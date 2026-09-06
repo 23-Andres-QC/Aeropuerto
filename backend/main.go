@@ -501,31 +501,6 @@ func main() {
 	mux.HandleFunc("GET /api/v1/live/snapshot", a.live)
 	mux.HandleFunc("GET /ws/v1/live", a.ws)
 	mux.HandleFunc("GET /api/v1/insights/summary", a.insights)
-	mux.HandleFunc("GET /api/v1/zones", func(w http.ResponseWriter, r *http.Request) {
-		c, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-		defer cancel()
-		rows, err := db.Query(c, "SELECT id,name,kind,ST_AsGeoJSON(geom)::json FROM zones ORDER BY id")
-		if err != nil {
-			fail(w, 503, "Zonas no disponibles")
-			return
-		}
-		defer rows.Close()
-		data := []map[string]any{}
-		for rows.Next() {
-			var id, name, kind string
-			var geom json.RawMessage
-			if err = rows.Scan(&id, &name, &kind, &geom); err != nil {
-				fail(w, 503, "Zonas no disponibles")
-				return
-			}
-			data = append(data, map[string]any{"id": id, "name": name, "kind": kind, "geometry": geom})
-		}
-		if rows.Err() != nil {
-			fail(w, 503, "Zonas no disponibles")
-			return
-		}
-		jsonResponse(w, data)
-	})
 	mux.HandleFunc("GET /health/ready", func(w http.ResponseWriter, r *http.Request) {
 		c, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
