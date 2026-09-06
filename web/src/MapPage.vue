@@ -20,6 +20,7 @@ const objects = ref<MapObject[]>([]),
   last = ref(""),
   error = ref(""),
   showTrails = ref(true),
+  paused = ref(false),
   now = ref(Date.now());
 const cameras = computed(() =>
   objects.value.filter((o) => o.kind === "camera"),
@@ -65,6 +66,7 @@ function connect() {
       people.value = s.people;
       events.value = s.events;
       last.value = s.at;
+      paused.value = !!s.paused;
       error.value = "";
     } catch {
       error.value = "No se pudo leer la actualización.";
@@ -130,8 +132,16 @@ function hour(s: string) {
       <span class="heading-meta"
         ><span class="pill">{{ cameras.length }} cámaras</span
         ><span class="pill">{{ zones.length }} zonas</span
-        ><span :class="connected && !stale ? 'good' : 'warn'"
-          >● {{ connected && !stale ? "Simulación activa" : "Sin datos" }}</span
+        ><span
+          :class="paused ? 'muted' : connected && !stale ? 'good' : 'warn'"
+          >●
+          {{
+            paused
+              ? "Simulación en pausa"
+              : connected && !stale
+                ? "Simulación activa"
+                : "Sin datos"
+          }}</span
         ></span
       >
     </div>
@@ -145,7 +155,11 @@ function hour(s: string) {
       @select="openFeed"
     />
     <div class="plan-bottom-status">
-      <span>{{ people.length }} personas simuladas</span
+      <span>{{
+        paused
+          ? "Simulación pausada · el histórico se conserva"
+          : people.length + " personas simuladas"
+      }}</span
       ><label
         ><input type="checkbox" v-model="showTrails" /> Recorridos</label
       ><span v-if="!cameras.length" class="warn"

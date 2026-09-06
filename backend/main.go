@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -76,6 +77,7 @@ type Snapshot struct {
 	Events    []Event   `json:"events"`
 	At        time.Time `json:"at"`
 	Simulated bool      `json:"simulated"`
+	Paused    bool      `json:"paused"`
 }
 type App struct {
 	db       *pgxpool.Pool
@@ -291,7 +293,7 @@ func (a *App) tick(ctx context.Context, walkers []*Walker, at time.Time) ([]*Wal
 		return nil, err
 	}
 	a.mu.Lock()
-	a.snapshot = Snapshot{people, events, at, true}
+	a.snapshot = Snapshot{people, events, at, true, false}
 	a.mu.Unlock()
 	return next, nil
 }
@@ -475,7 +477,10 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
-	a := &App{db: db, snapshot: Snapshot{People: []Person{}, Events: []Event{}, Simulated: true}}
+	// SIMULATION=off deja el histórico intacto y detiene el gasto: sin
+	// caminantes, sin escrituras por segundo y sin transacciones.
+	paused := strings.EqualFold(os.Getenv("SIMULATION"), "off")
+	a := &App{db: db, snapshot: Snapshot{People: []Person{}, Events: []Event{}, Simulated: true, Paused: paused}}
 	startup, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	// The demo simulator has one owner, including across accidental replicas.
@@ -494,7 +499,11 @@ func main() {
 		slog.Error("migration failed", "error", err)
 		os.Exit(1)
 	}
-	go a.simulate(ctx)
+	if paused {
+		slog.Info("simulation paused", "reason", "SIMULATION=off")
+	} else {
+		go a.simulate(ctx)
+	}
 	mux := http.NewServeMux()
 	a.mapRoutes(mux)
 	mux.HandleFunc("GET /api/v1/insights/spatial", a.spatial)
