@@ -1,0 +1,32 @@
+name: aeropuerto-demo
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_DB: aeropuerto
+      POSTGRES_USER: aeropuerto
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-demo_local_only}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U aeropuerto -d aeropuerto"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgres://aeropuerto:${DB_PASSWORD:-demo_local_only}@db:5432/aeropuerto?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+  web:
+    build: ./web
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:80"
+    depends_on: [backend]
+    restart: unless-stopped
+volumes:
+  pgdata:

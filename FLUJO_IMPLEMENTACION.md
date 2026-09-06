@@ -2,7 +2,7 @@
 
 Documento de diseño · 6 de septiembre de 2026
 
-Este documento define cómo construir el sistema mostrado en las láminas: video CCTV → tracking multicámara → coordenadas del aeropuerto → eventos → históricos → insights comerciales. La entrega actual es únicamente esta guía; los servicios, migraciones y contenedores descritos se implementarán siguiendo la ruta de trabajo. No hay una aplicación desplegada todavía.
+Este documento define cómo construir el sistema mostrado en las láminas: video CCTV → tracking multicámara → coordenadas del aeropuerto → eventos → históricos → insights comerciales. La arquitectura completa se implementará por etapas. Ya existe una primera demostración funcional con Go, PostgreSQL/PostGIS, Vue y Docker: ver README.md y la sección 17 para el alcance ejecutable actual.
 
 ## 1. Alcance y decisiones
 
@@ -688,3 +688,11 @@ La primera demostración completa debe mostrar una persona simulada o de un clip
 - Retención aprobada, roles, responsable del sistema y objetivos RPO/RTO.
 
 Estos datos no impiden construir el corte vertical con fixtures; sí condicionan la precisión del mapa, la capacidad prometida y la puesta en producción.
+
+## 17. Estado de la primera implementación
+
+Se añadió un corte vertical ejecutable: `compose.yaml`, backend Go, PostgreSQL/PostGIS y Vue con `/mapa` y `/insights`. Ver [README.md](README.md) para arrancar y probar.
+
+A petición del usuario, `/mapa` utiliza las capas reales del visor público de Jorge Chávez/Living Map, filtradas por nivel 3, mediante MapLibre. Se consultaron la configuración y los estilos públicos; la observación inicial de la sección 5 sobre no haber obtenido una API queda actualizada para esta integración de visualización. No se obtuvo un plano autorizado para calibración ni posiciones medidas de cámaras.
+
+Los recorridos y polígonos siguen siendo sintéticos y su anclaje es ilustrativo. Los datos locales no representan metros calibrados. Las plantillas de arquitectura de este documento describen la evolución futura; el `compose.yaml` ejecutable actual usa tres servicios y no requiere GPU/NATS para la demostración.
