@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 docker compose up -d --wait db
-if ! docker compose exec -T db psql -U aeropuerto -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='aeropuerto_test'" | rg -q 1; then
+if ! docker compose exec -T db psql -U aeropuerto -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='aeropuerto_test'" | grep -q 1; then
   docker compose exec -T db createdb -U aeropuerto aeropuerto_test
 fi
 # Uses the configured demo password; the test refuses any other database name.

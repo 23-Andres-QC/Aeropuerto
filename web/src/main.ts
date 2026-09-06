@@ -7,6 +7,7 @@ const router = createRouter({
   routes: [
     { path: "/", redirect: "/mapa" },
     { path: "/mapa", component: () => import("./MapPage.vue") },
+    { path: "/configuracion", component: () => import("./EditorPage.vue") },
     { path: "/insights", component: () => import("./InsightsPage.vue") },
     { path: "/:pathMatch(.*)*", redirect: "/mapa" },
   ],

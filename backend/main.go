@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
+	mrand "math/rand/v2"
 	"net/http"
 	"os"
 	"os/signal"
@@ -24,6 +26,34 @@ import (
 
 //go:embed migrations/*.sql
 var migrations embed.FS
+
+// Recorridos reales del nivel 3 en metros del plano, generados desde la misma
+// geometría que el SVG por scripts/maps/build-walkgraph.mjs.
+//
+//go:embed routes.json
+var routesFile []byte
+
+type segment [2]float64
+type simPath []segment
+type simData struct {
+	Shop       simPath   `json:"shop"`
+	Routes     []simPath `json:"routes"`
+	ShopRoutes []simPath `json:"shop_routes"`
+	Width      float64   `json:"width"`
+	Height     float64   `json:"height"`
+}
+
+var sim simData
+
+func loadRoutes() error {
+	if err := json.Unmarshal(routesFile, &sim); err != nil {
+		return err
+	}
+	if len(sim.Routes) == 0 || len(sim.ShopRoutes) == 0 {
+		return errors.New("routes.json sin recorridos")
+	}
+	return nil
+}
 
 type Point struct {
 	X float64 `json:"x"`
@@ -53,40 +83,51 @@ type App struct {
 	snapshot Snapshot
 }
 type Walker struct {
-	ID    string
-	Age   int
-	Buyer bool
-	Zones map[string]bool
-	Trail []Point
+	ID      string
+	Path    simPath // recorrido en metros del plano
+	Pos     float64 // metros ya caminados
+	Speed   float64 // metros por tick de un segundo
+	Dwell   int     // ticks que sigue detenido dentro de la tienda
+	Browses bool    // entra a la tienda y se detiene una vez
+	Stopped bool
+	Zones   map[string]bool
+	Trail   []Point
 }
 
-func route(age int, buyer bool) (Point, bool) {
-	if age < 0 || age >= 64 {
+// point interpola la posición a lo largo del recorrido; false cuando terminó.
+func (w *Walker) point() (Point, bool) {
+	if len(w.Path) < 2 || w.Pos < 0 {
 		return Point{}, false
 	}
-	if !buyer && age >= 30 {
-		return Point{70 + float64(age-30)*0.65, 38}, true
+	left := w.Pos
+	for i := 1; i < len(w.Path); i++ {
+		a, b := w.Path[i-1], w.Path[i]
+		seg := math.Hypot(b[0]-a[0], b[1]-a[1])
+		if seg == 0 {
+			continue
+		}
+		if left <= seg {
+			t := left / seg
+			return Point{a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t}, true
+		}
+		left -= seg
 	}
-	switch {
-	case age < 20:
-		return Point{10 + float64(age)*2, 38}, true
-	case age < 30:
-		if buyer {
-			return Point{50, 38 - float64(age-20)*2}, true
-		}
-		return Point{50 + float64(age-20)*2, 38}, true
-	case age < 44:
-		if buyer {
-			return Point{50, 18}, true
-		}
-		return Point{70 + float64(age-30), 38}, true
-	case age < 54:
-		if buyer {
-			return Point{50, 18 + float64(age-44)*2}, true
-		}
-		return Point{84, 38}, true
-	default:
-		return Point{50 + float64(age-54)*4, 38}, true
+	return Point{}, false
+}
+
+// newWalker toma un recorrido del terminal; los compradores usan los que
+// atraviesan el local comercial.
+func newWalker(browses bool) *Walker {
+	set := sim.Routes
+	if browses {
+		set = sim.ShopRoutes
+	}
+	return &Walker{
+		ID:      newID(),
+		Path:    set[mrand.IntN(len(set))],
+		Speed:   1.1 + mrand.Float64()*0.5,
+		Browses: browses,
+		Zones:   map[string]bool{},
 	}
 }
 func newID() string {
@@ -118,16 +159,23 @@ func (a *App) migrate(ctx context.Context) error {
 	if _, err = tx.Exec(ctx, "CREATE TABLE IF NOT EXISTS schema_migrations(version text PRIMARY KEY)"); err != nil {
 		return err
 	}
-	var exists bool
-	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='001')").Scan(&exists); err != nil {
-		return err
-	}
-	if !exists {
-		sql, _ := migrations.ReadFile("migrations/001_initial.sql")
+	for _, file := range []string{"001_initial", "002_map_objects", "003_plan_zones"} {
+		version := file[:3]
+		var exists bool
+		if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)", version).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
+		sql, e := migrations.ReadFile("migrations/" + file + ".sql")
+		if e != nil {
+			return e
+		}
 		if _, err = tx.Exec(ctx, string(sql)); err != nil {
 			return err
 		}
-		if _, err = tx.Exec(ctx, "INSERT INTO schema_migrations VALUES('001')"); err != nil {
+		if _, err = tx.Exec(ctx, "INSERT INTO schema_migrations VALUES($1)", version); err != nil {
 			return err
 		}
 	}
@@ -148,7 +196,7 @@ func (a *App) tick(ctx context.Context, walkers []*Walker, at time.Time) ([]*Wal
 	for _, old := range walkers {
 		walker := *old
 		walker.Zones = make(map[string]bool)
-		p, active := route(walker.Age, walker.Buyer)
+		p, active := walker.point()
 		if _, err = tx.Exec(ctx, "INSERT INTO sessions(id,started_at) VALUES($1,$2) ON CONFLICT DO NOTHING", walker.ID, at); err != nil {
 			return nil, err
 		}
@@ -188,6 +236,10 @@ func (a *App) tick(ctx context.Context, walkers []*Walker, at time.Time) ([]*Wal
 				}
 			}
 		}
+		if walker.Browses && walker.Zones["shop"] && !walker.Stopped {
+			walker.Stopped = true
+			walker.Dwell = 18 + mrand.IntN(42)
+		}
 		for z := range old.Zones {
 			if !walker.Zones[z] {
 				if _, err = tx.Exec(ctx, "UPDATE visits SET exited_at=$3,status='complete' WHERE session_id=$1 AND zone_id=$2 AND status='open'", walker.ID, z, at); err != nil {
@@ -200,11 +252,16 @@ func (a *App) tick(ctx context.Context, walkers []*Walker, at time.Time) ([]*Wal
 		}
 		if active {
 			walker.Trail = append(append([]Point{}, old.Trail...), p)
-			if len(walker.Trail) > 24 {
-				walker.Trail = walker.Trail[len(walker.Trail)-24:]
+			// Recorridos de varios minutos: una estela de 24 s no se veía.
+			if len(walker.Trail) > 45 {
+				walker.Trail = walker.Trail[len(walker.Trail)-45:]
 			}
 			people = append(people, Person{walker.ID, p, walker.Trail})
-			walker.Age++
+			if walker.Dwell > 0 {
+				walker.Dwell--
+			} else {
+				walker.Pos += walker.Speed
+			}
 			next = append(next, &walker)
 		} else {
 			if _, err = tx.Exec(ctx, "UPDATE sessions SET status='complete',ended_at=$2 WHERE id=$1", walker.ID, at); err != nil {
@@ -238,6 +295,18 @@ func (a *App) tick(ctx context.Context, walkers []*Walker, at time.Time) ([]*Wal
 	a.mu.Unlock()
 	return next, nil
 }
+// maxWalkers acota cuántas filas por segundo escribe la demostración.
+const maxWalkers = 28
+
+// prune limita el histórico de posiciones a algo más que la ventana máxima
+// consultable (24 h), para que la demo no crezca sin fin.
+func (a *App) prune(ctx context.Context) {
+	c, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if _, err := a.db.Exec(c, "DELETE FROM positions WHERE observed_at < now() - interval '25 hours'"); err != nil {
+		slog.Warn("position retention failed", "error", err)
+	}
+}
 func (a *App) simulate(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -249,8 +318,12 @@ func (a *App) simulate(ctx context.Context) {
 			return
 		case at := <-ticker.C:
 			candidates := append([]*Walker{}, walkers...)
-			if step%8 == 0 {
-				candidates = append(candidates, &Walker{ID: newID(), Buyer: (step/8)%3 != 2, Zones: map[string]bool{}})
+			// Un pasajero nuevo cada 4 s, con tope para acotar la escritura.
+			if step%4 == 0 && len(candidates) < maxWalkers {
+				candidates = append(candidates, newWalker((step/4)%3 == 0))
+			}
+			if step%600 == 0 {
+				a.prune(ctx)
 			}
 			work, cancel := context.WithTimeout(ctx, 4*time.Second)
 			next, err := a.tick(work, candidates, at.UTC())
@@ -265,9 +338,12 @@ func (a *App) simulate(ctx context.Context) {
 	}
 }
 func (a *App) live(w http.ResponseWriter, r *http.Request) {
+	// Copiar bajo el candado y escribir fuera: un cliente lento no debe
+	// frenar al simulador, que necesita el candado de escritura cada segundo.
 	a.mu.RLock()
-	defer a.mu.RUnlock()
-	jsonResponse(w, a.snapshot)
+	snapshot := a.snapshot
+	a.mu.RUnlock()
+	jsonResponse(w, snapshot)
 }
 func (a *App) ws(w http.ResponseWriter, r *http.Request) {
 	conn, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
@@ -389,6 +465,10 @@ func (a *App) insights(w http.ResponseWriter, r *http.Request) {
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if err := loadRoutes(); err != nil {
+		slog.Error("embedded routes invalid", "error", err)
+		os.Exit(1)
+	}
 	db, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
 	if err != nil {
 		slog.Error("database configuration invalid")
@@ -416,6 +496,8 @@ func main() {
 	}
 	go a.simulate(ctx)
 	mux := http.NewServeMux()
+	a.mapRoutes(mux)
+	mux.HandleFunc("GET /api/v1/insights/spatial", a.spatial)
 	mux.HandleFunc("GET /api/v1/live/snapshot", a.live)
 	mux.HandleFunc("GET /ws/v1/live", a.ws)
 	mux.HandleFunc("GET /api/v1/insights/summary", a.insights)

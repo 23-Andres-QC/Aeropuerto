@@ -36,7 +36,31 @@ func TestPostGISVisitLifecycle(t *testing.T) {
 	if _, err = db.Exec(ctx, "TRUNCATE events,visits,positions,sessions RESTART IDENTITY"); err != nil {
 		t.Fatal(err)
 	}
-	walkers := []*Walker{{ID: "test-buyer", Buyer: true, Zones: map[string]bool{}}, {ID: "test-passer", Buyer: false, Zones: map[string]bool{}}}
+	// Zonas de prueba en metros del plano: el local y su acera, separados.
+	if _, err = db.Exec(ctx, "UPDATE zones SET geom=ST_GeomFromText('POLYGON((100 100,126 100,126 126,100 126,100 100))',0) WHERE id='shop'"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(ctx, "UPDATE zones SET geom=ST_GeomFromText('POLYGON((90 90,150 90,150 99,90 99,90 90))',0) WHERE id='front'"); err != nil {
+		t.Fatal(err)
+	}
+	// Recorridos de un metro por paso: cada tick cae exactamente en un vértice.
+	steps := func(from Point, dx, dy float64, n int) simPath {
+		out := simPath{}
+		for i := 0; i < n; i++ {
+			out = append(out, segment{from.X + dx*float64(i), from.Y + dy*float64(i)})
+		}
+		return out
+	}
+	// 14 pasos por la acera, 27 dentro del local, 10 de salida.
+	buyerPath := append(append(
+		steps(Point{95, 95}, 1, 0, 10),
+		steps(Point{104, 96}, 0, 1, 4)...),
+		steps(Point{104, 100}, 0, 1, 37)...)
+	passerPath := steps(Point{95, 95}, 1, 0, 51)
+	walkers := []*Walker{
+		{ID: "test-buyer", Path: buyerPath, Speed: 1, Zones: map[string]bool{}},
+		{ID: "test-passer", Path: passerPath, Speed: 1, Zones: map[string]bool{}},
+	}
 	start := time.Now().UTC().Add(-2 * time.Minute)
 	for i := 0; i <= 64; i++ {
 		walkers, err = a.tick(ctx, walkers, start.Add(time.Duration(i)*time.Second))
@@ -75,13 +99,54 @@ func TestPostGISVisitLifecycle(t *testing.T) {
 	if summary.Visits != 1 || summary.Exposed != 2 || summary.Rate != 50 {
 		t.Fatalf("unexpected insights %+v", summary)
 	}
+	spatialResult := httptest.NewRecorder()
+	a.spatial(spatialResult, httptest.NewRequest("GET", "/api/v1/insights/spatial?minutes=60", nil))
+	if spatialResult.Code != 200 {
+		t.Fatal(spatialResult.Body.String())
+	}
+	var spatial struct {
+		Routes []json.RawMessage `json:"routes"`
+		Heat   []struct {
+			Seconds float64 `json:"seconds"`
+		} `json:"heat"`
+	}
+	if err = json.Unmarshal(spatialResult.Body.Bytes(), &spatial); err != nil {
+		t.Fatal(err)
+	}
+	total := 0.0
+	for _, cell := range spatial.Heat {
+		total += cell.Seconds
+	}
+	if len(spatial.Routes) != 2 || total != 100 {
+		t.Fatalf("spatial routes=%d seconds=%v", len(spatial.Routes), total)
+	}
 	invalid := httptest.NewRecorder()
 	a.insights(invalid, httptest.NewRequest("GET", "/api/v1/insights/summary?minutes=-1", nil))
 	if invalid.Code != 400 {
 		t.Fatal("invalid range accepted")
 	}
+	// Un comprador se detiene dentro del local: su visita dura más que el paso.
+	if _, err = db.Exec(ctx, "TRUNCATE events,visits,positions,sessions RESTART IDENTITY"); err != nil {
+		t.Fatal(err)
+	}
+	browser := []*Walker{{ID: "test-browser", Path: buyerPath, Speed: 1, Browses: true, Zones: map[string]bool{}}}
+	for i := 0; i <= 200 && len(browser) > 0; i++ {
+		browser, err = a.tick(ctx, browser, start.Add(time.Duration(i)*time.Second))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	var browsed float64
+	if err = db.QueryRow(ctx, "SELECT extract(epoch FROM exited_at-entered_at) FROM visits WHERE session_id='test-browser' AND zone_id='shop'").Scan(&browsed); err != nil {
+		t.Fatal(err)
+	}
+	// 27 s de tránsito más una pausa de entre 18 y 59 s.
+	if browsed < 45 || browsed > 86 {
+		t.Fatalf("permanencia del comprador fuera de rango: %v", browsed)
+	}
+
 	// Restart with an open shop visit: censor it, do not invent an EXIT or duration.
-	walkers = []*Walker{{ID: "test-interrupted", Age: 30, Buyer: true, Zones: map[string]bool{}}}
+	walkers = []*Walker{{ID: "test-interrupted", Path: buyerPath, Pos: 20, Speed: 1, Zones: map[string]bool{}}}
 	if _, err = a.tick(ctx, walkers, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}

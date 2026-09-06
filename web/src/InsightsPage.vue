@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from "vue";
+import LocalPlan from "./LocalPlan.vue";
+const spatial = ref<{
+  routes: { points: { x: number; y: number }[] }[];
+  heat: { x: number; y: number; seconds: number }[];
+}>({ routes: [], heat: [] });
 type Summary = {
   visits: number;
   unique: number;
@@ -32,6 +37,12 @@ async function load() {
     });
     if (!r.ok) throw Error();
     data.value = await r.json();
+    const maps = await fetch(
+      `/api/v1/insights/spatial?minutes=${minutes.value}`,
+      { signal: request.signal },
+    );
+    if (!maps.ok) throw Error();
+    spatial.value = await maps.json();
   } catch (e) {
     if (!request.signal.aborted)
       error.value =
@@ -60,15 +71,16 @@ onUnmounted(() => {
 <template>
   <section class="page-title">
     <div>
-      <p class="eyebrow">ANALÍTICA / NIVEL 3</p>
-      <h1>Insights comerciales</h1>
-      <p>Del movimiento a las visitas: resultados consultados en PostgreSQL.</p>
+      <p class="eyebrow">LAP · NIVEL 3 / ANÁLISIS ESPACIAL</p>
+      <h1>Comportamiento de pasajeros</h1>
+      <p>Trayectorias y permanencia sobre el plano local del aeropuerto.</p>
     </div>
     <label class="filter"
       >Período<select
         v-model="minutes"
         @change="
           data = null;
+          spatial = { routes: [], heat: [] };
           load();
         "
       >
@@ -78,66 +90,78 @@ onUnmounted(() => {
       </select></label
     >
   </section>
-  <div class="live-strip">
-    <span class="status" :class="stale ? 'warn' : 'good'"
-      >●
-      {{
-        stale ? "Esperando datos recientes" : "Histórico simulado disponible"
-      }}</span
-    ><span>Actualización cada 5 segundos</span
-    ><button @click="load" :disabled="loading">
-      {{ loading ? "Actualizando…" : "Actualizar" }}
-    </button>
-  </div>
   <p v-if="error" class="error" role="alert">{{ error }}</p>
-  <p v-if="!data && !error" class="empty" role="status">
-    Consultando indicadores…
-  </p>
-  <template v-if="data"
-    ><div class="metrics">
-      <article class="panel metric">
-        <p>VISITAS A TIENDA</p>
-        <strong>{{ data.visits }}</strong
-        ><small>{{ data.unique }} personas simuladas únicas</small>
+  <p v-if="!data && !error" class="empty">Consultando histórico…</p>
+  <div class="spatial-insights">
+    <section class="spatial-maps">
+      <article class="panel">
+        <div class="panel-heading">
+          <h2>Mapa de movimiento</h2>
+          <span class="pill">Hasta 40 recorridos</span>
+        </div>
+        <LocalPlan horizontal :movements="spatial.routes" />
+        <p class="chart-caption">
+          Trayectorias almacenadas en PostgreSQL · Datos simulados ·
+          {{ spatial.routes.length }} recorridos
+        </p>
       </article>
-      <article class="panel metric">
-        <p>EXPOSICIÓN COMERCIAL</p>
-        <strong>{{ data.exposed }}</strong
-        ><small>Personas que pasaron frente al local</small>
+      <article class="panel">
+        <div class="panel-heading">
+          <h2>Mapa de calor</h2>
+          <span class="heat-legend">Menor ▰▰▰ Mayor permanencia</span>
+        </div>
+        <LocalPlan horizontal :heat="spatial.heat" />
+        <p class="chart-caption">
+          Intensidad relativa por segundos-persona. Coordenadas de prueba; no
+          expresa personas/m².
+        </p>
       </article>
-      <article class="panel metric">
-        <p>TASA DE CAPTACIÓN</p>
-        <strong>{{
-          data.capture_rate === null ? "—" : data.capture_rate.toFixed(1) + "%"
-        }}</strong
-        ><small>{{ data.captured }} expuestas entraron · provisional</small>
-      </article>
-      <article class="panel metric">
-        <p>PERMANENCIA MEDIA</p>
-        <strong>{{
-          data.dwell_seconds === null
-            ? "—"
-            : data.dwell_seconds.toFixed(0) + " s"
-        }}</strong
-        ><small>{{ data.complete }} visitas completas</small>
-      </article>
-    </div>
-    <div class="insights-layout">
+    </section>
+    <aside v-if="data" class="insight-sidebar">
+      <div class="metrics">
+        <article class="panel metric">
+          <p>VISITAS A TIENDA</p>
+          <strong>{{ data.visits }}</strong
+          ><small>{{ data.unique }} personas únicas simuladas</small>
+        </article>
+        <article class="panel metric">
+          <p>EXPOSICIÓN</p>
+          <strong>{{ data.exposed }}</strong
+          ><small>Pasaron frente al local</small>
+        </article>
+        <article class="panel metric">
+          <p>CAPTACIÓN</p>
+          <strong>{{
+            data.capture_rate === null
+              ? "—"
+              : data.capture_rate.toFixed(1) + "%"
+          }}</strong
+          ><small>{{ data.captured }} ingresaron · provisional</small>
+        </article>
+        <article class="panel metric">
+          <p>PERMANENCIA</p>
+          <strong>{{
+            data.dwell_seconds === null
+              ? "—"
+              : data.dwell_seconds.toFixed(0) + " s"
+          }}</strong
+          ><small>{{ data.complete }} visitas completas</small>
+        </article>
+      </div>
       <section class="panel">
         <div class="panel-heading">
-          <h2>Entradas a tienda</h2>
-          <span class="muted">Por minuto</span>
+          <h2>Visitas por minuto</h2>
+          <button @click="load" :disabled="loading">Actualizar</button>
         </div>
         <p v-if="!data.series.length" class="empty">
-          Todavía no hay visitas en este período. La simulación genera su
-          primera entrada en unos 25 segundos.
+          Todavía no hay visitas en este período.
         </p>
-        <div v-else class="chart" aria-label="Visitas a tienda por minuto">
+        <div v-else class="chart">
           <div v-for="v in data.series" :key="v.at" class="bar-col">
             <b>{{ v.visits }}</b>
             <div
               class="bar"
-              :style="{ height: Math.max(4, (v.visits / max) * 150) + 'px' }"
+              :style="{ height: Math.max(4, (v.visits / max) * 100) + 'px' }"
             ></div>
             <small>{{
               new Date(v.at).toLocaleTimeString("es-PE", {
@@ -149,31 +173,31 @@ onUnmounted(() => {
         </div>
       </section>
       <section class="panel notes">
-        <h2>Cómo leer estos datos</h2>
+        <h2>Lectura de indicadores</h2>
         <p>
-          <b>Captación:</b> personas expuestas que ingresan en los siguientes 2
-          minutos, divididas entre personas expuestas del período. Las cohortes
-          recientes todavía pueden convertir.
+          La captación relaciona personas expuestas con entradas durante los
+          siguientes 2 minutos. Las cohortes recientes siguen abiertas.
         </p>
         <p>
-          <b>Permanencia:</b> tiempo entre entrada y salida de visitas
-          completas. {{ data.censored }} visitas interrumpidas están excluidas
-          de la media.
+          Permanencia calculada sobre visitas completas;
+          {{ data.censored }} visitas interrumpidas excluidas.
         </p>
-        <p>
-          <b>Fuente:</b> recorridos sintéticos superpuestos al mapa real, con
-          zonas de prueba. Estos números no representan pasajeros del
-          aeropuerto.
+        <p :class="stale ? 'warn' : 'good'">
+          {{
+            stale
+              ? "Datos sin actualización reciente"
+              : "Histórico simulado actualizado"
+          }}
         </p>
         <small class="muted"
-          >Último dato:
-          {{
+          >{{
             data.data_through
               ? new Date(data.data_through).toLocaleString("es-PE")
-              : "sin registros"
-          }}</small
+              : "Sin registros"
+          }}
+          · El video USB no alimenta estos indicadores todavía.</small
         >
       </section>
-    </div></template
-  >
+    </aside>
+  </div>
 </template>

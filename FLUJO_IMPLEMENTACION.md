@@ -695,4 +695,16 @@ Se añadió un corte vertical ejecutable: `compose.yaml`, backend Go, PostgreSQL
 
 A petición del usuario, `/mapa` utiliza las capas reales del visor público de Jorge Chávez/Living Map, filtradas por nivel 3, mediante MapLibre. Se consultaron la configuración y los estilos públicos; la observación inicial de la sección 5 sobre no haber obtenido una API queda actualizada para esta integración de visualización. No se obtuvo un plano autorizado para calibración ni posiciones medidas de cámaras.
 
-Los recorridos y polígonos siguen siendo sintéticos y su anclaje es ilustrativo. Los datos locales no representan metros calibrados. Las plantillas de arquitectura de este documento describen la evolución futura; el `compose.yaml` ejecutable actual usa tres servicios y no requiere GPU/NATS para la demostración.
+Los recorridos ya no son una franja sintética: se calculan sobre las superficies transitables reales del nivel 3 y cruzan el terminal completo, en metros del plano. Siguen siendo personas simuladas, no observaciones. Los datos locales no representan metros calibrados. Las plantillas de arquitectura de este documento describen la evolución futura; el `compose.yaml` ejecutable actual usa tres servicios y no requiere GPU/NATS para la demostración.
+
+### Editor de mapa y renovación visual
+
+La ruta `/configuracion` permite dibujar zonas y cobertura de cámaras, arrastrar vértices y ubicaciones, personalizar nombre/color/tipo/fuente/orientación y guardar o eliminar con control de revisión. La configuración real de usuario se almacena en WGS84 (PostGIS SRID 4326), separada de la simulación local, y se muestra también en `/mapa`.
+
+La interfaz incorpora navegación lateral, mapa amplio y panel de propiedades. Persistir una cámara no conecta todavía su stream; los polígonos no generan métricas de pasajeros hasta integrar calibración y observaciones reales. La primera edición está acotada al nivel 3.
+
+### Actualización: plano local, vista lateral y cámara USB
+
+La implementación vigente reemplaza MapLibre y los mosaicos externos por `web/public/maps/airport-level-3.svg`, una representación vertical local derivada de la geometría real del nivel 3, con el norte hacia arriba y el eje largo del terminal en vertical. `plan.ts` conserva la correspondencia WGS84 ↔ plano. Solo Editar plano activa zoom y desplazamiento.
+
+Operación (Mapa en vivo) muestra el plano horizontal a ancho completo, con las cámaras y el flujo de registro apilados debajo y una ventana ampliada al tocar una cámara; la configuración vive solo en Cámaras y zonas, con el plano vertical. La interfaz usa superficies translúcidas sobre una base azul/celeste con la identidad de LAP. La fuente `webcam` permite video USB real con permiso del navegador y análisis local de movimiento RGB; el dispositivo elegido se persiste en `source_ref` como `webcam:<deviceId>` y queda excluido de las demás cámaras; no es YOLO/ByteTrack/ReID ni alimenta métricas comerciales. Insights incluye trayectorias y calor históricos simulados a la izquierda e indicadores a la derecha. El README describe el estado ejecutable actual y sustituye las instrucciones anteriores sobre el visor externo.
