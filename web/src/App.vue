@@ -25,18 +25,18 @@ const title = computed(() =>
       </div>
       <p class="nav-caption">ESPACIO DE TRABAJO</p>
       <nav aria-label="Navegación principal">
-        <RouterLink to="/configuracion"
-          ><span>◇</span
-          ><span class="nav-label"
-            ><b class="nav-step">1.</b>Configuración</span
-          ></RouterLink
-        ><RouterLink to="/mapa"
+        <RouterLink to="/mapa"
           ><span>⌖</span
-          ><span class="nav-label"><b class="nav-step">2.</b>En vivo</span
+          ><span class="nav-label"><b class="nav-step">1.</b>En vivo</span
           ></RouterLink
         ><RouterLink to="/insights"
           ><span>▥</span
-          ><span class="nav-label"><b class="nav-step">3.</b>Insights</span
+          ><span class="nav-label"><b class="nav-step">2.</b>Insights</span
+          ></RouterLink
+        ><RouterLink to="/configuracion"
+          ><span>◇</span
+          ><span class="nav-label"
+            ><b class="nav-step">3.</b>Configuración</span
           ></RouterLink
         >
       </nav>

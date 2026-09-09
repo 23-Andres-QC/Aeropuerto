@@ -36,6 +36,7 @@ const props = withDefaults(
     showZones?: boolean;
     drawColor?: string;
     labels?: boolean;
+    zoomable?: boolean;
   }>(),
   {
     objects: () => [],
@@ -54,6 +55,7 @@ const props = withDefaults(
 );
 const emit = defineEmits<{
   point: [p: number[]];
+  removePoint: [index: number];
   select: [id: string];
   selectPerson: [id: string];
   move: [index: number, p: number[]];
@@ -85,11 +87,14 @@ const outline = computed(
     props.vertices.map((p, i) => (i ? "L" : "M") + coords(p).join(",")).join(" ") +
     "Z",
 );
+// Acercar y desplazar no exigen estar editando: el plano de reproducción
+// también se explora, aunque ahí no se dibuje nada.
+const interactive = computed(() => props.editing || props.zoomable);
 function reset() {
   view.value = [0, 0, base.value[0]!, base.value[1]!];
 }
 function zoom(factor: number) {
-  if (!props.editing) return;
+  if (!interactive.value) return;
   const [full, tall] = base.value as [number, number];
   const [x, y, w] = view.value as [number, number, number, number];
   const nw = Math.min(full, Math.max(full / 12, w * factor)),
@@ -130,11 +135,11 @@ function move(e: PointerEvent) {
   const dx = e.clientX - drag.start[0]!,
     dy = e.clientY - drag.start[1]!;
   if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
-  if (!props.editing) return;
-  if (drag.handle !== null) {
+  if (props.editing && drag.handle !== null) {
     emit("move", drag.handle, fromPlan(local(e)));
     return;
   }
+  if (!interactive.value) return;
   if (!props.drawing && drag.moved) {
     const m = svg.value!.getScreenCTM()!;
     view.value = [
@@ -148,8 +153,11 @@ function move(e: PointerEvent) {
 function up(e: PointerEvent) {
   if (!drag) return;
   if (!drag.moved) {
-    if (props.drawing && props.editing) emit("point", fromPlan(local(e)));
-    else if (drag.person) emit("selectPerson", drag.person);
+    if (props.drawing && props.editing) {
+      // Un clic sobre un vértice ya marcado lo retira en vez de duplicarlo.
+      if (drag.handle !== null) emit("removePoint", drag.handle);
+      else emit("point", fromPlan(local(e)));
+    } else if (drag.person) emit("selectPerson", drag.person);
     else if (drag.id) emit("select", drag.id);
   }
   drag = null;
@@ -207,7 +215,7 @@ watch(base, reset);
     <div class="plan-topline">
       <span><b>JORGE CHÁVEZ</b> / Nivel 3</span
       ><span>{{ editing ? "EDICIÓN ACTIVA" : "VISTA FIJA" }}</span>
-      <div v-if="editing" class="plan-zoom">
+      <div v-if="interactive" class="plan-zoom">
         <button @click="zoom(0.75)" aria-label="Acercar plano">＋</button
         ><button @click="zoom(1.3)" aria-label="Alejar plano">−</button
         ><button @click="reset">Restablecer</button>
@@ -216,7 +224,7 @@ watch(base, reset);
     <svg
       ref="svg"
       class="plan-svg"
-      :class="{ editable: editing, wide: horizontal }"
+      :class="{ editable: editing, pannable: interactive, wide: horizontal }"
       :viewBox="view.join(' ')"
       @pointerdown="down"
       @pointermove="move"
@@ -224,7 +232,7 @@ watch(base, reset);
       @pointercancel="drag = null"
       @wheel="
         (e) => {
-          if (editing) {
+          if (interactive) {
             e.preventDefault();
             zoom(e.deltaY > 0 ? 1.1 : 0.9);
           }
@@ -416,8 +424,10 @@ watch(base, reset);
       <span>Plano local · Lima Airport / Living Map · 06/09/2026</span
       ><span>{{
         editing
-          ? "Arrastra para desplazar · rueda para zoom"
-          : "Zoom bloqueado hasta editar"
+          ? "Arrastra para desplazar · rueda para zoom · clic en un punto para quitarlo"
+          : zoomable
+            ? "Arrastra para desplazar · rueda para zoom"
+            : "Zoom bloqueado hasta editar"
       }}</span>
     </div>
   </div>

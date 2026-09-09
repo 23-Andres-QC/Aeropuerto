@@ -111,4 +111,36 @@ func TestHistoricalReplayAndMetrics(t *testing.T) {
 	if metrics.Active != 2 || metrics.Visits != 2 || metrics.PassBy != 1 || metrics.CaptureRate == nil || *metrics.CaptureRate != 100 {
 		t.Fatalf("métricas inesperadas: %+v", metrics)
 	}
+
+	// Filtrado por tienda: solo cuentan las visitas, la exposición y la gente
+	// de esa zona. En el instante consultado nadie sigue en el frente.
+	byZone := params
+	byZone.Set("zone_id", "front")
+	zoneResult := httptest.NewRecorder()
+	a.replayMetrics(zoneResult, httptest.NewRequest("GET", "/api/v1/replay/metrics?"+byZone.Encode(), nil))
+	if zoneResult.Code != 200 {
+		t.Fatal(zoneResult.Body.String())
+	}
+	var scoped replayMetrics
+	if err = json.Unmarshal(zoneResult.Body.Bytes(), &scoped); err != nil {
+		t.Fatal(err)
+	}
+	if scoped.ZoneID != "front" || scoped.Visits != 1 || scoped.PassBy != 1 || scoped.Active != 0 {
+		t.Fatalf("métricas por zona inesperadas: %+v", scoped)
+	}
+	summaryResult := httptest.NewRecorder()
+	a.insights(summaryResult, httptest.NewRequest("GET", "/api/v1/insights/summary?"+byZone.Encode(), nil))
+	if summaryResult.Code != 200 {
+		t.Fatal(summaryResult.Body.String())
+	}
+	var summary struct {
+		Zones   []replayZone  `json:"zones"`
+		Metrics replayMetrics `json:"metrics"`
+	}
+	if err = json.Unmarshal(summaryResult.Body.Bytes(), &summary); err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.Zones) != 3 || summary.Metrics.Visits != 1 {
+		t.Fatalf("el resumen debe publicar el catálogo y respetar la zona: %+v", summary)
+	}
 }

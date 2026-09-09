@@ -603,7 +603,14 @@ footer {
   touch-action: none;
   cursor: crosshair;
 }
-.plan-svg:not(.editable) {
+.plan-svg.pannable:not(.editable) {
+  touch-action: none;
+  cursor: grab;
+}
+.plan-svg.pannable:not(.editable):active {
+  cursor: grabbing;
+}
+.plan-svg:not(.pannable) {
   touch-action: pan-y;
 }
 .plan-object {

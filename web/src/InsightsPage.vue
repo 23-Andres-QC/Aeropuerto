@@ -12,9 +12,11 @@ type Metrics = {
   captured: number;
   capture_rate: number | null;
 };
+type Zone = { id: string; name: string; kind: string; area_m2: number };
 type Summary = {
   from: string;
   to: string;
+  zones: Zone[];
   data_through: string | null;
   unique: number;
   complete: number;
@@ -31,6 +33,7 @@ type Spatial = {
 
 const data = ref<Summary | null>(null);
 const spatial = ref<Spatial>({ routes: [], heat: [], flows: [], heat_unit: "segundos-persona" });
+const zoneFilter = ref("");
 const dateFilter = ref("");
 const hourFilter = ref("");
 const slotFilter = ref("");
@@ -46,6 +49,7 @@ function query() {
   } else {
     params.set("minutes", "60");
   }
+  if (zoneFilter.value) params.set("zone_id", zoneFilter.value);
   return params.toString();
 }
 async function load() {
@@ -74,6 +78,14 @@ function onSlot() {
   if (slotFilter.value) hourFilter.value = "";
   load();
 }
+const zones = computed(() => data.value?.zones ?? []);
+const selectedZone = computed(() =>
+  zones.value.find((zone) => zone.id === zoneFilter.value),
+);
+// Qué mide cada tarjeta: todas las zonas o solo la elegida.
+const scope = computed(() =>
+  selectedZone.value ? `en ${selectedZone.value.name}` : "en todas las zonas",
+);
 function dwell(seconds: number | null | undefined) {
   if (seconds == null) return "—";
   return seconds >= 60 ? `${(seconds / 60).toFixed(1)} min` : `${seconds.toFixed(0)} s`;
@@ -90,7 +102,13 @@ onMounted(load);
       <p>Capas agregadas a partir de trayectorias históricas reales de PostgreSQL/PostGIS.</p>
     </div>
     <div class="replay-filters">
-      <label>Fecha<input v-model="dateFilter" type="date" @change="load" /></label>
+      <label>Tienda<select v-model="zoneFilter" @change="load">
+          <option value="">Todas las zonas</option>
+          <option v-for="zone in zones" :key="zone.id" :value="zone.id">
+            {{ zone.name }}
+          </option>
+        </select></label
+      ><label>Fecha<input v-model="dateFilter" type="date" @change="load" /></label>
       <label>Hora<select v-model="hourFilter" @change="onHour"><option value="">Todas</option><option v-for="hour in 24" :key="hour - 1" :value="hour - 1">{{ String(hour - 1).padStart(2, "0") }}:00</option></select></label>
       <label>Franja<select v-model="slotFilter" @change="onSlot" :disabled="!!hourFilter"><option value="">Todas</option><option value="night">00–06</option><option value="morning">06–12</option><option value="afternoon">12–18</option><option value="evening">18–24</option></select></label>
     </div>
@@ -112,15 +130,15 @@ onMounted(load);
     </section>
     <aside v-if="data" class="insight-sidebar">
       <div class="metrics">
-        <article class="panel metric"><p>ACTIVAS</p><strong>{{ data.metrics.active }}</strong><small>en el cierre del rango</small></article>
-        <article class="panel metric"><p>VISITAS</p><strong>{{ data.metrics.visits }}</strong><small>{{ data.unique }} IDs anónimos</small></article>
-        <article class="panel metric"><p>PASS-BY</p><strong>{{ data.metrics.pass_by }}</strong><small>exposición registrada</small></article>
-        <article class="panel metric"><p>DWELL TIME</p><strong>{{ dwell(data.metrics.dwell_seconds) }}</strong><small>promedio por visita</small></article>
-        <article class="panel metric"><p>CAPTURE RATE</p><strong>{{ data.metrics.capture_rate == null ? "—" : data.metrics.capture_rate.toFixed(1) + "%" }}</strong><small>{{ data.metrics.captured }} de {{ data.metrics.exposed }} expuestas</small></article>
-        <article class="panel metric"><p>DENSIDAD</p><strong>{{ data.metrics.density.toFixed(3) }}</strong><small>personas / m² de zona</small></article>
+        <article class="panel metric"><p>ACTIVAS</p><strong>{{ data.metrics.active }}</strong><small>{{ selectedZone ? "dentro de " + selectedZone.name : "en el cierre del rango" }}</small></article>
+        <article class="panel metric"><p>VISITAS</p><strong>{{ data.metrics.visits }}</strong><small>{{ data.unique }} IDs anónimos {{ scope }}</small></article>
+        <article class="panel metric"><p>PASS-BY</p><strong>{{ data.metrics.pass_by }}</strong><small>exposición registrada {{ scope }}</small></article>
+        <article class="panel metric"><p>DWELL TIME</p><strong>{{ dwell(data.metrics.dwell_seconds) }}</strong><small>promedio por visita {{ scope }}</small></article>
+        <article class="panel metric"><p>CAPTURE RATE</p><strong>{{ data.metrics.capture_rate == null ? "—" : data.metrics.capture_rate.toFixed(1) + "%" }}</strong><small>{{ data.metrics.captured }} de {{ data.metrics.exposed }} expuestas entraron {{ selectedZone ? "a " + selectedZone.name : "a una tienda" }}</small></article>
+        <article class="panel metric"><p>DENSIDAD</p><strong>{{ data.metrics.density.toFixed(3) }}</strong><small>personas / m² {{ selectedZone ? "de " + selectedZone.name : "de zona" }}</small></article>
       </div>
       <article class="panel">
-        <div class="panel-heading"><h2>Visitas por minuto</h2><span class="muted">{{ data.complete }} completas · {{ data.censored }} censuradas</span></div>
+        <div class="panel-heading"><h2>Visitas por minuto {{ selectedZone ? "· " + selectedZone.name : "" }}</h2><span class="muted">{{ data.complete }} completas · {{ data.censored }} censuradas</span></div>
         <div v-if="data.series.length" class="chart"><div v-for="point in data.series" :key="point.at" class="bar-col"><b>{{ point.visits }}</b><span class="bar" :style="{ height: `${18 + (70 * point.visits) / max}px` }"></span><small>{{ new Date(point.at).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" }) }}</small></div></div>
         <p v-else class="empty">Sin visitas en el filtro seleccionado.</p>
       </article>

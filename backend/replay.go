@@ -62,6 +62,7 @@ type zoneMetric struct {
 
 type replayMetrics struct {
 	At          time.Time    `json:"at"`
+	ZoneID      string       `json:"zone_id,omitempty"`
 	Active      int          `json:"active"`
 	Zones       []zoneMetric `json:"zones"`
 	Density     float64      `json:"density"`
@@ -159,6 +160,16 @@ func (a *App) historicalWindow(ctx context.Context, r *http.Request) (historical
 		return historicalRange{}, fmt.Errorf("el rango debe ser mayor que cero y no superar %d días", maxReplayMinutes/(24*60))
 	}
 	return historicalRange{From: from.UTC(), To: to.UTC(), Floor: floor}, nil
+}
+
+// zoneParam limita las métricas a una zona concreta. Devuelve nil cuando no se
+// pide ninguna, para que la misma consulta sirva a los dos casos.
+func zoneParam(r *http.Request) *string {
+	zone := strings.TrimSpace(r.URL.Query().Get("zone_id"))
+	if zone == "" {
+		return nil
+	}
+	return &zone
 }
 
 func replayLimit(r *http.Request, fallback, maximum int) (int, error) {
@@ -390,13 +401,22 @@ func (a *App) replayMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	at := window.To
 	if raw := r.URL.Query().Get("at"); raw != "" {
-		at, err = time.Parse(time.RFC3339, raw)
-		if err != nil || at.Before(window.From) || at.After(window.To) {
-			fail(w, http.StatusBadRequest, "at debe estar dentro del rango y usar RFC3339")
+		parsed, parseErr := time.Parse(time.RFC3339, raw)
+		if parseErr != nil {
+			fail(w, http.StatusBadRequest, "at debe usar RFC3339")
 			return
 		}
+		// La ventana viaja con microsegundos y el navegador trunca a
+		// milisegundos: acotar al rango en lugar de rechazar por esa diferencia.
+		at = parsed
+		if at.Before(window.From) {
+			at = window.From
+		}
+		if at.After(window.To) {
+			at = window.To
+		}
 	}
-	metrics, err := a.metricsAt(ctx, window, at)
+	metrics, err := a.metricsAt(ctx, window, at, zoneParam(r))
 	if err != nil {
 		fail(w, http.StatusServiceUnavailable, "No se pudieron calcular las métricas")
 		return
@@ -404,8 +424,11 @@ func (a *App) replayMetrics(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, metrics)
 }
 
-func (a *App) metricsAt(ctx context.Context, window historicalRange, at time.Time) (replayMetrics, error) {
+func (a *App) metricsAt(ctx context.Context, window historicalRange, at time.Time, zone *string) (replayMetrics, error) {
 	metrics := replayMetrics{At: at, Zones: []zoneMetric{}}
+	if zone != nil {
+		metrics.ZoneID = *zone
+	}
 	if err := a.db.QueryRow(ctx, `
 SELECT count(*) FROM (
  SELECT session_id FROM positions WHERE observed_at >= $1 AND observed_at <= $2
@@ -448,17 +471,28 @@ WHERE z.floor_id=$4 GROUP BY z.id,z.geom ORDER BY z.id`, window.From, window.To,
 	if coveredArea > 0 {
 		metrics.Density = float64(metrics.Active) / coveredArea
 	}
+	if zone != nil {
+		metrics.Active, metrics.Density = 0, 0
+		for _, candidate := range metrics.Zones {
+			if candidate.ZoneID == *zone {
+				metrics.Active, metrics.Density = candidate.Count, candidate.Density
+			}
+		}
+	}
 	if err = a.db.QueryRow(ctx, `SELECT count(*) FROM visits
-WHERE entered_at >= $1 AND entered_at <= $2`, window.From, at).Scan(&metrics.Visits); err != nil {
+WHERE entered_at >= $1 AND entered_at <= $2 AND ($3::text IS NULL OR zone_id=$3)`,
+		window.From, at, zone).Scan(&metrics.Visits); err != nil {
 		return metrics, err
 	}
 	if err = a.db.QueryRow(ctx, `SELECT count(*) FROM events
-WHERE observed_at >= $1 AND observed_at <= $2 AND upper(kind)='PASS_BY'`, window.From, at).Scan(&metrics.PassBy); err != nil {
+WHERE observed_at >= $1 AND observed_at <= $2 AND upper(kind)='PASS_BY'
+  AND ($3::text IS NULL OR zone_id=$3)`, window.From, at, zone).Scan(&metrics.PassBy); err != nil {
 		return metrics, err
 	}
 	if err = a.db.QueryRow(ctx, `SELECT avg(EXTRACT(EPOCH FROM LEAST(COALESCE(exited_at,$2),$2)-entered_at))
 FROM visits WHERE entered_at >= $1 AND entered_at <= $2
-  AND (exited_at IS NULL OR exited_at >= entered_at)`, window.From, at).Scan(&metrics.DwellSecond); err != nil {
+  AND (exited_at IS NULL OR exited_at >= entered_at)
+  AND ($3::text IS NULL OR zone_id=$3)`, window.From, at, zone).Scan(&metrics.DwellSecond); err != nil {
 		return metrics, err
 	}
 	if err = a.db.QueryRow(ctx, `
@@ -472,8 +506,9 @@ WITH cohort AS (
 SELECT count(*),count(*) FILTER (WHERE EXISTS (
  SELECT 1 FROM visits v JOIN zones z ON z.id=v.zone_id
  WHERE v.session_id=c.session_id AND v.entered_at >= c.first_exposure
-   AND v.entered_at <= LEAST(c.first_exposure+interval '2 minutes',$2) AND z.kind='shop'
-)) FROM cohort c`, window.From, at).Scan(&metrics.Exposed, &metrics.Captured); err != nil {
+   AND v.entered_at <= LEAST(c.first_exposure+interval '2 minutes',$2)
+   AND (($3::text IS NULL AND z.kind='shop') OR v.zone_id=$3)
+)) FROM cohort c`, window.From, at, zone).Scan(&metrics.Exposed, &metrics.Captured); err != nil {
 		return metrics, err
 	}
 	if metrics.Exposed > 0 {
@@ -491,7 +526,8 @@ func (a *App) insights(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	metrics, err := a.metricsAt(ctx, window, window.To)
+	zone := zoneParam(r)
+	metrics, err := a.metricsAt(ctx, window, window.To, zone)
 	if err != nil {
 		fail(w, http.StatusServiceUnavailable, "No se pudieron calcular los indicadores")
 		return
@@ -499,7 +535,8 @@ func (a *App) insights(w http.ResponseWriter, r *http.Request) {
 	var unique, complete, censored int
 	var through *time.Time
 	if err = a.db.QueryRow(ctx, `SELECT count(DISTINCT session_id),count(*) FILTER(WHERE status='complete'),count(*) FILTER(WHERE status='censored')
-FROM visits WHERE entered_at >= $1 AND entered_at <= $2`, window.From, window.To).Scan(&unique, &complete, &censored); err != nil {
+FROM visits WHERE entered_at >= $1 AND entered_at <= $2 AND ($3::text IS NULL OR zone_id=$3)`,
+		window.From, window.To, zone).Scan(&unique, &complete, &censored); err != nil {
 		fail(w, http.StatusServiceUnavailable, "No se pudieron consultar las visitas")
 		return
 	}
@@ -508,7 +545,8 @@ FROM visits WHERE entered_at >= $1 AND entered_at <= $2`, window.From, window.To
 		return
 	}
 	rows, err := a.db.Query(ctx, `SELECT date_trunc('minute',entered_at),count(*) FROM visits
-WHERE entered_at >= $1 AND entered_at <= $2 GROUP BY 1 ORDER BY 1`, window.From, window.To)
+WHERE entered_at >= $1 AND entered_at <= $2 AND ($3::text IS NULL OR zone_id=$3)
+GROUP BY 1 ORDER BY 1`, window.From, window.To, zone)
 	if err != nil {
 		fail(w, http.StatusServiceUnavailable, "No se pudo consultar la serie")
 		return
@@ -530,9 +568,14 @@ WHERE entered_at >= $1 AND entered_at <= $2 GROUP BY 1 ORDER BY 1`, window.From,
 		return
 	}
 	rows.Close()
+	catalogue, err := a.zones(ctx, window.Floor)
+	if err != nil {
+		fail(w, http.StatusServiceUnavailable, "No se pudieron cargar las zonas")
+		return
+	}
 	jsonResponse(w, map[string]any{
 		"from": window.From, "to": window.To, "data_through": through,
 		"unique": unique, "complete": complete, "censored": censored, "series": series,
-		"metrics": metrics,
+		"metrics": metrics, "zones": catalogue,
 	})
 }

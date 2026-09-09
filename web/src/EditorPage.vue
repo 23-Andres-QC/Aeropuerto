@@ -180,6 +180,12 @@ function place(p: number[]) {
   }
   dirty.value = true;
 }
+function dropPoint(index: number) {
+  if (mode.value !== "zone" && mode.value !== "coverage") return;
+  if (index < 0 || index >= vertices.value.length) return;
+  vertices.value.splice(index, 1);
+  dirty.value = true;
+}
 function moveHandle(i: number, p: number[]) {
   if (!draft.value || busy.value) return;
   if (mode.value === "zone" || mode.value === "coverage") vertices.value[i] = p;
@@ -327,7 +333,7 @@ onUnmounted(() => {
       >
         <span>{{
           mode === "zone"
-            ? `Paso 1 · Marca las esquinas del área (${vertices.length}). Con 3 o más se pinta sola.`
+            ? `Paso 1 · Marca las esquinas del área (${vertices.length}). Toca un punto para quitarlo; con 3 o más se pinta sola.`
             : mode === "coverage"
               ? `Paso 1 · Marca el alcance visible de la cámara (${vertices.length}).`
               : mode === "position"
@@ -364,6 +370,7 @@ onUnmounted(() => {
         :editing="editing && !busy"
         :drawing="mode !== 'none'"
         @point="place"
+        @remove-point="dropPoint"
         @select="select"
         @move="moveHandle"
       />

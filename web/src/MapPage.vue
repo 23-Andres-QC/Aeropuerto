@@ -237,7 +237,9 @@ function togglePlayback() {
 }
 function openFeed(id: string) {
   selectedPerson.value = "";
-  if (cameras.value.some((camera) => camera.id === id)) opened.value = id;
+  if (!cameras.value.some((camera) => camera.id === id)) return;
+  // Volver a tocar la misma cámara la cierra.
+  opened.value = opened.value === id ? "" : id;
 }
 function selectPerson(id: string) {
   opened.value = "";
@@ -287,7 +289,7 @@ onUnmounted(() => {
       <span class="heading-meta"><span class="pill">{{ people.length }} activas</span><span class="pill">{{ cameras.length }} cámaras</span><span :class="loading ? 'muted' : replay?.tracks.length ? 'good' : 'warn'">● {{ loading ? "Cargando histórico" : replay?.tracks.length ? "Reproducción lista" : "Sin observaciones" }}</span></span>
     </div>
     <LocalPlan
-      horizontal labels
+      horizontal labels zoomable
       :objects="visibleObjects" :people="people" :zones="replay?.zones ?? []"
       :zone-counts="zoneCounts" :trails="showTrails" :show-people="showPeople"
       :show-zones="showZones" :selected="opened" :selected-person="selectedPerson"
