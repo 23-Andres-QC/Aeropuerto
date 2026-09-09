@@ -16,7 +16,7 @@ Requiere Docker/Compose. Internet se necesita para descargar imágenes y depende
 
 ## Uso del plano y editor
 
-Las dos pantallas tienen papeles separados. **Cámaras y zonas** es donde se configura: dibujar áreas, ubicar cámaras y asignarles el dispositivo de video. **Mapa en vivo** solo observa: el plano ocupa el ancho completo en horizontal, al tocar una cámara se abre ampliada en una ventana (Esc o clic fuera para cerrar) y debajo quedan todas las cámaras y el flujo de registro. Ahí no se edita nada.
+Las dos pantallas tienen papeles separados. **Cámaras y zonas** es donde se configura: dibujar áreas, ubicar cámaras y asignarles el dispositivo de video. **Reproducción** solo observa: el plano ocupa el ancho completo en horizontal y por encima corre una línea de tiempo que reproduce lo que quedó registrado en la base. Ahí no se edita nada.
 
 El plano está fijo mientras se visualiza. En **Cámaras y zonas**, cualquiera de los dos botones de creación activa la edición, que habilita zoom y desplazamiento:
 
@@ -42,22 +42,15 @@ La cámara pertenece al equipo donde se abre el navegador, no al contenedor Dock
 
 A la izquierda se muestran mapa de movimiento (hasta 40 recorridos recientes) y mapa de calor ponderado por segundos-persona. A la derecha están visitas, exposición, captación, permanencia y gráfica por minuto. Filtros: 15 minutos, una hora o 24 horas.
 
-**Estos históricos siguen siendo simulados**, separados del video USB y de las zonas configuradas por el usuario.
+La aplicación **no genera movimiento**: reproduce el que ya está almacenado. Cada `global_id` (`sessions.id`) se reconstruye ordenando sus `positions` por `observed_at`, y Vue interpola entre observaciones consecutivas para animarlo sin saltos. Los datos actualmente cargados provienen de una simulación previa; **el modelo de detección y tracking todavía no está integrado**, y su lugar es precisamente el de productor de esas mismas tablas.
 
-`scripts/maps/build-walkgraph.mjs` lee el propio `airport-level-3.svg`, donde el relleno de cada superficie indica su tipo, arma una rejilla de 4 m sobre lo transitable —descartando las áreas de servicio— y calcula con BFS **263 caminos reales**: 153 salidas desde 21 puntos de transporte vertical hacia 56 salas de embarque, 33 que atraviesan el local comercial y 77 de llegada en sentido inverso. Miden de 64 a 922 m y arrancan en 61 lugares distintos.
+El control temporal vive en el navegador: reproducir, pausar, reiniciar, arrastrar la barra y elegir velocidad (0,5× a 20×). El backend entrega la ventana completa una sola vez y Vue avanza el reloj; no hay sondeo por segundo.
 
-Sobre esos caminos, cada persona es distinta:
+Capas conmutables sobre el plano: pasajeros en movimiento, trayectorias (últimos N segundos o recorrido completo), zonas configuradas con su recuento actual, cámaras y mapa de calor. Cada punto trae su estado —en movimiento o detenido, según la velocidad real entre observaciones— y la zona que lo cubre. Al seleccionar a una persona se aísla su recorrido histórico completo y sus eventos.
 
-- **Carril propio.** Un desplazamiento lateral de hasta 3 m respecto al eje del pasillo, con un vaivén de fase individual: dos pasajeros de la misma ruta nunca pisan la misma línea.
-- **Perfil.** Cuatro conductas repartidas al azar: *salida* (1,15–1,60 m/s, hasta 3 paradas cortas), *con prisa* (1,70–2,15 m/s, sin distracciones), *llegada* (baja del avión y camina hacia la salida) y *compra* (1,00–1,35 m/s, entra al local y se queda entre 18 y 59 segundos).
-- **Ritmo variable.** El paso se acelera y afloja un 12–24 % en vez de ser constante.
-- **Paradas.** Pantallas de vuelos, baño o un café: 6 a 39 segundos, en puntos imprevisibles.
-- **Espera en el destino.** Al llegar a su sala nadie se evapora: se queda de pie entre 15 s y 3,8 min antes de embarcar.
-- **Oleadas.** El flujo de entrada sigue un ciclo sinusoidal, como las tandas de vuelos, en lugar de un goteo a reloj.
+Indicadores recalculados en el instante reproducido: personas activas, personas y densidad por zona (`ST_Area` de cada polígono), visitas, pass-by, permanencia media, expuestos, captados y captura. Los flujos entre zonas salen de las transiciones consecutivas registradas en `events`.
 
-Hasta 45 personas a la vez; las posiciones se escriben cada 2 s y se purgan pasadas 25 h. Los eventos y visitas se conservan en PostgreSQL. Con `SIMULATION=off` en el `.env` la simulación queda en pausa, el histórico se conserva y la interfaz lo anuncia. No se atribuyen visitas ni densidades a la cámara real hasta integrar detección y calibración. El heatmap es relativo y no expresa personas/m².
-
-El SVG conserva geometrías del plano real con un estilo local; no incluye todos los rótulos originales. La proyección geográfica permite conservar la ubicación de cámaras y zonas al editar. El anclaje de recorridos simulados sigue siendo ilustrativo. Ver [metadatos del plano](web/public/maps/README.md).
+Solo se muestran identificadores anónimos; no hay ningún dato personal en la base. El heatmap es relativo y no expresa personas/m² calibradas. El SVG conserva geometrías del plano real con un estilo local; no incluye todos los rótulos originales. La proyección geográfica permite conservar la ubicación de cámaras y zonas al editar. El anclaje de los recorridos cargados sigue siendo ilustrativo mientras no haya calibración cámara-plano. Ver [metadatos del plano](web/public/maps/README.md).
 
 ## Desarrollo y pruebas
 
@@ -78,9 +71,12 @@ El script usa Docker, crea `aeropuerto_test` y solo limpia las tablas de esa bas
 
 ## API
 
-- `GET /api/v1/live/snapshot`, WebSocket `/ws/v1/live`: simulación.
-- `GET /api/v1/insights/summary?minutes=60`: indicadores.
-- `GET /api/v1/insights/spatial?minutes=60`: trayectorias y calor.
+- `GET /api/v1/replay`: reproducción histórica completa de una ventana (trayectorias por `global_id`, eventos, zonas y flujos).
+- `GET /api/v1/replay/metrics?at=<RFC3339>`: indicadores en el instante reproducido.
+- `GET /api/v1/insights/summary`: indicadores agregados de la ventana y serie por minuto.
+- `GET /api/v1/insights/spatial`: trayectorias, calor por segundos-persona y flujos entre zonas.
+
+Las cuatro aceptan la misma ventana temporal: `minutes=N` (por defecto la última hora **terminada en la observación más reciente**, no en el reloj del servidor), `from`/`to` en RFC3339, o `date=AAAA-MM-DD` con `hour=0..23` o `time_slot=night|morning|afternoon|evening`. Todas son de solo lectura.
 - `GET/POST /api/v1/map-objects`: listar/crear configuración.
 - `PUT /api/v1/map-objects/{id}`: modificar con revisión.
 - `DELETE /api/v1/map-objects/{id}?revision=N`: eliminar.

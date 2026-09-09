@@ -14,14 +14,26 @@ const props = withDefaults(
       id: string;
       x: number;
       y: number;
-      kind?: string;
+      state?: "moving" | "stopped";
+      zone_id?: string;
       trail: { x: number; y: number }[];
     }[];
+    zones?: {
+      id: string;
+      name: string;
+      kind: string;
+      geometry: { type: "Polygon"; coordinates: number[][][] };
+      area_m2: number;
+    }[];
+    zoneCounts?: Record<string, number>;
     trails?: boolean;
     movements?: { points: { x: number; y: number }[] }[];
     heat?: { x: number; y: number; seconds: number }[];
     selected?: string;
+    selectedPerson?: string;
     horizontal?: boolean;
+    showPeople?: boolean;
+    showZones?: boolean;
     drawColor?: string;
     labels?: boolean;
   }>(),
@@ -30,15 +42,20 @@ const props = withDefaults(
     vertices: () => [],
     handles: () => [],
     people: () => [],
+    zones: () => [],
+    zoneCounts: () => ({}),
     movements: () => [],
     heat: () => [],
     trails: true,
+    showPeople: true,
+    showZones: true,
     drawColor: "#2868df",
   },
 );
 const emit = defineEmits<{
   point: [p: number[]];
   select: [id: string];
+  selectPerson: [id: string];
   move: [index: number, p: number[]];
 }>();
 const svg = ref<SVGSVGElement>();
@@ -90,6 +107,7 @@ let drag: {
   view: number[];
   handle: number | null;
   id: string | null;
+  person: string | null;
   moved: boolean;
 } | null = null;
 function down(e: PointerEvent) {
@@ -102,6 +120,7 @@ function down(e: PointerEvent) {
       ? Number(el.getAttribute("data-handle"))
       : null,
     id: el.closest("[data-object]")?.getAttribute("data-object") ?? null,
+    person: el.closest("[data-person]")?.getAttribute("data-person") ?? null,
     moved: false,
   };
   svg.value?.setPointerCapture(e.pointerId);
@@ -130,6 +149,7 @@ function up(e: PointerEvent) {
   if (!drag) return;
   if (!drag.moved) {
     if (props.drawing && props.editing) emit("point", fromPlan(local(e)));
+    else if (drag.person) emit("selectPerson", drag.person);
     else if (drag.id) emit("select", drag.id);
   }
   drag = null;
@@ -153,18 +173,26 @@ function center(o: MapObject) {
     r.reduce((s, p) => s + p[1]!, 0) / r.length,
   ];
 }
-// Un color por perfil: quien sale, quien corre, quien llega y quien compra.
-const personColors: Record<string, string> = {
-  salida: "#2265d4",
-  apurado: "#0f3f9e",
-  llegada: "#13a08c",
-  compra: "#cf8324",
-};
-function personColor(kind?: string) {
-  return personColors[kind ?? ""] ?? "#2265d4";
+function personColor(state?: string, zoneID?: string) {
+  if (state === "stopped") return "#8b5cf6";
+  if (zoneID) return "#cf8324";
+  return "#2265d4";
 }
 function trail(ps: { x: number; y: number }[]) {
   return ps.map((p) => `${p.x},${p.y}`).join(" ");
+}
+function zonePath(zone: (typeof props.zones)[number]) {
+  return zone.geometry.coordinates[0]
+    .map((point, index) => `${index ? "L" : "M"}${point[0]},${point[1]}`)
+    .join(" ") + " Z";
+}
+function zoneCenter(zone: (typeof props.zones)[number]) {
+  const points = zone.geometry.coordinates[0].slice(0, -1);
+  if (!points.length) return [0, 0];
+  return [
+    points.reduce((total, point) => total + point[0]!, 0) / points.length,
+    points.reduce((total, point) => total + point[1]!, 0) / points.length,
+  ];
 }
 watch(
   () => props.editing,
@@ -219,6 +247,17 @@ watch(base, reset);
           :height="plan.height"
           pointer-events="none"
         />
+        <g v-if="showZones" class="historical-zones">
+          <g v-for="zone in zones" :key="zone.id" class="historical-zone">
+            <path :d="zonePath(zone)" :class="`zone-${zone.kind}`" />
+            <g v-if="labels" :transform="`translate(${zoneCenter(zone).join(' ')}) ${upright}`">
+              <text class="plan-label" text-anchor="middle">
+                {{ zone.name }} · {{ zoneCounts[zone.id] ?? 0 }}
+              </text>
+            </g>
+            <title>{{ zone.name }} · {{ zoneCounts[zone.id] ?? 0 }} personas</title>
+          </g>
+        </g>
         <g v-for="(route, i) in movements" :key="'r' + i">
           <polyline
             :points="trail(route.points)"
@@ -317,23 +356,34 @@ watch(base, reset);
           stroke-width="1.8"
           stroke-dasharray="4 2"
         />
-        <g v-for="p in people" :key="p.id">
+        <g v-if="showPeople" v-for="p in people" :key="p.id" :data-person="p.id" class="plan-person">
           <polyline
             v-if="trails"
             :points="trail(p.trail)"
             fill="none"
-            :stroke="personColor(p.kind)"
+            :stroke="personColor(p.state, p.zone_id)"
             stroke-width="1.4"
             opacity=".45"
+          />
+          <circle
+            v-if="selectedPerson === p.id || p.zone_id"
+            :cx="p.x"
+            :cy="p.y"
+            :r="selectedPerson === p.id ? 6.7 : 5.4"
+            fill="none"
+            :stroke="personColor(p.state, p.zone_id)"
+            stroke-width="1.1"
+            opacity=".7"
           />
           <circle
             :cx="p.x"
             :cy="p.y"
             r="3.4"
-            :fill="personColor(p.kind)"
+            :fill="personColor(p.state, p.zone_id)"
             stroke="white"
             stroke-width=".9"
           />
+          <title>{{ p.id.slice(0, 8) }} · {{ p.state === "stopped" ? "detenido" : p.zone_id ? "en zona" : "en movimiento" }}</title>
         </g>
         <g
           v-if="editing"

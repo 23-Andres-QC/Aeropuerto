@@ -18,8 +18,6 @@ services:
     build: ./backend
     environment:
       DATABASE_URL: postgres://aeropuerto:${DB_PASSWORD:-demo_local_only}@db:5432/aeropuerto?sslmode=disable
-      # SIMULATION=off detiene a los pasajeros simulados sin borrar el histórico.
-      SIMULATION: ${SIMULATION:-on}
     depends_on:
       db:
         condition: service_healthy
