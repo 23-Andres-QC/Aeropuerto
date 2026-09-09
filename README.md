@@ -41,7 +41,20 @@ La cámara pertenece al equipo donde se abre el navegador, no al contenedor Dock
 
 A la izquierda se muestran mapa de movimiento (hasta 40 recorridos recientes) y mapa de calor ponderado por segundos-persona. A la derecha están visitas, exposición, captación, permanencia y gráfica por minuto. Filtros: 15 minutos, una hora o 24 horas.
 
-**Estos históricos siguen siendo simulados**, separados del video USB y de las zonas configuradas por el usuario. Los pasajeros simulados recorren el terminal completo: `scripts/maps/build-walkgraph.mjs` deriva de la misma geometría del nivel 3 una rejilla de 4 m sobre las superficies transitables (pisos, pasillos, travelators, salas de espera, puertas y check-in) y calcula 72 recorridos reales de 224 a 756 m entre el área de facturación y 34 destinos repartidos de un extremo a otro. Cada persona camina a 1,1–1,6 m/s; una de cada tres atraviesa el local comercial y se detiene allí entre 18 y 59 segundos. Los eventos y visitas se conservan en PostgreSQL. No se atribuyen visitas ni densidades a la cámara real hasta integrar detección y calibración. El heatmap es relativo y no expresa personas/m².
+**Estos históricos siguen siendo simulados**, separados del video USB y de las zonas configuradas por el usuario.
+
+`scripts/maps/build-walkgraph.mjs` lee el propio `airport-level-3.svg`, donde el relleno de cada superficie indica su tipo, arma una rejilla de 4 m sobre lo transitable —descartando las áreas de servicio— y calcula con BFS **263 caminos reales**: 153 salidas desde 21 puntos de transporte vertical hacia 56 salas de embarque, 33 que atraviesan el local comercial y 77 de llegada en sentido inverso. Miden de 64 a 922 m y arrancan en 61 lugares distintos.
+
+Sobre esos caminos, cada persona es distinta:
+
+- **Carril propio.** Un desplazamiento lateral de hasta 3 m respecto al eje del pasillo, con un vaivén de fase individual: dos pasajeros de la misma ruta nunca pisan la misma línea.
+- **Perfil.** Cuatro conductas repartidas al azar: *salida* (1,15–1,60 m/s, hasta 3 paradas cortas), *con prisa* (1,70–2,15 m/s, sin distracciones), *llegada* (baja del avión y camina hacia la salida) y *compra* (1,00–1,35 m/s, entra al local y se queda entre 18 y 59 segundos).
+- **Ritmo variable.** El paso se acelera y afloja un 12–24 % en vez de ser constante.
+- **Paradas.** Pantallas de vuelos, baño o un café: 6 a 39 segundos, en puntos imprevisibles.
+- **Espera en el destino.** Al llegar a su sala nadie se evapora: se queda de pie entre 15 s y 3,8 min antes de embarcar.
+- **Oleadas.** El flujo de entrada sigue un ciclo sinusoidal, como las tandas de vuelos, en lugar de un goteo a reloj.
+
+Hasta 45 personas a la vez; las posiciones se escriben cada 2 s y se purgan pasadas 25 h. Los eventos y visitas se conservan en PostgreSQL. Con `SIMULATION=off` en el `.env` la simulación queda en pausa, el histórico se conserva y la interfaz lo anuncia. No se atribuyen visitas ni densidades a la cámara real hasta integrar detección y calibración. El heatmap es relativo y no expresa personas/m².
 
 El SVG conserva geometrías del plano real con un estilo local; no incluye todos los rótulos originales. La proyección geográfica permite conservar la ubicación de cámaras y zonas al editar. El anclaje de recorridos simulados sigue siendo ilustrativo. Ver [metadatos del plano](web/public/maps/README.md).
 

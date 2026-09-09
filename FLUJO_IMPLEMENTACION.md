@@ -695,7 +695,7 @@ Se añadió un corte vertical ejecutable: `compose.yaml`, backend Go, PostgreSQL
 
 A petición del usuario, `/mapa` utiliza las capas reales del visor público de Jorge Chávez/Living Map, filtradas por nivel 3, mediante MapLibre. Se consultaron la configuración y los estilos públicos; la observación inicial de la sección 5 sobre no haber obtenido una API queda actualizada para esta integración de visualización. No se obtuvo un plano autorizado para calibración ni posiciones medidas de cámaras.
 
-Los recorridos ya no son una franja sintética: se calculan sobre las superficies transitables reales del nivel 3 y cruzan el terminal completo, en metros del plano. Siguen siendo personas simuladas, no observaciones. Los datos locales no representan metros calibrados. Las plantillas de arquitectura de este documento describen la evolución futura; el `compose.yaml` ejecutable actual usa tres servicios y no requiere GPU/NATS para la demostración.
+Los recorridos ya no son una franja sintética: se calculan sobre las superficies transitables reales del nivel 3 y cruzan el terminal completo, en metros del plano, con 263 caminos entre transporte vertical y salas de embarque. Cada persona lleva carril, ritmo, paradas y espera propios, y hay flujos de llegada además de los de salida. Siguen siendo personas simuladas, no observaciones: no hay detección ni calibración de cámaras detrás. Los datos locales no representan metros calibrados. Las plantillas de arquitectura de este documento describen la evolución futura; el `compose.yaml` ejecutable actual usa tres servicios y no requiere GPU/NATS para la demostración.
 
 ### Editor de mapa y renovación visual
 

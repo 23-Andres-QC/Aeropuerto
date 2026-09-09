@@ -14,6 +14,7 @@ const props = withDefaults(
       id: string;
       x: number;
       y: number;
+      kind?: string;
       trail: { x: number; y: number }[];
     }[];
     trails?: boolean;
@@ -151,6 +152,16 @@ function center(o: MapObject) {
     r.reduce((s, p) => s + p[0]!, 0) / r.length,
     r.reduce((s, p) => s + p[1]!, 0) / r.length,
   ];
+}
+// Un color por perfil: quien sale, quien corre, quien llega y quien compra.
+const personColors: Record<string, string> = {
+  salida: "#2265d4",
+  apurado: "#0f3f9e",
+  llegada: "#13a08c",
+  compra: "#cf8324",
+};
+function personColor(kind?: string) {
+  return personColors[kind ?? ""] ?? "#2265d4";
 }
 function trail(ps: { x: number; y: number }[]) {
   return ps.map((p) => `${p.x},${p.y}`).join(" ");
@@ -311,15 +322,15 @@ watch(base, reset);
             v-if="trails"
             :points="trail(p.trail)"
             fill="none"
-            stroke="#2265d4"
+            :stroke="personColor(p.kind)"
             stroke-width="1.4"
-            opacity=".5"
+            opacity=".45"
           />
           <circle
             :cx="p.x"
             :cy="p.y"
             r="3.4"
-            fill="#2265d4"
+            :fill="personColor(p.kind)"
             stroke="white"
             stroke-width=".9"
           />

@@ -40,6 +40,7 @@ type simData struct {
 	Shop       simPath   `json:"shop"`
 	Routes     []simPath `json:"routes"`
 	ShopRoutes []simPath `json:"shop_routes"`
+	Arrivals   []simPath `json:"arrivals"`
 	Width      float64   `json:"width"`
 	Height     float64   `json:"height"`
 }
@@ -50,7 +51,7 @@ func loadRoutes() error {
 	if err := json.Unmarshal(routesFile, &sim); err != nil {
 		return err
 	}
-	if len(sim.Routes) == 0 || len(sim.ShopRoutes) == 0 {
+	if len(sim.Routes) == 0 || len(sim.ShopRoutes) == 0 || len(sim.Arrivals) == 0 {
 		return errors.New("routes.json sin recorridos")
 	}
 	return nil
@@ -63,6 +64,7 @@ type Point struct {
 type Person struct {
 	ID string `json:"id"`
 	Point
+	Kind  string  `json:"kind"`
 	Trail []Point `json:"trail"`
 }
 type Event struct {
@@ -83,20 +85,30 @@ type App struct {
 	db       *pgxpool.Pool
 	mu       sync.RWMutex
 	snapshot Snapshot
+	// Ticks entre escrituras de posición. 0 o 1 escriben cada segundo.
+	sampleEvery int
 }
 type Walker struct {
 	ID      string
+	Kind    string  // salida, llegada, compra, apurado
 	Path    simPath // recorrido en metros del plano
 	Pos     float64 // metros ya caminados
-	Speed   float64 // metros por tick de un segundo
-	Dwell   int     // ticks que sigue detenido dentro de la tienda
-	Browses bool    // entra a la tienda y se detiene una vez
+	Speed   float64 // metros por segundo a paso normal
+	Pace    float64 // amplitud del vaivén del paso; 0 mantiene ritmo exacto
+	Offset  float64 // carril propio: separación lateral del eje del pasillo
+	Phase   float64 // desfase del vaivén, distinto en cada persona
+	Dwell   int     // ticks detenido (tienda o parada corta)
+	Wait    int     // ticks de espera al llegar al destino
+	Stops   int     // paradas cortas que aún puede hacer
+	Browses bool
 	Stopped bool
+	Steps   int
 	Zones   map[string]bool
 	Trail   []Point
 }
 
-// point interpola la posición a lo largo del recorrido; false cuando terminó.
+// point interpola la posición a lo largo del recorrido y la desplaza al carril
+// propio de esa persona: dos pasajeros de la misma ruta no pisan la misma línea.
 func (w *Walker) point() (Point, bool) {
 	if len(w.Path) < 2 || w.Pos < 0 {
 		return Point{}, false
@@ -104,33 +116,67 @@ func (w *Walker) point() (Point, bool) {
 	left := w.Pos
 	for i := 1; i < len(w.Path); i++ {
 		a, b := w.Path[i-1], w.Path[i]
-		seg := math.Hypot(b[0]-a[0], b[1]-a[1])
+		dx, dy := b[0]-a[0], b[1]-a[1]
+		seg := math.Hypot(dx, dy)
 		if seg == 0 {
 			continue
 		}
 		if left <= seg {
 			t := left / seg
-			return Point{a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t}, true
+			lane := w.Offset * (0.72 + 0.28*math.Sin(w.Pos/9+w.Phase))
+			return Point{
+				a[0] + dx*t - dy/seg*lane,
+				a[1] + dy*t + dx/seg*lane,
+			}, true
 		}
 		left -= seg
 	}
 	return Point{}, false
 }
 
-// newWalker toma un recorrido del terminal; los compradores usan los que
-// atraviesan el local comercial.
-func newWalker(browses bool) *Walker {
-	set := sim.Routes
-	if browses {
-		set = sim.ShopRoutes
+// current añade la espera en el destino: quien llega a su sala no se evapora,
+// se queda de pie hasta que embarca o sale.
+func (w *Walker) current() (Point, bool) {
+	if p, ok := w.point(); ok {
+		return p, true
 	}
-	return &Walker{
-		ID:      newID(),
-		Path:    set[mrand.IntN(len(set))],
-		Speed:   1.1 + mrand.Float64()*0.5,
-		Browses: browses,
-		Zones:   map[string]bool{},
+	if w.Wait > 0 && len(w.Path) > 0 {
+		w.Wait--
+		last := w.Path[len(w.Path)-1]
+		lane := w.Offset * 0.8
+		return Point{last[0] + lane, last[1] + lane*0.4}, true
 	}
+	return Point{}, false
+}
+
+// newWalker reparte perfiles: quien corre a su puerta, quien pasea, quien
+// compra y quien acaba de bajar del avión.
+func newWalker() *Walker {
+	pick := func(set []simPath) simPath { return set[mrand.IntN(len(set))] }
+	w := &Walker{
+		ID:     newID(),
+		Offset: (mrand.Float64()*2 - 1) * 3.1,
+		Phase:  mrand.Float64() * 2 * math.Pi,
+		Pace:   0.12 + mrand.Float64()*0.12,
+		Zones:  map[string]bool{},
+	}
+	switch r := mrand.Float64(); {
+	case r < 0.20: // llega de un vuelo y camina hacia la salida
+		w.Kind, w.Path = "llegada", pick(sim.Arrivals)
+		w.Speed, w.Stops = 1.20+mrand.Float64()*0.45, mrand.IntN(2)
+	case r < 0.42: // pasa por el local comercial
+		w.Kind, w.Path = "compra", pick(sim.ShopRoutes)
+		w.Speed, w.Browses = 1.00+mrand.Float64()*0.35, true
+		w.Stops, w.Wait = 1+mrand.IntN(2), 40+mrand.IntN(140)
+	case r < 0.58: // va con el tiempo justo
+		w.Kind, w.Path = "apurado", pick(sim.Routes)
+		w.Speed, w.Wait = 1.70+mrand.Float64()*0.45, 15+mrand.IntN(50)
+	default: // salida con calma
+		w.Kind, w.Path = "salida", pick(sim.Routes)
+		w.Speed, w.Stops = 1.15+mrand.Float64()*0.45, mrand.IntN(3)
+		w.Wait = 60+mrand.IntN(170)
+	}
+	return w
 }
 func newID() string {
 	b := make([]byte, 12)
@@ -198,13 +244,18 @@ func (a *App) tick(ctx context.Context, walkers []*Walker, at time.Time) ([]*Wal
 	for _, old := range walkers {
 		walker := *old
 		walker.Zones = make(map[string]bool)
-		p, active := walker.point()
+		walker.Steps++
+	p, active := walker.current()
 		if _, err = tx.Exec(ctx, "INSERT INTO sessions(id,started_at) VALUES($1,$2) ON CONFLICT DO NOTHING", walker.ID, at); err != nil {
 			return nil, err
 		}
 		if active {
-			if _, err = tx.Exec(ctx, "INSERT INTO positions VALUES($1,$2,'SIM-01',ST_SetSRID(ST_MakePoint($3,$4),0)) ON CONFLICT DO NOTHING", walker.ID, at, p.X, p.Y); err != nil {
-				return nil, err
+			// La detección de zona corre cada segundo; la escritura de posición
+			// puede espaciarse sin alterar los segundos-persona, que se acotan a 2.
+			if a.sampleEvery <= 1 || walker.Steps%a.sampleEvery == 0 {
+				if _, err = tx.Exec(ctx, "INSERT INTO positions VALUES($1,$2,'SIM-01',ST_SetSRID(ST_MakePoint($3,$4),0)) ON CONFLICT DO NOTHING", walker.ID, at, p.X, p.Y); err != nil {
+					return nil, err
+				}
 			}
 			rows, e := tx.Query(ctx, "SELECT id FROM zones WHERE floor_id=3 AND ST_Covers(geom,ST_SetSRID(ST_MakePoint($1,$2),0))", p.X, p.Y)
 			if e != nil {
@@ -258,11 +309,17 @@ func (a *App) tick(ctx context.Context, walkers []*Walker, at time.Time) ([]*Wal
 			if len(walker.Trail) > 45 {
 				walker.Trail = walker.Trail[len(walker.Trail)-45:]
 			}
-			people = append(people, Person{walker.ID, p, walker.Trail})
+			people = append(people, Person{walker.ID, p, walker.Kind, walker.Trail})
 			if walker.Dwell > 0 {
 				walker.Dwell--
 			} else {
-				walker.Pos += walker.Speed
+				// El paso no es constante: se acelera y se afloja al caminar.
+				walker.Pos += walker.Speed * (1 + walker.Pace*math.Sin(float64(walker.Steps)/17+walker.Phase))
+				// Paradas cortas: pantallas de vuelos, baño, un café.
+				if walker.Stops > 0 && mrand.Float64() < 0.005 {
+					walker.Stops--
+					walker.Dwell = 6 + mrand.IntN(34)
+				}
 			}
 			next = append(next, &walker)
 		} else {
@@ -297,8 +354,8 @@ func (a *App) tick(ctx context.Context, walkers []*Walker, at time.Time) ([]*Wal
 	a.mu.Unlock()
 	return next, nil
 }
-// maxWalkers acota cuántas filas por segundo escribe la demostración.
-const maxWalkers = 28
+// maxWalkers acota cuánta gente hay a la vez en el terminal.
+const maxWalkers = 45
 
 // prune limita el histórico de posiciones a algo más que la ventana máxima
 // consultable (24 h), para que la demo no crezca sin fin.
@@ -320,9 +377,10 @@ func (a *App) simulate(ctx context.Context) {
 			return
 		case at := <-ticker.C:
 			candidates := append([]*Walker{}, walkers...)
-			// Un pasajero nuevo cada 4 s, con tope para acotar la escritura.
-			if step%4 == 0 && len(candidates) < maxWalkers {
-				candidates = append(candidates, newWalker((step/4)%3 == 0))
+			// Los vuelos salen en tandas: el flujo va por oleadas, no a reloj.
+			wave := 1 + 0.55*math.Sin(float64(step)/220)
+			if len(candidates) < maxWalkers && mrand.Float64() < 0.30*wave {
+				candidates = append(candidates, newWalker())
 			}
 			if step%600 == 0 {
 				a.prune(ctx)
@@ -480,7 +538,7 @@ func main() {
 	// SIMULATION=off deja el histórico intacto y detiene el gasto: sin
 	// caminantes, sin escrituras por segundo y sin transacciones.
 	paused := strings.EqualFold(os.Getenv("SIMULATION"), "off")
-	a := &App{db: db, snapshot: Snapshot{People: []Person{}, Events: []Event{}, Simulated: true, Paused: paused}}
+	a := &App{db: db, sampleEvery: 2, snapshot: Snapshot{People: []Person{}, Events: []Event{}, Simulated: true, Paused: paused}}
 	startup, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	// The demo simulator has one owner, including across accidental replicas.

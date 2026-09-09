@@ -47,13 +47,15 @@ func TestGeneratedRoutesCoverTerminal(t *testing.T) {
 	if err := loadRoutes(); err != nil {
 		t.Fatal(err)
 	}
-	if len(sim.Routes) < 20 || len(sim.ShopRoutes) < 8 {
-		t.Fatalf("pocos recorridos: %d directos, %d de compra", len(sim.Routes), len(sim.ShopRoutes))
+	if len(sim.Routes) < 60 || len(sim.ShopRoutes) < 20 || len(sim.Arrivals) < 40 {
+		t.Fatalf("pocos recorridos: %d salidas, %d compras, %d llegadas",
+			len(sim.Routes), len(sim.ShopRoutes), len(sim.Arrivals))
 	}
 	minX, minY := math.Inf(1), math.Inf(1)
 	maxX, maxY := math.Inf(-1), math.Inf(-1)
-	for _, r := range append(append([]simPath{}, sim.Routes...), sim.ShopRoutes...) {
-		if l := length(r); l < 120 {
+	every := append(append(append([]simPath{}, sim.Routes...), sim.ShopRoutes...), sim.Arrivals...)
+	for _, r := range every {
+		if l := length(r); l < 60 {
 			t.Fatalf("recorrido de solo %.0f m", l)
 		}
 		for _, p := range r {
@@ -83,25 +85,80 @@ func TestGeneratedRoutesCoverTerminal(t *testing.T) {
 	}
 }
 
-func TestNewWalkerUsesShopRoutesForBrowsers(t *testing.T) {
+func TestWalkerProfilesAreVariedAndCoherent(t *testing.T) {
 	if err := loadRoutes(); err != nil {
 		t.Fatal(err)
 	}
 	cx, cy := centre(sim.Shop)
-	for i := 0; i < 30; i++ {
-		w := newWalker(true)
-		if !w.Browses || w.Speed < 1.1 || w.Speed > 1.6 {
+	kinds := map[string]int{}
+	for i := 0; i < 600; i++ {
+		w := newWalker()
+		kinds[w.Kind]++
+		if len(w.Path) < 2 || w.Speed < 0.9 || w.Speed > 2.2 {
 			t.Fatalf("caminante inválido: %+v", w)
 		}
-		near := false
-		for _, p := range w.Path {
-			if math.Hypot(p[0]-cx, p[1]-cy) < 40 {
-				near = true
-				break
+		if math.Abs(w.Offset) > 3.2 {
+			t.Fatalf("carril fuera del pasillo: %v", w.Offset)
+		}
+		if w.Browses {
+			near := false
+			for _, p := range w.Path {
+				if math.Hypot(p[0]-cx, p[1]-cy) < 40 {
+					near = true
+					break
+				}
+			}
+			if !near {
+				t.Fatal("un comprador recibió un recorrido que no pasa por el local")
 			}
 		}
-		if !near {
-			t.Fatal("un comprador recibió un recorrido que no pasa por el local")
+	}
+	for _, k := range []string{"salida", "llegada", "compra", "apurado"} {
+		if kinds[k] < 30 {
+			t.Fatalf("perfil %q casi ausente: %d de 600", k, kinds[k])
 		}
+	}
+}
+
+// El reclamo del proyecto es que cada persona haga su propio camino.
+func TestWalkersOnTheSameRouteDoNotOverlap(t *testing.T) {
+	if err := loadRoutes(); err != nil {
+		t.Fatal(err)
+	}
+	path := sim.Routes[0]
+	a := &Walker{Path: path, Offset: 2.6, Phase: 0.4}
+	b := &Walker{Path: path, Offset: -2.2, Phase: 2.9}
+	apart := 0.0
+	for d := 0.0; d < 120; d += 10 {
+		a.Pos, b.Pos = d, d
+		pa, oka := a.point()
+		pb, okb := b.point()
+		if !oka || !okb {
+			break
+		}
+		gap := math.Hypot(pa.X-pb.X, pa.Y-pb.Y)
+		if gap < 1 {
+			t.Fatalf("dos personas pisando la misma línea a los %v m: %v", d, gap)
+		}
+		apart += gap
+	}
+	if apart == 0 {
+		t.Fatal("recorrido demasiado corto para comprobar los carriles")
+	}
+}
+
+func TestWalkerWaitsAtDestination(t *testing.T) {
+	w := &Walker{Path: simPath{{0, 0}, {10, 0}}, Speed: 4, Wait: 3}
+	seen := 0
+	for i := 0; i < 20; i++ {
+		if _, ok := w.current(); !ok {
+			break
+		}
+		seen++
+		w.Pos += w.Speed
+	}
+	// 0, 4, 8 sobre el recorrido y luego 3 ticks de pie en el destino.
+	if seen != 6 {
+		t.Fatalf("ticks vividos=%d, se esperaban 6", seen)
 	}
 }

@@ -4,7 +4,7 @@ import LocalPlan from "./LocalPlan.vue";
 import CameraFeed from "./CameraFeed.vue";
 import { loadObjects, type MapObject } from "./mapObjects";
 type Point = { x: number; y: number };
-type Person = Point & { id: string; trail: Point[] };
+type Person = Point & { id: string; kind?: string; trail: Point[] };
 type Event = {
   id: number;
   person: string;
@@ -160,6 +160,10 @@ function hour(s: string) {
           ? "Simulación pausada · el histórico se conserva"
           : people.length + " personas simuladas"
       }}</span
+      ><span v-if="!paused" class="people-legend"
+        ><b style="color: #2265d4">●</b> salida <b style="color: #0f3f9e">●</b>
+        con prisa <b style="color: #13a08c">●</b> llegada
+        <b style="color: #cf8324">●</b> compra</span
       ><label
         ><input type="checkbox" v-model="showTrails" /> Recorridos</label
       ><span v-if="!cameras.length" class="warn"

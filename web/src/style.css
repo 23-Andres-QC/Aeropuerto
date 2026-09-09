@@ -637,6 +637,13 @@ footer {
   font-size: 10.5px;
   color: var(--ink-soft);
 }
+.people-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9.5px;
+  color: var(--ink-faint);
+}
 .plan-bottom-status label {
   display: inline-flex;
   align-items: center;

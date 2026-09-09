@@ -1,79 +1,107 @@
-// Build walkable routes across the whole level-3 terminal from the same GeoJSON
-// that produced the SVG. Output is in plan metres, the coordinate system the
-// simulation and the map share.
-// Usage: node scripts/maps/build-walkgraph.mjs /tmp/airport-features.json
+// Recorridos peatonales del nivel 3, derivados del propio plano del repo.
+// El SVG guarda la geometría en metros del plano y codifica el tipo de cada
+// superficie en su relleno, así que la rejilla transitable, los orígenes
+// (transporte vertical) y los destinos (salas de embarque, comercios) salen
+// de ahí sin depender de la descarga original.
+// Uso: node scripts/maps/build-walkgraph.mjs
 import fs from 'node:fs';
-const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-const plan = JSON.parse(fs.readFileSync('web/src/plan.json', 'utf8'));
-const STEP = 4; // metres per grid cell
-const WALKABLE = new Set(['floor', 'corridor', 'travelator', 'threshold', 'waiting_area', 'gate', 'check_in']);
 
-function project(p) {
-  const east = (p[0] - plan.origin[0]) * 111320 * Math.cos((plan.origin[1] * Math.PI) / 180),
-    north = (p[1] - plan.origin[1]) * 111320;
+const SVG = 'web/public/maps/airport-level-3.svg';
+const STEP = 4; // metros por celda
+const FILL = {
+  floor: '#ffffff', // pisos y pasillos
+  vertical: '#d4e6e8', // escaleras, ascensores, travelators
+  lounge: '#e7edf7', // salas de espera de embarque
+  restroom: '#d5e9ec',
+  retail: '#f6e9b6',
+  food: '#ead9bc',
+  other: '#edf1f4', // puertas, facturación, información
+  backOfHouse: '#e6ebef', // no transitable por pasajeros
+};
+const WALKABLE = new Set([
+  FILL.floor, FILL.vertical, FILL.lounge, FILL.restroom, FILL.retail, FILL.food, FILL.other,
+]);
+
+const svg = fs.readFileSync(SVG, 'utf8');
+const viewBox = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/);
+const WIDTH = +viewBox[1], HEIGHT = +viewBox[2];
+// Cada <path> se parte en anillos por cada M; regla par-impar para los huecos.
+const shapes = [...svg.matchAll(/<path d="([^"]+)" fill="(#[0-9a-fA-F]{6})"/g)].map((m) => ({
+  fill: m[2],
+  rings: m[1]
+    .split('M')
+    .filter(Boolean)
+    .map((part) =>
+      part
+        .replace(/Z/g, '')
+        .trim()
+        .split(/[ L]+/)
+        .filter(Boolean)
+        .map((pair) => pair.split(',').map(Number))
+        .filter((p) => p.length === 2 && Number.isFinite(p[0]) && Number.isFinite(p[1])),
+    )
+    .filter((r) => r.length > 2),
+})).filter((s) => s.rings.length);
+
+const bbox = (rings) => {
+  const pts = rings.flat();
   return [
-    east * Math.sin(plan.angle) + north * Math.cos(plan.angle) - plan.minX,
-    east * Math.cos(plan.angle) - north * Math.sin(plan.angle) - plan.minY,
+    Math.min(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])),
+    Math.max(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1])),
   ];
-}
-const rings = (g) =>
-  g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
-function projectRings(g) {
-  return rings(g).flatMap((poly) => poly.map((r) => r.map(project)));
-}
-function inside(x, y, polyRings) {
+};
+function inside(x, y, rings) {
   let hit = false;
-  for (const r of polyRings)
+  for (const r of rings)
     for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
       const [xi, yi] = r[i], [xj, yj] = r[j];
       if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
     }
   return hit;
 }
-function centroid(g) {
-  const pts = [];
-  (function walk(c) {
-    typeof c[0] === 'number' ? pts.push(project(c)) : c.forEach(walk);
-  })(g.coordinates);
+const centre = (rings) => {
+  const pts = rings.flat();
   return [
     pts.reduce((s, p) => s + p[0], 0) / pts.length,
     pts.reduce((s, p) => s + p[1], 0) / pts.length,
   ];
-}
-function area(polyRings) {
-  const r = polyRings[0] ?? [];
+};
+const area = (rings) => {
+  const r = rings[0];
   let a = 0;
   for (let i = 0, j = r.length - 1; i < r.length; j = i++)
     a += r[j][0] * r[i][1] - r[i][0] * r[j][1];
   return Math.abs(a / 2);
-}
+};
 
-// ---- walkable grid ----------------------------------------------------------
-const cols = Math.ceil(plan.width / STEP), rows = Math.ceil(plan.height / STEP);
+// ---- rejilla transitable ----------------------------------------------------
+const cols = Math.ceil(WIDTH / STEP), rows = Math.ceil(HEIGHT / STEP);
 const walk = new Uint8Array(cols * rows);
 const idx = (c, r) => r * cols + c;
 const cellCentre = (i) => [((i % cols) + 0.5) * STEP, (Math.floor(i / cols) + 0.5) * STEP];
-let surfaces = 0;
-for (const f of data) {
-  if (!WALKABLE.has(f.properties.type)) continue;
-  const pr = projectRings(f.geometry);
-  if (!pr.length) continue;
-  surfaces++;
-  const xs = pr.flat().map((p) => p[0]), ys = pr.flat().map((p) => p[1]);
-  const c0 = Math.max(0, Math.floor(Math.min(...xs) / STEP)),
-    c1 = Math.min(cols - 1, Math.ceil(Math.max(...xs) / STEP)),
-    r0 = Math.max(0, Math.floor(Math.min(...ys) / STEP)),
-    r1 = Math.min(rows - 1, Math.ceil(Math.max(...ys) / STEP));
-  for (let r = r0; r <= r1; r++)
-    for (let c = c0; c <= c1; c++) {
-      if (walk[idx(c, r)]) continue;
-      const [x, y] = cellCentre(idx(c, r));
-      if (inside(x, y, pr)) walk[idx(c, r)] = 1;
+for (const s of shapes) {
+  if (!WALKABLE.has(s.fill)) continue;
+  const [x0, y0, x1, y1] = bbox(s.rings);
+  for (let r = Math.max(0, Math.floor(y0 / STEP)); r <= Math.min(rows - 1, Math.ceil(y1 / STEP)); r++)
+    for (let c = Math.max(0, Math.floor(x0 / STEP)); c <= Math.min(cols - 1, Math.ceil(x1 / STEP)); c++) {
+      const i = idx(c, r);
+      if (walk[i]) continue;
+      const [x, y] = cellCentre(i);
+      if (inside(x, y, s.rings)) walk[i] = 1;
     }
 }
-const walkableCells = walk.reduce((s, v) => s + v, 0);
+// Los locales de servicio no son paso de pasajeros.
+for (const s of shapes) {
+  if (s.fill !== FILL.backOfHouse) continue;
+  const [x0, y0, x1, y1] = bbox(s.rings);
+  for (let r = Math.max(0, Math.floor(y0 / STEP)); r <= Math.min(rows - 1, Math.ceil(y1 / STEP)); r++)
+    for (let c = Math.max(0, Math.floor(x0 / STEP)); c <= Math.min(cols - 1, Math.ceil(x1 / STEP)); c++) {
+      const i = idx(c, r);
+      const [x, y] = cellCentre(i);
+      if (walk[i] && inside(x, y, s.rings)) walk[i] = 0;
+    }
+}
 
-// ---- shortest paths ---------------------------------------------------------
 function snap(p) {
   let best = -1, bestD = Infinity;
   for (let i = 0; i < walk.length; i++) {
@@ -89,15 +117,13 @@ function bfs(start) {
   const queue = [start];
   seen[start] = 1;
   for (let head = 0; head < queue.length; head++) {
-    const i = queue[head], c = i % cols, r = Math.floor(i / cols);
+    const i = queue[head], c = i % cols, r = (i / cols) | 0;
     for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nc = c + dc, nr = r + dr;
       if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
       const n = idx(nc, nr);
       if (seen[n] || !walk[n]) continue;
-      seen[n] = 1;
-      prev[n] = i;
-      queue.push(n);
+      seen[n] = 1; prev[n] = i; queue.push(n);
     }
   }
   return { prev, seen };
@@ -108,7 +134,6 @@ function pathTo(prev, seen, target) {
   for (let i = target; i !== -1; i = prev[i]) out.push(cellCentre(i));
   return out.reverse();
 }
-// Keep the shape, drop the staircase: average over a small window, then thin.
 function smooth(path) {
   const s = path.map((_, i) => {
     const w = path.slice(Math.max(0, i - 2), i + 3);
@@ -119,84 +144,64 @@ function smooth(path) {
   });
   const out = [s[0]];
   for (const p of s)
-    if (Math.hypot(p[0] - out[out.length - 1][0], p[1] - out[out.length - 1][1]) >= 7) out.push(p);
-  if (out.length > 1) out[out.length - 1] = s[s.length - 1];
+    if (Math.hypot(p[0] - out.at(-1)[0], p[1] - out.at(-1)[1]) >= 7) out.push(p);
+  if (out.length > 1) out[out.length - 1] = s.at(-1);
   return out.map((p) => [+p[0].toFixed(1), +p[1].toFixed(1)]);
 }
 
-// ---- points of interest -----------------------------------------------------
-const pois = (type) =>
-  data.filter((f) => f.properties.type === type).map((f) => centroid(f.geometry));
-const entrances = pois('check_in');
-const gates = pois('gate');
-// La tienda de referencia: el local comercial de mayor superficie del nivel.
-const retail = data
-  .filter((f) => f.properties.class === 'retail' && f.geometry.type.includes('Polygon'))
-  .map((f) => ({ ring: projectRings(f.geometry)[0], a: area(projectRings(f.geometry)) }))
-  .sort((a, b) => b.a - a.a);
-const shopRing = retail[0].ring.map((p) => [+p[0].toFixed(1), +p[1].toFixed(1)]);
-const shopCentre = [
+// ---- orígenes, destinos y comercio -----------------------------------------
+const of = (fill, min = 0) =>
+  shapes.filter((s) => s.fill === fill && area(s.rings) >= min).map((s) => centre(s.rings));
+const origins = [...new Set(of(FILL.vertical, 30).map(snap))].filter((i) => i >= 0);
+const lounges = [...new Set(of(FILL.lounge, 40).map(snap))].filter((i) => i >= 0);
+// La tienda de referencia se mantiene: es la que fija la migración 003.
+const previous = JSON.parse(fs.readFileSync('backend/routes.json', 'utf8'));
+const shopRing = previous.shop;
+const shopCell = snap([
   shopRing.reduce((s, p) => s + p[0], 0) / shopRing.length,
   shopRing.reduce((s, p) => s + p[1], 0) / shopRing.length,
-];
+]);
 
-const originCells = [...new Set(entrances.map(snap))].filter((i) => i >= 0).slice(0, 6);
-const gateCells = [...new Set(gates.map(snap))].filter((i) => i >= 0);
-const shopCell = snap(shopCentre);
+const spread = (arr, n) =>
+  arr.length <= n ? arr : arr.filter((_, i) => i % Math.ceil(arr.length / n) === 0).slice(0, n);
 const routes = [], shopRoutes = [];
 const fromShop = bfs(shopCell);
-for (const o of originCells) {
+origins.forEach((o, k) => {
   const { prev, seen } = bfs(o);
   const toShop = pathTo(prev, seen, shopCell);
-  for (const g of gateCells) {
+  const fan = lounges.slice(k % lounges.length).concat(lounges.slice(0, k % lounges.length));
+  for (const g of spread(fan, 8)) {
     const direct = pathTo(prev, seen, g);
-    if (direct && direct.length > 12) routes.push(smooth(direct));
-    if (toShop) {
-      const tail = pathTo(fromShop.prev, fromShop.seen, g);
-      if (tail && tail.length > 6) shopRoutes.push(smooth([...toShop, ...tail.slice(1)]));
-    }
+    if (direct && direct.length > 20) routes.push(smooth(direct));
   }
-}
-const pick = (arr, n) =>
-  arr.length <= n ? arr : arr.filter((_, i) => i % Math.ceil(arr.length / n) === 0).slice(0, n);
+  if (toShop && k % 2 === 0)
+    for (const g of spread(fan, 3)) {
+      const tail = pathTo(fromShop.prev, fromShop.seen, g);
+      if (tail && tail.length > 10) shopRoutes.push(smooth([...toShop, ...tail.slice(1)]));
+    }
+});
+const arrivals = spread(routes, 140).map((r) => [...r].reverse());
 const out = {
   step: STEP,
-  width: +plan.width.toFixed(1),
-  height: +plan.height.toFixed(1),
+  width: +WIDTH.toFixed(1),
+  height: +HEIGHT.toFixed(1),
   shop: shopRing,
-  routes: pick(routes, 48),
-  shop_routes: pick(shopRoutes, 24),
+  routes: spread(routes, 420),
+  shop_routes: spread(shopRoutes, 140),
+  arrivals,
 };
 fs.writeFileSync('backend/routes.json', JSON.stringify(out));
-
-// La migración mueve las zonas de demostración al local comercial real y
-// descarta las posiciones antiguas: estaban en otro sistema de coordenadas.
-const closed = shopRing[0][0] === shopRing.at(-1)[0] && shopRing[0][1] === shopRing.at(-1)[1]
-  ? shopRing
-  : [...shopRing, shopRing[0]];
-const wkt = 'POLYGON((' + closed.map((p) => p[0] + ' ' + p[1]).join(',') + '))';
-fs.writeFileSync(
-  'backend/migrations/003_plan_zones.sql',
-  `-- Generado por scripts/maps/build-walkgraph.mjs. No editar a mano.
--- El simulador pasa a recorrer todo el nivel 3 en metros del plano, el mismo
--- sistema de coordenadas del SVG, así que las zonas de demostración se
--- reubican sobre un local comercial real y el frente pasa a ser su acera.
-UPDATE zones SET geom=ST_GeometryN(ST_CollectionExtract(ST_MakeValid(ST_GeomFromText('${wkt}',0)),3),1) WHERE id='shop';
-UPDATE zones SET geom=ST_Difference(ST_Buffer((SELECT geom FROM zones WHERE id='shop'),7),(SELECT geom FROM zones WHERE id='shop')) WHERE id='front';
--- Las posiciones previas quedaron en el marco sintético anterior.
-DELETE FROM positions;
-`,
-);
 const len = (p) => p.reduce((s, q, i) => (i ? s + Math.hypot(q[0] - p[i - 1][0], q[1] - p[i - 1][1]) : 0), 0);
+const all = [...out.routes, ...out.shop_routes, ...out.arrivals];
 console.log({
-  surfaces,
-  walkableCells,
-  coveragePct: +((100 * walkableCells) / (cols * rows)).toFixed(1),
-  entrances: originCells.length,
-  gates: gateCells.length,
-  routes: out.routes.length,
-  shopRoutes: out.shop_routes.length,
-  metresAvg: +(out.routes.reduce((s, p) => s + len(p), 0) / out.routes.length).toFixed(0),
-  shopArea: +retail[0].a.toFixed(0),
-  shopCentre: shopCentre.map((v) => +v.toFixed(1)),
+  superficies: shapes.length,
+  celdasTransitables: walk.reduce((s, v) => s + v, 0),
+  origenes: origins.length,
+  salas: lounges.length,
+  salidas: out.routes.length,
+  compras: out.shop_routes.length,
+  llegadas: out.arrivals.length,
+  metrosMedios: +(all.reduce((s, p) => s + len(p), 0) / all.length).toFixed(0),
+  metrosMin: +Math.min(...all.map(len)).toFixed(0),
+  metrosMax: +Math.max(...all.map(len)).toFixed(0),
 });
