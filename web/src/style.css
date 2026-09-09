@@ -610,6 +610,9 @@ footer {
 .plan-svg.pannable:not(.editable):active {
   cursor: grabbing;
 }
+.plan-svg.panning {
+  cursor: grabbing;
+}
 .plan-svg:not(.pannable) {
   touch-action: pan-y;
 }

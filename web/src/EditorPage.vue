@@ -362,6 +362,7 @@ onUnmounted(() => {
       </div>
       <LocalPlan
         labels
+        zoomable
         :draw-color="draft?.color"
         :objects="items"
         :draft="draft"

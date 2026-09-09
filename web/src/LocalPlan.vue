@@ -114,20 +114,39 @@ let drag: {
   id: string | null;
   person: string | null;
   moved: boolean;
+  pan: boolean;
 } | null = null;
+const panning = ref(false);
+// Desplazar la vista sin tocar la geometría: el arrastre solo mueve la ventana.
+function panBy(dx: number, dy: number, from: number[]) {
+  const m = svg.value?.getScreenCTM();
+  if (!m) return;
+  view.value = [from[0]! - dx / m.a, from[1]! - dy / m.d, from[2]!, from[3]!];
+}
 function down(e: PointerEvent) {
-  if (e.button !== 0) return;
+  // Botón izquierdo para trabajar; rueda pulsada para desplazar, como en un
+  // plano de CAD: arrastra el fondo aunque se esté dibujando.
+  if (e.button !== 0 && e.button !== 1) return;
+  const wheelDrag = e.button === 1;
+  if (wheelDrag) e.preventDefault();
   const el = e.target as Element;
   drag = {
     start: [e.clientX, e.clientY],
     view: [...view.value],
-    handle: el.hasAttribute("data-handle")
-      ? Number(el.getAttribute("data-handle"))
-      : null,
-    id: el.closest("[data-object]")?.getAttribute("data-object") ?? null,
-    person: el.closest("[data-person]")?.getAttribute("data-person") ?? null,
+    handle:
+      !wheelDrag && el.hasAttribute("data-handle")
+        ? Number(el.getAttribute("data-handle"))
+        : null,
+    id: wheelDrag
+      ? null
+      : (el.closest("[data-object]")?.getAttribute("data-object") ?? null),
+    person: wheelDrag
+      ? null
+      : (el.closest("[data-person]")?.getAttribute("data-person") ?? null),
     moved: false,
+    pan: wheelDrag,
   };
+  panning.value = wheelDrag;
   svg.value?.setPointerCapture(e.pointerId);
 }
 function move(e: PointerEvent) {
@@ -135,23 +154,24 @@ function move(e: PointerEvent) {
   const dx = e.clientX - drag.start[0]!,
     dy = e.clientY - drag.start[1]!;
   if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+  if (drag.pan) {
+    if (interactive.value) panBy(dx, dy, drag.view);
+    return;
+  }
   if (props.editing && drag.handle !== null) {
     emit("move", drag.handle, fromPlan(local(e)));
     return;
   }
   if (!interactive.value) return;
-  if (!props.drawing && drag.moved) {
-    const m = svg.value!.getScreenCTM()!;
-    view.value = [
-      drag.view[0]! - dx / m.a,
-      drag.view[1]! - dy / m.d,
-      drag.view[2]!,
-      drag.view[3]!,
-    ];
-  }
+  if (!props.drawing && drag.moved) panBy(dx, dy, drag.view);
 }
 function up(e: PointerEvent) {
   if (!drag) return;
+  panning.value = false;
+  if (drag.pan) {
+    drag = null;
+    return;
+  }
   if (!drag.moved) {
     if (props.drawing && props.editing) {
       // Un clic sobre un vértice ya marcado lo retira en vez de duplicarlo.
@@ -224,12 +244,21 @@ watch(base, reset);
     <svg
       ref="svg"
       class="plan-svg"
-      :class="{ editable: editing, pannable: interactive, wide: horizontal }"
+      :class="{
+        editable: editing,
+        pannable: interactive,
+        panning,
+        wide: horizontal,
+      }"
       :viewBox="view.join(' ')"
       @pointerdown="down"
       @pointermove="move"
       @pointerup="up"
-      @pointercancel="drag = null"
+      @pointercancel="
+        drag = null;
+        panning = false;
+      "
+      @auxclick.prevent
       @wheel="
         (e) => {
           if (interactive) {
