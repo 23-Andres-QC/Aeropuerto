@@ -992,13 +992,25 @@ footer {
   flex-direction: column;
   gap: 7px;
 }
-.object-list button {
-  width: 100%;
+.object-list li {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.object-list li > button:first-child {
+  flex: 1;
+  min-width: 0;
   justify-content: flex-start;
   gap: 10px;
   padding: 10px 11px;
   border-radius: 12px;
   text-align: left;
+}
+.object-list li > button + button {
+  flex: none;
+  padding: 0 11px;
+  border-radius: 12px;
+  font-size: 13px;
 }
 .object-list button > span:nth-child(2) {
   flex: 1;

@@ -153,11 +153,8 @@ function create(kind: "zone" | "camera") {
   dirty.value = false;
 }
 function edit(o: MapObject) {
-  if (!editing.value) {
-    notice.value = "Pulsa Editar plano para modificar elementos.";
-    return;
-  }
   if (!discardOK()) return;
+  editing.value = true;
   draft.value = JSON.parse(JSON.stringify(o));
   vertices.value = [];
   mode.value = "none";
@@ -244,24 +241,20 @@ async function save() {
     busy.value = false;
   }
 }
-async function remove() {
-  if (
-    !draft.value?.id ||
-    !window.confirm("¿Eliminar " + draft.value.name + "?")
-  )
-    return;
+async function remove(target?: MapObject) {
+  const d = target ?? draft.value;
+  if (!d?.id || !window.confirm("¿Eliminar " + d.name + "?")) return;
   busy.value = true;
   error.value = "";
   try {
-    const d = draft.value;
     const r = await fetch(
       "/api/v1/map-objects/" + d.id + "?revision=" + d.revision,
       { method: "DELETE" },
     );
     if (!r.ok) throw Error((await r.json()).error);
     items.value = items.value.filter((i) => i.id !== d.id);
-    reset();
-    notice.value = "Elemento eliminado.";
+    if (draft.value?.id === d.id) reset();
+    notice.value = d.name + " eliminado.";
   } catch (e) {
     error.value = (e as Error).message;
   } finally {
@@ -481,7 +474,7 @@ onUnmounted(() => {
               v-if="draft.id"
               type="button"
               class="danger-button"
-              @click="remove"
+              @click="remove()"
             >
               ✕ Eliminar elemento
             </button>
@@ -508,7 +501,15 @@ onUnmounted(() => {
                     >{{ o.kind === "camera" ? "Cámara" : "Zona" }} · Nivel
                     3</small
                   ></span
-                ><span>›</span>
+                ><span>›</span></button
+              ><button
+                class="danger-button icon-button"
+                :disabled="busy"
+                :title="'Eliminar ' + o.name"
+                :aria-label="'Eliminar ' + o.name"
+                @click="remove(o)"
+              >
+                ✕
               </button>
             </li>
           </ul>
