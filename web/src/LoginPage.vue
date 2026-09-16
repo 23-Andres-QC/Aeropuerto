@@ -37,17 +37,21 @@ async function login() {
 <template>
   <main class="login-page">
     <section class="login-visual" aria-label="Información del sistema">
-      <div class="login-brand"><span class="brand-icon">✈</span> LAP</div>
+      <div class="login-brand-row">
+        <div class="login-brand"><span class="brand-icon">✈</span> LAP</div>
+        <span class="login-status"><span></span> Operación aérea</span>
+      </div>
       <div class="login-visual-copy">
-        <span class="eyebrow">CENTRO DE OPERACIONES</span>
-        <h1>Flujo de pasajeros<br /><em>en perspectiva.</em></h1>
-        <p>Monitorea el movimiento y convierte los datos del terminal en decisiones operativas.</p>
+        <span class="eyebrow">AEROPUERTO INTERNACIONAL</span>
+        <h1>Jorge Chávez<br /><em>Lima, Perú.</em></h1>
+        <p>Centro de control y monitoreo del terminal aéreo.</p>
       </div>
       <div class="login-visual-footer">LIMA AIRPORT PARTNERS <span>·</span> JORGE CHÁVEZ</div>
     </section>
 
     <section class="login-panel">
       <div class="login-card">
+        <div class="login-card-top"><span class="login-card-mark">✈</span><span>Terminal · Nivel 3</span></div>
         <div class="login-card-heading">
           <span class="login-kicker">ACCESO SEGURO</span>
           <h2>Bienvenido</h2>
