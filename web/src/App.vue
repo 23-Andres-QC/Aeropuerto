@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRoute } from "vue-router";
+import { useRouter } from "vue-router";
 const route = useRoute();
+const router = useRouter();
 const title = computed(() =>
   route.path === "/configuracion"
     ? "Cámaras y zonas del terminal"
@@ -9,9 +11,15 @@ const title = computed(() =>
       ? "Análisis comercial"
       : "Control en vivo",
 );
+
+function logout() {
+  localStorage.removeItem("lap-session");
+  router.replace("/login");
+}
 </script>
 <template>
-  <div class="app-shell">
+  <div v-if="route.path === '/login'"><RouterView /></div>
+  <div v-else class="app-shell">
     <aside class="sidebar">
       <a class="brand" href="/configuracion"
         ><span class="brand-icon">✈</span
@@ -53,7 +61,8 @@ const title = computed(() =>
         <div><span class="breadcrumb">LAP /</span> {{ title }}</div>
         <div class="workspace-meta">
           <span class="live-dot"></span> Demo local
-          <span class="avatar">AQ</span>
+          <span class="avatar" title="Sesión LAP">LAP</span>
+          <button class="logout-button" type="button" @click="logout">Salir</button>
         </div>
       </header>
       <main><RouterView /></main>

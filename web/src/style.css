@@ -204,6 +204,63 @@ button:disabled {
   border-radius: 8px;
 }
 
+/* ---------- acceso ---------- */
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(340px, 0.92fr) minmax(440px, 1.08fr);
+  background: #f4f8fd;
+}
+.login-visual {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  padding: 34px clamp(34px, 6vw, 96px);
+  color: white;
+  background:
+    radial-gradient(circle at 84% 18%, rgba(71, 156, 255, 0.56), transparent 28%),
+    radial-gradient(circle at 12% 84%, rgba(22, 104, 227, 0.36), transparent 32%),
+    linear-gradient(145deg, #082f63 0%, #061b3e 100%);
+}
+.login-visual::after {
+  content: "";
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  right: -180px;
+  bottom: -160px;
+  border: 1px solid rgba(191, 230, 255, 0.22);
+  border-radius: 50%;
+  box-shadow: 0 0 0 70px rgba(191, 230, 255, 0.04), 0 0 0 140px rgba(191, 230, 255, 0.03);
+}
+.login-brand { position: relative; z-index: 1; display: flex; align-items: center; gap: 11px; font-size: 17px; font-weight: 700; letter-spacing: 2px; }
+.login-brand .brand-icon { width: 35px; height: 35px; }
+.login-visual-copy { position: relative; z-index: 1; max-width: 470px; }
+.eyebrow, .login-kicker { color: #75c5ff; font-size: 10px; font-weight: 700; letter-spacing: 2px; }
+.login-visual h1 { margin: 16px 0 20px; font-size: clamp(37px, 5vw, 66px); line-height: 1.04; letter-spacing: -2.5px; }
+.login-visual h1 em { color: #8dccff; font-style: normal; }
+.login-visual-copy p { max-width: 360px; color: #b7d0e9; font-size: 14px; line-height: 1.65; }
+.login-visual-footer { position: relative; z-index: 1; color: #8baed1; font-size: 9px; font-weight: 700; letter-spacing: 1.8px; }
+.login-visual-footer span { margin: 0 8px; color: #5ec2ff; }
+.login-panel { display: grid; place-items: center; padding: 40px 24px; }
+.login-card { width: min(100%, 400px); }
+.login-card-heading { margin-bottom: 34px; }
+.login-card-heading h2 { margin: 12px 0 8px; color: var(--ink); font-size: 31px; letter-spacing: -1px; }
+.login-card-heading p { color: var(--ink-soft); font-size: 13px; }
+.login-card form > label { display: block; margin: 18px 0 7px; color: var(--ink); font-size: 12px; font-weight: 650; }
+.password-field { position: relative; }
+.password-field input { padding-right: 72px; }
+.password-toggle { position: absolute; top: 50%; right: 7px; padding: 5px 7px; border: 0; background: transparent; box-shadow: none; color: var(--blue-700); font-size: 11px; transform: translateY(-50%); }
+.password-toggle:hover { transform: translateY(-50%); background: rgba(22, 104, 227, 0.08); }
+.login-error { margin-top: 13px; padding: 9px 11px; border: 1px solid rgba(207, 64, 64, .23); border-radius: 9px; background: var(--danger-soft); color: var(--danger); font-size: 12px; }
+.login-submit { width: 100%; justify-content: space-between; margin-top: 24px; padding: 12px 15px; }
+.login-security { margin-top: 38px; color: var(--ink-faint); font-size: 10px; text-align: center; }
+.login-security span { margin-right: 5px; color: var(--good); font-size: 16px; vertical-align: -1px; }
+.logout-button { padding: 5px 8px; border: 0; background: transparent; box-shadow: none; color: var(--ink-soft); font-size: 11px; }
+.logout-button:hover { color: var(--danger); background: rgba(207, 64, 64, .08); transform: none; }
+
 /* ---------- estructura ---------- */
 .app-shell {
   min-height: 100vh;
@@ -1355,6 +1412,17 @@ footer {
   }
 }
 @media (max-width: 600px) {
+  .login-page { display: block; }
+  .login-visual { min-height: 270px; padding: 24px; }
+  .login-visual-copy { margin-top: 42px; }
+  .login-visual h1 { margin: 10px 0 12px; font-size: 34px; letter-spacing: -1.5px; }
+  .login-visual-copy p { display: none; }
+  .login-visual-footer { margin-top: 34px; font-size: 8px; }
+  .login-panel { min-height: calc(100vh - 270px); padding: 36px 22px; align-items: start; }
+  .login-card-heading { margin-bottom: 26px; }
+  .login-card-heading h2 { font-size: 28px; }
+  .workspace-meta { gap: 5px; }
+  .logout-button { padding-left: 4px; padding-right: 4px; }
   .camera-grid {
     grid-template-columns: 1fr;
   }
