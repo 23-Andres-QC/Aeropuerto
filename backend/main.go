@@ -63,7 +63,7 @@ func (a *App) migrate(ctx context.Context) error {
 	if _, err = tx.Exec(ctx, "CREATE TABLE IF NOT EXISTS schema_migrations(version text PRIMARY KEY)"); err != nil {
 		return err
 	}
-	for _, file := range []string{"001_initial", "002_map_objects", "003_plan_zones", "004_historical_replay"} {
+	for _, file := range []string{"001_initial", "002_map_objects", "003_plan_zones", "004_historical_replay", "005_aerovision_schema"} {
 		version := file[:3]
 		var exists bool
 		if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)", version).Scan(&exists); err != nil {
