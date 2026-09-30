@@ -270,10 +270,13 @@ func (s *Sala) Atender(ws *websocket.Conn) {
 				}
 				detEnviada[c.id] = c.seqDet
 			}
-			// Una cámara web se ve siempre con su propio video; las cajas van aparte («det»).
-			if d := s.camaras.PorTelefono(c.id); d != nil && d.Transmitiendo() {
-				c.frame, c.seq, _ = d.Ultimo()
-				c.fuente = 'd'
+			// Una cámara web se ve siempre con su propio video, nunca con el del modelo
+			// (tampoco antes de su primer cuadro); las cajas van aparte («det»).
+			if d := s.camaras.PorTelefono(c.id); d != nil {
+				c.frame, c.fuente = nil, 'd'
+				if d.Transmitiendo() {
+					c.frame, c.seq, _ = d.Ultimo()
+				}
 			}
 			clave := c.id + string(c.fuente)
 			if c.frame == nil || len(c.id) > 255 || enviado[clave] == c.seq {
