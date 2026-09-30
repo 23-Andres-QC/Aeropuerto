@@ -37,6 +37,9 @@ services:
     restart: unless-stopped
   web:
     build: ./web
+    environment:
+      # IP pública o dominio del servidor: entra al certificado autofirmado.
+      PUBLIC_HOST: ${PUBLIC_HOST:-}
     ports:
       # Local: 127.0.0.1. Servidor: BIND_ADDR=0.0.0.0 y WEB_PORT=80 en .env.
       - "${BIND_ADDR:-127.0.0.1}:${WEB_PORT:-8080}:80"

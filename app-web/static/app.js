@@ -151,7 +151,10 @@ async function mantenerPantalla() {
 function conectar() {
   clearTimeout(app.reintento);
   const consulta = new URLSearchParams({ id: app.id, nombre: $('nombre').value.trim() });
-  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?${consulta}`);
+  // Relativa a la página: sirve igual en https://IP:8444/ que detrás del nginx de la web en /camara/.
+  const url = new URL(`ws?${consulta}`, location.href);
+  url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(url);
   app.ws = ws;
   app.unida = false;
   app.esperandoAcuse = false;

@@ -11,11 +11,11 @@ CCTV / dataset → Modelo LAP01 (Python, GPU) → API Go → PostgreSQL/PostGIS 
 
 ## Enlaces del proyecto
 
-- **Aplicación en el servidor:** http://35.239.224.191/
+- **Aplicación en el servidor:** http://34.70.132.18/ (HTTPS: https://34.70.132.18/, cámara web: https://34.70.132.18/camara/)
 - **Presentación Canva:** https://canva.link/s9381tjj12znjbi
 - **Informe:** https://www.overleaf.com/4988787614zrfjthnvgdhr#5a9571
 - **Carpeta de Drive:** https://drive.google.com/drive/folders/1OH2wUcujzm-cPwITiiukz6uNG6pCSm8Q
-- **Repositorio:** https://github.com/emaaa1000/proyecto-aeropuerto-2026
+- **Repositorio:** https://github.com/23-Andres-QC/Aeropuerto
 
 ## Ejecutar
 
@@ -124,12 +124,15 @@ Por defecto la web se publica solo en `127.0.0.1`. Para servirla por la IP públ
 ```bash
 BIND_ADDR=0.0.0.0
 WEB_PORT=80
+WEB_TLS_PORT=443
+PUBLIC_HOST=<IP pública del servidor>
 DB_PASSWORD=<una contraseña propia, no la del ejemplo>
+VIVO_DB_PASSWORD=<otra contraseña propia>
 ```
 
 y levanta con `docker compose up -d --build`. nginx añade `nosniff`, `SAMEORIGIN`, `Referrer-Policy` y un límite de peticiones por IP sobre `/api/`; PostgreSQL y el backend no publican puertos al host.
 
 - **Acceso:** el login es de demostración (se valida en el navegador). Antes de un uso real hace falta autenticación en el backend: cualquiera que alcance la IP puede modificar la configuración.
-- **Cámaras del navegador y teléfonos:** los navegadores solo dan acceso a la cámara en `localhost` o HTTPS (la web también escucha en 8443 con un certificado autofirmado).
+- **Cámaras del navegador y teléfonos:** los navegadores solo dan acceso a la cámara en `localhost` o HTTPS (la web también escucha en `WEB_TLS_PORT` con un certificado autofirmado). La cámara web (`app-web`) se sirve además por el nginx de la web en `https://<IP>/camara/`, así en el servidor basta con abrir 80 y 443 en el firewall.
 
 Diseño original de la arquitectura: [FLUJO_IMPLEMENTACION.md](FLUJO_IMPLEMENTACION.md).

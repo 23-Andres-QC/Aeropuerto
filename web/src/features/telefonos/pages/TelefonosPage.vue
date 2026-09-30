@@ -30,10 +30,12 @@ const textoEstado = computed(() => {
   return { clase: procesando ? "good" : "warn", texto: `Procesando ${procesando} de ${telefonos.value.length} cámaras en ${servicio.value?.dispositivo ?? ""}` };
 });
 // El enlace con la IP real lo publica el modelo (corre en la laptop); si no corre y la web se abrió por la
-// IP de la red, sirve esa; desde localhost la IP no se conoce.
+// IP de la red o la pública, sirve esa; desde localhost la IP no se conoce. En los puertos estándar (servidor,
+// donde solo 80/443 pasan el firewall) la cámara va por el nginx de la web en /camara/; en la laptop, por el 8444.
 const urlCamara = computed(() => {
   if (conectado.value && servicio.value?.enlace) return servicio.value.enlace;
-  return ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname) ? null : `https://${location.hostname}:8444`;
+  if (["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) return null;
+  return location.port ? `https://${location.hostname}:8444` : `https://${location.hostname}/camara/`;
 });
 const copiado = ref(false);
 
