@@ -6,6 +6,9 @@ usa la web (px por metro, origen y tamaño del mapa) y, con --publicar, guarda e
 el fondo, el contorno exacto del piso y los obstáculos (la carpa y los objetos: nadie camina a
 través de ellos; la Parte III aparta de ahí las posiciones) con PUT /api/v1/sites/esan/plano.
 
+El plano del campus (`campus.json`: la imagen del campus y dónde cae el patio en ella) viaja con
+el plano: la web abre en el campus entero y un clic en el patio acerca a él.
+
 Con --zonas crea los locales y zonas de `zonas_iniciales.json` por la misma API que usa la
 web, solo si el sitio aún no tiene zonas: después se editan en Configuración y este script
 no las vuelve a tocar.
@@ -95,8 +98,8 @@ def main():
               "<defs>"
               '<pattern id="baldosas" width="20" height="20" patternUnits="userSpaceOnUse">'
               '<rect width="20" height="20" fill="#f1e8d8"/><path d="M20 0H0V20" fill="none" stroke="#e2d6c1" stroke-width="1"/></pattern>'
-              "</defs>",
-              f'<rect width="{ancho}" height="{alto}" fill="#f6f8fb"/>']
+              "</defs>"]
+    # Sin fondo propio: fuera del piso se ve lo que haya debajo (el campus, o el fondo de la web).
     for a in areas.values():
         partes.append(f'<polygon points="{ruta(a["m"])}" {ESTILOS[a["estilo"]]}/>')
     for l in lineas:
@@ -127,8 +130,9 @@ def main():
     if args.publicar:
         obstaculos = [{"nombre": a["nombre"], "puntos_m": a["m"]} for a in areas.values() if a["estilo"] == "carpa"]
         obstaculos += [{"nombre": o["nombre"], "puntos_m": huella(o)} for o in objetos]
+        campus = {k: v for k, v in json.loads((AQUI / "campus.json").read_text(encoding="utf-8")).items() if k != "descripcion"}
         cuerpo = {"fondo": {"url": URL_FONDO, "fuente": "Levantamiento desde cam01 y cam03 (homografías del Build)"},
-                  "piso_m": piso, "obstaculos": obstaculos}
+                  "piso_m": piso, "obstaculos": obstaculos, "campus": campus}
         llamar(args.web, "PUT", f"/api/v1/sites/{args.sitio}/plano", cuerpo)
         print(f"Plano guardado en el sitio {args.sitio} ({len(obstaculos)} obstáculos: {', '.join(o['nombre'] for o in obstaculos)}).")
     if args.zonas:

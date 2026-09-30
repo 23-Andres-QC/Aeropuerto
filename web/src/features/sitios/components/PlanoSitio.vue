@@ -34,6 +34,8 @@ const props = withDefaults(
     zoom?: boolean;
     /** Leyenda debajo del plano con lo que se está mostrando. */
     leyenda?: boolean;
+    /** Con campus: la vista abre en el campus entero o directamente en el sitio. */
+    inicio?: "campus" | "sitio";
   }>(),
   {
     zonas: () => [],
@@ -53,6 +55,7 @@ const props = withDefaults(
     camaraActiva: null,
     leyenda: true,
     zoom: false,
+    inicio: "campus",
   },
 );
 const emit = defineEmits<{
@@ -81,13 +84,87 @@ const py = (y: number) => (props.mapa.origen_m[1] - y) * k.value;
 const puntos = (ps: Punto[]) => ps.map(([x, y]) => `${px(x).toFixed(1)},${py(y).toFixed(1)}`).join(" ");
 const aMetros = (p: DOMPoint): Punto => [+(p.x / k.value + props.mapa.origen_m[0]).toFixed(2), +(props.mapa.origen_m[1] - p.y / k.value).toFixed(2)];
 
+// --- Campus: el lugar entero alrededor del sitio (ej. la universidad) ---------
+type Vista = { x: number; y: number; w: number; h: number };
+const campus = computed(() => props.mapa.campus);
+/**
+ * Matriz SVG que lleva un píxel de la imagen del campus al plano del sitio (px del plano): gira el campus para que
+ * el sitio quede con su orientación de siempre y lo escala a los px por metro del plano.
+ */
+const matrizCampus = computed(() => {
+  const c = campus.value;
+  if (!c) return null;
+  const t = (c.angulo_deg * Math.PI) / 180;
+  const f = k.value / c.px_por_metro;
+  const [a, b, cc, d] = [f * Math.cos(t), f * Math.sin(t), -f * Math.sin(t), f * Math.cos(t)];
+  const [u, v] = c.centro_px;
+  const [X, Y] = [px(c.centro_m[0]), py(c.centro_m[1])];
+  return { a, b, c: cc, d, e: X - (a * u + cc * v), f: Y - (b * u + d * v) };
+});
+const transformCampus = computed(() => {
+  const m = matrizCampus.value;
+  return m ? `matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.e} ${m.f})` : undefined;
+});
+/** Todo lo que se puede ver: el plano del sitio y, si hay, el campus que lo rodea. */
+const mundo = computed<Vista>(() => {
+  const m = matrizCampus.value;
+  const c = campus.value;
+  let [x0, y0, x1, y1] = [0, 0, ancho.value, alto.value];
+  if (m && c) {
+    for (const [u, v] of [[0, 0], [c.tam_px[0], 0], [0, c.tam_px[1]], [c.tam_px[0], c.tam_px[1]]]) {
+      const [x, y] = [m.a * u + m.c * v + m.e, m.b * u + m.d * v + m.f];
+      [x0, y0, x1, y1] = [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x), Math.max(y1, y)];
+    }
+  }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+});
+/** Ancho del viewBox con todo a la vista (el viewBox conserva la proporción del plano). */
+const anchoMax = computed(() => Math.max(mundo.value.w, (mundo.value.h * ancho.value) / alto.value));
+/** El sitio con un poco de campus alrededor (sin campus, el plano justo). */
+const vistaSitio = computed<Vista>(() => {
+  const f = campus.value ? 1.3 : 1;
+  const [w, h] = [ancho.value * f, alto.value * f];
+  return { x: (ancho.value - w) / 2, y: (alto.value - h) / 2, w, h };
+});
+const vistaTodo = computed<Vista>(() => ({ x: mundo.value.x, y: mundo.value.y, w: anchoMax.value, h: 0 }));
+
 // --- Vista: zoom y desplazamiento sobre el viewBox ---------------------------
-const vista = ref({ x: 0, y: 0, w: 0, h: 0 });
+const vista = ref<Vista>({ x: 0, y: 0, w: 0, h: 0 });
+let animacion = 0;
+/** Con el campus a la vista (lejos del sitio): el sitio se marca y un clic acerca a él. */
+const enCampus = computed(() => !!campus.value && vista.value.w > ancho.value * 1.8);
 function reiniciarVista() {
-  vista.value = { x: 0, y: 0, w: ancho.value, h: alto.value };
+  cancelAnimationFrame(animacion);
+  vista.value = acotar(campus.value && props.inicio === "campus" ? vistaTodo.value : vistaSitio.value);
 }
 // Solo se reinicia si cambia el marco del plano, no cada vez que se recarga la configuración.
-watch(() => `${props.mapa.tam_px.join()}|${props.mapa.px_por_metro}|${props.mapa.origen_m.join()}`, reiniciarVista, { immediate: true });
+watch(
+  () => `${props.mapa.tam_px.join()}|${props.mapa.px_por_metro}|${props.mapa.origen_m.join()}|${campus.value?.url ?? ""}`,
+  reiniciarVista,
+  { immediate: true },
+);
+
+// Acercar al sitio (o alejarse al campus) en un movimiento: el ancho cambia en escala logarítmica
+// (el zoom se siente parejo) y el centro se desplaza a la vez.
+function irA(destino: Vista) {
+  cancelAnimationFrame(animacion);
+  const desde = { ...vista.value };
+  const hasta = acotar(destino);
+  const inicio = performance.now();
+  const cuadro = (ahora: number) => {
+    const t = Math.min(1, (ahora - inicio) / 700);
+    const s = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+    const w = desde.w * (hasta.w / desde.w) ** s;
+    const h = (w * alto.value) / ancho.value;
+    const cx = desde.x + desde.w / 2 + (hasta.x + hasta.w / 2 - desde.x - desde.w / 2) * s;
+    const cy = desde.y + desde.h / 2 + (hasta.y + hasta.h / 2 - desde.y - desde.h / 2) * s;
+    vista.value = { x: cx - w / 2, y: cy - h / 2, w, h };
+    if (t < 1) animacion = requestAnimationFrame(cuadro);
+  };
+  animacion = requestAnimationFrame(cuadro);
+}
+const entrarAlSitio = () => irA(vistaSitio.value);
+const verTodo = () => (campus.value ? irA(vistaTodo.value) : reiniciarVista());
 // Tamaño del plano en pantalla: el SVG se ajusta a su caja manteniendo la proporción (meet).
 const pantalla = ref({ w: 0, h: 0 });
 let observador: ResizeObserver | undefined;
@@ -96,7 +173,10 @@ onMounted(() => {
   observador = new ResizeObserver(([caja]) => (pantalla.value = { w: caja.contentRect.width, h: caja.contentRect.height }));
   observador.observe(svg.value);
 });
-onUnmounted(() => observador?.disconnect());
+onUnmounted(() => {
+  observador?.disconnect();
+  cancelAnimationFrame(animacion);
+});
 /**
  * Unidades del plano por píxel de pantalla: los textos, puntos, asas e íconos se multiplican por ella
  * para verse siempre del mismo tamaño, sea el plano chico o grande y con cualquier zoom.
@@ -106,13 +186,18 @@ const e = computed(() => {
   return w && h ? Math.max(vista.value.w / w, vista.value.h / h) : vista.value.w / ancho.value;
 });
 
-function acotar(v: { x: number; y: number; w: number; h: number }) {
-  const w = Math.min(Math.max(v.w, ancho.value / 40), ancho.value);
+/** Mantiene la vista dentro de lo que hay para ver; si sobra espacio en un eje, la centra. */
+function acotar(v: Vista): Vista {
+  const m = mundo.value;
+  const w = Math.min(Math.max(v.w, ancho.value / 40), anchoMax.value);
   const h = (w * alto.value) / ancho.value;
-  return { w, h, x: Math.min(Math.max(v.x, 0), ancho.value - w), y: Math.min(Math.max(v.y, 0), alto.value - h) };
+  const x = w >= m.w ? m.x + (m.w - w) / 2 : Math.min(Math.max(v.x, m.x), m.x + m.w - w);
+  const y = h >= m.h ? m.y + (m.h - h) / 2 : Math.min(Math.max(v.y, m.y), m.y + m.h - h);
+  return { x, y, w, h };
 }
 
 function acercar(factor: number, centro?: DOMPoint | null) {
+  cancelAnimationFrame(animacion);
   const v = vista.value;
   const c = centro ?? new DOMPoint(v.x + v.w / 2, v.y + v.h / 2);
   const w = v.w * factor;
@@ -143,7 +228,8 @@ function capturar(ev: PointerEvent) {
 const seMovio = (ev: PointerEvent, desde: { cx: number; cy: number }) => Math.hypot(ev.clientX - desde.cx, ev.clientY - desde.cy) > UMBRAL;
 
 function iniciarPaneo(ev: PointerEvent) {
-  if (!props.zoom || !svg.value || vista.value.w >= ancho.value) return;
+  if (!props.zoom || !svg.value || vista.value.w >= anchoMax.value - 0.5) return;
+  cancelAnimationFrame(animacion);
   paneo = { cx: ev.clientX, cy: ev.clientY, vx: vista.value.x, vy: vista.value.y, movido: false };
 }
 
@@ -431,6 +517,14 @@ const elementos = computed(() => {
   };
 });
 
+/** Largo de la barra de escala: un valor redondo que se vea de ~110 px con cualquier zoom. */
+const escalaM = computed(() => {
+  const objetivo = (110 * e.value) / k.value;
+  return [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000].find((m) => m >= objetivo) ?? 2000;
+});
+/** El recorte de la cuadrícula al piso sobre el campus necesita un id propio por plano (hay varios por página). */
+const idPiso = `piso-${Math.random().toString(36).slice(2, 9)}`;
+
 const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.length, ps.reduce((a, p) => a + p[1], 0) / ps.length];
 </script>
 
@@ -439,7 +533,7 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
     <svg
       ref="svg"
       class="lienzo-plano"
-      :class="{ dibujando, desplazable: zoom && vista.w < ancho }"
+      :class="{ dibujando, desplazable: zoom && vista.w < anchoMax - 0.5 }"
       :viewBox="`${vista.x} ${vista.y} ${vista.w} ${vista.h}`"
       :style="{ '--e': e }"
       preserveAspectRatio="xMidYMid meet"
@@ -453,15 +547,32 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
       @pointercancel="soltar"
       @pointerleave="cursor = null"
     >
-      <rect :width="ancho" :height="alto" class="fondo" />
+      <template v-if="campus">
+        <rect :x="mundo.x" :y="mundo.y" :width="mundo.w" :height="mundo.h" class="fondo" />
+        <image
+          :href="campus.url"
+          x="0"
+          y="0"
+          :width="campus.tam_px[0]"
+          :height="campus.tam_px[1]"
+          :transform="transformCampus"
+          preserveAspectRatio="none"
+          class="dibujo campus"
+        />
+        <clipPath v-if="mapa.piso_L_m?.length" :id="idPiso"><polygon :points="puntos(mapa.piso_L_m)" /></clipPath>
+      </template>
+      <rect v-else :width="ancho" :height="alto" class="fondo" />
       <image v-if="mapa.fondo" :href="mapa.fondo.url" x="0" y="0" :width="ancho" :height="alto" preserveAspectRatio="none" class="dibujo" />
       <polygon v-if="mapa.piso_L_m?.length" :points="puntos(mapa.piso_L_m)" class="piso" :class="{ 'sobre-dibujo': mapa.fondo }" />
       <!-- Los obstáculos ya están en el dibujo de fondo; sin dibujo, se marcan aquí. -->
       <template v-if="!mapa.fondo">
         <polygon v-for="(o, i) in mapa.obstaculos ?? []" :key="'o' + i" :points="puntos(o.puntos_m)" class="obstaculo"><title>{{ o.nombre }}</title></polygon>
       </template>
-      <line v-for="l in lineas.verticales" :key="'v' + l.v" :x1="l.v" :x2="l.v" y1="0" :y2="alto" :class="l.fuerte ? 'rejilla-5' : 'rejilla'" />
-      <line v-for="l in lineas.horizontales" :key="'h' + l.v" :y1="l.v" :y2="l.v" x1="0" :x2="ancho" :class="l.fuerte ? 'rejilla-5' : 'rejilla'" />
+      <!-- Sobre el campus, la cuadrícula solo va en el piso del sitio. -->
+      <g :clip-path="campus && mapa.piso_L_m?.length ? `url(#${idPiso})` : undefined">
+        <line v-for="l in lineas.verticales" :key="'v' + l.v" :x1="l.v" :x2="l.v" y1="0" :y2="alto" :class="l.fuerte ? 'rejilla-5' : 'rejilla'" />
+        <line v-for="l in lineas.horizontales" :key="'h' + l.v" :y1="l.v" :y2="l.v" x1="0" :x2="ancho" :class="l.fuerte ? 'rejilla-5' : 'rejilla'" />
+      </g>
       <rect v-for="(c, i) in celdas" :key="'c' + i" :x="c.x" :y="c.y" :width="c.lado" :height="c.lado" :fill="c.color"><title>{{ c.n }}</title></rect>
       <g
         v-for="z in zonasPlano"
@@ -551,9 +662,17 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
         <circle :cx="px(p.x)" :cy="py(p.y)" :r="(p.estado === 'salio' ? 6 : 9) * e" :fill="p.color" class="persona" />
         <text :x="px(p.x) + 12 * e" :y="py(p.y) - 8 * e" class="persona-etiqueta" :style="{ fill: p.color }">{{ p.etiqueta }}</text>
       </g>
+      <!-- Desde el campus, el sitio grabado se marca y un clic acerca a él. -->
+      <g v-if="enCampus" class="entrada-sitio" role="button" tabindex="0" @click.stop="entrarAlSitio" @keydown.enter="entrarAlSitio">
+        <polygon v-if="mapa.piso_L_m?.length" :points="puntos(mapa.piso_L_m)" class="marca-sitio" />
+        <rect v-else :width="ancho" :height="alto" class="marca-sitio" />
+        <text :x="ancho / 2" :y="-14 * e" class="nombre-sitio">{{ campus?.nombre || "Zona grabada" }}</text>
+        <text :x="ancho / 2" :y="alto + 22 * e" class="ayuda-sitio">Clic para acercar</text>
+        <title>Acercar a {{ campus?.nombre || "la zona grabada" }}</title>
+      </g>
       <g class="escala" :transform="`translate(${vista.x + 14 * e} ${vista.y + vista.h - 18 * e})`">
-        <rect :width="5 * paso * k" :height="5 * e" />
-        <text :x="5 * paso * k + 6 * e" :y="6 * e">{{ 5 * paso }} m</text>
+        <rect :width="escalaM * k" :height="5 * e" />
+        <text :x="escalaM * k + 6 * e" :y="6 * e">{{ escalaM }} m</text>
       </g>
       <defs>
         <marker id="flecha-flujo" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto">
@@ -564,8 +683,11 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
     <div v-if="zoom" class="controles-zoom">
       <button type="button" aria-label="Acercar" title="Acercar (o rueda del ratón)" @click="acercar(0.7)">＋</button>
       <button type="button" aria-label="Alejar" title="Alejar" @click="acercar(1 / 0.7)">－</button>
-      <button type="button" aria-label="Ver todo el plano" title="Ver todo el plano" @click="reiniciarVista">⤢</button>
+      <button type="button" :aria-label="campus ? 'Ver todo el campus' : 'Ver todo el plano'" :title="campus ? 'Ver todo el campus' : 'Ver todo el plano'" @click="verTodo">⤢</button>
     </div>
+    <button v-if="campus" class="alternar-campus" type="button" @click="enCampus ? entrarAlSitio() : verTodo()">
+      {{ enCampus ? `Ir a ${campus.nombre || "la zona grabada"}` : "Ver campus" }}
+    </button>
     <ul v-if="leyenda" class="leyenda-plano" aria-label="Leyenda del plano">
       <li v-if="elementos.piso"><span class="muestra m-piso"></span>Piso</li>
       <li v-if="elementos.obstaculos"><span class="muestra m-obstaculo"></span>Obstáculo</li>
@@ -591,6 +713,7 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
       </li>
     </ul>
     <p v-if="mapa.fondo?.fuente" class="fuente-plano">Plano: {{ mapa.fondo.fuente }}</p>
+    <p v-if="campus?.fuente" class="fuente-plano">Campus: {{ campus.fuente }}</p>
   </div>
 </template>
 
@@ -636,6 +759,58 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
 :root[data-theme="dark"] .dibujo {
   filter: invert(0.9) hue-rotate(180deg);
   opacity: 0.6;
+}
+/* El sitio marcado desde el campus: late para invitar al clic. */
+.entrada-sitio {
+  cursor: zoom-in;
+}
+.marca-sitio {
+  fill: rgba(37, 99, 235, 0.22);
+  stroke: #2563eb;
+  stroke-width: 3;
+  animation: latido 1.6s ease-in-out infinite;
+}
+.entrada-sitio:hover .marca-sitio,
+.entrada-sitio:focus-visible .marca-sitio {
+  fill: rgba(37, 99, 235, 0.4);
+}
+@keyframes latido {
+  50% {
+    stroke-opacity: 0.35;
+    fill-opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marca-sitio {
+    animation: none;
+  }
+}
+.nombre-sitio,
+.ayuda-sitio {
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #fff;
+  pointer-events: none;
+}
+.nombre-sitio {
+  font-size: calc(15px * var(--e));
+  font-weight: 750;
+  fill: #1d4ed8;
+  stroke-width: calc(4px * var(--e));
+}
+.ayuda-sitio {
+  font-size: calc(12px * var(--e));
+  font-weight: 600;
+  fill: #1e3a8a;
+  stroke-width: calc(3px * var(--e));
+}
+.alternar-campus {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 650;
 }
 .piso {
   fill: rgba(61, 139, 255, 0.07);

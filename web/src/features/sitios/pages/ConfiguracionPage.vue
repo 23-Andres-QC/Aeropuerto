@@ -502,6 +502,7 @@ onUnmounted(() => {
         <PlanoSitio
           class="plano"
           zoom
+          inicio="sitio"
           :mapa="mapa"
           :zonas="config.zones"
           :borrador="borrador"

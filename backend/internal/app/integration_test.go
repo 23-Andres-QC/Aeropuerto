@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -231,7 +232,9 @@ func TestSiteLifecycle(t *testing.T) {
 
 	// The drawn plan (background + floor outline) survives a new Build publication.
 	plano := map[string]any{"fondo": map[string]string{"url": "/planos/prueba.svg", "fuente": "levantamiento"}, "piso_m": [][2]float64{{0, 0}, {5, 0}, {5, 4}},
-		"obstaculos": []map[string]any{{"nombre": "Columna", "puntos_m": [][2]float64{{1, 1}, {2, 1}, {2, 2}}}}}
+		"obstaculos": []map[string]any{{"nombre": "Columna", "puntos_m": [][2]float64{{1, 1}, {2, 1}, {2, 2}}}},
+		"campus": map[string]any{"url": "/planos/campus.jpg", "nombre": "Patio", "tam_px": []int{800, 600}, "centro_px": []float64{400, 300},
+			"centro_m": []float64{2, 2}, "px_por_metro": 2, "angulo_deg": 30}}
 	if w = do("PUT", "/api/v1/sites/prueba-a/plano", plano); w.Code != 204 {
 		t.Fatalf("save plan: %d %s", w.Code, w.Body)
 	}
@@ -246,8 +249,24 @@ func TestSiteLifecycle(t *testing.T) {
 		t.Fatalf("obstacle with two vertices accepted: %d", w.Code)
 	}
 	if conPlano.Plano.Background == nil || conPlano.Plano.Background.URL != "/planos/prueba.svg" || len(conPlano.Plano.Floor) != 3 ||
-		len(conPlano.Plano.Obstacles) != 1 || conPlano.Plano.Obstacles[0].Name != "Columna" {
+		len(conPlano.Plano.Obstacles) != 1 || conPlano.Plano.Obstacles[0].Name != "Columna" ||
+		conPlano.Plano.Campus == nil || conPlano.Plano.Campus.AngleDeg != 30 || conPlano.Plano.Campus.Size != [2]int{800, 600} {
 		t.Fatalf("plan not returned: %+v", conPlano.Plano)
+	}
+	// Moving the site on the campus is only drawing: earlier analyses stay current.
+	// A new floor outline does leave them out of date.
+	cambioPlano := func() (cambio time.Time) {
+		db.QueryRow(context.Background(), "SELECT plan_updated_at FROM sites WHERE slug = 'prueba-a'").Scan(&cambio)
+		return cambio
+	}
+	antes := cambioPlano()
+	plano["campus"].(map[string]any)["angulo_deg"] = 40
+	if w = do("PUT", "/api/v1/sites/prueba-a/plano", plano); w.Code != 204 || !cambioPlano().Equal(antes) {
+		t.Fatalf("moving the campus flagged the analyses out of date: %d", w.Code)
+	}
+	plano["piso_m"] = [][2]float64{{0, 0}, {6, 0}, {6, 4}}
+	if w = do("PUT", "/api/v1/sites/prueba-a/plano", plano); w.Code != 204 || !cambioPlano().After(antes) {
+		t.Fatalf("a new floor did not flag the analyses out of date: %d", w.Code)
 	}
 
 	// Files the Build exported for the site are served from <media>/<site>/.

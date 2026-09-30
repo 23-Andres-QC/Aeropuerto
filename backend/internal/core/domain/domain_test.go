@@ -3,6 +3,7 @@ package domain
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"testing"
 )
 
@@ -122,5 +123,29 @@ func TestSiteInputNormalize(t *testing.T) {
 	edit := SiteInput{Name: "Nuevo nombre"}
 	if err := edit.Normalize(false); err != nil {
 		t.Fatalf("al editar el slug no cambia ni se valida: %v", err)
+	}
+}
+
+func TestSitePlanCampus(t *testing.T) {
+	campus := func() *PlanCampus {
+		return &PlanCampus{URL: " /planos/esan-campus.jpg ", Name: "Patio", Size: [2]int{789, 585},
+			CenterPx: [2]float64{407, 466}, CenterM: [2]float64{-0.8, -0.5}, PxPerMeter: 1.86, AngleDeg: 35}
+	}
+	ok := SitePlan{Floor: [][2]float64{{0, 0}, {5, 0}, {5, 4}}, Campus: campus()}
+	if err := ok.Normalize(); err != nil || ok.Campus.URL != "/planos/esan-campus.jpg" {
+		t.Fatalf("valid campus rejected: %v", err)
+	}
+	for nombre, cambiar := range map[string]func(*PlanCampus){
+		"external url": func(c *PlanCampus) { c.URL = "https://otro.sitio/campus.jpg" },
+		"no size":      func(c *PlanCampus) { c.Size = [2]int{} },
+		"zero scale":   func(c *PlanCampus) { c.PxPerMeter = 0 },
+		"nan angle":    func(c *PlanCampus) { c.AngleDeg = math.NaN() },
+	} {
+		c := campus()
+		cambiar(c)
+		plan := SitePlan{Floor: [][2]float64{{0, 0}, {5, 0}, {5, 4}}, Campus: c}
+		if err := plan.Normalize(); err == nil {
+			t.Errorf("%s: accepted", nombre)
+		}
 	}
 }

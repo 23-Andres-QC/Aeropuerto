@@ -155,8 +155,13 @@ func (r *SiteRepository) SavePlan(ctx context.Context, site domain.Site, plan do
 	if err != nil {
 		return err
 	}
-	// A new plan (floor, obstacles) leaves earlier Part III analyses out of date.
-	_, err = r.db.Exec(ctx, "UPDATE sites SET plano = $2::text::jsonb, plan_updated_at = now() WHERE site_id = $1", site.ID, string(raw))
+	// A new floor or obstacles leave earlier Part III analyses out of date; the
+	// background drawing and the campus are only drawn, so they do not.
+	_, err = r.db.Exec(ctx, `UPDATE sites SET plano = $2::text::jsonb,
+		plan_updated_at = CASE WHEN plano->'piso_m' IS NOT DISTINCT FROM $2::text::jsonb->'piso_m'
+		                        AND plano->'obstaculos' IS NOT DISTINCT FROM $2::text::jsonb->'obstaculos'
+		                       THEN plan_updated_at ELSE now() END
+		WHERE site_id = $1`, site.ID, string(raw))
 	return rejected(err)
 }
 

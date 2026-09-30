@@ -2,7 +2,6 @@
 <title>ESAN · patio</title>
 <desc>Levantamiento desde las cámaras cam01 y cam03 con las homografías del Build (Modelo/mapa_piso.json): el piso (patio, descanso y tramo norte de la L), la carpa azul, los ascensores y los objetos del patio.</desc>
 <defs><pattern id="baldosas" width="20" height="20" patternUnits="userSpaceOnUse"><rect width="20" height="20" fill="#f1e8d8"/><path d="M20 0H0V20" fill="none" stroke="#e2d6c1" stroke-width="1"/></pattern></defs>
-<rect width="1060" height="660" fill="#f6f8fb"/>
 <polygon points="152.0,142.0 385.6,159.6 657.2,174.8 664.0,112.0 904.4,117.2 873.6,195.6 1004.0,204.0 952.0,504.0 828.4,498.4 823.2,569.6 743.2,554.8 663.6,543.2 534.4,523.6 487.6,527.6 365.2,518.0 265.2,525.6 92.0,524.0" fill="url(#baldosas)" stroke="#6b7280" stroke-width="4" stroke-linejoin="round"/>
 <polygon points="711.6,180.8 692.0,232.8 626.4,225.6 638.4,176.0" fill="#2563eb" fill-opacity="0.55" stroke="#1d4ed8" stroke-width="2"/>
 <polyline points="823.2,569.6 743.2,554.8 663.6,543.2 534.4,523.6" fill="none" stroke="#b91c1c" stroke-width="5" stroke-dasharray="16 7"/>

@@ -19,6 +19,23 @@ export type Mapa = {
   fondo?: FondoPlano;
   /** Huella de lo que nadie atraviesa (una carpa, una máquina); la Parte III aparta de ahí las posiciones. */
   obstaculos?: Obstaculo[];
+  /** Imagen del lugar entero (el campus) con el sitio ubicado encima: la web abre ahí y acerca al sitio. */
+  campus?: CampusPlano;
+};
+
+/**
+ * Plano del campus alrededor del sitio: el punto `centro_m` del sitio (metros) cae en `centro_px` de la imagen,
+ * con `px_por_metro` píxeles de la imagen por metro y el eje este del sitio girado `angulo_deg` (antihorario).
+ */
+export type CampusPlano = {
+  url: string;
+  fuente?: string;
+  nombre?: string;
+  tam_px: [number, number];
+  centro_px: Punto;
+  centro_m: Punto;
+  px_por_metro: number;
+  angulo_deg: number;
 };
 
 export type Obstaculo = { nombre: string; puntos_m: Punto[] };
@@ -26,7 +43,7 @@ export type Obstaculo = { nombre: string; puntos_m: Punto[] };
 export type FondoPlano = { url: string; fuente?: string };
 
 /** Dibujo guardado del sitio (levantamiento o plano arquitectónico), aparte de lo que publica el Build. */
-export type Plano = { fondo: FondoPlano | null; piso_m?: Punto[] | null; obstaculos?: Obstaculo[] | null };
+export type Plano = { fondo: FondoPlano | null; piso_m?: Punto[] | null; obstaculos?: Obstaculo[] | null; campus?: CampusPlano | null };
 
 export type Sitio = {
   slug: string;
@@ -84,7 +101,13 @@ export function mapaDelSitio(c: Config | null | undefined): Mapa | undefined {
   const mapa = c?.map?.mapa;
   if (!mapa) return undefined;
   const piso = c.plano?.piso_m;
-  return { ...mapa, fondo: c.plano?.fondo ?? mapa.fondo, piso_L_m: piso?.length ? piso : mapa.piso_L_m, obstaculos: c.plano?.obstaculos ?? [] };
+  return {
+    ...mapa,
+    fondo: c.plano?.fondo ?? mapa.fondo,
+    piso_L_m: piso?.length ? piso : mapa.piso_L_m,
+    obstaculos: c.plano?.obstaculos ?? [],
+    campus: c.plano?.campus ?? undefined,
+  };
 }
 
 export type Sesion = {

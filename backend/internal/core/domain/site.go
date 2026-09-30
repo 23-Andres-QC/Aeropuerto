@@ -61,6 +61,9 @@ func (in *SiteInput) Normalize(isNew bool) error {
 
 var backgroundPattern = regexp.MustCompile(`^/planos/[a-z0-9][a-z0-9._-]{0,80}\.svg$`)
 
+// campusPattern admits the raster drawings a campus plan usually comes as.
+var campusPattern = regexp.MustCompile(`^/planos/[a-z0-9][a-z0-9._-]{0,80}\.(svg|jpg|png|webp)$`)
+
 // SitePlan is the drawn plan of a site (surveyed from the cameras or taken from
 // the architectural drawing): a static SVG background, the exact outline of the
 // walkable floor and the obstacles nobody walks through, in the same metres as
@@ -70,6 +73,43 @@ type SitePlan struct {
 	Background *PlanBackground `json:"fondo"`
 	Floor      [][2]float64    `json:"piso_m"`
 	Obstacles  []PlanObstacle  `json:"obstaculos"`
+	// Campus is the whole place around the recorded area (e.g. the university
+	// map): the web opens on it and zooms into the site when it is clicked.
+	Campus *PlanCampus `json:"campus,omitempty"`
+}
+
+// PlanCampus is a static image of the surroundings and where the site sits
+// on it: the site point CenterM (metres) falls on CenterPx (image pixels),
+// with PxPerMeter image pixels per metre and the site's east axis turned
+// AngleDeg counter-clockwise on the image.
+type PlanCampus struct {
+	URL        string     `json:"url"`
+	Source     string     `json:"fuente"`
+	Name       string     `json:"nombre"`
+	Size       [2]int     `json:"tam_px"`
+	CenterPx   [2]float64 `json:"centro_px"`
+	CenterM    [2]float64 `json:"centro_m"`
+	PxPerMeter float64    `json:"px_por_metro"`
+	AngleDeg   float64    `json:"angulo_deg"`
+}
+
+func (c *PlanCampus) normalize() error {
+	c.URL, c.Source, c.Name = strings.TrimSpace(c.URL), strings.TrimSpace(c.Source), strings.TrimSpace(c.Name)
+	if !campusPattern.MatchString(c.URL) || len([]rune(c.Source)) > 200 || len([]rune(c.Name)) > 80 {
+		return Invalid("el campus debe ser una imagen de /planos/, con fuente de hasta 200 caracteres y nombre de hasta 80")
+	}
+	if c.Size[0] < 1 || c.Size[1] < 1 || c.Size[0] > 20000 || c.Size[1] > 20000 {
+		return Invalid("tamaño del campus inválido")
+	}
+	for _, v := range []float64{c.CenterPx[0], c.CenterPx[1], c.CenterM[0], c.CenterM[1], c.PxPerMeter, c.AngleDeg} {
+		if !finite(v) {
+			return Invalid("ubicación del sitio en el campus inválida")
+		}
+	}
+	if c.PxPerMeter <= 0 || c.PxPerMeter > 1000 || math.Abs(c.AngleDeg) > 360 || !insidePlan([][2]float64{c.CenterM}) {
+		return Invalid("ubicación del sitio en el campus inválida")
+	}
+	return nil
 }
 
 // PlanObstacle is the footprint of something on the floor: a stand, a machine, a column.
@@ -98,6 +138,11 @@ func (p *SitePlan) Normalize() error {
 	}
 	if !insidePlan(p.Floor) {
 		return Invalid("contorno del piso fuera del plano")
+	}
+	if p.Campus != nil {
+		if err := p.Campus.normalize(); err != nil {
+			return err
+		}
 	}
 	if len(p.Obstacles) > 200 {
 		return Invalid("hasta 200 obstáculos por plano")
