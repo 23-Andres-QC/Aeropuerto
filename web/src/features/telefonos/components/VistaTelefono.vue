@@ -55,9 +55,10 @@ function dibujar() {
     const color = p.global_id != null ? colorPersona(p.global_id) : "#8ba4bf";
     ctx.strokeStyle = color;
     ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-    const genero = p.gender ? ` · ${p.gender}${p.gender_conf ? " " + Math.round(p.gender_conf * 100) + "%" : ""}` : "";
-    // G = ID global (el de la memoria); mientras se confirma, L = el ID local del tracker en este teléfono.
-    const texto = `${p.global_id != null ? "G" + p.global_id : "L" + p.local_id}${genero}`;
+    const genero = p.gender ? `${p.gender}${p.gender_conf ? " " + Math.round(p.gender_conf * 100) + "%" : ""}` : "";
+    // Solo el ID global (el de la memoria); mientras se confirma (~1 s) la caja va sin número.
+    const texto = [p.global_id != null ? "G" + p.global_id : "", genero].filter(Boolean).join(" · ");
+    if (!texto) continue;
     const ancho = ctx.measureText(texto).width + 10;
     const y = Math.max(18, y1);
     ctx.fillStyle = "rgba(10, 20, 35, 0.82)";

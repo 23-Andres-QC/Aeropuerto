@@ -133,6 +133,8 @@ DB_IMAGE=imresamu/postgis:17-3.5
 # Modelo en vivo en CPU (servidor sin GPU) y enlace público para unir teléfonos.
 COMPOSE_PROFILES=modelo
 ENLACE_CAMARA=https://<IP pública del servidor>/camara/
+MODELO_CPUS=7        # núcleos para el modelo (deja uno para la web)
+MODELO_IMGSZ=480     # detector más rápido en CPU
 ```
 
 El modelo en vivo (`modelo-vivo`) necesita los pesos de CLIP que van por Git LFS: en el servidor, `git lfs install --local && git lfs pull` antes de construir.

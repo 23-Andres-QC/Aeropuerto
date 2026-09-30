@@ -44,6 +44,10 @@ TRANSICION_MAX_S = 60.0
 # Un teléfono ve a la gente de cerca: quien sale cortado por el borde del cuadro también da muestras de Re-ID (en las
 # cámaras fijas del Build esas vistas se descartan). Si no, de cerca nadie llegaría a tener ID.
 MARGEN_BORDE_TELEFONO = -1
+# La web de Teléfonos muestra solo el ID global: se confirma con 3 vistas en ~1 s (las cámaras fijas del Build piden
+# 5 vistas y 2 s), a cambio de un poco más de riesgo de confundir a dos personas parecidas. Vale para el asociador y
+# para la memoria, así quien vuelve se compara con la memoria con las mismas vistas con que se confirma.
+ASOCIACION_TELEFONO = {"min_samples": 3, "min_query_samples": 3, "min_identity_duration_s": 1.0, "sample_interval_s": 0.3}
 PUERTO_CAMARA = int(os.environ.get("CAMARA_PORT", "8444"))  # el de la página de cámara (compose: camara-web)  # como en camaras.json: alguien puede pasar de un teléfono a otro en hasta 60 s
 
 
@@ -341,11 +345,15 @@ def main():
     args = parser.parse_args()
     url_api = args.api.rstrip("/")
     config = json.loads((MODELO / "config_lap01.json").read_text())
-    asociacion = json.loads((MODELO / "camaras.json").read_text()).get("association", {})
+    # En un servidor sin GPU el detector va a menos resolución (ej. 480): en CPU es lo que más pesa por cuadro.
+    if os.environ.get("MODELO_IMGSZ"):
+        config["detector"]["imgsz"] = int(os.environ["MODELO_IMGSZ"])
+    asociacion = {**json.loads((MODELO / "camaras.json").read_text()).get("association", {}), **ASOCIACION_TELEFONO}
     print("Cargando el modelo final (YOLO26m, tracker, Re-ID, género)...", flush=True)
     motor = lap01.MotorLAP01(MODELO, config, device="auto", batch=True)
     reid = lap01.crear_asociador(motor, {"mode": "visual_temporal", "units": "m", "cameras": {"x": {}}}).reid
-    print(f"Modelo listo en {motor.device} · GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no'}", flush=True)
+    print(f"Modelo listo en {motor.device} · detector a {config['detector']['imgsz']} px · "
+          f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no'}", flush=True)
     memoria = MemoriaIdentidades(url_api, asociacion)
     relevo = Relevo(url_api)
     sesion = SesionEnVivo(motor, reid, asociacion, memoria)
