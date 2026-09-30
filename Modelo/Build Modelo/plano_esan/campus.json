@@ -1,11 +1,20 @@
 {
-  "descripcion": "Dónde está el patio en el plano del campus de ESAN (pdf-mapa-campus-esan: una imagen de 789 × 585 px). El patio es el hueco blanco en L entre el Edificio A y el Edificio B. Se ubicó ajustando su tramo largo (22,8 m) al del hueco en el dibujo: el punto centro_m del patio (metros del plano) cae en centro_px de la imagen, con px_por_metro píxeles de la imagen por metro y el eje este del patio girado angulo_deg en sentido antihorario. El dibujo del campus es esquemático: el hueco es más angosto que el patio real, así que el patio se ve un poco más ancho que su hueco.",
-  "url": "/planos/esan-campus.jpg",
-  "fuente": "Mapa del campus de la Universidad ESAN",
+  "descripcion": "Dónde está el patio en el plano del campus de ESAN (pdf-mapa-campus-esan: una imagen de 789 × 585 px, redibujada sin textos por dibujar_campus.py en las mismas coordenadas). El patio es el hueco blanco en L entre el Edificio A y el Edificio B. Se ubicó con el contorno del hueco trazado sobre el dibujo: la similitud (escala, giro y posición) que más superpone el piso del patio con el hueco (IoU 0,86). El punto centro_m del patio (metros del plano) cae en centro_px de la imagen, con px_por_metro píxeles de la imagen por metro y el eje este del patio girado angulo_deg en sentido antihorario.",
+  "url": "/planos/esan-campus.svg",
+  "fuente": "Mapa del campus de la Universidad ESAN, redibujado sin textos",
   "nombre": "Patio · zona grabada",
-  "tam_px": [789, 585],
-  "centro_px": [407.2, 466.5],
-  "centro_m": [-0.8, -0.52],
-  "px_por_metro": 1.865,
-  "angulo_deg": 35.1
+  "tam_px": [
+    789,
+    585
+  ],
+  "centro_px": [
+    405.9,
+    468.4
+  ],
+  "centro_m": [
+    -0.8,
+    -0.52
+  ],
+  "px_por_metro": 1.5,
+  "angulo_deg": 29.7
 }
