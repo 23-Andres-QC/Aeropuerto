@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import type { Camara, Mapa, Punto, Zona } from "../api";
 
-export type PersonaPlano = { id: number; x: number; y: number; color: string; etiqueta: string };
+/** `estimado`: en un hueco de detección (posición interpolada); `salio`: ya dejó el plano (su última posición). */
+export type PersonaPlano = { id: number; x: number; y: number; color: string; etiqueta: string; estado?: "visto" | "estimado" | "salio" };
 /** Flecha entre dos puntos del plano (flujo origen-destino), con grosor según su peso. */
 export type FlechaPlano = { desde: Punto; hacia: Punto; peso: number; etiqueta?: string };
-/** Trazo de un recorrido; `activo` lo dibuja como el rastro de alguien que sigue en el plano. */
-export type RecorridoPlano = { id: number | string; color: string; puntos: Punto[]; activo?: boolean };
+/** Trazo de un recorrido; `activo` lo dibuja como el rastro de alguien que sigue en el plano y `hueco` une un tramo sin detección. */
+export type RecorridoPlano = { id: number | string; color: string; puntos: Punto[]; activo?: boolean; hueco?: boolean };
 
 const props = withDefaults(
   defineProps<{
@@ -20,7 +21,11 @@ const props = withDefaults(
     flechas?: FlechaPlano[];
     borrador?: Punto[];
     dibujando?: boolean;
+    /** El borrador es una zona: se ve la línea hasta el cursor y un clic en el primer punto la cierra. */
+    trazarZona?: boolean;
     zonaActiva?: number | null;
+    /** La zona activa se mueve entera, se le arrastran los puntos, se agregan y se quitan. */
+    editarZonas?: boolean;
     mostrarCamaras?: boolean;
     camaras?: Camara[];
     editarCamaras?: boolean;
@@ -39,7 +44,9 @@ const props = withDefaults(
     flechas: () => [],
     borrador: () => [],
     dibujando: false,
+    trazarZona: false,
     zonaActiva: null,
+    editarZonas: false,
     mostrarCamaras: true,
     camaras: undefined,
     editarCamaras: false,
@@ -50,13 +57,21 @@ const props = withDefaults(
 );
 const emit = defineEmits<{
   punto: [p: Punto];
+  /** Clic en el primer punto del borrador: la zona queda cerrada. */
+  cerrar: [];
   zona: [id: number];
+  /** Nueva forma de una zona, al soltarla (movida, con un punto arrastrado, agregado o quitado). */
+  forma: [id: number, puntos: Punto[]];
   camara: [id: string];
   pose: [id: string, pose: { position?: Punto; angle_deg?: number }];
+  /** Clic en una parte vacía del plano (fuera de zonas y cámaras). */
+  fondo: [];
 }>();
 const svg = ref<SVGSVGElement>();
-type Arrastre = { id: string; modo: "mover" | "girar"; pos: Punto; angulo: number; ox: number; oy: number; movido: boolean; soltado: boolean };
+// cx/cy: dónde se presionó (px de pantalla). Nada se arrastra hasta pasar UMBRAL: un clic simple sigue siendo un clic.
+type Arrastre = { id: string; modo: "mover" | "girar"; pos: Punto; angulo: number; ox: number; oy: number; cx: number; cy: number; movido: boolean; soltado: boolean };
 const arrastre = ref<Arrastre | null>(null);
+const UMBRAL = 3;
 
 const k = computed(() => props.mapa.px_por_metro);
 const ancho = computed(() => props.mapa.tam_px[0]);
@@ -73,8 +88,23 @@ function reiniciarVista() {
 }
 // Solo se reinicia si cambia el marco del plano, no cada vez que se recarga la configuración.
 watch(() => `${props.mapa.tam_px.join()}|${props.mapa.px_por_metro}|${props.mapa.origen_m.join()}`, reiniciarVista, { immediate: true });
-/** Escala de la vista: los textos, puntos e íconos se multiplican por ella para no crecer al acercar. */
-const e = computed(() => vista.value.w / ancho.value);
+// Tamaño del plano en pantalla: el SVG se ajusta a su caja manteniendo la proporción (meet).
+const pantalla = ref({ w: 0, h: 0 });
+let observador: ResizeObserver | undefined;
+onMounted(() => {
+  if (!svg.value) return;
+  observador = new ResizeObserver(([caja]) => (pantalla.value = { w: caja.contentRect.width, h: caja.contentRect.height }));
+  observador.observe(svg.value);
+});
+onUnmounted(() => observador?.disconnect());
+/**
+ * Unidades del plano por píxel de pantalla: los textos, puntos, asas e íconos se multiplican por ella
+ * para verse siempre del mismo tamaño, sea el plano chico o grande y con cualquier zoom.
+ */
+const e = computed(() => {
+  const { w, h } = pantalla.value;
+  return w && h ? Math.max(vista.value.w / w, vista.value.h / h) : vista.value.w / ancho.value;
+});
 
 function acotar(v: { x: number; y: number; w: number; h: number }) {
   const w = Math.min(Math.max(v.w, ancho.value / 40), ancho.value);
@@ -96,17 +126,25 @@ function rueda(ev: WheelEvent) {
 }
 
 let paneo: { cx: number; cy: number; vx: number; vy: number; movido: boolean } | null = null;
-let suprimirClic = false;
+// Tras arrastrar, el clic que sigue al soltar (con el puntero capturado cae en el plano) no debe elegir ni soltar nada.
+let suprimirHasta = 0;
+const suprimir = () => (suprimirHasta = performance.now() + 400);
+const suprimido = () => performance.now() < suprimirHasta;
 
 function enSvg(ev: MouseEvent): DOMPoint | null {
   const matriz = svg.value?.getScreenCTM();
   return matriz ? new DOMPoint(ev.clientX, ev.clientY).matrixTransform(matriz.inverse()) : null;
 }
 
+/** Captura el puntero recién al empezar a arrastrar: así un clic simple llega a la zona o cámara que tocó. */
+function capturar(ev: PointerEvent) {
+  if (svg.value && !svg.value.hasPointerCapture(ev.pointerId)) svg.value.setPointerCapture(ev.pointerId);
+}
+const seMovio = (ev: PointerEvent, desde: { cx: number; cy: number }) => Math.hypot(ev.clientX - desde.cx, ev.clientY - desde.cy) > UMBRAL;
+
 function iniciarPaneo(ev: PointerEvent) {
   if (!props.zoom || !svg.value || vista.value.w >= ancho.value) return;
   paneo = { cx: ev.clientX, cy: ev.clientY, vx: vista.value.x, vy: vista.value.y, movido: false };
-  svg.value.setPointerCapture(ev.pointerId);
 }
 
 // --- Cámaras -------------------------------------------------------------
@@ -149,32 +187,162 @@ watch(
 
 function empezar(ev: PointerEvent, c: CamaraPlano, modo: "mover" | "girar") {
   emit("camara", c.id);
-  if (!props.editarCamaras || !svg.value) return;
-  arrastre.value = { id: c.id, modo, pos: c.pos, angulo: c.angulo, ox: c.x, oy: c.y, movido: false, soltado: false };
-  svg.value.setPointerCapture(ev.pointerId);
+  if (!props.editarCamaras) return;
+  arrastre.value = { id: c.id, modo, pos: c.pos, angulo: c.angulo, ox: c.x, oy: c.y, cx: ev.clientX, cy: ev.clientY, movido: false, soltado: false };
 }
+
+// --- Zonas: mover entera, arrastrar, agregar y quitar puntos -------------
+type ArrastreZona = {
+  id: number;
+  modo: "mover" | "vertice";
+  indice: number;
+  inicio: Punto;
+  original: Punto[];
+  puntos: Punto[];
+  cx: number;
+  cy: number;
+  movido: boolean;
+  soltado: boolean;
+};
+const arrastreZona = ref<ArrastreZona | null>(null);
+
+// Tras soltar, la forma arrastrada se mantiene hasta que llegan las zonas guardadas.
+watch(
+  () => props.zonas,
+  () => {
+    if (arrastreZona.value?.soltado) arrastreZona.value = null;
+  },
+);
+
+/** Zonas con la forma que se está arrastrando; la activa va al final, encima de las demás. */
+const zonasPlano = computed(() => {
+  const a = arrastreZona.value;
+  const lista = props.zonas.map((z) => (a && a.id === z.zone_id ? { ...z, points: a.puntos } : z));
+  const activa = lista.findIndex((z) => z.zone_id === props.zonaActiva);
+  if (activa >= 0) lista.push(...lista.splice(activa, 1));
+  return lista;
+});
+const zonaEditable = computed(() => (props.editarZonas && !props.dibujando ? zonasPlano.value.find((z) => z.zone_id === props.zonaActiva) : undefined));
+/** Punto medio de cada lado de la zona editable: arrastrarlo agrega un punto ahí. */
+const medios = computed(() => {
+  const ps = zonaEditable.value?.points ?? [];
+  return ps.map((p, i) => {
+    const q = ps[(i + 1) % ps.length];
+    return [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2] as Punto;
+  });
+});
+
+function empezarZona(ev: PointerEvent, z: Zona) {
+  if (!zonaEditable.value || z.zone_id !== zonaEditable.value.zone_id) return;
+  const p = enSvg(ev);
+  if (!p) return;
+  ev.stopPropagation(); // la zona elegida se arrastra, no desplaza el plano
+  arrastreZona.value = {
+    id: z.zone_id,
+    modo: "mover",
+    indice: -1,
+    inicio: aMetros(p),
+    original: z.points,
+    puntos: z.points,
+    cx: ev.clientX,
+    cy: ev.clientY,
+    movido: false,
+    soltado: false,
+  };
+}
+
+function empezarVertice(ev: PointerEvent, indice: number, nuevo: boolean) {
+  const z = zonaEditable.value;
+  if (!z) return;
+  const puntosZona = [...z.points];
+  if (nuevo) puntosZona.splice(indice, 0, medios.value[indice - 1]);
+  // Un punto nuevo cuenta aunque no se arrastre: un clic en el punto chico ya lo agrega.
+  arrastreZona.value = {
+    id: z.zone_id,
+    modo: "vertice",
+    indice,
+    inicio: puntosZona[indice],
+    original: z.points,
+    puntos: puntosZona,
+    cx: ev.clientX,
+    cy: ev.clientY,
+    movido: nuevo,
+    soltado: false,
+  };
+}
+
+function quitarVertice(indice: number) {
+  const z = zonaEditable.value;
+  if (!z || z.points.length <= 3) return;
+  emit("forma", z.zone_id, z.points.filter((_, i) => i !== indice));
+}
+
+function moverZona(ev: PointerEvent, p: DOMPoint) {
+  const a = arrastreZona.value;
+  if (!a || a.soltado) return;
+  if (!a.movido && !seMovio(ev, a)) return;
+  capturar(ev);
+  a.movido = true;
+  const [x, y] = aMetros(p);
+  if (a.modo === "vertice") {
+    a.puntos = a.puntos.map((q, i) => (i === a.indice ? [x, y] : q));
+    return;
+  }
+  const [dx, dy] = [x - a.inicio[0], y - a.inicio[1]];
+  a.puntos = a.original.map(([qx, qy]) => [+(qx + dx).toFixed(2), +(qy + dy).toFixed(2)]);
+}
+
+// --- Borrador de una zona nueva ------------------------------------------
+const cursor = ref<Punto | null>(null);
+/** El cursor está sobre el primer punto de un borrador que ya puede cerrarse. */
+const cierra = computed(() => {
+  const b = props.borrador;
+  const c = cursor.value;
+  if (!props.trazarZona || b.length < 3 || !c) return false;
+  return Math.hypot(px(c[0]) - px(b[0][0]), py(c[1]) - py(b[0][1])) < 12 * e.value;
+});
 
 function mover(ev: PointerEvent) {
   if (paneo && svg.value) {
+    if (!paneo.movido && !seMovio(ev, paneo)) return;
+    capturar(ev);
+    paneo.movido = true;
     const escala = 1 / (svg.value.getScreenCTM()?.a ?? 1);
     const dx = (ev.clientX - paneo.cx) * escala;
     const dy = (ev.clientY - paneo.cy) * escala;
-    if (Math.hypot(ev.clientX - paneo.cx, ev.clientY - paneo.cy) > 4) paneo.movido = true;
     vista.value = acotar({ ...vista.value, x: paneo.vx - dx, y: paneo.vy - dy });
     return;
   }
+  const p = enSvg(ev);
+  if (!p) return;
+  if (props.dibujando) cursor.value = aMetros(p);
+  if (arrastreZona.value) {
+    moverZona(ev, p);
+    return;
+  }
   const a = arrastre.value;
-  const p = a && !a.soltado ? enSvg(ev) : null;
-  if (!a || !p) return;
+  if (!a || a.soltado || (!a.movido && !seMovio(ev, a))) return;
+  capturar(ev);
+  a.movido = true;
   if (a.modo === "mover") a.pos = aMetros(p);
   else a.angulo = +((((Math.atan2(a.oy - p.y, p.x - a.ox) * 180) / Math.PI) + 360) % 360).toFixed(1);
-  a.movido = true;
 }
 
 function soltar() {
   if (paneo) {
-    suprimirClic = paneo.movido;
+    if (paneo.movido) suprimir();
     paneo = null;
+    return;
+  }
+  const z = arrastreZona.value;
+  if (z && !z.soltado) {
+    if (!z.movido) {
+      arrastreZona.value = null;
+      return;
+    }
+    z.soltado = true;
+    suprimir();
+    emit("forma", z.id, z.puntos);
     return;
   }
   const a = arrastre.value;
@@ -184,16 +352,24 @@ function soltar() {
     return;
   }
   a.soltado = true;
+  suprimir();
   emit("pose", a.id, a.modo === "mover" ? { position: a.pos } : { angle_deg: a.angulo });
 }
 
 function clic(ev: MouseEvent) {
-  if (suprimirClic) {
-    suprimirClic = false;
+  if (suprimido()) return;
+  if (!props.dibujando) {
+    emit("fondo");
     return;
   }
-  const p = props.dibujando ? enSvg(ev) : null;
-  if (p) emit("punto", aMetros(p));
+  const p = enSvg(ev);
+  if (!p) return;
+  if (cierra.value) emit("cerrar");
+  else emit("punto", aMetros(p));
+}
+
+function clicZona(z: Zona) {
+  if (!suprimido()) emit("zona", z.zone_id);
 }
 
 // --- Cuadrícula, calor, flechas y escala -----------------------------------
@@ -244,9 +420,12 @@ const elementos = computed(() => {
     piso: !!props.mapa.piso_L_m?.length && !props.mapa.fondo,
     obstaculos: !props.mapa.fondo && !!props.mapa.obstaculos?.length,
     camaras: props.mostrarCamaras && camaras.value.length > 0,
-    personas: props.personas.length > 0,
-    rastros: props.recorridos.some((r) => r.activo),
-    recorridos: props.recorridos.some((r) => !r.activo),
+    personas: props.personas.some((p) => (p.estado ?? "visto") === "visto"),
+    estimadas: props.personas.some((p) => p.estado === "estimado"),
+    salieron: props.personas.some((p) => p.estado === "salio"),
+    rastros: props.recorridos.some((r) => r.activo && !r.hueco),
+    recorridos: props.recorridos.some((r) => !r.activo && !r.hueco),
+    huecos: props.recorridos.some((r) => r.hueco),
     calor: props.calor.length > 0,
     flechas: props.flechas.length > 0,
   };
@@ -272,6 +451,7 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
       @pointermove="mover"
       @pointerup="soltar"
       @pointercancel="soltar"
+      @pointerleave="cursor = null"
     >
       <rect :width="ancho" :height="alto" class="fondo" />
       <image v-if="mapa.fondo" :href="mapa.fondo.url" x="0" y="0" :width="ancho" :height="alto" preserveAspectRatio="none" class="dibujo" />
@@ -283,20 +463,55 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
       <line v-for="l in lineas.verticales" :key="'v' + l.v" :x1="l.v" :x2="l.v" y1="0" :y2="alto" :class="l.fuerte ? 'rejilla-5' : 'rejilla'" />
       <line v-for="l in lineas.horizontales" :key="'h' + l.v" :y1="l.v" :y2="l.v" x1="0" :x2="ancho" :class="l.fuerte ? 'rejilla-5' : 'rejilla'" />
       <rect v-for="(c, i) in celdas" :key="'c' + i" :x="c.x" :y="c.y" :width="c.lado" :height="c.lado" :fill="c.color"><title>{{ c.n }}</title></rect>
-      <g v-for="z in zonas" :key="'z' + z.zone_id" class="zona" :class="{ activa: z.zone_id === zonaActiva }" @click.stop="emit('zona', z.zone_id)">
+      <g
+        v-for="z in zonasPlano"
+        :key="'z' + z.zone_id"
+        class="zona"
+        :class="{ activa: z.zone_id === zonaActiva, movible: zonaEditable?.zone_id === z.zone_id }"
+        @click.stop="clicZona(z)"
+        @pointerdown="empezarZona($event, z)"
+      >
         <polygon :points="puntos(z.points)" :style="{ fill: (z.color || '#3d8bff') + '33', stroke: z.color || '#3d8bff' }" />
         <text :x="px(centro(z.points)[0])" :y="py(centro(z.points)[1])" class="zona-nombre">{{ z.name }}</text>
+      </g>
+      <g v-if="zonaEditable" class="asas-zona">
+        <circle
+          v-for="(m, i) in medios"
+          :key="'m' + i"
+          :cx="px(m[0])"
+          :cy="py(m[1])"
+          :r="4.5 * e"
+          class="asa-medio"
+          @pointerdown.stop="empezarVertice($event, i + 1, true)"
+          @click.stop
+        >
+          <title>Arrastra para agregar un punto</title>
+        </circle>
+        <circle
+          v-for="(p, i) in zonaEditable.points"
+          :key="'p' + i"
+          :cx="px(p[0])"
+          :cy="py(p[1])"
+          :r="6.5 * e"
+          class="asa-vertice"
+          @pointerdown.stop="empezarVertice($event, i, false)"
+          @click.stop
+          @dblclick.stop="quitarVertice(i)"
+        >
+          <title>Arrastra para mover el punto · doble clic para quitarlo</title>
+        </circle>
       </g>
       <polyline
         v-for="(r, i) in recorridos"
         :key="'r' + i"
         :points="puntos(r.puntos)"
-        :class="r.activo ? 'rastro' : 'recorrido'"
+        :class="r.hueco ? 'hueco' : r.activo ? 'rastro' : 'recorrido'"
         :style="{ stroke: r.color }"
       />
       <g v-if="borrador.length">
-        <polyline :points="puntos(borrador)" class="borrador" />
-        <circle v-for="(p, i) in borrador" :key="'b' + i" :cx="px(p[0])" :cy="py(p[1])" :r="4 * e" class="vertice" />
+        <polygon v-if="trazarZona && borrador.length >= 3" :points="puntos(borrador)" class="borrador-relleno" />
+        <polyline :points="puntos(trazarZona && cursor && !cierra ? [...borrador, cursor] : borrador)" class="borrador" />
+        <circle v-for="(p, i) in borrador" :key="'b' + i" :cx="px(p[0])" :cy="py(p[1])" :r="(i === 0 && cierra ? 9 : 4) * e" class="vertice" :class="{ primero: i === 0 && trazarZona }" />
       </g>
       <g v-if="mostrarCamaras">
         <g
@@ -332,8 +547,8 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
         <path :d="f.d" :stroke-width="f.ancho * e" marker-end="url(#flecha-flujo)" />
         <text :x="f.mx" :y="f.my">{{ f.etiqueta }}</text>
       </g>
-      <g v-for="p in personas" :key="'p' + p.id">
-        <circle :cx="px(p.x)" :cy="py(p.y)" :r="9 * e" :fill="p.color" class="persona" />
+      <g v-for="p in personas" :key="'p' + p.id" class="persona-g" :class="p.estado ?? 'visto'">
+        <circle :cx="px(p.x)" :cy="py(p.y)" :r="(p.estado === 'salio' ? 6 : 9) * e" :fill="p.color" class="persona" />
         <text :x="px(p.x) + 12 * e" :y="py(p.y) - 8 * e" class="persona-etiqueta" :style="{ fill: p.color }">{{ p.etiqueta }}</text>
       </g>
       <g class="escala" :transform="`translate(${vista.x + 14 * e} ${vista.y + vista.h - 18 * e})`">
@@ -364,8 +579,11 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
         Cámara
       </li>
       <li v-if="elementos.personas"><span class="muestra m-persona"></span>Persona (G = ID global)</li>
+      <li v-if="elementos.estimadas"><span class="muestra m-persona estimada"></span>Sin detección un momento (posición estimada)</li>
+      <li v-if="elementos.salieron"><span class="muestra m-persona salio"></span>Ya salió (última posición)</li>
       <li v-if="elementos.rastros"><span class="muestra m-linea gruesa"></span>Rastro de quien sigue en el plano</li>
       <li v-if="elementos.recorridos"><span class="muestra m-linea"></span>Recorrido (un color por persona)</li>
+      <li v-if="elementos.huecos"><span class="muestra m-linea punteada"></span>Tramo sin detección</li>
       <li v-if="elementos.calor"><span class="muestra m-calor"></span>Menor → mayor presencia</li>
       <li v-if="elementos.flechas">
         <svg class="muestra-icono" viewBox="0 0 24 12" aria-hidden="true"><path d="M 1 6 H 17" class="m-flujo" /><path d="M 15 1 L 23 6 L 15 11 Z" class="m-punta" /></svg>
@@ -394,6 +612,11 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
 }
 .lienzo-plano.dibujando {
   cursor: crosshair;
+}
+/* Mientras se dibuja, los clics caen en el plano aunque haya zonas o cámaras debajo. */
+.lienzo-plano.dibujando .zona,
+.lienzo-plano.dibujando .camara {
+  pointer-events: none;
 }
 .lienzo-plano line,
 .lienzo-plano polygon,
@@ -439,19 +662,56 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
 .zona polygon {
   stroke-width: 2;
   cursor: pointer;
+  transition: stroke-width 0.12s;
+}
+.zona:hover polygon {
+  stroke-width: 3;
 }
 .zona.activa polygon {
   stroke-width: 4;
+}
+.zona.movible polygon {
+  cursor: move;
+  touch-action: none;
 }
 .zona-nombre {
   font-size: calc(13px * var(--e));
   font-weight: 650;
   fill: var(--ink);
   text-anchor: middle;
+  dominant-baseline: middle;
   pointer-events: none;
   paint-order: stroke;
   stroke: var(--glass-strong);
   stroke-width: calc(3px * var(--e));
+  transition: font-size 0.12s;
+}
+/* Al pasar el cursor (o con la zona elegida) su nombre se agranda. */
+.zona:hover .zona-nombre,
+.zona.activa .zona-nombre {
+  font-size: calc(20px * var(--e));
+  font-weight: 750;
+  stroke-width: calc(4px * var(--e));
+}
+.asa-vertice {
+  fill: #fff;
+  stroke: var(--blue-600);
+  stroke-width: 2.5;
+  cursor: grab;
+  touch-action: none;
+  vector-effect: non-scaling-stroke;
+}
+.asa-medio {
+  fill: var(--blue-600);
+  fill-opacity: 0.45;
+  stroke: #fff;
+  stroke-width: 1.5;
+  cursor: copy;
+  touch-action: none;
+  vector-effect: non-scaling-stroke;
+}
+.asa-medio:hover {
+  fill-opacity: 0.9;
 }
 .recorrido {
   fill: none;
@@ -460,20 +720,40 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
   stroke-linejoin: round;
   opacity: 0.6;
 }
+.hueco {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+  stroke-linecap: round;
+  opacity: 0.5;
+}
 .borrador {
-  fill: rgba(61, 139, 255, 0.15);
+  fill: none;
   stroke: var(--blue-600);
   stroke-width: 2;
   stroke-dasharray: 6 4;
 }
+.borrador-relleno {
+  fill: rgba(61, 139, 255, 0.15);
+  stroke: none;
+}
 .vertice {
   fill: var(--blue-600);
+}
+.vertice.primero {
+  fill: #fff;
+  stroke: var(--blue-600);
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
 }
 .camara .cono {
   fill: rgba(61, 139, 255, 0.14);
   stroke: rgba(61, 139, 255, 0.45);
   stroke-width: 1;
   pointer-events: none;
+}
+.camara .icono {
+  cursor: pointer;
 }
 .camara .cuerpo,
 .camara .lente {
@@ -518,6 +798,7 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
 }
 .camara-nombre {
   text-anchor: middle;
+  pointer-events: none;
 }
 .flecha path {
   fill: none;
@@ -550,12 +831,22 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
   stroke: #fff;
   stroke-width: 2;
 }
+.persona-g.estimado .persona {
+  fill-opacity: 0.45;
+  stroke-dasharray: 3 2;
+}
+.persona-g.salio {
+  opacity: 0.45;
+}
 .persona-etiqueta {
   font-size: calc(13px * var(--e));
   font-weight: 700;
   paint-order: stroke;
   stroke: var(--glass-strong);
   stroke-width: calc(3px * var(--e));
+}
+.persona-g.salio .persona-etiqueta {
+  font-size: calc(11px * var(--e));
 }
 .controles-zoom {
   position: absolute;
@@ -607,6 +898,15 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
   border-color: #fff;
   box-shadow: 0 0 0 1px var(--ink-faint);
 }
+.m-persona.estimada {
+  opacity: 0.5;
+  border-style: dashed;
+}
+.m-persona.salio {
+  width: 9px;
+  height: 9px;
+  opacity: 0.45;
+}
 .m-linea {
   height: 0;
   width: 18px;
@@ -617,6 +917,10 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
 }
 .m-linea.gruesa {
   border-top-width: 3px;
+}
+.m-linea.punteada {
+  border-top-style: dashed;
+  opacity: 0.5;
 }
 .m-calor {
   width: 40px;

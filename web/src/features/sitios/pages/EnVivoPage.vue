@@ -28,24 +28,33 @@ const camarasVideo = computed(() =>
 );
 const duracion = computed(() => replay.value?.duracion_s ?? 0);
 
-function posicion(p: Replay["personas"][number], instante: number): { x: number; y: number } | null {
+/** Un hueco sin detección de más de esto se ve como tal (punto atenuado, tramo punteado). */
+const HUECO_S = 1;
+
+/**
+ * Dónde está una persona en `instante`, sin perderla en el recorrido: antes de aparecer, en ningún
+ * lado; entre su primer y su último punto, interpolada (también a través de un hueco sin detección,
+ * «estimado»); pasado su último punto, se queda en él («salio»).
+ */
+function posicion(p: Replay["personas"][number], instante: number): { x: number; y: number; estado: NonNullable<PersonaPlano["estado"]> } | null {
   const paso = replay.value?.paso_s ?? 0.2;
   const objetivo = instante / paso;
+  const ultimo = p.k.length - 1;
+  if (ultimo < 0 || objetivo < p.k[0]) return null;
+  if (objetivo >= p.k[ultimo]) {
+    return { x: p.x[ultimo], y: p.y[ultimo], estado: (objetivo - p.k[ultimo]) * paso > HUECO_S ? "salio" : "visto" };
+  }
   let lo = 0;
-  let hi = p.k.length - 1;
-  if (hi < 0 || objetivo < p.k[0] - 2 || objetivo > p.k[hi] + 2) return null;
+  let hi = ultimo;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;
     if (p.k[mid] <= objetivo) lo = mid;
     else hi = mid - 1;
   }
   const i = lo;
-  if (Math.abs(p.k[i] - objetivo) * paso > 1 && (i + 1 >= p.k.length || (p.k[i + 1] - objetivo) * paso > 1)) return null;
-  if (i + 1 < p.k.length && p.k[i] <= objetivo && p.k[i + 1] - p.k[i] <= 5) {
-    const f = (objetivo - p.k[i]) / (p.k[i + 1] - p.k[i]);
-    return { x: p.x[i] + f * (p.x[i + 1] - p.x[i]), y: p.y[i] + f * (p.y[i + 1] - p.y[i]) };
-  }
-  return { x: p.x[i], y: p.y[i] };
+  const f = (objetivo - p.k[i]) / (p.k[i + 1] - p.k[i]);
+  const hueco = (p.k[i + 1] - p.k[i]) * paso > HUECO_S;
+  return { x: p.x[i] + f * (p.x[i + 1] - p.x[i]), y: p.y[i] + f * (p.y[i + 1] - p.y[i]), estado: hueco ? "estimado" : "visto" };
 }
 
 /** Índice del último punto registrado hasta `instante` (-1 si la persona aún no aparece). */
@@ -62,30 +71,35 @@ function ultimoPunto(p: Replay["personas"][number], instante: number) {
   return lo;
 }
 
-// El rastro se queda: quien está en el plano lleva todo su recorrido hasta el instante actual,
-// y quien ya salió deja dibujado el recorrido completo que hizo (cortado donde no se lo vio).
+// Nadie se pierde en el gráfico: cada persona lleva su punto y todo su recorrido hasta el instante
+// actual; donde no se la vio, el tramo se une punteado, y quien ya salió queda en su último punto.
 const trazos = computed(() => {
   const personas: PersonaPlano[] = [];
   const recorridos: RecorridoPlano[] = [];
   const paso = replay.value?.paso_s ?? 0.2;
   for (const p of replay.value?.personas ?? []) {
-    const fin = ultimoPunto(p, t.value);
-    if (fin < 0) continue;
-    const partes = tramos(p, paso, fin);
     const actual = posicion(p, t.value);
+    if (!actual) continue;
+    const partes = tramos(p, paso, ultimoPunto(p, t.value));
     const color = colorPersona(p.numero);
-    if (actual) {
-      partes[partes.length - 1].push([actual.x, actual.y]);
-      personas.push({ id: p.numero, x: actual.x, y: actual.y, color, etiqueta: `G${p.numero}` });
+    const sigue = actual.estado !== "salio";
+    const final = partes[partes.length - 1];
+    if (actual.estado === "visto") final.push([actual.x, actual.y]);
+    for (const puntos of partes) if (puntos.length > 1) recorridos.push({ id: p.numero, color, puntos, activo: sigue });
+    for (let j = 1; j < partes.length; j++) {
+      const antes = partes[j - 1];
+      recorridos.push({ id: p.numero, color, puntos: [antes[antes.length - 1], partes[j][0]], hueco: true });
     }
-    for (const puntos of partes) if (puntos.length > 1) recorridos.push({ id: p.numero, color, puntos, activo: !!actual });
+    if (actual.estado === "estimado") recorridos.push({ id: p.numero, color, puntos: [final[final.length - 1], [actual.x, actual.y]], hueco: true });
+    personas.push({ id: p.numero, x: actual.x, y: actual.y, color, etiqueta: `G${p.numero}`, estado: actual.estado });
   }
   return { personas, recorridos };
 });
 const personas = computed(() => trazos.value.personas);
+const enPlano = computed(() => personas.value.filter((p) => p.estado !== "salio"));
 
 const presentes = computed(() => {
-  const ids = new Set(personas.value.map((p) => p.id));
+  const ids = new Set(enPlano.value.map((p) => p.id));
   return (replay.value?.personas ?? []).filter((p) => ids.has(p.numero));
 });
 
@@ -201,7 +215,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
     <section class="panel plano-panel">
       <div class="panel-heading">
         <h2>Plano · {{ (mapa.tam_px[0] / mapa.px_por_metro).toFixed(0) }} × {{ (mapa.tam_px[1] / mapa.px_por_metro).toFixed(0) }} m</h2>
-        <span v-if="replay" class="heading-meta"><span class="pill">{{ personas.length }} en el plano</span><span class="pill">{{ replay.personas.length }} personas</span></span>
+        <span v-if="replay" class="heading-meta"><span class="pill">{{ enPlano.length }} en el plano</span><span class="pill">{{ replay.personas.length }} personas</span></span>
         <span v-else-if="!cargando && !sesiones.length" class="pill">sin sesiones</span>
       </div>
       <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :personas="personas" :recorridos="trazos.recorridos" :camaras="config?.cameras" zoom />

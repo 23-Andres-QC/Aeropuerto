@@ -1,479 +1,402 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
-import { cantidad } from "../../../shared/format";
-import { api, mapaDelSitio, TIPOS_DE_LOCAL, TIPOS_ZONA, type Camara, type Config, type DatosCamara, type Punto, type Sesion } from "../api";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { api, mapaDelSitio, type Camara, type Config, type Punto, type Zona } from "../api";
 import PlanoSitio from "../components/PlanoSitio.vue";
-import { recordarSitio, useSitios } from "../useSitios";
+import { useSitios } from "../useSitios";
 
-type Edicion = { name: string; stream_uri: string; active: boolean; x: number | null; y: number | null; angulo: number | null };
+// El plano base del sitio lo publica el modelo (Build) y no se toca aquí: solo se editan zonas y cámaras.
+const COLORES = ["#3d8bff", "#16a34a", "#f59e0b", "#a855f7", "#ef4444", "#0ea5e9", "#db2777", "#65a30d", "#475569"];
 
-const router = useRouter();
-const { slug, sitios, recargar: recargarSitios } = useSitios();
+const { slug } = useSitios();
 const config = ref<Config>();
 const error = ref("");
-const aviso = ref("");
-const modo = ref<"zona" | "camara" | null>(null);
+const guardado = ref("");
+/** Modo edición: agregar zonas y cámaras, y arrastrar formas y cámaras en el plano. */
+const editando = ref(false);
+const dibujo = ref<"zona" | "camara" | null>(null);
 const borrador = ref<Punto[]>([]);
 const zonaActiva = ref<number | null>(null);
 const camaraActiva = ref<string | null>(null);
-const nuevaZona = ref<{ name: string; zone_type: string; color: string; local_id: number | null }>({
-  name: "",
-  zone_type: "PASILLO",
-  color: "#3d8bff",
-  local_id: null,
-});
-const nuevaCamara = ref<{ camera_id: string; name: string; stream_uri: string; angulo: number; position: Punto | null }>({
-  camera_id: "",
-  name: "",
-  stream_uri: "",
-  angulo: 0,
-  position: null,
-});
-const nuevoLocal = ref({ name: "", category: "" });
-const edicionLocal = ref<{ id: number; name: string; category: string } | null>(null);
-const sesiones = ref<Sesion[]>([]);
-const datosSitio = ref({ name: "", description: "" });
-const editandoSitio = ref(false);
-const nuevoSitio = ref<{ slug: string; name: string; description: string } | null>(null);
-const edicion = ref<Record<string, Edicion>>({});
-const guardando = ref("");
+const datosZona = ref({ name: "", color: COLORES[0] });
+const datosCamara = ref({ name: "", active: true, x: 0, y: 0, angulo: 0 });
+const nombreZona = ref<HTMLInputElement>();
+const nombreCamara = ref<HTMLInputElement>();
+let avisoGuardado: ReturnType<typeof setTimeout> | undefined;
 
 const mapa = computed(() => mapaDelSitio(config.value));
-const sitio = computed(() => config.value?.site);
-const requiereLocal = computed(() => TIPOS_DE_LOCAL.has(nuevaZona.value.zone_type));
-const nombreLocal = (id: number | null) => config.value?.locales.find((l) => l.local_id === id)?.name ?? "";
-const zonasDeLocal = (id: number) => (config.value?.zones ?? []).filter((z) => z.local_id === id);
-const informe = computed(() => {
-  const inf = mapa.value?.informe ?? {};
-  return Object.entries(inf)
+const zonaSel = computed(() => config.value?.zones.find((z) => z.zone_id === zonaActiva.value));
+const camaraSel = computed(() => config.value?.cameras.find((c) => c.camera_id === camaraActiva.value));
+const informe = computed(() =>
+  Object.entries(mapa.value?.informe ?? {})
     .filter(([clave]) => clave.includes("->"))
-    .map(([par, v]) => ({ par, pares: v.pares ?? 0, residuo_mediano_m: v.residuo_mediano_m ?? 0, menos_de_1m: v.menos_de_1m ?? 0 }));
+    .map(([par, v]) => ({ par, pares: v.pares ?? 0, residuo_mediano_m: v.residuo_mediano_m ?? 0, menos_de_1m: v.menos_de_1m ?? 0 })),
+);
+const ayudaDibujo = computed(() => {
+  if (dibujo.value === "camara") return "Haz clic en el plano donde está la cámara.";
+  const n = borrador.value.length;
+  if (n === 0) return "Haz clic en el plano para marcar el primer punto de la zona.";
+  if (n < 3) return `Sigue marcando puntos (${n} de al menos 3).`;
+  return "Haz clic en el primer punto para cerrar la zona (o «Terminar zona»).";
 });
-const puntosPlano = computed(() => (modo.value === "camara" ? (nuevaCamara.value.position ? [nuevaCamara.value.position] : []) : borrador.value));
 
-function pose(c: Camara) {
-  return mapa.value?.camaras?.[c.camera_id];
-}
-
-function editable(c: Camara): Edicion {
-  return {
-    name: c.name,
-    stream_uri: c.stream_uri,
-    active: c.active,
-    x: c.position ? +c.position[0].toFixed(2) : null,
-    y: c.position ? +c.position[1].toFixed(2) : null,
-    angulo: c.angle_deg != null ? +c.angle_deg.toFixed(1) : null,
-  };
-}
-
-async function accion(tarea: () => Promise<unknown>, exito: string, recargarTodo = true) {
-  error.value = aviso.value = "";
-  try {
-    await tarea();
-    aviso.value = exito;
-    if (recargarTodo) await cargar();
-  } catch (e) {
-    error.value = (e as Error).message;
-  }
+function avisar(texto: string) {
+  guardado.value = texto;
+  clearTimeout(avisoGuardado);
+  avisoGuardado = setTimeout(() => (guardado.value = ""), 2500);
 }
 
 async function cargar() {
   try {
-    [config.value, sesiones.value] = await Promise.all([api.config(slug.value), api.sesiones(slug.value)]);
-    edicion.value = Object.fromEntries(config.value.cameras.map((c) => [c.camera_id, editable(c)]));
-    datosSitio.value = { name: config.value.site.name, description: config.value.site.description };
+    config.value = await api.config(slug.value);
+    if (zonaActiva.value != null && !zonaSel.value) zonaActiva.value = null;
+    if (camaraActiva.value != null && !camaraSel.value) camaraActiva.value = null;
   } catch (e) {
     error.value = (e as Error).message;
   }
 }
 
-// --- Sitio ---------------------------------------------------------------
-async function guardarSitio() {
-  await accion(async () => {
-    await api.actualizarSitio(slug.value, { name: datosSitio.value.name.trim(), description: datosSitio.value.description.trim() });
-    await recargarSitios();
-  }, "Sitio guardado en la base de datos.");
-  if (!error.value) editandoSitio.value = false;
-}
+type Resultado<T> = { ok: true; valor: T } | { ok: false };
 
-function cancelarSitio() {
-  editandoSitio.value = false;
-  if (config.value) datosSitio.value = { name: config.value.site.name, description: config.value.site.description };
-}
-
-async function crearSitio() {
-  if (!nuevoSitio.value) return;
+async function tarea<T>(hacer: () => Promise<T>, exito: string): Promise<Resultado<T>> {
   error.value = "";
   try {
-    const s = await api.crearSitio(nuevoSitio.value);
-    await recargarSitios();
-    nuevoSitio.value = null;
-    await router.push(`/sitios/${s.slug}/configuracion`);
+    const valor = await hacer();
+    avisar(exito);
+    return { ok: true, valor };
   } catch (e) {
     error.value = (e as Error).message;
+    await cargar(); // lo que se ve vuelve a ser lo guardado
+    return { ok: false };
   }
 }
 
-async function borrarSitio() {
-  if (!sitio.value || !confirm(`¿Eliminar el sitio «${sitio.value.name}» con sus cámaras, locales y zonas?`)) return;
+// --- Selección -----------------------------------------------------------
+function elegirZona(id: number) {
+  if (dibujo.value) return;
+  const z = config.value?.zones.find((o) => o.zone_id === id);
+  if (!z) return;
+  camaraActiva.value = null;
+  zonaActiva.value = id;
+  datosZona.value = { name: z.name, color: z.color || COLORES[0] };
+}
+
+function elegirCamara(id: string) {
+  if (dibujo.value) return;
+  const c = config.value?.cameras.find((o) => o.camera_id === id);
+  if (!c) return;
+  zonaActiva.value = null;
+  camaraActiva.value = id;
+  datosCamara.value = {
+    name: c.name,
+    active: c.active,
+    x: c.position ? +c.position[0].toFixed(2) : 0,
+    y: c.position ? +c.position[1].toFixed(2) : 0,
+    angulo: c.angle_deg != null ? Math.round(c.angle_deg) : 0,
+  };
+}
+
+function soltarSeleccion() {
+  zonaActiva.value = null;
+  camaraActiva.value = null;
+}
+
+function activarEdicion() {
+  editando.value = true;
   error.value = "";
-  try {
-    await api.borrarSitio(slug.value);
-    await recargarSitios();
-    // El sitio borrado era el último visitado: el inicio pasa a otro que sí existe.
-    const siguiente = sitios.value[0]?.slug;
-    recordarSitio(siguiente ?? "esan");
-    await router.push(siguiente ? `/sitios/${siguiente}/configuracion` : "/");
-  } catch (e) {
-    error.value = (e as Error).message;
-  }
 }
 
-function borrarSesion(s: Sesion) {
-  const detalle = `${cantidad(s.identities, "persona")} y ${s.points.toLocaleString()} puntos`;
-  if (!confirm(`¿Eliminar la sesión «${s.name || s.session_id.slice(0, 8)}» con sus ${detalle} y su análisis? No se puede deshacer.`)) return;
-  return accion(async () => {
-    await api.borrarSesion(slug.value, s.session_id);
-    await recargarSitios();
-  }, "Sesión eliminada de la base de datos.");
+function terminarEdicion() {
+  cancelarDibujo();
+  editando.value = false;
+}
+
+// --- Zonas ---------------------------------------------------------------
+function reemplazarZona(z: Zona) {
+  if (!config.value) return;
+  config.value.zones = config.value.zones.map((o) => (o.zone_id === z.zone_id ? z : o));
+}
+
+/** Guarda la zona conservando lo que no se edita aquí (tipo y local, que usa la Parte III). */
+function guardarZona(z: Zona, cambios: Partial<Pick<Zona, "name" | "color" | "points">>) {
+  const datos = { local_id: z.local_id, zone_type: z.zone_type, name: z.name, color: z.color, points: z.points, ...cambios };
+  return tarea(async () => {
+    const guardada = await api.guardarZona(slug.value, datos, z.zone_id);
+    reemplazarZona(guardada);
+    return guardada;
+  }, "Zona guardada");
+}
+
+function guardarForma(id: number, puntos: Punto[]) {
+  const z = config.value?.zones.find((o) => o.zone_id === id);
+  if (z) return guardarZona(z, { points: puntos });
+}
+
+function guardarDatosZona() {
+  const z = zonaSel.value;
+  const nombre = datosZona.value.name.trim();
+  if (!z) return;
+  if (!nombre) {
+    datosZona.value.name = z.name;
+    return;
+  }
+  if (nombre !== z.name || datosZona.value.color !== z.color) return guardarZona(z, { name: nombre, color: datosZona.value.color });
+}
+
+function elegirColor(color: string) {
+  datosZona.value.color = color;
+  return guardarDatosZona();
+}
+
+function nombreNuevaZona() {
+  const nombres = new Set(config.value?.zones.map((z) => z.name));
+  let n = (config.value?.zones.length ?? 0) + 1;
+  while (nombres.has(`Zona ${n}`)) n++;
+  return `Zona ${n}`;
+}
+
+function empezarZona() {
+  soltarSeleccion();
+  dibujo.value = "zona";
+  borrador.value = [];
+  error.value = "";
+}
+
+function cancelarDibujo() {
+  dibujo.value = null;
+  borrador.value = [];
+}
+
+function deshacerPunto() {
+  borrador.value.pop();
+}
+
+async function cerrarZona() {
+  if (dibujo.value !== "zona" || borrador.value.length < 3) return;
+  const puntos = borrador.value;
+  const nueva = await tarea(
+    () =>
+      api.guardarZona(slug.value, {
+        name: nombreNuevaZona(),
+        zone_type: "OTRO",
+        color: COLORES[(config.value?.zones.length ?? 0) % COLORES.length],
+        local_id: null,
+        points: puntos,
+      }),
+    "Zona creada",
+  );
+  if (!nueva.ok) return;
+  cancelarDibujo();
+  await cargar();
+  elegirZona(nueva.valor.zone_id);
+  // Lista para ponerle nombre: se escribe encima de «Zona N».
+  await nextTick();
+  nombreZona.value?.focus();
+  nombreZona.value?.select();
+}
+
+async function borrarZona(z: Zona) {
+  if (!confirm(`¿Eliminar la zona «${z.name}»?`)) return;
+  const r = await tarea(() => api.borrarZona(slug.value, z.zone_id), `Zona «${z.name}» eliminada`);
+  if (!r.ok) return;
+  zonaActiva.value = null;
+  await cargar();
 }
 
 // --- Cámaras -------------------------------------------------------------
-// Sustituye una cámara sin recargar todo, para no perder lo que se esté editando en otras tarjetas.
-function reemplazar(c: Camara) {
+function reemplazarCamara(c: Camara) {
   if (!config.value) return;
-  const otras = config.value.cameras.filter((o) => o.camera_id !== c.camera_id);
-  config.value.cameras = [...otras, c].sort((a, b) => a.camera_id.localeCompare(b.camera_id));
-  edicion.value[c.camera_id] = editable(c);
+  config.value.cameras = config.value.cameras.map((o) => (o.camera_id === c.camera_id ? c : o));
 }
 
-async function guardarCamara(c: Camara) {
-  const e = edicion.value[c.camera_id];
-  const datos: DatosCamara = { name: e.name, stream_uri: e.stream_uri, active: e.active };
-  if (e.x != null && e.y != null && (!c.position || e.x !== +c.position[0].toFixed(2) || e.y !== +c.position[1].toFixed(2))) datos.position = [e.x, e.y];
-  if (e.angulo != null && e.angulo !== (c.angle_deg != null ? +c.angle_deg.toFixed(1) : null)) datos.angle_deg = e.angulo;
-  guardando.value = c.camera_id;
-  await accion(async () => reemplazar(await api.guardarCamara(slug.value, c.camera_id, datos)), `Cámara ${c.camera_id} guardada en la base de datos.`, false);
-  guardando.value = "";
+function guardarCamara(c: Camara, cambios: { name?: string; active?: boolean; position?: Punto; angle_deg?: number }) {
+  return tarea(async () => {
+    const guardada = await api.guardarCamara(slug.value, c.camera_id, { name: c.name, stream_uri: c.stream_uri, active: c.active, ...cambios });
+    reemplazarCamara(guardada);
+    return guardada;
+  }, "Cámara guardada");
 }
 
+/** Arrastrada o girada en el plano: se guarda y el panel muestra la nueva pose. */
 async function moverCamara(id: string, cambio: { position?: Punto; angle_deg?: number }) {
   const c = config.value?.cameras.find((o) => o.camera_id === id);
   if (!c) return;
-  error.value = aviso.value = "";
-  try {
-    reemplazar(await api.guardarCamara(slug.value, id, { name: c.name, stream_uri: c.stream_uri, active: c.active, ...cambio }));
-    aviso.value = cambio.position
-      ? `${id} movida a (${cambio.position[0].toFixed(1)}, ${cambio.position[1].toFixed(1)}) m · guardada en la base de datos.`
-      : `${id} girada a ${cambio.angle_deg?.toFixed(0)}° · guardada en la base de datos.`;
-  } catch (err) {
-    error.value = (err as Error).message;
-    await cargar();
-  }
-}
-
-function borrarCamara(c: Camara) {
-  if (!confirm(`¿Eliminar la cámara «${c.name}» (${c.camera_id})?`)) return;
-  return accion(() => api.borrarCamara(slug.value, c.camera_id), `Cámara ${c.camera_id} eliminada.`);
-}
-
-async function crearCamara() {
-  const n = nuevaCamara.value;
-  if (!n.position || !n.camera_id.trim() || !n.name.trim()) {
-    error.value = "La cámara necesita ID, nombre y un punto en el plano.";
-    return;
-  }
-  await accion(async () => {
-    const c = await api.crearCamara(slug.value, {
-      camera_id: n.camera_id.trim(),
-      name: n.name.trim(),
-      stream_uri: n.stream_uri.trim(),
-      position: n.position ?? undefined,
-      angle_deg: n.angulo,
+  const r = await guardarCamara(c, cambio);
+  if (r.ok && id === camaraActiva.value) {
+    const g = r.valor;
+    Object.assign(datosCamara.value, {
+      x: g.position ? +g.position[0].toFixed(2) : datosCamara.value.x,
+      y: g.position ? +g.position[1].toFixed(2) : datosCamara.value.y,
+      angulo: g.angle_deg != null ? Math.round(g.angle_deg) : datosCamara.value.angulo,
     });
-    camaraActiva.value = c.camera_id;
-    modo.value = null;
-    nuevaCamara.value = { camera_id: "", name: "", stream_uri: "", angulo: 0, position: null };
-  }, "Cámara creada y guardada en la base de datos.");
+  }
 }
 
-// --- Locales y zonas -----------------------------------------------------
-function crearLocal() {
-  if (!nuevoLocal.value.name.trim()) {
-    error.value = "El local necesita un nombre.";
+function guardarDatosCamara() {
+  const c = camaraSel.value;
+  const d = datosCamara.value;
+  if (!c) return;
+  const nombre = d.name.trim();
+  if (!nombre) {
+    d.name = c.name;
     return;
   }
-  return accion(async () => {
-    await api.crearLocal(slug.value, { name: nuevoLocal.value.name.trim(), category: nuevoLocal.value.category.trim() });
-    nuevoLocal.value = { name: "", category: "" };
-  }, "Local guardado. Ahora dibuja su zona INTERIOR (ingreso) y su FRONTAGE (frente).");
+  const cambios: { name?: string; active?: boolean; position?: Punto; angle_deg?: number } = {};
+  if (nombre !== c.name) cambios.name = nombre;
+  if (d.active !== c.active) cambios.active = d.active;
+  if (Number.isFinite(d.x) && Number.isFinite(d.y) && (!c.position || d.x !== +c.position[0].toFixed(2) || d.y !== +c.position[1].toFixed(2)))
+    cambios.position = [d.x, d.y];
+  const angulo = ((Math.round(d.angulo) % 360) + 360) % 360;
+  if (Number.isFinite(d.angulo) && angulo !== Math.round(c.angle_deg ?? 0)) cambios.angle_deg = angulo;
+  if (Object.keys(cambios).length) return guardarCamara(c, cambios);
 }
 
-function guardarLocal() {
-  const l = edicionLocal.value;
-  if (!l || !l.name.trim()) return;
-  return accion(async () => {
-    await api.actualizarLocal(slug.value, l.id, { name: l.name.trim(), category: l.category.trim() });
-    edicionLocal.value = null;
-  }, "Local actualizado.");
+function idNuevaCamara() {
+  const usados = new Set(config.value?.cameras.map((c) => c.camera_id));
+  let n = (config.value?.cameras.length ?? 0) + 1;
+  while (usados.has(`cam${String(n).padStart(2, "0")}`)) n++;
+  return `cam${String(n).padStart(2, "0")}`;
 }
 
-function borrarLocal(id: number, nombre: string) {
-  const n = zonasDeLocal(id).length;
-  if (!confirm(`¿Eliminar el local «${nombre}»${n ? ` y sus ${n} zonas` : ""}?`)) return;
-  return accion(() => api.borrarLocal(slug.value, id), `Local «${nombre}» eliminado.`);
-}
-
-function empezar(nuevo: "zona" | "camara", tipo?: string, local?: number) {
-  modo.value = nuevo;
+function empezarCamara() {
+  soltarSeleccion();
+  dibujo.value = "camara";
   borrador.value = [];
-  nuevaCamara.value.position = null;
-  zonaActiva.value = null;
   error.value = "";
-  if (nuevo === "zona" && tipo) {
-    nuevaZona.value.zone_type = tipo;
-    nuevaZona.value.local_id = local ?? null;
-    nuevaZona.value.name = local ? `${nombreLocal(local)} · ${tipo === "INTERIOR" ? "interior" : "frente"}` : "";
-    nuevaZona.value.color = tipo === "INTERIOR" ? "#16a34a" : tipo === "FRONTAGE" ? "#f59e0b" : "#3d8bff";
-  }
-  aviso.value =
-    nuevo === "zona"
-      ? "Haz clic en el plano para marcar los vértices; con 3 o más, pulsa Guardar zona."
-      : "Haz clic en el plano donde está la cámara, completa sus datos y pulsa Guardar cámara.";
 }
 
-function cancelar() {
-  modo.value = null;
-  borrador.value = [];
-  nuevaCamara.value.position = null;
-  aviso.value = "";
+async function crearCamara(p: Punto) {
+  const id = idNuevaCamara();
+  const nueva = await tarea(() => api.crearCamara(slug.value, { camera_id: id, name: id, stream_uri: "", position: p, angle_deg: 0 }), "Cámara creada");
+  cancelarDibujo();
+  if (!nueva.ok) return;
+  await cargar();
+  elegirCamara(nueva.valor.camera_id);
+  await nextTick();
+  nombreCamara.value?.focus();
+  nombreCamara.value?.select();
 }
 
+async function borrarCamara(c: Camara) {
+  if (!confirm(`¿Eliminar la cámara «${c.name}» (${c.camera_id})?`)) return;
+  const r = await tarea(() => api.borrarCamara(slug.value, c.camera_id), `Cámara ${c.camera_id} eliminada`);
+  if (!r.ok) return;
+  camaraActiva.value = null;
+  await cargar();
+}
+
+// --- Plano ---------------------------------------------------------------
 function alPunto(p: Punto) {
-  if (modo.value === "zona") borrador.value.push(p);
-  else if (modo.value === "camara") nuevaCamara.value.position = p;
+  if (dibujo.value === "zona") borrador.value.push(p);
+  else if (dibujo.value === "camara") void crearCamara(p);
 }
 
-async function guardarZona() {
-  const z = nuevaZona.value;
-  if (borrador.value.length < 3 || !z.name.trim()) {
-    error.value = "La zona necesita un nombre y al menos 3 vértices.";
+function alFondo() {
+  if (!dibujo.value) soltarSeleccion();
+}
+
+/** Atajos: Esc cancela o suelta, Enter cierra la zona, Retroceso quita el último punto, Supr borra lo elegido. */
+function teclas(ev: KeyboardEvent) {
+  const escribiendo = ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement || ev.target instanceof HTMLTextAreaElement;
+  if (ev.key === "Escape") {
+    if (dibujo.value) cancelarDibujo();
+    else soltarSeleccion();
     return;
   }
-  if (requiereLocal.value && !z.local_id) {
-    error.value = "Las zonas INTERIOR y FRONTAGE deben pertenecer a un local.";
-    return;
-  }
-  error.value = aviso.value = "";
-  try {
-    const guardada = await api.guardarZona(slug.value, {
-      name: z.name.trim(),
-      zone_type: z.zone_type,
-      color: z.color,
-      local_id: requiereLocal.value ? z.local_id : null,
-      points: borrador.value,
-    });
-    modo.value = null;
-    borrador.value = [];
-    nuevaZona.value.name = "";
-    await cargar();
-    aviso.value = `Zona «${guardada.name}» guardada en la base de datos (${guardada.area_m2.toFixed(1)} m²).`;
-  } catch (e) {
-    error.value = (e as Error).message;
+  if (escribiendo) return;
+  if (dibujo.value === "zona" && ev.key === "Enter") void cerrarZona();
+  else if (dibujo.value === "zona" && ev.key === "Backspace") {
+    ev.preventDefault();
+    deshacerPunto();
+  } else if (!dibujo.value && ev.key === "Delete") {
+    if (zonaSel.value) void borrarZona(zonaSel.value);
+    else if (camaraSel.value) void borrarCamara(camaraSel.value);
   }
 }
 
-function borrarZona(id: number, nombre: string) {
-  if (!confirm(`¿Eliminar la zona «${nombre}»?`)) return;
-  return accion(() => api.borrarZona(slug.value, id), `Zona «${nombre}» eliminada.`);
-}
-
-onMounted(cargar);
+onMounted(() => {
+  void cargar();
+  window.addEventListener("keydown", teclas);
+});
+onUnmounted(() => {
+  window.removeEventListener("keydown", teclas);
+  clearTimeout(avisoGuardado);
+});
 </script>
 
 <template>
   <section class="page-title">
     <div>
-      <p class="eyebrow">{{ sitio?.name ?? slug }} · CONFIGURACIÓN DEL SITIO</p>
-      <h1>Plano, cámaras, locales y zonas</h1>
-      <p>
-        El plano y la calibración los publica el modelo (Build). Aquí se mueven y giran cámaras (arrástralas en el plano), se registran locales y se
-        dibujan zonas: todo se guarda en la base de datos y la Parte III del modelo lo usa para los insights.
-      </p>
+      <p class="eyebrow">{{ config?.site.name ?? slug }} · CONFIGURACIÓN</p>
+      <h1>Zonas y cámaras</h1>
     </div>
-    <button type="button" @click="nuevoSitio = nuevoSitio ? null : { slug: '', name: '', description: '' }">＋ Nuevo sitio</button>
   </section>
   <p v-if="error" class="error" role="alert">{{ error }}</p>
-  <p v-if="aviso" class="success">{{ aviso }}</p>
-
-  <section v-if="nuevoSitio" class="panel form-sitio">
-    <div class="panel-heading"><h2>Nuevo sitio</h2></div>
-    <div class="form-plano">
-      <label>Identificador<input v-model="nuevoSitio.slug" maxlength="40" placeholder="mall-norte" /></label>
-      <label>Nombre<input v-model="nuevoSitio.name" maxlength="100" placeholder="Mall Norte" /></label>
-      <label class="ancho">Descripción<input v-model="nuevoSitio.description" maxlength="500" placeholder="Centro comercial · 4 cámaras" /></label>
-      <button class="primary-button" type="button" :disabled="!nuevoSitio.slug || !nuevoSitio.name" @click="crearSitio">Crear sitio</button>
-    </div>
-    <p class="chart-caption">El plano se crea al publicar el Build del sitio con <code>SITIO = "identificador"</code>.</p>
-  </section>
 
   <div v-if="config" class="config-sitio">
-    <section class="panel plano-panel">
-      <template v-if="mapa">
-        <div class="panel-heading">
-          <h2>Plano del piso · {{ (mapa.tam_px[0] / mapa.px_por_metro).toFixed(1) }} × {{ (mapa.tam_px[1] / mapa.px_por_metro).toFixed(1) }} m</h2>
-          <span class="heading-meta">
-            <template v-if="!modo">
-              <button class="primary-button" type="button" @click="empezar('zona', 'PASILLO')">＋ Nueva zona</button>
-              <button type="button" @click="empezar('camara')">＋ Nueva cámara</button>
-            </template>
-            <template v-else-if="modo === 'zona'">
-              <button class="primary-button" type="button" :disabled="borrador.length < 3" @click="guardarZona">Guardar zona</button>
-              <button type="button" :disabled="!borrador.length" @click="borrador.pop()">Deshacer vértice</button>
-              <button type="button" @click="cancelar">Cancelar</button>
-            </template>
-            <template v-else>
-              <button class="primary-button" type="button" :disabled="!nuevaCamara.position" @click="crearCamara">Guardar cámara</button>
-              <button type="button" @click="cancelar">Cancelar</button>
-            </template>
-          </span>
-        </div>
-        <div v-if="modo === 'zona'" class="form-plano">
-          <label
-            >Tipo<select v-model="nuevaZona.zone_type">
-              <option v-for="(nombre, clave) in TIPOS_ZONA" :key="clave" :value="clave">{{ nombre }}</option>
-            </select></label
-          >
-          <label v-if="requiereLocal"
-            >Local<select v-model.number="nuevaZona.local_id">
-              <option :value="null" disabled>Elige un local</option>
-              <option v-for="l in config.locales" :key="l.local_id" :value="l.local_id">{{ l.name }}</option>
-            </select></label
-          >
-          <label>Nombre<input v-model="nuevaZona.name" maxlength="100" placeholder="Ej. Ingreso principal" /></label>
-          <label>Color<input v-model="nuevaZona.color" type="color" /></label>
-          <span class="muted">{{ borrador.length }} vértices</span>
-        </div>
-        <div v-else-if="modo === 'camara'" class="form-plano">
-          <label>ID<input v-model="nuevaCamara.camera_id" maxlength="30" placeholder="cam04" /></label>
-          <label>Nombre<input v-model="nuevaCamara.name" maxlength="80" placeholder="Ej. Pasillo norte" /></label>
-          <label>Dirección (°)<input v-model.number="nuevaCamara.angulo" type="number" min="0" max="359" step="5" /></label>
-          <label>Fuente (opcional)<input v-model="nuevaCamara.stream_uri" maxlength="500" placeholder="rtsp://… o http://…" /></label>
-          <span class="muted">{{
-            nuevaCamara.position ? `(${nuevaCamara.position[0].toFixed(1)}, ${nuevaCamara.position[1].toFixed(1)}) m` : "Sin ubicar"
-          }}</span>
-        </div>
-        <PlanoSitio
-          class="plano"
-          zoom
-          :mapa="mapa"
-          :zonas="config.zones"
-          :borrador="puntosPlano"
-          :dibujando="modo !== null"
-          :zona-activa="zonaActiva"
-          :camaras="config.cameras"
-          :editar-camaras="modo === null"
-          :camara-activa="camaraActiva"
-          @punto="alPunto"
-          @zona="(id) => (zonaActiva = id)"
-          @camara="(id) => (camaraActiva = id)"
-          @pose="moverCamara"
-        />
-        <p class="chart-caption">
-          Arrastra el ícono de una cámara para moverla y el círculo punteado para girarla · rueda del ratón o ＋/－ para acercar y arrastra el plano
-          para desplazarte.
-        </p>
-      </template>
-      <p v-else class="empty">
-        {{ config.site.name }} todavía no tiene plano calibrado. Procesa su dataset con <code>Modelo/Build Modelo/Build_Modelo.ipynb</code> y
-        publícalo con <code>SITIO = "{{ slug }}"</code>: el Build crea el plano y las cámaras. Mientras tanto puedes registrar sus locales.
-      </p>
-    </section>
-
     <aside class="columna">
-      <section class="panel">
+      <!-- Lo elegido en el plano o en la lista: se edita aquí y se guarda solo. -->
+      <section v-if="zonaSel" class="panel editor" aria-label="Zona elegida">
         <div class="panel-heading">
-          <h2>Sitio</h2>
-          <span class="pill">{{ cantidad(config.site.sessions, "sesión", "sesiones") }}</span>
+          <h2><span class="color" :style="{ background: datosZona.color }"></span>Zona</h2>
+          <button class="icon-button" type="button" aria-label="Cerrar" title="Cerrar (Esc)" @click="soltarSeleccion">✕</button>
         </div>
-        <div v-if="!editandoSitio" class="bloque">
-          <p class="sitio-nombre">
-            <b>{{ config.site.name }}</b><small class="muted">{{ config.site.description || "Sin descripción" }} · /{{ config.site.slug }}</small>
+        <div class="bloque">
+          <label
+            >Nombre<input
+              ref="nombreZona"
+              v-model="datosZona.name"
+              maxlength="100"
+              @change="guardarDatosZona"
+              @keydown.enter="($event.target as HTMLInputElement).blur()"
+          /></label>
+          <div class="campo">
+            <span>Color</span>
+            <div class="colores">
+              <button
+                v-for="c in COLORES"
+                :key="c"
+                type="button"
+                class="muestra-color"
+                :class="{ elegido: datosZona.color === c }"
+                :style="{ background: c }"
+                :aria-label="`Color ${c}`"
+                @click="elegirColor(c)"
+              ></button>
+            </div>
+          </div>
+          <p class="dato">{{ zonaSel.area_m2.toFixed(1) }} m² · {{ zonaSel.points.length }} puntos</p>
+          <p v-if="editando" class="ayuda">
+            Arrastra la zona para moverla entera · arrastra un punto para cambiar la forma · el punto chico de cada lado agrega uno · doble clic en un
+            punto lo quita.
           </p>
-          <div class="acciones">
-            <button type="button" @click="editandoSitio = true">Editar sitio</button>
-            <button
-              class="danger-button"
-              type="button"
-              :disabled="config.site.sessions > 0"
-              :title="config.site.sessions > 0 ? 'Tiene sesiones del modelo guardadas' : ''"
-              @click="borrarSitio"
-            >
-              Eliminar sitio
-            </button>
-          </div>
+          <button v-else type="button" @click="activarEdicion">✎ Editar forma</button>
+          <button class="danger-button" type="button" @click="borrarZona(zonaSel)">Eliminar zona</button>
         </div>
-        <div v-else class="bloque">
-          <label>Nombre del sitio<input v-model="datosSitio.name" maxlength="100" /></label>
-          <label>Descripción<input v-model="datosSitio.description" maxlength="500" /></label>
-          <div class="acciones">
-            <button class="primary-button" type="button" :disabled="!datosSitio.name.trim()" @click="guardarSitio">Guardar sitio</button>
-            <button type="button" @click="cancelarSitio">Cancelar</button>
-          </div>
-        </div>
-        <ul v-if="sesiones.length" class="lista sesiones" aria-label="Sesiones del modelo">
-          <li v-for="s in sesiones" :key="s.session_id">
-            <span
-              ><b>{{ s.name || s.session_id.slice(0, 8) }}</b
-              ><small class="muted"
-                >{{ new Date(s.recording_start).toLocaleString("es-PE") }} · {{ s.kind === "BUILD" ? "dataset" : "en vivo" }} ·
-                {{ cantidad(s.identities, "persona") }} · {{ s.points.toLocaleString() }} puntos</small
-              ></span
-            >
-            <button class="danger-button icon-button" type="button" title="Eliminar sesión" :aria-label="`Eliminar la sesión ${s.name}`" @click="borrarSesion(s)">
-              ✕
-            </button>
-          </li>
-        </ul>
       </section>
 
-      <section class="panel">
+      <section v-else-if="camaraSel" class="panel editor" aria-label="Cámara elegida">
         <div class="panel-heading">
-          <h2>Locales</h2>
-          <span class="pill">{{ config.locales.length }}</span>
+          <h2>Cámara · {{ camaraSel.camera_id }}</h2>
+          <button class="icon-button" type="button" aria-label="Cerrar" title="Cerrar (Esc)" @click="soltarSeleccion">✕</button>
         </div>
-        <ul class="lista">
-          <template v-for="l in config.locales" :key="l.local_id">
-            <li v-if="edicionLocal?.id === l.local_id" class="editando">
-              <label>Nombre<input v-model="edicionLocal.name" maxlength="100" /></label>
-              <label>Categoría<input v-model="edicionLocal.category" maxlength="50" /></label>
-              <span class="acciones-local">
-                <button class="primary-button" type="button" :disabled="!edicionLocal.name.trim()" @click="guardarLocal">Guardar</button>
-                <button type="button" @click="edicionLocal = null">Cancelar</button>
-              </span>
-            </li>
-            <li v-else>
-              <span
-                ><b>{{ l.name }}</b
-                ><small class="muted">{{ l.category || "Sin categoría" }} · {{ zonasDeLocal(l.local_id).map((z) => TIPOS_ZONA[z.zone_type]).join(", ") || "sin zonas" }}</small></span
-              >
-              <span class="acciones-local">
-                <button type="button" title="Cambiar nombre o categoría" @click="edicionLocal = { id: l.local_id, name: l.name, category: l.category }">Editar</button>
-                <template v-if="mapa">
-                  <button type="button" title="Dibujar su interior" @click="empezar('zona', 'INTERIOR', l.local_id)">＋ Interior</button>
-                  <button type="button" title="Dibujar su frente" @click="empezar('zona', 'FRONTAGE', l.local_id)">＋ Frente</button>
-                </template>
-              </span>
-              <button class="danger-button icon-button" type="button" :aria-label="`Eliminar ${l.name}`" @click="borrarLocal(l.local_id, l.name)">✕</button>
-            </li>
-          </template>
-          <li v-if="!config.locales.length" class="muted vacia">Sin locales. Regístralos para medir exposición, visitas y tasa de captación.</li>
-        </ul>
-        <div class="form-plano local">
-          <label>Nombre<input v-model="nuevoLocal.name" maxlength="100" placeholder="Ej. Cafetería" /></label>
-          <label>Categoría<input v-model="nuevoLocal.category" maxlength="50" placeholder="Comida" /></label>
-          <button type="button" :disabled="!nuevoLocal.name.trim()" @click="crearLocal">＋ Local</button>
+        <div class="bloque">
+          <label
+            >Nombre<input
+              ref="nombreCamara"
+              v-model="datosCamara.name"
+              maxlength="80"
+              @change="guardarDatosCamara"
+              @keydown.enter="($event.target as HTMLInputElement).blur()"
+          /></label>
+          <div class="pose">
+            <label>X (m)<input v-model.number="datosCamara.x" type="number" step="0.1" @change="guardarDatosCamara" /></label>
+            <label>Y (m)<input v-model.number="datosCamara.y" type="number" step="0.1" @change="guardarDatosCamara" /></label>
+            <label>Dirección (°)<input v-model.number="datosCamara.angulo" type="number" step="5" @change="guardarDatosCamara" /></label>
+          </div>
+          <label class="check"><input v-model="datosCamara.active" type="checkbox" @change="guardarDatosCamara" /> Activa</label>
+          <p v-if="editando" class="ayuda">Arrastra la cámara para moverla y el círculo punteado para girarla.</p>
+          <button v-else type="button" @click="activarEdicion">✎ Mover en el plano</button>
+          <button class="danger-button" type="button" @click="borrarCamara(camaraSel)">Eliminar cámara</button>
         </div>
       </section>
 
@@ -482,19 +405,21 @@ onMounted(cargar);
           <h2>Zonas</h2>
           <span class="pill">{{ config.zones.length }}</span>
         </div>
-        <ul class="lista zonas">
-          <li v-for="z in config.zones" :key="z.zone_id" :class="{ activa: z.zone_id === zonaActiva }" @click="zonaActiva = z.zone_id">
+        <ul class="lista">
+          <li
+            v-for="z in config.zones"
+            :key="z.zone_id"
+            :class="{ activa: z.zone_id === zonaActiva }"
+            tabindex="0"
+            @click="elegirZona(z.zone_id)"
+            @keydown.enter="elegirZona(z.zone_id)"
+          >
             <span class="color" :style="{ background: z.color || '#3d8bff' }"></span>
             <span
-              ><b>{{ z.name }}</b
-              ><small class="muted"
-                >{{ TIPOS_ZONA[z.zone_type] ?? z.zone_type }}<template v-if="z.local_id"> · {{ nombreLocal(z.local_id) }}</template> ·
-                {{ z.area_m2.toFixed(1) }} m²</small
-              ></span
+              ><b>{{ z.name }}</b><small class="muted">{{ z.area_m2.toFixed(1) }} m²</small></span
             >
-            <button class="danger-button icon-button" type="button" :aria-label="`Eliminar ${z.name}`" @click.stop="borrarZona(z.zone_id, z.name)">✕</button>
           </li>
-          <li v-if="!config.zones.length" class="muted vacia">Sin zonas. Usa «Nueva zona» o «＋ Interior / ＋ Frente» de un local.</li>
+          <li v-if="!config.zones.length" class="vacia muted">Sin zonas todavía.</li>
         </ul>
       </section>
 
@@ -503,44 +428,26 @@ onMounted(cargar);
           <h2>Cámaras</h2>
           <span class="pill">{{ config.cameras.length }}</span>
         </div>
-        <article
-          v-for="c in config.cameras"
-          :key="c.camera_id"
-          class="camara"
-          :class="{ activa: c.camera_id === camaraActiva }"
-          @click="camaraActiva = c.camera_id"
-        >
-          <header>
-            <b>{{ c.camera_id }}</b>
-            <span class="muted">{{ c.width_px ? `${c.width_px}×${c.height_px} · ${c.fps?.toFixed(0)} fps` : "sin datos del Build" }}</span>
-          </header>
-          <dl v-if="pose(c) && mapa">
-            <dt>Altura</dt>
-            <dd>{{ pose(c)!.altura_m.toFixed(2) }} m</dd>
-            <dt>Focal</dt>
-            <dd>{{ pose(c)!.focal_px.toFixed(0) }} px</dd>
-            <dt>Desfase</dt>
-            <dd>{{ (mapa.desfases_s[c.camera_id] ?? 0).toFixed(2) }} s</dd>
-          </dl>
-          <span v-if="c.pose_manual" class="pill manual" title="Volver a publicar el Build no pisa esta posición">Posición editada a mano</span>
-          <label>Nombre<input v-model="edicion[c.camera_id].name" maxlength="80" /></label>
-          <div class="pose">
-            <label>X (m)<input v-model.number="edicion[c.camera_id].x" type="number" step="0.1" /></label>
-            <label>Y (m)<input v-model.number="edicion[c.camera_id].y" type="number" step="0.1" /></label>
-            <label>Dirección (°)<input v-model.number="edicion[c.camera_id].angulo" type="number" min="0" max="359" step="1" /></label>
-          </div>
-          <label>Fuente (RTSP / HTTP)<input v-model="edicion[c.camera_id].stream_uri" placeholder="rtsp://… o http://…" maxlength="500" /></label>
-          <label class="check"><input v-model="edicion[c.camera_id].active" type="checkbox" /> Activa</label>
-          <div class="acciones">
-            <button type="button" :disabled="guardando === c.camera_id" @click.stop="guardarCamara(c)">Guardar cámara</button>
-            <button class="danger-button" type="button" @click.stop="borrarCamara(c)">Eliminar</button>
-          </div>
-        </article>
-        <p v-if="!config.cameras.length" class="muted vacia">Sin cámaras. Llegan con el Build o créalas con «Nueva cámara» sobre el plano.</p>
+        <ul class="lista">
+          <li
+            v-for="c in config.cameras"
+            :key="c.camera_id"
+            :class="{ activa: c.camera_id === camaraActiva, apagada: !c.active }"
+            tabindex="0"
+            @click="elegirCamara(c.camera_id)"
+            @keydown.enter="elegirCamara(c.camera_id)"
+          >
+            <span class="icono-camara" aria-hidden="true">▣</span>
+            <span
+              ><b>{{ c.name }}</b><small class="muted">{{ c.camera_id }}{{ c.active ? "" : " · apagada" }}</small></span
+            >
+          </li>
+          <li v-if="!config.cameras.length" class="vacia muted">Sin cámaras todavía.</li>
+        </ul>
       </section>
 
-      <section v-if="informe.length" class="panel">
-        <div class="panel-heading"><h2>Calibración entre cámaras</h2></div>
+      <details v-if="informe.length" class="panel calibracion">
+        <summary>Calibración entre cámaras</summary>
         <table class="tabla">
           <thead>
             <tr>
@@ -559,15 +466,70 @@ onMounted(cargar);
             </tr>
           </tbody>
         </table>
-      </section>
+      </details>
     </aside>
+
+    <section class="panel plano-panel">
+      <template v-if="mapa">
+        <div class="panel-heading barra">
+          <template v-if="dibujo">
+            <span class="ayuda-barra">{{ ayudaDibujo }}</span>
+            <span class="heading-meta">
+              <template v-if="dibujo === 'zona'">
+                <button class="primary-button" type="button" :disabled="borrador.length < 3" @click="cerrarZona">✓ Terminar zona</button>
+                <button type="button" :disabled="!borrador.length" title="Retroceso" @click="deshacerPunto">↶ Deshacer punto</button>
+              </template>
+              <button type="button" title="Esc" @click="cancelarDibujo">Cancelar</button>
+            </span>
+          </template>
+          <template v-else-if="editando">
+            <span class="ayuda-barra">Editando · elige una zona o cámara para moverla</span>
+            <span class="heading-meta">
+              <span v-if="guardado" class="guardado" role="status">✓ {{ guardado }}</span>
+              <button class="primary-button" type="button" @click="empezarZona">＋ Zona</button>
+              <button type="button" @click="empezarCamara">＋ Cámara</button>
+              <button type="button" @click="terminarEdicion">Listo</button>
+            </span>
+          </template>
+          <template v-else>
+            <h2>Plano · {{ (mapa.tam_px[0] / mapa.px_por_metro).toFixed(1) }} × {{ (mapa.tam_px[1] / mapa.px_por_metro).toFixed(1) }} m</h2>
+            <span class="heading-meta">
+              <span v-if="guardado" class="guardado" role="status">✓ {{ guardado }}</span>
+              <button class="primary-button" type="button" @click="activarEdicion">✎ Editar</button>
+            </span>
+          </template>
+        </div>
+        <PlanoSitio
+          class="plano"
+          zoom
+          :mapa="mapa"
+          :zonas="config.zones"
+          :borrador="borrador"
+          :dibujando="dibujo !== null"
+          :trazar-zona="dibujo === 'zona'"
+          :zona-activa="zonaActiva"
+          :editar-zonas="editando"
+          :camaras="config.cameras"
+          :editar-camaras="editando && !dibujo"
+          :camara-activa="camaraActiva"
+          @punto="alPunto"
+          @cerrar="cerrarZona"
+          @zona="elegirZona"
+          @forma="guardarForma"
+          @camara="elegirCamara"
+          @pose="moverCamara"
+          @fondo="alFondo"
+        />
+      </template>
+      <p v-else class="empty">Este sitio todavía no tiene plano: lo publica el Build del modelo.</p>
+    </section>
   </div>
 </template>
 
 <style scoped>
 .config-sitio {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: 300px minmax(0, 1fr);
   gap: 14px;
   align-items: start;
 }
@@ -579,155 +541,139 @@ onMounted(cargar);
   margin: 10px;
   width: calc(100% - 20px);
 }
-.form-sitio {
-  margin-bottom: 14px;
+.barra {
+  min-height: 52px;
 }
-.form-plano {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 10px 14px 0;
-}
-.form-plano.local {
-  padding: 4px 12px 12px;
-}
-.form-plano .ancho {
-  flex: 1 1 220px;
-}
-.form-plano label,
-.bloque label,
-.camara label {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 10.5px;
-  font-weight: 650;
+.ayuda-barra {
+  font-size: 12px;
+  font-weight: 600;
   color: var(--ink-soft);
 }
-.sitio-nombre {
-  margin: 0;
-  font-size: 12px;
-}
-.sitio-nombre small {
-  display: block;
-  margin-top: 2px;
-}
-.bloque {
-  display: grid;
-  gap: 8px;
-  padding: 12px 14px;
+.guardado {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--green-600, #16a34a);
 }
 .columna {
   display: grid;
   gap: 14px;
 }
-.camara {
-  display: grid;
-  gap: 7px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--glass-line);
+.editor {
+  border: 1.5px solid var(--blue-500, #3d8bff);
 }
-.camara.activa {
-  background: var(--pill-bg);
-}
-.camara header {
+.editor h2 {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
+  gap: 8px;
 }
-.camara dl {
+.bloque {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 2px 10px;
-  margin: 0;
-  font-size: 11px;
+  gap: 10px;
+  padding: 12px 14px 14px;
 }
-.camara dt {
-  color: var(--ink-faint);
+.bloque label,
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 650;
+  color: var(--ink-soft);
 }
-.camara dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-}
-.camara .check {
+.bloque .check {
   flex-direction: row;
   align-items: center;
   gap: 6px;
 }
-.camara .pose {
+.pose {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
-.camara .manual {
-  justify-self: start;
-  font-size: 10px;
-}
-.acciones,
-.acciones-local {
+.colores {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
-.acciones-local button {
-  padding: 4px 7px;
-  font-size: 10.5px;
+.muestra-color {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--glass-strong);
+  box-shadow: 0 0 0 1px var(--glass-line);
+}
+.muestra-color.elegido {
+  box-shadow: 0 0 0 2px var(--ink);
+}
+.dato {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.ayuda {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-soft);
 }
 .lista {
   list-style: none;
   margin: 0;
-  padding: 8px 12px;
+  padding: 8px 10px;
   display: grid;
-  gap: 6px;
+  gap: 4px;
   font-size: 11.5px;
+  max-height: 320px;
+  overflow: auto;
 }
 .lista li {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 14px 1fr;
   align-items: center;
   gap: 8px;
-  padding: 6px;
+  padding: 7px 8px;
   border-radius: 8px;
-}
-.lista.zonas li {
-  grid-template-columns: 12px 1fr auto;
   cursor: pointer;
 }
-.lista li.editando {
-  grid-template-columns: 1fr 1fr;
-  background: var(--glass);
+.lista li:hover,
+.lista li.activa {
+  background: var(--pill-bg);
 }
-.lista li.editando .acciones-local {
-  grid-column: 1 / -1;
-}
-.lista.sesiones {
-  border-top: 1px solid var(--glass-line);
-}
-.lista.sesiones li {
-  grid-template-columns: 1fr auto;
+.lista li.apagada {
+  opacity: 0.55;
 }
 .lista li.vacia {
   display: block;
   cursor: default;
 }
-.lista li.activa {
-  background: var(--pill-bg);
+.lista li.vacia:hover {
+  background: none;
 }
 .lista small {
   display: block;
 }
-.vacia {
-  padding: 10px 14px;
-  font-size: 11.5px;
-}
 .color {
+  display: inline-block;
   width: 12px;
   height: 12px;
   border-radius: 3px;
+  flex: none;
+}
+.icono-camara {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.calibracion summary {
+  padding: 12px 14px;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
 }
 .tabla {
   width: calc(100% - 24px);
-  margin: 12px;
+  margin: 0 12px 12px;
   border-collapse: collapse;
   font-size: 11px;
 }
