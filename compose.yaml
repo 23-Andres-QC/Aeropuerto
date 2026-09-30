@@ -1,7 +1,10 @@
 name: aeropuerto-demo
 services:
   db:
-    image: postgis/postgis:17-3.5
+    # postgis/postgis solo se publica para amd64. En un servidor ARM (ej. GCP
+    # c4a/Axion) poner DB_IMAGE=imresamu/postgis:17-3.5 en .env: es la misma
+    # imagen (PostgreSQL 17 + PostGIS 3.5) construida también para arm64.
+    image: ${DB_IMAGE:-postgis/postgis:17-3.5}
     environment:
       POSTGRES_DB: aeropuerto
       POSTGRES_USER: aeropuerto

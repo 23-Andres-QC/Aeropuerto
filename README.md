@@ -128,6 +128,8 @@ WEB_TLS_PORT=443
 PUBLIC_HOST=<IP pública del servidor>
 DB_PASSWORD=<una contraseña propia, no la del ejemplo>
 VIVO_DB_PASSWORD=<otra contraseña propia>
+# Solo si el servidor es ARM (ej. GCP c4a): postgis/postgis no tiene imagen arm64.
+DB_IMAGE=imresamu/postgis:17-3.5
 ```
 
 y levanta con `docker compose up -d --build`. nginx añade `nosniff`, `SAMEORIGIN`, `Referrer-Policy` y un límite de peticiones por IP sobre `/api/`; PostgreSQL y el backend no publican puertos al host.
