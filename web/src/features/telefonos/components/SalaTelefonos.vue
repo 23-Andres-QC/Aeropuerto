@@ -175,8 +175,8 @@ function dibujarCajas(id: string) {
     const genero = persona.gender
       ? ` · ${persona.gender}${persona.gender_conf ? " " + Math.round(persona.gender_conf * 100) + "%" : ""}`
       : "";
-    // Sin ID todavía (se está identificando): «…», no el número local, que parecía otro ID.
-    const texto = `${persona.global_id != null ? "G" + persona.global_id : "…"}${genero}`;
+    // G = ID global (el de la memoria); mientras se confirma, L = el ID local del tracker en este teléfono.
+    const texto = `${persona.global_id != null ? "G" + persona.global_id : "L" + persona.local_id}${genero}`;
     const alto = 18 * escala;
     const y = Math.max(alto, y1);
     ctx.fillStyle = "rgba(10, 20, 35, 0.82)";

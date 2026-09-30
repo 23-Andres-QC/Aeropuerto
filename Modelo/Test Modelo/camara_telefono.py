@@ -41,6 +41,9 @@ CANAL_ESTADO = "telefonos"
 ANCHO_RELEVO = 640
 FPS_NOMINAL = 15.0
 TRANSICION_MAX_S = 60.0
+# Un teléfono ve a la gente de cerca: quien sale cortado por el borde del cuadro también da muestras de Re-ID (en las
+# cámaras fijas del Build esas vistas se descartan). Si no, de cerca nadie llegaría a tener ID.
+MARGEN_BORDE_TELEFONO = -1
 PUERTO_CAMARA = int(os.environ.get("CAMARA_PORT", "8444"))  # el de la página de cámara (compose: camara-web)  # como en camaras.json: alguien puede pasar de un teléfono a otro en hasta 60 s
 
 
@@ -254,6 +257,7 @@ class SesionEnVivo:
             config = config_telefonos(telefonos, self.asociacion)
             if self.asociador is None:
                 self.asociador = AsociadorConMemoria(self.reid, config, self.memoria)
+                self.asociador.quality["margen_borde"] = MARGEN_BORDE_TELEFONO
             else:
                 self.asociador.cambiar_camaras(config, conservar=siguen)
         for cid in telefonos:

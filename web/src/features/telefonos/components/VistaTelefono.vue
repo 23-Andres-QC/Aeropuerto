@@ -56,8 +56,8 @@ function dibujar() {
     ctx.strokeStyle = color;
     ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
     const genero = p.gender ? ` · ${p.gender}${p.gender_conf ? " " + Math.round(p.gender_conf * 100) + "%" : ""}` : "";
-    // Sin ID todavía (se está identificando): «…», no el número local, que parecía otro ID.
-    const texto = `${p.global_id != null ? "G" + p.global_id : "…"}${genero}`;
+    // G = ID global (el de la memoria); mientras se confirma, L = el ID local del tracker en este teléfono.
+    const texto = `${p.global_id != null ? "G" + p.global_id : "L" + p.local_id}${genero}`;
     const ancho = ctx.measureText(texto).width + 10;
     const y = Math.max(18, y1);
     ctx.fillStyle = "rgba(10, 20, 35, 0.82)";
