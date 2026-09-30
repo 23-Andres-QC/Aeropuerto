@@ -54,8 +54,11 @@ def enlace_camara():
     """https://<IP de esta laptop en la red>:8444, el enlace que abren los teléfonos; None sin red.
 
     El navegador y los contenedores no conocen la IP de la laptop; este proceso sí. La ruta hacia afuera elige la
-    interfaz de la red (Wi-Fi o cable) sin mandar ningún paquete.
+    interfaz de la red (Wi-Fi o cable) sin mandar ningún paquete. En un servidor esa sería la IP de su red interna:
+    ENLACE_CAMARA fija el enlace público (ej. https://34.70.132.18/camara/).
     """
+    if os.environ.get("ENLACE_CAMARA"):
+        return os.environ["ENLACE_CAMARA"]
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sonda:
             sonda.connect(("8.8.8.8", 80))

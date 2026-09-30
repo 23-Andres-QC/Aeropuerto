@@ -121,6 +121,29 @@ services:
       retries: 12
       start_period: 5s
     restart: unless-stopped
+  # Modelo en vivo (camara_telefono.py) en CPU, para un servidor sin GPU. En la
+  # laptop corre directo con Python y la GPU, así que va con perfil: se levanta
+  # solo con COMPOSE_PROFILES=modelo en .env (o docker compose --profile modelo).
+  modelo-vivo:
+    build: "./Modelo/Test Modelo"
+    profiles: [modelo]
+    # Red del host: lee el MJPEG de camara-web (127.0.0.1:8092) y habla con
+    # backend-vivo (127.0.0.1:8093) igual que cuando corre en la laptop.
+    network_mode: host
+    command: ["--api", "http://127.0.0.1:${VIVO_API_PORT:-8093}"]
+    environment:
+      # Enlace que Teléfonos muestra para unir un teléfono: el público, no la IP
+      # de la red interna del servidor (ej. https://34.70.132.18/camara/).
+      ENLACE_CAMARA: ${ENLACE_CAMARA:-}
+      OMP_NUM_THREADS: ${MODELO_CPUS:-3}
+    # Deja un núcleo libre para que la web y la API sigan respondiendo.
+    cpus: ${MODELO_CPUS:-3}
+    depends_on:
+      backend-vivo:
+        condition: service_healthy
+      camara-web:
+        condition: service_healthy
+    restart: unless-stopped
 volumes:
   pgdata:
   camara-cert:
