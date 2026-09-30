@@ -18,7 +18,7 @@ import numpy as np
 
 TEST = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TEST))
-from camara_telefono import config_telefonos  # noqa: E402  (prepara lap01 y sus rutas)
+from camara_telefono import SesionEnVivo, config_telefonos  # noqa: E402  (prepara lap01 y sus rutas)
 import lap01  # noqa: E402
 import memoria_identidades as mi  # noqa: E402
 
@@ -292,6 +292,23 @@ class PruebasPersistencia(unittest.TestCase):
         self.assertEqual(memoria.epoca, 2)
         memoria.cerrar()
         self.assertEqual(set(BackendFalso.estado["personas"]), {1})
+
+
+class PruebasRitmoGenero(unittest.TestCase):
+    """El género se muestrea por tiempo de reloj: a ~3 FPS (CPU) no se esperan 9 frames (3 s) entre muestras."""
+
+    def test_intervalo_segun_fps_medidos(self):
+        from types import SimpleNamespace
+        genero = SimpleNamespace(enabled=True, sample_s=0.6, sample_frames={"tel-a": 9, "tel-b": 9})
+        sesion = SesionEnVivo(SimpleNamespace(genero=genero), None, None, None)
+        sesion.telefonos = ["tel-a", "tel-b"]
+        # tel-a procesa a 3 FPS; tel-b todavía no tiene medida y usa los 15 FPS nominales.
+        sesion.tiempos = {"tel-a": [0.0, 1 / 3, 2 / 3, 1.0], "tel-b": [0.0]}
+        sesion._ritmo_genero()
+        self.assertEqual(genero.sample_frames, {"tel-a": 2, "tel-b": 9})
+        sesion.tiempos["tel-a"] = [0.0, 0.5, 1.0]  # 2 FPS: una muestra por frame procesado
+        sesion._ritmo_genero()
+        self.assertEqual(genero.sample_frames["tel-a"], 1)
 
 
 if __name__ == "__main__":

@@ -282,6 +282,7 @@ class SesionEnVivo:
             self.ultimo[cid] = numero
             self.procesados[cid] += 1
             frames[cid] = frame
+        self._ritmo_genero()
         filas = lap01.procesar_instante(self.motor, self.asociador, self.t, frames, dict(self.procesados))
         ahora = time.perf_counter()
         for cid, (_, _, llegada) in datos.items():
@@ -291,6 +292,16 @@ class SesionEnVivo:
             for fila in filas[cid]:
                 self._genero(fila)
         return filas
+
+    def _ritmo_genero(self):
+        """Muestrea el género cada sample_interval_s de reloj según los FPS medidos de cada teléfono. El Build cuenta
+        el intervalo en frames a 15 FPS (9 frames); en CPU el modelo procesa ~3 FPS, así que eran ~3 s entre muestras
+        y más de 12 s hasta reunir los votos para mostrar el género."""
+        genero = self.motor.genero
+        if not genero.enabled:
+            return
+        for cid in self.telefonos:
+            genero.sample_frames[cid] = max(1, round(genero.sample_s * (self.fps(cid) or FPS_NOMINAL)))
 
     def _genero(self, fila):
         """Quien ya se vio muestra su género al reconocerlo; un género nuevo y confiable se guarda en la memoria."""
