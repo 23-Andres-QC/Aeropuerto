@@ -103,9 +103,9 @@ onMounted(recargar);
         </nav>
         <RouterView :key="`${slug}:${seccion}`" />
       </main>
-      <footer>
-        <span>Modelo LAP01 · YOLO26m + tracking + Re-ID + mapa 2D</span
-        ><span>{{ telefonos ? "Teléfonos: backend y base propios (backend-vivo), sin video ni fotos" : "Datos del modelo en PostgreSQL/PostGIS" }}</span>
+      <!-- Teléfonos va sin textos: solo el enlace y las cámaras. -->
+      <footer v-if="!telefonos">
+        <span>Modelo LAP01 · YOLO26m + tracking + Re-ID + mapa 2D</span><span>Datos del modelo en PostgreSQL/PostGIS</span>
       </footer>
     </div>
   </div>

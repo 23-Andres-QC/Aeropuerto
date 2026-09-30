@@ -68,7 +68,7 @@ function espera(c: CamaraSala): string {
   const e = estadoDe(c.id);
   if (e?.estado === "sin_conexion") return e.mensaje ?? "El modelo no puede leer esta cámara.";
   if (c.web) return "Esperando la pantalla…";
-  return props.servicio ? "El modelo se está conectando…" : "Se ve cuando el modelo la procesa (paso 2).";
+  return props.servicio ? "El modelo se está conectando…" : "Esperando al modelo…";
 }
 
 function insignias(c: CamaraSala): string {
@@ -253,13 +253,8 @@ onUnmounted(() => {
 <template>
   <section ref="contenedor" class="panel sala">
     <div class="panel-heading">
-      <h2>Pantallas conectadas</h2>
-      <span class="heading-meta">
-        <span class="pill" :class="camaras.length ? 'good' : 'warn'">
-          {{ camaras.length }} {{ camaras.length === 1 ? "cámara" : "cámaras" }}
-        </span>
-        <button class="button" type="button" @click="pantallaCompleta">⛶ Pantalla completa</button>
-      </span>
+      <span></span>
+      <button class="button icon-button" type="button" aria-label="Pantalla completa" title="Pantalla completa" @click="pantallaCompleta">⛶</button>
     </div>
     <div v-if="camaras.length" class="rejilla" :style="rejilla">
       <div
@@ -288,7 +283,7 @@ onUnmounted(() => {
         </button>
       </div>
     </div>
-    <p v-else class="vacia">Sin cámaras todavía. Únete desde cualquier navegador (paso 1).</p>
+    <div v-else class="vacia"></div>
   </section>
 </template>
 
