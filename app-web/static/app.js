@@ -9,10 +9,12 @@ const LADO_MAX = 1280;
 // detector (640 px en la laptop, 480 en el servidor).
 const LADO_ENVIO = 960;
 const CALIDAD = 0.6;
-// Cuadros enviados sin acuse todavía. Con el servidor lejos (ida y vuelta de
-// ~150 ms), esperar cada acuse deja la cámara en ~3 fps; con unos pocos en
-// camino llega a 15 fps y la cola nunca pasa de estos cuadros.
-const EN_VUELO_MAX = 3;
+// Cuadros enviados sin acuse todavía: los que caben en una ida y vuelta al ritmo
+// pedido, más uno. Con el servidor lejos (ida y vuelta de ~400 ms desde un
+// celular), esperar cada acuse deja la cámara en ~3 fps; así llega a 15 fps.
+// Entre 2 y 6: la cola nunca pasa de eso aunque la red se ponga lenta.
+const EN_VUELO_MIN = 2;
+const EN_VUELO_MAX = 6;
 
 const $ = (id) => document.getElementById(id);
 
@@ -198,8 +200,14 @@ function conectar() {
   };
 }
 
-// Manda un JPEG si hay menos de EN_VUELO_MAX sin acuse: la cola nunca crece más
-// que eso, así que cada cuadro sale con poca demora aunque el servidor esté lejos.
+function enVueloPermitido(fps) {
+  const idas = [...app.idas].sort((a, b) => a - b);
+  const ida = idas.length ? idas[idas.length >> 1] : 300;
+  return Math.min(EN_VUELO_MAX, Math.max(EN_VUELO_MIN, Math.ceil(ida / (1000 / fps)) + 1));
+}
+
+// Manda un JPEG si quedan pocos sin acuse (enVueloPermitido): la cola nunca crece
+// más que eso, así que cada cuadro sale con poca demora aunque el servidor esté lejos.
 function bucleEnvio() {
   if (!app.activa) return;
   setTimeout(bucleEnvio, 5);
@@ -207,8 +215,8 @@ function bucleEnvio() {
   if (!ws || ws.readyState !== WebSocket.OPEN || !app.unida || video.readyState < 2 || !video.videoWidth) return;
   const ahora = performance.now();
   if (app.enVuelo.length && ahora - app.enVuelo[0] > 3000) app.enVuelo = []; // acuses perdidos
-  if (app.codificando || app.enVuelo.length >= EN_VUELO_MAX) return;
   const fps = app.lectores > 0 || app.espectadores > 0 ? FPS_VIVO : FPS_EN_ESPERA;
+  if (app.codificando || app.enVuelo.length >= enVueloPermitido(fps)) return;
   if (ahora - app.ultimoEnvio < 1000 / fps - 4) return;
   app.codificando = true;
   app.ultimoEnvio = ahora;
