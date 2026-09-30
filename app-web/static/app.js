@@ -5,7 +5,14 @@
 const FPS_VIVO = 15;
 const FPS_EN_ESPERA = 1;
 const LADO_MAX = 1280;
-const CALIDAD = 0.7;
+// Lo que viaja: 960 px en JPEG 0,6 pesa la mitad que 1280 px en 0,7 y sobra para el
+// detector (640 px en la laptop, 480 en el servidor).
+const LADO_ENVIO = 960;
+const CALIDAD = 0.6;
+// Cuadros enviados sin acuse todavía. Con el servidor lejos (ida y vuelta de
+// ~150 ms), esperar cada acuse deja la cámara en ~3 fps; con unos pocos en
+// camino llega a 15 fps y la cola nunca pasa de estos cuadros.
+const EN_VUELO_MAX = 3;
 
 const $ = (id) => document.getElementById(id);
 
@@ -19,7 +26,8 @@ const app = {
   motivo: null, // último error recuperable
   lectores: 0, // el modelo leyendo su video
   espectadores: 0, // páginas de Teléfonos en la web
-  esperandoAcuse: false,
+  enVuelo: [], // hora de envío de cada cuadro sin acuse, en orden
+  codificando: false,
   ultimoEnvio: 0,
   envios: [],
   idas: [], // ms entre enviar un cuadro y su acuse
@@ -157,7 +165,8 @@ function conectar() {
   const ws = new WebSocket(url);
   app.ws = ws;
   app.unida = false;
-  app.esperandoAcuse = false;
+  app.enVuelo = [];
+  app.codificando = false;
   ws.onmessage = (e) => {
     if (typeof e.data !== 'string') return;
     let m;
@@ -170,9 +179,10 @@ function conectar() {
       Object.assign(app, { unida: true, motivo: null, nombre: m.nombre, lectores: m.lectores, espectadores: m.espectadores || 0 });
       $('nombre-camara').textContent = m.nombre;
     } else if (m.tipo === 'ok') {
-      app.idas.push(performance.now() - app.ultimoEnvio);
+      const enviado = app.enVuelo.shift();
+      if (enviado !== undefined) app.idas.push(performance.now() - enviado);
       if (app.idas.length > 15) app.idas.shift();
-      Object.assign(app, { esperandoAcuse: false, lectores: m.lectores, espectadores: m.espectadores || 0 });
+      Object.assign(app, { lectores: m.lectores, espectadores: m.espectadores || 0 });
     } else if (m.tipo === 'error') {
       if (m.reintentar) app.motivo = m.mensaje;
       else terminar(m.mensaje);
@@ -188,20 +198,21 @@ function conectar() {
   };
 }
 
-// Manda un JPEG solo cuando el anterior fue acusado: nunca se forma cola, así
-// que cada cuadro sale con la menor demora posible.
+// Manda un JPEG si hay menos de EN_VUELO_MAX sin acuse: la cola nunca crece más
+// que eso, así que cada cuadro sale con poca demora aunque el servidor esté lejos.
 function bucleEnvio() {
   if (!app.activa) return;
   setTimeout(bucleEnvio, 5);
   const ws = app.ws;
   if (!ws || ws.readyState !== WebSocket.OPEN || !app.unida || video.readyState < 2 || !video.videoWidth) return;
   const ahora = performance.now();
-  if (app.esperandoAcuse && ahora - app.ultimoEnvio < 3000) return;
+  if (app.enVuelo.length && ahora - app.enVuelo[0] > 3000) app.enVuelo = []; // acuses perdidos
+  if (app.codificando || app.enVuelo.length >= EN_VUELO_MAX) return;
   const fps = app.lectores > 0 || app.espectadores > 0 ? FPS_VIVO : FPS_EN_ESPERA;
   if (ahora - app.ultimoEnvio < 1000 / fps - 4) return;
-  app.esperandoAcuse = true;
+  app.codificando = true;
   app.ultimoEnvio = ahora;
-  const k = Math.min(1, LADO_MAX / Math.max(video.videoWidth, video.videoHeight));
+  const k = Math.min(1, LADO_ENVIO / Math.max(video.videoWidth, video.videoHeight));
   const w = Math.round(video.videoWidth * k);
   const h = Math.round(video.videoHeight * k);
   if (lienzo.width !== w || lienzo.height !== h) {
@@ -210,12 +221,12 @@ function bucleEnvio() {
   }
   ctx.drawImage(video, 0, 0, w, h);
   lienzo.toBlob((blob) => {
-    if (!blob || ws.readyState !== WebSocket.OPEN) {
-      app.esperandoAcuse = false;
-      return;
-    }
+    app.codificando = false;
+    if (!blob || ws.readyState !== WebSocket.OPEN) return;
     ws.send(blob);
-    app.envios.push(performance.now());
+    const enviado = performance.now();
+    if (ws === app.ws) app.enVuelo.push(enviado);
+    app.envios.push(enviado);
   }, 'image/jpeg', CALIDAD);
 }
 
