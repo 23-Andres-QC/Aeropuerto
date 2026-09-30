@@ -11,9 +11,10 @@ import (
 )
 
 // Sala es lo que muestra Teléfonos en la web del aeropuerto: todas las cámaras
-// en vivo con el video y las detecciones que el modelo publica en el relevo del
-// backend. Una cámara que el modelo todavía no procesa se ve con su propio
-// video, sin cajas.
+// en vivo con las detecciones que el modelo publica en el relevo del backend.
+// Una cámara web se ve con su propio video, a su ritmo (~15 fps), y las cajas
+// del modelo encima: más fluido que esperar su cuadro procesado (en CPU el
+// modelo va más lento). Las demás se ven con el video que publica el modelo.
 //
 // El servicio se suscribe una sola vez por cámara al relevo y a cada espectador
 // le manda cada cuadro en cuanto llega, sin topes de fps; si uno no alcanza a
@@ -269,12 +270,10 @@ func (s *Sala) Atender(ws *websocket.Conn) {
 				}
 				detEnviada[c.id] = c.seqDet
 			}
-			if c.frame == nil {
-				// Sin video del modelo: una cámara web se ve con el suyo.
-				if d := s.camaras.PorTelefono(c.id); d != nil && d.Transmitiendo() {
-					c.frame, c.seq, _ = d.Ultimo()
-					c.fuente = 'd'
-				}
+			// Una cámara web se ve siempre con su propio video; las cajas van aparte («det»).
+			if d := s.camaras.PorTelefono(c.id); d != nil && d.Transmitiendo() {
+				c.frame, c.seq, _ = d.Ultimo()
+				c.fuente = 'd'
 			}
 			clave := c.id + string(c.fuente)
 			if c.frame == nil || len(c.id) > 255 || enviado[clave] == c.seq {

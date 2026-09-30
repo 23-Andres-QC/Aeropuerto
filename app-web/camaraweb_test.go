@@ -389,6 +389,72 @@ func TestSalaMuestraLaCamaraWebSinProcesar(t *testing.T) {
 	}
 }
 
+// Aunque el modelo publique su cuadro procesado, una cámara web se ve con su
+// propio video (a su ritmo, más fluido) y las cajas del modelo llegan aparte.
+func TestSalaMuestraLaCamaraWebDirectaConLasCajasDelModelo(t *testing.T) {
+	relevo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer ws.Close()
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/detections/watch"):
+			_ = ws.WriteMessage(websocket.TextMessage, []byte(`{"ts":1,"frame_w":640,"frame_h":480,"people":[]}`))
+		case strings.HasSuffix(r.URL.Path, "/watch"):
+			_ = ws.WriteMessage(websocket.BinaryMessage, []byte("cuadro del modelo"))
+		}
+		for {
+			if _, _, err := ws.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}))
+	t.Cleanup(relevo.Close)
+
+	e := nuevoEntorno(t, time.Minute, relevoDe(relevo.URL))
+	camara := unirseComo(t, e, idPrueba, "Laptop")
+	lista, err := e.camaras.Sincronizar(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.sala.Actualizar(lista)
+	esperar(t, "el cuadro y las cajas del modelo", func() bool {
+		e.sala.mu.Lock()
+		defer e.sala.mu.Unlock()
+		f := e.sala.fuentes[lista[0].ID]
+		return f != nil && f.frame != nil && f.det != nil
+	})
+
+	espectador := conectarWS(t, e.srv.URL+"/ws/sala")
+	esperar(t, "que cuente al espectador", func() bool { return e.sala.Espectadores() == 1 })
+	if err := camara.WriteMessage(websocket.BinaryMessage, jpegDePrueba); err != nil {
+		t.Fatal(err)
+	}
+	cajas := false
+	for {
+		_ = espectador.SetReadDeadline(time.Now().Add(3 * time.Second))
+		tipo, datos, err := espectador.ReadMessage()
+		if err != nil {
+			t.Fatalf("no llegó el video de la cámara web (cajas: %v): %v", cajas, err)
+		}
+		if tipo == websocket.TextMessage {
+			var m mensajeSala
+			_ = json.Unmarshal(datos, &m)
+			cajas = cajas || (m.Tipo == "det" && m.ID == lista[0].ID)
+			continue
+		}
+		id, fuente, jpeg := cuadroDeSala(datos)
+		if id != lista[0].ID || fuente != 'd' || !bytes.Equal(jpeg, jpegDePrueba) {
+			t.Fatalf("cuadro = %s %c %q", id, fuente, jpeg)
+		}
+		if !cajas {
+			t.Fatal("el video llegó sin las cajas del modelo")
+		}
+		return
+	}
+}
+
 func TestLaRedSoloVeLaPaginaDeCamara(t *testing.T) {
 	e := nuevoEntorno(t, time.Minute, "")
 	publico := httptest.NewServer(NuevoServidor(e.camaras, e.sala).Publico())
