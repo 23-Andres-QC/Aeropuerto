@@ -514,9 +514,11 @@ func TestLaCamaraWebVeSuProceso(t *testing.T) {
 
 func TestLaRedSoloVeLaPaginaDeCamara(t *testing.T) {
 	e := nuevoEntorno(t, time.Minute, "")
-	publico := httptest.NewServer(NuevoServidor(e.camaras, e.sala).Publico())
+	s := NuevoServidor(e.camaras, e.sala)
+	s.Personas = func(context.Context) ([]byte, error) { return []byte(`{"fichas":[]}`), nil }
+	publico := httptest.NewServer(s.Publico())
 	defer publico.Close()
-	for ruta, esperado := range map[string]int{"/": http.StatusOK, "/app.js": http.StatusOK,
+	for ruta, esperado := range map[string]int{"/": http.StatusOK, "/app.js": http.StatusOK, "/personas": http.StatusOK,
 		"/ws/sala": http.StatusNotFound, "/video?token=x": http.StatusNotFound, "/foto.jpg?token=x": http.StatusNotFound} {
 		resp, err := http.Get(publico.URL + ruta)
 		if err != nil {
@@ -545,6 +547,10 @@ func TestAPIAeropuerto(t *testing.T) {
 			fmt.Fprint(w, `{"id":"tel-ab12","nombre":"Entrada","url":"u"}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/telefonos":
 			fmt.Fprint(w, `[{"id":"tel-ab12","nombre":"Entrada","url":"u"}]`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/personas/resumen":
+			fmt.Fprint(w, `{"personas":1,"siguiente_id":2}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/personas/fichas":
+			fmt.Fprint(w, `[{"id":1,"genero":"Mujer","camaras":["tel-ab12"]}]`)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/telefonos/tel-ab12":
 			w.WriteHeader(http.StatusNoContent)
 		default:
@@ -565,6 +571,15 @@ func TestAPIAeropuerto(t *testing.T) {
 	}
 	if lista, err := api.Telefonos(ctx); err != nil || len(lista) != 1 || lista[0] != (Telefono{ID: "tel-ab12", Nombre: "Entrada"}) {
 		t.Fatalf("Telefonos = %+v, %v", lista, err)
+	}
+	var personas struct {
+		Resumen   struct{ Personas int }
+		Fichas    []struct{ ID int64 }
+		Telefonos []Telefono
+	}
+	if datos, err := api.Personas(ctx); err != nil || json.Unmarshal(datos, &personas) != nil ||
+		personas.Resumen.Personas != 1 || len(personas.Fichas) != 1 || len(personas.Telefonos) != 1 {
+		t.Fatalf("Personas = %s, %v", datos, err)
 	}
 	if err := api.Quitar(ctx, "tel-ab12"); err != nil {
 		t.Fatal(err)

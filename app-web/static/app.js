@@ -350,6 +350,93 @@ function textoProceso() {
   return partes.join(' · ');
 }
 
+// ---------- Personas (memoria de identidades, como la tabla de Teléfonos) ----------
+
+const personas = { abierto: false, sondeo: null };
+
+function haceCuanto(iso) {
+  const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
+  if (s < 60) return `hace ${s} s`;
+  if (s < 3600) return `hace ${Math.floor(s / 60)} min`;
+  if (s < 86400) return `hace ${Math.floor(s / 3600)} h`;
+  return `hace ${Math.floor(s / 86400)} d`;
+}
+
+const horaDe = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const fechaDe = (iso) => new Date(iso).toLocaleDateString([], { day: '2-digit', month: '2-digit' });
+
+// Una tarjeta por persona (textContent: nada del servidor se interpreta como HTML).
+function ficha(f, nombres) {
+  const li = document.createElement('li');
+  li.className = 'ficha';
+  const cabecera = document.createElement('div');
+  cabecera.className = 'ficha-cabecera';
+  const id = document.createElement('b');
+  id.className = 'ficha-id';
+  id.style.setProperty('--color', colorPersona(f.id));
+  id.textContent = `G${f.id}`;
+  const hace = document.createElement('span');
+  hace.className = 'ficha-hace';
+  hace.textContent = `visto ${haceCuanto(f.ultima_vez)}`;
+  cabecera.append(id, hace);
+  const datos = document.createElement('dl');
+  const filas = [
+    ['Género', f.genero || 'Sin determinar'],
+    ['Confianza', f.confianza_genero == null ? '—' : `${Math.round(f.confianza_genero * 100)} %`],
+    ['Muestras', String(f.muestras)],
+    ['Veces vista', String(f.apariciones)],
+    ['Cámaras', (f.camaras || []).map((c) => nombres.get(c) || c).join(', ') || '—'],
+    ['Primera vez', `${fechaDe(f.primera_vez)} ${horaDe(f.primera_vez)}`],
+    ['Última vez', `${fechaDe(f.ultima_vez)} ${horaDe(f.ultima_vez)}`],
+  ];
+  for (const [etiqueta, valor] of filas) {
+    const dt = document.createElement('dt');
+    dt.textContent = etiqueta;
+    const dd = document.createElement('dd');
+    dd.textContent = valor;
+    datos.append(dt, dd);
+  }
+  li.append(cabecera, datos);
+  return li;
+}
+
+async function cargarPersonas() {
+  let datos;
+  try {
+    const resp = await fetch('personas', { cache: 'no-store' });
+    datos = await resp.json();
+    if (!resp.ok) throw new Error(datos.error || `Error ${resp.status}`);
+  } catch (e) {
+    $('personas-error').textContent = e instanceof SyntaxError ? 'No se pudo leer la memoria de personas.' : e.message;
+    $('personas-error').hidden = false;
+    return;
+  }
+  if (!personas.abierto) return;
+  $('personas-error').hidden = true;
+  const fichas = datos.fichas || [];
+  const r = datos.resumen || {};
+  const nombres = new Map((datos.telefonos || []).map((t) => [t.id, t.nombre]));
+  const total = r.personas ?? fichas.length;
+  $('personas-resumen').textContent = `${total} en memoria${r.siguiente_id ? ` · próximo G${r.siguiente_id}` : ''}`
+    + `${r.retencion_horas ? ` · se olvida tras ${r.retencion_horas} h` : ''}`;
+  $('personas-vacia').hidden = fichas.length > 0;
+  $('personas-lista').replaceChildren(...fichas.map((f) => ficha(f, nombres)));
+}
+
+function abrirPersonas() {
+  personas.abierto = true;
+  $('personas').hidden = false;
+  cargarPersonas();
+  clearInterval(personas.sondeo);
+  personas.sondeo = setInterval(cargarPersonas, 3000);
+}
+
+function cerrarPersonas() {
+  personas.abierto = false;
+  clearInterval(personas.sondeo);
+  $('personas').hidden = true;
+}
+
 // ---------- Entrar y salir ----------
 
 async function unirse() {
@@ -403,6 +490,9 @@ function iniciar() {
   $('aviso-https').hidden = window.isSecureContext;
   $('unirse').addEventListener('click', unirse);
   $('salir').addEventListener('click', salir);
+  $('ver-personas').addEventListener('click', abrirPersonas);
+  $('abrir-personas').addEventListener('click', abrirPersonas);
+  $('cerrar-personas').addEventListener('click', cerrarPersonas);
   $('camaras').addEventListener('change', () => cambiarCamara($('camaras').value));
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') mantenerPantalla();

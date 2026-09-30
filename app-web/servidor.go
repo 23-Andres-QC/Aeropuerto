@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"regexp"
 	"time"
@@ -31,6 +33,8 @@ type Servidor struct {
 	camaras *Camaras
 	sala    *Sala
 	pagina  http.Handler
+	// Personas lee la memoria de identidades para el panel «Personas» (nil: no disponible).
+	Personas func(context.Context) ([]byte, error)
 }
 
 func NuevoServidor(camaras *Camaras, sala *Sala) *Servidor {
@@ -62,6 +66,28 @@ func (s *Servidor) Interno() http.Handler {
 func (s *Servidor) rutasDispositivo(m *http.ServeMux) {
 	m.Handle("GET /", s.pagina)
 	m.HandleFunc("GET /ws", s.unirse)
+	m.HandleFunc("GET /personas", s.verPersonas)
+}
+
+// verPersonas devuelve la memoria de identidades (sin vectores) para el panel de la página.
+func (s *Servidor) verPersonas(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if s.Personas == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "La memoria de personas no está disponible."})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	datos, err := s.Personas(ctx)
+	if err != nil {
+		log.Printf("personas: %v", err)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "No se pudo leer la memoria de personas."})
+		return
+	}
+	_, _ = w.Write(datos)
 }
 
 // unirse recibe los JPEG de una pestaña y acusa cada uno con quién la mira:

@@ -33,9 +33,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	api := env("API_VIVO", "http://backend-vivo:8080")
-	camaras := NuevasCamaras(NuevaAPIAeropuerto(api), env("URL_MJPEG", "http://127.0.0.1:8092"), 10*time.Second)
+	aeropuerto := NuevaAPIAeropuerto(api)
+	camaras := NuevasCamaras(aeropuerto, env("URL_MJPEG", "http://127.0.0.1:8092"), 10*time.Second)
 	sala := NuevaSala(ctx, relevoDe(api), camaras)
 	s := NuevoServidor(camaras, sala)
+	s.Personas = aeropuerto.Personas
 	home, _ := os.UserHomeDir()
 	cert, err := certificado(env("CERT_DIR", filepath.Join(home, "certs")))
 	if err != nil {

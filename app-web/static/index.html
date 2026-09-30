@@ -25,6 +25,7 @@
     <label for="nombre">Nombre de esta cámara</label>
     <input id="nombre" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Ej. Entrada norte">
     <button id="unirse" class="primario" type="button">Unirse con la cámara</button>
+    <button id="ver-personas" class="secundario" type="button">Ver personas en memoria</button>
     <p id="error-inicio" class="error" role="alert" hidden></p>
 
     <ol class="pasos">
@@ -46,8 +47,22 @@
       <span id="nombre-camara" class="nombre-camara"></span>
       <span class="espacio"></span>
       <select id="camaras" aria-label="Cámara" hidden></select>
+      <button id="abrir-personas" class="opcion" type="button">Personas</button>
       <button id="salir" class="peligro" type="button">Salir</button>
     </div>
+  </section>
+
+  <section id="personas" class="personas" hidden aria-label="Personas en memoria">
+    <header class="personas-cabecera">
+      <div>
+        <h2>Personas</h2>
+        <p id="personas-resumen" class="tenue-texto">Cargando…</p>
+      </div>
+      <button id="cerrar-personas" class="opcion" type="button" aria-label="Cerrar">✕</button>
+    </header>
+    <p id="personas-error" class="error" role="alert" hidden></p>
+    <p id="personas-vacia" class="tenue-texto" hidden>Nadie en la memoria todavía: aparece aquí cada persona que el modelo identifica.</p>
+    <ul id="personas-lista" class="personas-lista"></ul>
   </section>
 </main>
 </body>
