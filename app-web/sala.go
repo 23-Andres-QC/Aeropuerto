@@ -296,6 +296,63 @@ func (s *Sala) Atender(ws *websocket.Conn) {
 	}
 }
 
+// Acompanar manda a la pestaña de una cámara web lo que el modelo hace con su
+// video, como lo ve Teléfonos: las cajas de cada cuadro procesado («det») y su
+// estado («proceso»: FPS, latencia, personas). Termina al cerrarse `parar`.
+func (s *Sala) Acompanar(c *Conexion, telefono string, parar <-chan struct{}) {
+	var vistaDet, vistaEstado uint64
+	for {
+		s.mu.Lock()
+		cambio := s.cambio
+		var det []byte
+		var seqDet uint64
+		if f := s.fuentes[telefono]; f != nil {
+			det, seqDet = f.det, f.seqDet
+		}
+		estado, seqEstado := s.estado, s.seqEstado
+		s.mu.Unlock()
+
+		if det != nil && seqDet != vistaDet {
+			if c.EnviarJSON(`{"tipo":"det","datos":`, det) != nil {
+				return
+			}
+			vistaDet = seqDet
+		}
+		if estado != nil && seqEstado != vistaEstado {
+			if p := procesoDe(estado, telefono); p != nil && c.EnviarJSON(`{"tipo":"proceso","datos":`, p) != nil {
+				return
+			}
+			vistaEstado = seqEstado
+		}
+		select {
+		case <-parar:
+			return
+		case <-cambio:
+		}
+	}
+}
+
+// procesoDe resume el estado global del modelo para una cámara: el suyo y los
+// totales de la sesión, sin el de las demás cámaras.
+func procesoDe(estado []byte, telefono string) []byte {
+	var e struct {
+		Estado        string                     `json:"estado"`
+		PersonasTotal *int                       `json:"personas_total"`
+		Reconocidas   *int                       `json:"reconocidas"`
+		Genero        map[string]int             `json:"genero"`
+		Telefonos     map[string]json.RawMessage `json:"telefonos"`
+	}
+	if json.Unmarshal(estado, &e) != nil {
+		return nil
+	}
+	p, err := json.Marshal(map[string]any{"estado": e.Estado, "personas_total": e.PersonasTotal,
+		"reconocidas": e.Reconocidas, "genero": e.Genero, "camara": e.Telefonos[telefono]})
+	if err != nil {
+		return nil
+	}
+	return p
+}
+
 func (s *Sala) enviarLista(ws *websocket.Conn, lista []Telefono) error {
 	type camara struct {
 		ID     string `json:"id"`

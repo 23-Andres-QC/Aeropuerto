@@ -97,6 +97,7 @@ func (s *Servidor) unirse(w http.ResponseWriter, r *http.Request) {
 	parar := make(chan struct{})
 	defer close(parar)
 	go latir(ws, parar)
+	go s.sala.Acompanar(c, d.telefono, parar)
 	for {
 		tipo, datos, err := ws.ReadMessage()
 		if err != nil {

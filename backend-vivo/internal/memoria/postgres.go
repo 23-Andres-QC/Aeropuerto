@@ -223,3 +223,22 @@ func (r *Postgres) Resumen(ctx context.Context) (Resumen, error) {
 	                           FROM numeracion`).Scan(&s.Personas, &s.Vistas, &s.Siguiente, &s.Epoca)
 	return s, err
 }
+
+func (r *Postgres) Fichas(ctx context.Context, limite int) ([]Ficha, error) {
+	filas, err := r.db.Query(ctx, `SELECT id, genero, confianza_genero, muestras, apariciones, camaras, primera_vez, ultima_vez
+	                               FROM personas ORDER BY ultima_vez DESC, id DESC LIMIT $1`, limite)
+	if err != nil {
+		return nil, err
+	}
+	defer filas.Close()
+	fichas := []Ficha{}
+	for filas.Next() {
+		var f Ficha
+		if err = filas.Scan(&f.ID, &f.Genero, &f.ConfianzaGenero, &f.Muestras, &f.Apariciones, &f.Camaras,
+			&f.PrimeraVez, &f.UltimaVez); err != nil {
+			return nil, err
+		}
+		fichas = append(fichas, f)
+	}
+	return fichas, filas.Err()
+}

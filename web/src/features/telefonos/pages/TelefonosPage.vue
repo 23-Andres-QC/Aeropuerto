@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { wsUrl } from "../../../core/http";
-import { api, RELEVO_VIVO, type EstadoServicio, type ResumenMemoria, type Telefono } from "../api";
+import { api, RELEVO_VIVO, type EstadoServicio, type FichaPersona, type ResumenMemoria, type Telefono } from "../api";
+import MemoriaPersonas from "../components/MemoriaPersonas.vue";
 import SalaTelefonos from "../components/SalaTelefonos.vue";
 import VistaTelefono from "../components/VistaTelefono.vue";
 
 const telefonos = ref<Telefono[]>([]);
 const memoria = ref<ResumenMemoria>();
+const fichas = ref<FichaPersona[]>([]);
 const olvidando = ref(false);
 // La sala del servicio de cámara web; sin él, cada cámara en su propio panel.
 const salaDisponible = ref(false);
@@ -44,7 +46,7 @@ async function copiarEnlace() {
 
 async function cargar() {
   try {
-    [telefonos.value, memoria.value] = await Promise.all([api.telefonos(), api.memoria()]);
+    [telefonos.value, memoria.value, fichas.value] = await Promise.all([api.telefonos(), api.memoria(), api.fichas()]);
   } catch (e) {
     error.value = (e as Error).message;
   }
@@ -132,6 +134,8 @@ onUnmounted(() => {
       @quitar="quitar(t)"
     />
   </div>
+
+  <MemoriaPersonas :fichas="fichas" :memoria="memoria" :telefonos="telefonos" :ahora="ahora" />
 </template>
 
 <style scoped>

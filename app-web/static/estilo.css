@@ -117,6 +117,12 @@ select {
   background: #000;
 }
 
+/* Cajas del modelo: cubren exactamente la imagen del video (ver dibujarCajas). */
+.cajas {
+  position: absolute;
+  pointer-events: none;
+}
+
 .arriba, .abajo {
   position: absolute;
   left: 0;

@@ -455,6 +455,63 @@ func TestSalaMuestraLaCamaraWebDirectaConLasCajasDelModelo(t *testing.T) {
 	}
 }
 
+// La página de la cámara ve lo mismo que Teléfonos: sus cajas y su estado,
+// sin el de las demás cámaras.
+func TestLaCamaraWebVeSuProceso(t *testing.T) {
+	relevo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer ws.Close()
+		switch {
+		case r.URL.Path == "/api/v1/cameras/telefonos/detections/watch":
+			_ = ws.WriteMessage(websocket.TextMessage, []byte(`{"ts":1,"estado":"procesando","personas_total":3,`+
+				`"genero":{"Mujer":2},"telefonos":{"tel-1":{"fps":2.9,"personas_ahora":1},"tel-otro":{"fps":9}}}`))
+		case strings.HasSuffix(r.URL.Path, "/detections/watch"):
+			_ = ws.WriteMessage(websocket.TextMessage, []byte(`{"ts":1,"frame_w":960,"frame_h":720,"people":[]}`))
+		}
+		for {
+			if _, _, err := ws.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}))
+	t.Cleanup(relevo.Close)
+
+	e := nuevoEntorno(t, time.Minute, relevoDe(relevo.URL))
+	camara := unirseComo(t, e, idPrueba, "Laptop")
+	lista, err := e.camaras.Sincronizar(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.sala.Actualizar(lista)
+
+	vistos := map[string]bool{}
+	for !(vistos["det"] && vistos["proceso"]) {
+		_ = camara.SetReadDeadline(time.Now().Add(3 * time.Second))
+		var m struct {
+			Tipo  string          `json:"tipo"`
+			Datos json.RawMessage `json:"datos"`
+		}
+		if err := camara.ReadJSON(&m); err != nil {
+			t.Fatalf("faltó el proceso del modelo (%v): %v", vistos, err)
+		}
+		switch m.Tipo {
+		case "det":
+			if !strings.Contains(string(m.Datos), `"frame_w":960`) {
+				t.Fatalf("det = %s", m.Datos)
+			}
+		case "proceso":
+			d := string(m.Datos)
+			if !strings.Contains(d, `"personas_total":3`) || !strings.Contains(d, `"fps":2.9`) || strings.Contains(d, "tel-otro") {
+				t.Fatalf("proceso = %s", d)
+			}
+		}
+		vistos[m.Tipo] = true
+	}
+}
+
 func TestLaRedSoloVeLaPaginaDeCamara(t *testing.T) {
 	e := nuevoEntorno(t, time.Minute, "")
 	publico := httptest.NewServer(NuevoServidor(e.camaras, e.sala).Publico())

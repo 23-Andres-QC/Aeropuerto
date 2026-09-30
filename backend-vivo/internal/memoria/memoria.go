@@ -206,6 +206,18 @@ type Resumen struct {
 	RetencionHoras int   `json:"retencion_horas"`
 }
 
+// Ficha es una persona de la memoria tal como se muestra en la web: sin vectores.
+type Ficha struct {
+	ID              int64     `json:"id"`
+	Genero          *string   `json:"genero"`
+	ConfianzaGenero *float32  `json:"confianza_genero"`
+	Muestras        int       `json:"muestras"`
+	Apariciones     int       `json:"apariciones"`
+	Camaras         []string  `json:"camaras"`
+	PrimeraVez      time.Time `json:"primera_vez"`
+	UltimaVez       time.Time `json:"ultima_vez"`
+}
+
 // Repositorio guarda la memoria (PostgreSQL + pgvector).
 type Repositorio interface {
 	// Personas devuelve todas las personas con sus vistas, el próximo ID libre y la época.
@@ -219,4 +231,6 @@ type Repositorio interface {
 	// Purgar quita a quienes no se ven desde antes de `antes`.
 	Purgar(ctx context.Context, antes time.Time) (int64, error)
 	Resumen(ctx context.Context) (Resumen, error)
+	// Fichas devuelve hasta `limite` personas, la vista más reciente primero, sin vectores.
+	Fichas(ctx context.Context, limite int) ([]Ficha, error)
 }

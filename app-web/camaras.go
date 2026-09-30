@@ -87,6 +87,13 @@ func (c *Conexion) Enviar(m mensaje) error {
 	return c.ws.WriteJSON(m)
 }
 
+// EnviarJSON manda un mensaje que envuelve un JSON ya validado (ver enviarJSON de la sala).
+func (c *Conexion) EnviarJSON(prefijo string, datos []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return enviarJSON(c.ws, prefijo, datos)
+}
+
 // Terminar avisa el motivo a la página y cierra la conexión.
 func (c *Conexion) Terminar(texto string, reintentar bool) {
 	_ = c.Enviar(mensaje{Tipo: "error", Mensaje: texto, Reintentar: reintentar})

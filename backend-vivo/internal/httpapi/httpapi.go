@@ -38,6 +38,7 @@ func Nuevo(o Opciones) http.Handler {
 	m.HandleFunc("DELETE /api/v1/telefonos/{id}", a.quitarTelefono)
 	m.HandleFunc("GET /api/v1/personas", a.personas)
 	m.HandleFunc("GET /api/v1/personas/resumen", a.resumen)
+	m.HandleFunc("GET /api/v1/personas/fichas", a.fichas)
 	m.HandleFunc("PUT /api/v1/personas/{id}", a.guardarPersona)
 	m.HandleFunc("DELETE /api/v1/personas/{id}", a.borrarPersona)
 	m.HandleFunc("DELETE /api/v1/personas", a.olvidarTodas)
@@ -110,6 +111,20 @@ func (a api) resumen(w http.ResponseWriter, r *http.Request) {
 	}
 	s.RetencionHoras = a.RetencionHoras
 	escribir(w, http.StatusOK, s)
+}
+
+// maxFichas acota la lista que ve la web: las más recientes bastan para seguir al modelo.
+const maxFichas = 500
+
+func (a api) fichas(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	f, err := a.Memoria.Fichas(ctx, maxFichas)
+	if err != nil {
+		errorInterno(w, "no se pudo leer la memoria de identidades", err)
+		return
+	}
+	escribir(w, http.StatusOK, f)
 }
 
 // idYEpoca lee el id de la ruta y la época (?epoca=) con que el modelo cargó la memoria.

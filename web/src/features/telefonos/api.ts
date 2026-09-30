@@ -39,6 +39,18 @@ export type EstadoServicio = {
 /** Memoria de identidades de backend-vivo (sin vectores). */
 export type ResumenMemoria = { personas: number; vistas: number; siguiente_id: number; epoca: number; retencion_horas: number };
 
+/** Una persona de la memoria de identidades (tabla personas de vivo-db), sin vectores. */
+export type FichaPersona = {
+  id: number;
+  genero: "Hombre" | "Mujer" | null;
+  confianza_genero: number | null;
+  muestras: number;
+  apariciones: number;
+  camaras: string[];
+  primera_vez: string;
+  ultima_vez: string;
+};
+
 /** Una persona en las detecciones que el modelo publica por cámara. */
 export type PersonaDetectada = {
   id: number;
@@ -56,5 +68,6 @@ export const api = {
   telefonos: () => request<Telefono[]>(`${VIVO}/telefonos`),
   quitar: (id: string) => request<void>(`${VIVO}/telefonos/${encodeURIComponent(id)}`, { method: "DELETE" }),
   memoria: () => request<ResumenMemoria>(`${VIVO}/personas/resumen`),
+  fichas: () => request<FichaPersona[]>(`${VIVO}/personas/fichas`),
   olvidarTodas: () => request<{ borradas: number }>(`${VIVO}/personas`, { method: "DELETE" }),
 };

@@ -15,6 +15,9 @@ const CALIDAD = 0.6;
 // Entre 2 y 6: la cola nunca pasa de eso aunque la red se ponga lenta.
 const EN_VUELO_MIN = 2;
 const EN_VUELO_MAX = 6;
+// Cajas y estado del modelo: pasado este tiempo sin novedades ya no se muestran.
+const DET_VIGENTE_MS = 1500;
+const PROCESO_VIGENTE_MS = 6000;
 
 const $ = (id) => document.getElementById(id);
 
@@ -35,9 +38,14 @@ const app = {
   idas: [], // ms entre enviar un cuadro y su acuse
   reintento: null,
   wakeLock: null,
+  det: null, // últimas cajas del modelo para esta cámara
+  horaDet: 0,
+  proceso: null, // estado del modelo: el de esta cámara y los totales
+  horaProceso: 0,
 };
 
 const video = $('video');
+const capa = $('cajas');
 const lienzo = document.createElement('canvas');
 const ctx = lienzo.getContext('2d');
 
@@ -185,6 +193,12 @@ function conectar() {
       if (enviado !== undefined) app.idas.push(performance.now() - enviado);
       if (app.idas.length > 15) app.idas.shift();
       Object.assign(app, { lectores: m.lectores, espectadores: m.espectadores || 0 });
+    } else if (m.tipo === 'det') {
+      Object.assign(app, { det: m.datos, horaDet: performance.now() });
+      dibujarCajas();
+      return;
+    } else if (m.tipo === 'proceso') {
+      Object.assign(app, { proceso: m.datos, horaProceso: performance.now() });
     } else if (m.tipo === 'error') {
       if (m.reintentar) app.motivo = m.mensaje;
       else terminar(m.mensaje);
@@ -259,6 +273,81 @@ function mostrarEstado() {
   const envio = $('envio');
   envio.hidden = !app.unida;
   envio.textContent = `${app.envios.length} fps${idas.length ? ` · ${Math.round(idas[idas.length >> 1])} ms` : ''}`;
+  const proceso = $('proceso');
+  proceso.textContent = app.unida ? textoProceso() : '';
+  proceso.hidden = !proceso.textContent;
+}
+
+// ---------- Proceso del modelo (como en Teléfonos de la web) ----------
+
+// El mismo color por persona que la web (web/src/shared/format.ts).
+function colorPersona(numero) {
+  return `hsl(${Math.round(((numero * 0.618034) % 1) * 360)}, 78%, 48%)`;
+}
+
+// La capa cubre la imagen del video (object-fit: contain) y dibuja las cajas en
+// las coordenadas del cuadro que procesó el modelo (el JPEG enviado).
+function dibujarCajas() {
+  const g = capa.getContext('2d');
+  const W = video.clientWidth;
+  const H = video.clientHeight;
+  if (video.videoWidth && video.videoHeight && W && H) {
+    const k = Math.min(W / video.videoWidth, H / video.videoHeight);
+    const w = video.videoWidth * k;
+    const h = video.videoHeight * k;
+    Object.assign(capa.style, { left: `${(W - w) / 2}px`, top: `${(H - h) / 2}px`, width: `${w}px`, height: `${h}px` });
+  }
+  const det = app.det && performance.now() - app.horaDet < DET_VIGENTE_MS ? app.det : null;
+  if (!det || !det.frame_w || !det.frame_h) {
+    g.clearRect(0, 0, capa.width, capa.height);
+    return;
+  }
+  if (capa.width !== det.frame_w || capa.height !== det.frame_h) {
+    capa.width = det.frame_w;
+    capa.height = det.frame_h;
+  }
+  g.clearRect(0, 0, capa.width, capa.height);
+  const escala = det.frame_w / 640;
+  g.lineWidth = 2 * escala;
+  g.font = `600 ${Math.round(13 * escala)}px system-ui, sans-serif`;
+  for (const persona of det.people || []) {
+    const [x1, y1, x2, y2] = persona.box;
+    const color = persona.global_id != null ? colorPersona(persona.global_id) : '#8ba4bf';
+    g.strokeStyle = color;
+    g.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    const genero = persona.gender
+      ? `${persona.gender}${persona.gender_conf ? ` ${Math.round(persona.gender_conf * 100)}%` : ''}`
+      : '';
+    // Solo el ID global (el de la memoria); mientras se confirma la caja va sin número.
+    const texto = [persona.global_id != null ? `G${persona.global_id}` : '', genero].filter(Boolean).join(' · ');
+    if (!texto) continue;
+    const alto = 18 * escala;
+    const y = Math.max(alto, y1);
+    g.fillStyle = 'rgba(10, 20, 35, 0.82)';
+    g.fillRect(x1, y - alto, g.measureText(texto).width + 10 * escala, alto);
+    g.fillStyle = color;
+    g.fillText(texto, x1 + 5 * escala, y - 5 * escala);
+  }
+}
+
+// «1 en cuadro · 2.9 FPS · 470 ms · 12 personas (7 H, 5 M)», como las insignias de Teléfonos.
+function textoProceso() {
+  const p = app.proceso;
+  if (!p || performance.now() - app.horaProceso > PROCESO_VIGENTE_MS || p.estado === 'detenido') return '';
+  const partes = [];
+  const c = p.camara;
+  if (c && c.estado === 'procesando') {
+    partes.push(`${c.personas_ahora ?? 0} en cuadro`, `${c.fps ?? 0} FPS`);
+    if (c.latencia_ms != null) partes.push(`${c.latencia_ms} ms`);
+  } else if (c && c.estado === 'sin_conexion') {
+    partes.push(c.mensaje || 'El modelo no puede leer esta cámara');
+  }
+  if (p.personas_total != null) {
+    const g = p.genero || {};
+    const detalle = [g.Hombre ? `${g.Hombre} H` : '', g.Mujer ? `${g.Mujer} M` : ''].filter(Boolean).join(', ');
+    partes.push(`${p.personas_total} ${p.personas_total === 1 ? 'persona' : 'personas'}${detalle ? ` (${detalle})` : ''}`);
+  }
+  return partes.join(' · ');
 }
 
 // ---------- Entrar y salir ----------
@@ -296,7 +385,9 @@ function salir() {
 function terminar(mensaje) {
   const ws = app.ws;
   clearTimeout(app.reintento);
-  Object.assign(app, { activa: false, id: null, unida: false, ws: null, motivo: null, lectores: 0, espectadores: 0 });
+  Object.assign(app, { activa: false, id: null, unida: false, ws: null, motivo: null, lectores: 0, espectadores: 0,
+    det: null, proceso: null });
+  dibujarCajas();
   if (ws) ws.close();
   detenerCamara();
   if (app.wakeLock) app.wakeLock.release().catch(() => {});
@@ -320,8 +411,11 @@ function iniciar() {
   window.addEventListener('pagehide', () => {
     if (app.ws && app.ws.readyState === WebSocket.OPEN) app.ws.send(JSON.stringify({ tipo: 'salir' }));
   });
+  window.addEventListener('resize', dibujarCajas);
   setInterval(() => {
-    if (app.activa) mostrarEstado();
+    if (!app.activa) return;
+    mostrarEstado();
+    dibujarCajas(); // borra las cajas si el modelo dejó de mandarlas
   }, 500);
 }
 

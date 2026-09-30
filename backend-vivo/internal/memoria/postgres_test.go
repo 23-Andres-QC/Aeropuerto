@@ -80,6 +80,15 @@ func TestPostgresGuardaYRecuerda(t *testing.T) {
 		t.Fatalf("fechas o cámaras = %v %v", leida.UltimaVez, leida.Camaras)
 	}
 
+	// Las fichas van sin vectores y con la vista más reciente primero.
+	fichas, err := repo.Fichas(ctx, 10)
+	if err != nil || len(fichas) != 2 || fichas[0].Apariciones == 0 || fichas[0].UltimaVez.Before(fichas[1].UltimaVez) {
+		t.Fatalf("fichas = %+v, %v", fichas, err)
+	}
+	if fichas, err = repo.Fichas(ctx, 1); err != nil || len(fichas) != 1 {
+		t.Fatalf("fichas con límite = %+v, %v", fichas, err)
+	}
+
 	if n, err := repo.Purgar(ctx, p.UltimaVez.Add(time.Second)); err != nil || n != 2 {
 		t.Fatalf("purgar = %d, %v", n, err)
 	}

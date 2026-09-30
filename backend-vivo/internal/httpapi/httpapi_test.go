@@ -60,6 +60,17 @@ func (m *memoriaFalsa) Resumen(context.Context) (memoria.Resumen, error) {
 		Numeracion: memoria.Numeracion{Siguiente: m.siguiente, Epoca: m.epoca}}, m.fallar
 }
 
+func (m *memoriaFalsa) Fichas(_ context.Context, limite int) ([]memoria.Ficha, error) {
+	fichas := []memoria.Ficha{}
+	for _, p := range m.personas {
+		if len(fichas) < limite {
+			fichas = append(fichas, memoria.Ficha{ID: p.ID, Genero: p.Genero, Muestras: p.Muestras,
+				Apariciones: p.Apariciones, Camaras: p.Camaras, PrimeraVez: p.PrimeraVez, UltimaVez: p.UltimaVez})
+		}
+	}
+	return fichas, m.fallar
+}
+
 func servidor(t *testing.T) (*httptest.Server, *memoriaFalsa) {
 	t.Helper()
 	m := &memoriaFalsa{personas: map[int64]memoria.Persona{}, siguiente: 1, epoca: 1}
@@ -161,6 +172,29 @@ func TestMemoriaPorHTTP(t *testing.T) {
 	m.fallar = errors.New("sin base")
 	if resp, _ = pedir(t, http.MethodGet, s.URL+"/api/v1/personas", nil); resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("sin base = %d", resp.StatusCode)
+	}
+	if resp, _ = pedir(t, http.MethodGet, s.URL+"/api/v1/personas/fichas", nil); resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("fichas sin base = %d", resp.StatusCode)
+	}
+}
+
+func TestFichasSinVectores(t *testing.T) {
+	s, m := servidor(t)
+	genero := "Hombre"
+	ahora := time.Now().UTC()
+	m.personas[4] = memoria.Persona{ID: 4, Suma: vector(), Muestras: 9, Genero: &genero, Camaras: []string{"tel-a"},
+		Apariciones: 2, PrimeraVez: ahora, UltimaVez: ahora}
+	resp, err := http.Get(s.URL + "/api/v1/personas/fichas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var fichas []map[string]any
+	if err = json.NewDecoder(resp.Body).Decode(&fichas); err != nil || resp.StatusCode != http.StatusOK || len(fichas) != 1 {
+		t.Fatalf("fichas = %d %v %v", resp.StatusCode, fichas, err)
+	}
+	if _, hay := fichas[0]["suma"]; hay || fichas[0]["genero"] != "Hombre" || fichas[0]["apariciones"].(float64) != 2 {
+		t.Fatalf("ficha = %v", fichas[0])
 	}
 }
 
