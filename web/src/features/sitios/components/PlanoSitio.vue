@@ -71,6 +71,8 @@ const emit = defineEmits<{
   fondo: [];
 }>();
 const svg = ref<SVGSVGElement>();
+/** Grupo con todo lo que está en px del plano (girado junto con la vista cuando hay campus). */
+const grupo = ref<SVGGElement>();
 // cx/cy: dónde se presionó (px de pantalla). Nada se arrastra hasta pasar UMBRAL: un clic simple sigue siendo un clic.
 type Arrastre = { id: string; modo: "mover" | "girar"; pos: Punto; angulo: number; ox: number; oy: number; cx: number; cy: number; movido: boolean; soltado: boolean };
 const arrastre = ref<Arrastre | null>(null);
@@ -105,34 +107,70 @@ const transformCampus = computed(() => {
   const m = matrizCampus.value;
   return m ? `matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.e} ${m.f})` : undefined;
 });
-/** Todo lo que se puede ver: el plano del sitio y, si hay, el campus que lo rodea. */
-const mundo = computed<Vista>(() => {
+/** Esquinas de todo lo que se puede ver, en px del plano: el sitio y, si hay, la imagen del campus. */
+const esquinas = computed<Punto[]>(() => {
+  const lista: Punto[] = [[0, 0], [ancho.value, 0], [0, alto.value], [ancho.value, alto.value]];
   const m = matrizCampus.value;
   const c = campus.value;
-  let [x0, y0, x1, y1] = [0, 0, ancho.value, alto.value];
   if (m && c) {
-    for (const [u, v] of [[0, 0], [c.tam_px[0], 0], [0, c.tam_px[1]], [c.tam_px[0], c.tam_px[1]]]) {
-      const [x, y] = [m.a * u + m.c * v + m.e, m.b * u + m.d * v + m.f];
-      [x0, y0, x1, y1] = [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x), Math.max(y1, y)];
-    }
+    for (const [u, v] of [[0, 0], [c.tam_px[0], 0], [0, c.tam_px[1]], [c.tam_px[0], c.tam_px[1]]]) lista.push([m.a * u + m.c * v + m.e, m.b * u + m.d * v + m.f]);
   }
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  return lista;
 });
-/** Ancho del viewBox con todo a la vista (el viewBox conserva la proporción del plano). */
-const anchoMax = computed(() => Math.max(mundo.value.w, (mundo.value.h * ancho.value) / alto.value));
+/** Un punto del plano (px) como se ve con la vista girada `grados` (horario) alrededor del centro del sitio. */
+function girar([x, y]: Punto, grados: number): Punto {
+  if (!grados) return [x, y];
+  const t = (grados * Math.PI) / 180;
+  const [cx, cy] = [ancho.value / 2, alto.value / 2];
+  return [cx + (x - cx) * Math.cos(t) - (y - cy) * Math.sin(t), cy + (x - cx) * Math.sin(t) + (y - cy) * Math.cos(t)];
+}
+/** Caja de puntos (px de la vista). */
+function caja(ps: Punto[]): Vista {
+  const xs = ps.map((q) => q[0]);
+  const ys = ps.map((q) => q[1]);
+  const [x, y] = [Math.min(...xs), Math.min(...ys)];
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+/** Todo lo que se puede ver con la vista girada `grados`. */
+const mundoCon = (grados: number) => caja(esquinas.value.map((q) => girar(q, grados)));
+/** Con todo el campus a la vista, la vista gira para dejarlo derecho, como su plano. */
+const giroCampus = computed(() => -(campus.value?.angulo_deg ?? 0));
+/** Todo a la vista (el viewBox conserva la proporción del plano). */
+const vistaTodo = computed<Vista>(() => {
+  const m = mundoCon(giroCampus.value);
+  return { x: m.x, y: m.y, w: Math.max(m.w, (m.h * ancho.value) / alto.value), h: 0 };
+});
+const anchoMax = computed(() => (campus.value ? vistaTodo.value.w : ancho.value));
 /** El sitio con un poco de campus alrededor (sin campus, el plano justo). */
 const vistaSitio = computed<Vista>(() => {
-  const f = campus.value ? 1.3 : 1;
+  const f = campus.value ? 1.5 : 1;
   const [w, h] = [ancho.value * f, alto.value * f];
   return { x: (ancho.value - w) / 2, y: (alto.value - h) / 2, w, h };
 });
-const vistaTodo = computed<Vista>(() => ({ x: mundo.value.x, y: mundo.value.y, w: anchoMax.value, h: 0 }));
+/**
+ * Giro de la vista según el zoom: de cerca, el sitio con su orientación de siempre (0°); al alejarse gira de a poco
+ * hasta dejar el campus derecho. Va de 1,5 veces el sitio a la mitad del campus, en escala logarítmica como el zoom.
+ */
+function giroDe(w: number): number {
+  if (!campus.value) return 0;
+  const [cerca, lejos] = [Math.log(ancho.value * 1.5), Math.log(vistaTodo.value.w * 0.5)];
+  if (lejos <= cerca) return w > ancho.value * 1.5 ? giroCampus.value : 0;
+  return giroCampus.value * Math.min(1, Math.max(0, (Math.log(w) - cerca) / (lejos - cerca)));
+}
 
 // --- Vista: zoom y desplazamiento sobre el viewBox ---------------------------
 const vista = ref<Vista>({ x: 0, y: 0, w: 0, h: 0 });
 let animacion = 0;
+const giro = computed(() => giroDe(vista.value.w));
 /** Con el campus a la vista (lejos del sitio): el sitio se marca y un clic acerca a él. */
 const enCampus = computed(() => !!campus.value && vista.value.w > ancho.value * 1.8);
+/** Dónde van el nombre del sitio (arriba) y la ayuda (abajo) en la vista, ya girada. */
+const etiquetaSitio = computed(() => {
+  const piso = props.mapa.piso_L_m;
+  const ps: Punto[] = piso?.length ? piso.map(([x, y]) => [px(x), py(y)]) : esquinas.value.slice(0, 4);
+  const c = caja(ps.map((q) => girar(q, giro.value)));
+  return { x: c.x + c.w / 2, arriba: c.y, abajo: c.y + c.h };
+});
 function reiniciarVista() {
   cancelAnimationFrame(animacion);
   vista.value = acotar(campus.value && props.inicio === "campus" ? vistaTodo.value : vistaSitio.value);
@@ -186,10 +224,10 @@ const e = computed(() => {
   return w && h ? Math.max(vista.value.w / w, vista.value.h / h) : vista.value.w / ancho.value;
 });
 
-/** Mantiene la vista dentro de lo que hay para ver; si sobra espacio en un eje, la centra. */
+/** Mantiene la vista dentro de lo que hay para ver (con el giro de ese zoom); si sobra espacio en un eje, la centra. */
 function acotar(v: Vista): Vista {
-  const m = mundo.value;
   const w = Math.min(Math.max(v.w, ancho.value / 40), anchoMax.value);
+  const m = mundoCon(giroDe(w));
   const h = (w * alto.value) / ancho.value;
   const x = w >= m.w ? m.x + (m.w - w) / 2 : Math.min(Math.max(v.x, m.x), m.x + m.w - w);
   const y = h >= m.h ? m.y + (m.h - h) / 2 : Math.min(Math.max(v.y, m.y), m.y + m.h - h);
@@ -207,7 +245,7 @@ function acercar(factor: number, centro?: DOMPoint | null) {
 function rueda(ev: WheelEvent) {
   if (!props.zoom) return;
   ev.preventDefault();
-  acercar(Math.exp(ev.deltaY * 0.0015), enSvg(ev));
+  acercar(Math.exp(ev.deltaY * 0.0015), enVista(ev));
 }
 
 let paneo: { cx: number; cy: number; vx: number; vy: number; movido: boolean } | null = null;
@@ -216,7 +254,14 @@ let suprimirHasta = 0;
 const suprimir = () => (suprimirHasta = performance.now() + 400);
 const suprimido = () => performance.now() < suprimirHasta;
 
+/** Punto del plano (px, sin el giro de la vista) bajo el puntero. */
 function enSvg(ev: MouseEvent): DOMPoint | null {
+  const matriz = grupo.value?.getScreenCTM();
+  return matriz ? new DOMPoint(ev.clientX, ev.clientY).matrixTransform(matriz.inverse()) : null;
+}
+
+/** Punto de la vista (viewBox) bajo el puntero: el zoom con la rueda se centra ahí. */
+function enVista(ev: MouseEvent): DOMPoint | null {
   const matriz = svg.value?.getScreenCTM();
   return matriz ? new DOMPoint(ev.clientX, ev.clientY).matrixTransform(matriz.inverse()) : null;
 }
@@ -533,7 +578,7 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
     <svg
       ref="svg"
       class="lienzo-plano"
-      :class="{ dibujando, desplazable: zoom && vista.w < anchoMax - 0.5 }"
+      :class="{ dibujando, desplazable: zoom && vista.w < anchoMax - 0.5, lejos: enCampus }"
       :viewBox="`${vista.x} ${vista.y} ${vista.w} ${vista.h}`"
       :style="{ '--e': e }"
       preserveAspectRatio="xMidYMid meet"
@@ -547,128 +592,133 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
       @pointercancel="soltar"
       @pointerleave="cursor = null"
     >
-      <template v-if="campus">
-        <rect :x="mundo.x" :y="mundo.y" :width="mundo.w" :height="mundo.h" class="fondo" />
-        <image
-          :href="campus.url"
-          x="0"
-          y="0"
-          :width="campus.tam_px[0]"
-          :height="campus.tam_px[1]"
-          :transform="transformCampus"
-          preserveAspectRatio="none"
-          class="dibujo campus"
-        />
-        <clipPath v-if="mapa.piso_L_m?.length" :id="idPiso"><polygon :points="puntos(mapa.piso_L_m)" /></clipPath>
-      </template>
-      <rect v-else :width="ancho" :height="alto" class="fondo" />
-      <image v-if="mapa.fondo" :href="mapa.fondo.url" x="0" y="0" :width="ancho" :height="alto" preserveAspectRatio="none" class="dibujo" />
-      <polygon v-if="mapa.piso_L_m?.length" :points="puntos(mapa.piso_L_m)" class="piso" :class="{ 'sobre-dibujo': mapa.fondo }" />
-      <!-- Los obstáculos ya están en el dibujo de fondo; sin dibujo, se marcan aquí. -->
-      <template v-if="!mapa.fondo">
-        <polygon v-for="(o, i) in mapa.obstaculos ?? []" :key="'o' + i" :points="puntos(o.puntos_m)" class="obstaculo"><title>{{ o.nombre }}</title></polygon>
-      </template>
-      <!-- Sobre el campus, la cuadrícula solo va en el piso del sitio. -->
-      <g :clip-path="campus && mapa.piso_L_m?.length ? `url(#${idPiso})` : undefined">
-        <line v-for="l in lineas.verticales" :key="'v' + l.v" :x1="l.v" :x2="l.v" y1="0" :y2="alto" :class="l.fuerte ? 'rejilla-5' : 'rejilla'" />
-        <line v-for="l in lineas.horizontales" :key="'h' + l.v" :y1="l.v" :y2="l.v" x1="0" :x2="ancho" :class="l.fuerte ? 'rejilla-5' : 'rejilla'" />
-      </g>
-      <rect v-for="(c, i) in celdas" :key="'c' + i" :x="c.x" :y="c.y" :width="c.lado" :height="c.lado" :fill="c.color"><title>{{ c.n }}</title></rect>
-      <g
-        v-for="z in zonasPlano"
-        :key="'z' + z.zone_id"
-        class="zona"
-        :class="{ activa: z.zone_id === zonaActiva, movible: zonaEditable?.zone_id === z.zone_id }"
-        @click.stop="clicZona(z)"
-        @pointerdown="empezarZona($event, z)"
-      >
-        <polygon :points="puntos(z.points)" :style="{ fill: (z.color || '#3d8bff') + '33', stroke: z.color || '#3d8bff' }" />
-        <text :x="px(centro(z.points)[0])" :y="py(centro(z.points)[1])" class="zona-nombre">{{ z.name }}</text>
-      </g>
-      <g v-if="zonaEditable" class="asas-zona">
-        <circle
-          v-for="(m, i) in medios"
-          :key="'m' + i"
-          :cx="px(m[0])"
-          :cy="py(m[1])"
-          :r="4.5 * e"
-          class="asa-medio"
-          @pointerdown.stop="empezarVertice($event, i + 1, true)"
-          @click.stop
-        >
-          <title>Arrastra para agregar un punto</title>
-        </circle>
-        <circle
-          v-for="(p, i) in zonaEditable.points"
-          :key="'p' + i"
-          :cx="px(p[0])"
-          :cy="py(p[1])"
-          :r="6.5 * e"
-          class="asa-vertice"
-          @pointerdown.stop="empezarVertice($event, i, false)"
-          @click.stop
-          @dblclick.stop="quitarVertice(i)"
-        >
-          <title>Arrastra para mover el punto · doble clic para quitarlo</title>
-        </circle>
-      </g>
-      <polyline
-        v-for="(r, i) in recorridos"
-        :key="'r' + i"
-        :points="puntos(r.puntos)"
-        :class="r.hueco ? 'hueco' : r.activo ? 'rastro' : 'recorrido'"
-        :style="{ stroke: r.color }"
-      />
-      <g v-if="borrador.length">
-        <polygon v-if="trazarZona && borrador.length >= 3" :points="puntos(borrador)" class="borrador-relleno" />
-        <polyline :points="puntos(trazarZona && cursor && !cierra ? [...borrador, cursor] : borrador)" class="borrador" />
-        <circle v-for="(p, i) in borrador" :key="'b' + i" :cx="px(p[0])" :cy="py(p[1])" :r="(i === 0 && cierra ? 9 : 4) * e" class="vertice" :class="{ primero: i === 0 && trazarZona }" />
-      </g>
-      <g v-if="mostrarCamaras">
+      <rect v-if="campus" :x="vista.x" :y="vista.y" :width="vista.w" :height="vista.h" class="fondo" />
+      <g ref="grupo" :transform="giro ? `rotate(${giro} ${ancho / 2} ${alto / 2})` : undefined">
+        <template v-if="campus">
+          <image
+            :href="campus.url"
+            x="0"
+            y="0"
+            :width="campus.tam_px[0]"
+            :height="campus.tam_px[1]"
+            :transform="transformCampus"
+            preserveAspectRatio="none"
+            class="dibujo campus"
+          />
+          <clipPath v-if="mapa.piso_L_m?.length" :id="idPiso"><polygon :points="puntos(mapa.piso_L_m)" /></clipPath>
+        </template>
+        <rect v-else :width="ancho" :height="alto" class="fondo" />
+        <image v-if="mapa.fondo" :href="mapa.fondo.url" x="0" y="0" :width="ancho" :height="alto" preserveAspectRatio="none" class="dibujo" />
+        <polygon v-if="mapa.piso_L_m?.length" :points="puntos(mapa.piso_L_m)" class="piso" :class="{ 'sobre-dibujo': mapa.fondo }" />
+        <!-- Los obstáculos ya están en el dibujo de fondo; sin dibujo, se marcan aquí. -->
+        <template v-if="!mapa.fondo">
+          <polygon v-for="(o, i) in mapa.obstaculos ?? []" :key="'o' + i" :points="puntos(o.puntos_m)" class="obstaculo"><title>{{ o.nombre }}</title></polygon>
+        </template>
+        <!-- Sobre el campus, la cuadrícula solo va en el piso del sitio. -->
+        <g :clip-path="campus && mapa.piso_L_m?.length ? `url(#${idPiso})` : undefined">
+          <line v-for="l in lineas.verticales" :key="'v' + l.v" :x1="l.v" :x2="l.v" y1="0" :y2="alto" :class="l.fuerte ? 'rejilla-5' : 'rejilla'" />
+          <line v-for="l in lineas.horizontales" :key="'h' + l.v" :y1="l.v" :y2="l.v" x1="0" :x2="ancho" :class="l.fuerte ? 'rejilla-5' : 'rejilla'" />
+        </g>
+        <rect v-for="(c, i) in celdas" :key="'c' + i" :x="c.x" :y="c.y" :width="c.lado" :height="c.lado" :fill="c.color"><title>{{ c.n }}</title></rect>
         <g
-          v-for="c in camaras"
-          :key="c.id"
-          class="camara"
-          :class="{ activa: c.id === camaraActiva, inactiva: !c.activa, editable: editarCamaras }"
+          v-for="z in zonasPlano"
+          :key="'z' + z.zone_id"
+          class="zona"
+          :class="{ activa: z.zone_id === zonaActiva, movible: zonaEditable?.zone_id === z.zone_id }"
+          @click.stop="clicZona(z)"
+          @pointerdown="empezarZona($event, z)"
         >
-          <g :transform="`translate(${c.x} ${c.y}) rotate(${-c.angulo}) scale(${e})`">
-            <path d="M 8 0 L 44 -20 A 46 46 0 0 1 44 20 Z" class="cono" />
-            <g class="icono" @pointerdown.stop="empezar($event, c, 'mover')" @click.stop>
-              <rect x="-12" y="-8" width="18" height="16" rx="3.5" class="cuerpo" />
-              <path d="M 5 -4.5 L 13 -9 L 13 9 L 5 4.5 Z" class="lente" />
-              <circle cx="-3" cy="0" r="3.2" class="objetivo" />
-              <title v-if="editarCamaras">Arrastra para mover {{ c.id }}</title>
-            </g>
-          </g>
+          <polygon :points="puntos(z.points)" :style="{ fill: (z.color || '#3d8bff') + '33', stroke: z.color || '#3d8bff' }" />
+          <text :x="px(centro(z.points)[0])" :y="py(centro(z.points)[1])" class="zona-nombre">{{ z.name }}</text>
+        </g>
+        <g v-if="zonaEditable" class="asas-zona">
           <circle
-            v-if="editarCamaras"
-            :cx="c.asaX"
-            :cy="c.asaY"
-            :r="6 * e"
-            class="asa"
-            @pointerdown.stop="empezar($event, c, 'girar')"
+            v-for="(m, i) in medios"
+            :key="'m' + i"
+            :cx="px(m[0])"
+            :cy="py(m[1])"
+            :r="4.5 * e"
+            class="asa-medio"
+            @pointerdown.stop="empezarVertice($event, i + 1, true)"
             @click.stop
           >
-            <title>Arrastra para girar {{ c.id }}</title>
+            <title>Arrastra para agregar un punto</title>
           </circle>
-          <text :x="c.x" :y="c.y + 22 * e" class="camara-nombre">{{ c.etiqueta }}</text>
+          <circle
+            v-for="(p, i) in zonaEditable.points"
+            :key="'p' + i"
+            :cx="px(p[0])"
+            :cy="py(p[1])"
+            :r="6.5 * e"
+            class="asa-vertice"
+            @pointerdown.stop="empezarVertice($event, i, false)"
+            @click.stop
+            @dblclick.stop="quitarVertice(i)"
+          >
+            <title>Arrastra para mover el punto · doble clic para quitarlo</title>
+          </circle>
+        </g>
+        <polyline
+          v-for="(r, i) in recorridos"
+          :key="'r' + i"
+          :points="puntos(r.puntos)"
+          :class="r.hueco ? 'hueco' : r.activo ? 'rastro' : 'recorrido'"
+          :style="{ stroke: r.color }"
+        />
+        <g v-if="borrador.length">
+          <polygon v-if="trazarZona && borrador.length >= 3" :points="puntos(borrador)" class="borrador-relleno" />
+          <polyline :points="puntos(trazarZona && cursor && !cierra ? [...borrador, cursor] : borrador)" class="borrador" />
+          <circle v-for="(p, i) in borrador" :key="'b' + i" :cx="px(p[0])" :cy="py(p[1])" :r="(i === 0 && cierra ? 9 : 4) * e" class="vertice" :class="{ primero: i === 0 && trazarZona }" />
+        </g>
+        <g v-if="mostrarCamaras">
+          <g
+            v-for="c in camaras"
+            :key="c.id"
+            class="camara"
+            :class="{ activa: c.id === camaraActiva, inactiva: !c.activa, editable: editarCamaras }"
+          >
+            <g :transform="`translate(${c.x} ${c.y}) rotate(${-c.angulo}) scale(${e})`">
+              <path d="M 8 0 L 44 -20 A 46 46 0 0 1 44 20 Z" class="cono" />
+              <g class="icono" @pointerdown.stop="empezar($event, c, 'mover')" @click.stop>
+                <rect x="-12" y="-8" width="18" height="16" rx="3.5" class="cuerpo" />
+                <path d="M 5 -4.5 L 13 -9 L 13 9 L 5 4.5 Z" class="lente" />
+                <circle cx="-3" cy="0" r="3.2" class="objetivo" />
+                <title v-if="editarCamaras">Arrastra para mover {{ c.id }}</title>
+              </g>
+            </g>
+            <circle
+              v-if="editarCamaras"
+              :cx="c.asaX"
+              :cy="c.asaY"
+              :r="6 * e"
+              class="asa"
+              @pointerdown.stop="empezar($event, c, 'girar')"
+              @click.stop
+            >
+              <title>Arrastra para girar {{ c.id }}</title>
+            </circle>
+            <text :x="c.x" :y="c.y + 22 * e" class="camara-nombre">{{ c.etiqueta }}</text>
+          </g>
+        </g>
+        <g v-for="(f, i) in flechasPlano" :key="'f' + i" class="flecha">
+          <path :d="f.d" :stroke-width="f.ancho * e" marker-end="url(#flecha-flujo)" />
+          <text :x="f.mx" :y="f.my">{{ f.etiqueta }}</text>
+        </g>
+        <g v-for="p in personas" :key="'p' + p.id" class="persona-g" :class="p.estado ?? 'visto'">
+          <circle :cx="px(p.x)" :cy="py(p.y)" :r="(p.estado === 'salio' ? 6 : 9) * e" :fill="p.color" class="persona" />
+          <text :x="px(p.x) + 12 * e" :y="py(p.y) - 8 * e" class="persona-etiqueta" :style="{ fill: p.color }">{{ p.etiqueta }}</text>
+        </g>
+        <!-- Desde el campus, el sitio grabado se marca y un clic acerca a él. -->
+        <g v-if="enCampus" class="entrada-sitio" role="button" tabindex="0" @click.stop="entrarAlSitio" @keydown.enter="entrarAlSitio">
+          <polygon v-if="mapa.piso_L_m?.length" :points="puntos(mapa.piso_L_m)" class="marca-sitio" />
+          <rect v-else :width="ancho" :height="alto" class="marca-sitio" />
+          <title>Acercar a {{ campus?.nombre || "la zona grabada" }}</title>
         </g>
       </g>
-      <g v-for="(f, i) in flechasPlano" :key="'f' + i" class="flecha">
-        <path :d="f.d" :stroke-width="f.ancho * e" marker-end="url(#flecha-flujo)" />
-        <text :x="f.mx" :y="f.my">{{ f.etiqueta }}</text>
-      </g>
-      <g v-for="p in personas" :key="'p' + p.id" class="persona-g" :class="p.estado ?? 'visto'">
-        <circle :cx="px(p.x)" :cy="py(p.y)" :r="(p.estado === 'salio' ? 6 : 9) * e" :fill="p.color" class="persona" />
-        <text :x="px(p.x) + 12 * e" :y="py(p.y) - 8 * e" class="persona-etiqueta" :style="{ fill: p.color }">{{ p.etiqueta }}</text>
-      </g>
-      <!-- Desde el campus, el sitio grabado se marca y un clic acerca a él. -->
-      <g v-if="enCampus" class="entrada-sitio" role="button" tabindex="0" @click.stop="entrarAlSitio" @keydown.enter="entrarAlSitio">
-        <polygon v-if="mapa.piso_L_m?.length" :points="puntos(mapa.piso_L_m)" class="marca-sitio" />
-        <rect v-else :width="ancho" :height="alto" class="marca-sitio" />
-        <text :x="ancho / 2" :y="-14 * e" class="nombre-sitio">{{ campus?.nombre || "Zona grabada" }}</text>
-        <text :x="ancho / 2" :y="alto + 22 * e" class="ayuda-sitio">Clic para acercar</text>
-        <title>Acercar a {{ campus?.nombre || "la zona grabada" }}</title>
+      <!-- Fuera del grupo girado: los textos siempre derechos. -->
+      <g v-if="enCampus" class="entrada-sitio" @click.stop="entrarAlSitio">
+        <text :x="etiquetaSitio.x" :y="etiquetaSitio.arriba - 14 * e" class="nombre-sitio">{{ campus?.nombre || "Zona grabada" }}</text>
+        <text :x="etiquetaSitio.x" :y="etiquetaSitio.abajo + 24 * e" class="ayuda-sitio">Clic para acercar</text>
       </g>
       <g class="escala" :transform="`translate(${vista.x + 14 * e} ${vista.y + vista.h - 18 * e})`">
         <rect :width="escalaM * k" :height="5 * e" />
@@ -759,6 +809,13 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
 :root[data-theme="dark"] .dibujo {
   filter: invert(0.9) hue-rotate(180deg);
   opacity: 0.6;
+}
+/* Desde el campus, el sitio es chico: sin nombres de zonas, cámaras ni etiquetas encima de su marca. */
+.lienzo-plano.lejos .zona-nombre,
+.lienzo-plano.lejos .camara,
+.lienzo-plano.lejos .persona-etiqueta,
+.lienzo-plano.lejos .flecha text {
+  display: none;
 }
 /* El sitio marcado desde el campus: late para invitar al clic. */
 .entrada-sitio {
