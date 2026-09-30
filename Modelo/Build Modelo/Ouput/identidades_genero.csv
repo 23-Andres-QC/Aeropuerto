@@ -1,0 +1,17 @@
+global_id,global_uuid,genero,confianza_genero,votos_genero
+1,7664b14d-358b-5278-ba79-4caede837790,Hombre,0.91736305,45
+2,e7ec3a61-20e5-5732-8c5e-187b8e4ca255,Hombre,0.7407694,75
+3,0eaf95e4-b536-5d68-9464-3e5ebcfe9f90,Sin determinar,,0
+4,bf6459a6-204b-5e8f-953d-7faa8360ab27,Sin determinar,,21
+5,2367bae0-4fdd-5c24-96ac-18b141dcb120,Sin determinar,,19
+6,6bbfcf4e-e2e7-54a3-ae05-3efd1f8f36a0,Hombre,0.9879207,77
+7,f497d483-c2a0-5f24-9628-3326d43b0db2,Mujer,0.8085831,72
+8,3ac6a852-ce8a-5cbf-b477-abe489342180,Mujer,0.9649035,51
+9,cd38e6d3-b97d-57a2-b740-f496b80e71df,Hombre,0.97979146,83
+10,f3487a5c-23d8-57b2-a229-0cf827176157,Sin determinar,,0
+11,b6b547c2-8dd6-55cc-94f1-6d7acaaba0ad,Mujer,0.734888,26
+12,e1487ac0-3d7f-5585-9269-e79b8649e0eb,Sin determinar,,0
+13,700d963d-747e-5d89-84de-93740df1e9c1,Hombre,0.9034676,10
+14,771330cc-995a-52e5-a221-2ea97709bfdc,Sin determinar,,0
+15,0da2b001-b722-5ba2-822c-f5e14f087d12,Hombre,1.0,10
+16,b47a87e5-f467-5a25-82d8-ae703cdaf312,Sin determinar,,3

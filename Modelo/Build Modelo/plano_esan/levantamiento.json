@@ -1,0 +1,40 @@
+{
+  "descripcion": "Levantamiento del patio de ESAN desde las cámaras. Cada punto viene de un píxel del suelo en el primer cuadro del dataset ('camara' + 'px') y se pasa a metros con la homografía del Build (Modelo/mapa_piso.json); cada objeto ocupa 'tam_m' (ancho en x, fondo en y) alrededor de su punto. La carpa y los objetos son obstáculos: nadie camina a través de ellos. Los puntos 'm' están fuera del campo de visión y se extrapolan del contorno del Build y de las trayectorias. El piso es uno solo: el patio, el descanso bajo el entrepiso (sobre su borde, en el 3.er piso, está cam02) y el tramo de la L que sube al norte hacia cam03.",
+  "areas": [
+    {"id": "piso", "nombre": "Piso", "estilo": "baldosas", "puntos": [
+      {"m": [-10.7, 4.45], "nota": "esquina NO bajo cam01 (extrapolada)"},
+      {"camara": "cam01", "px": [431, 699], "nota": "murete, borde inferior del cuadro"},
+      {"camara": "cam01", "px": [385, 420], "nota": "murete junto a la carpa: aquí el piso gira al norte (la L)"},
+      {"m": [2.1, 5.2], "nota": "tramo norte de la L; cam03 lo ve hasta y ≈ 4.4 m, el borde es extrapolado"},
+      {"camara": "cam01", "px": [300, 308], "nota": "base del muro gris del fondo: esquina NE del tramo norte"},
+      {"camara": "cam01", "px": [375, 308], "nota": "esquina del muro gris con el descanso"},
+      {"m": [10.6, 2.9], "nota": "fondo del descanso, bajo el entrepiso (extrapolado)"},
+      {"m": [9.3, -4.6], "nota": "fondo del descanso, bajo el entrepiso (extrapolado)"},
+      {"camara": "cam01", "px": [650, 280], "nota": "borde del descanso junto a los ascensores"},
+      {"camara": "cam03", "px": [420, 290], "nota": "puerta de ascensor (este)"},
+      {"camara": "cam03", "px": [560, 290]},
+      {"camara": "cam03", "px": [700, 288]},
+      {"camara": "cam03", "px": [930, 285], "nota": "puerta de ascensor (oeste)"},
+      {"camara": "cam01", "px": [882, 449], "nota": "base de la fachada sur"},
+      {"camara": "cam01", "px": [1006, 566]},
+      {"camara": "cam01", "px": [1180, 700]},
+      {"m": [-12.2, -5.1], "nota": "esquina SO bajo cam01 (extrapolada)"}
+    ]},
+    {"id": "carpa", "nombre": "Carpa azul", "estilo": "carpa", "puntos": [
+      {"camara": "cam01", "px": [383, 386]},
+      {"camara": "cam01", "px": [444, 386]},
+      {"camara": "cam01", "px": [452, 428]},
+      {"camara": "cam01", "px": [390, 432]}
+    ]}
+  ],
+  "lineas": [
+    {"id": "ascensores", "nombre": "Ascensores", "estilo": "puertas", "nota": "bases de las puertas de los ascensores en cam03", "puntos": [
+      {"camara": "cam03", "px": [420, 290]}, {"camara": "cam03", "px": [560, 290]}, {"camara": "cam03", "px": [700, 288]}, {"camara": "cam03", "px": [930, 285]}]}
+  ],
+  "objetos": [
+    {"id": "expendedora_negra", "nombre": "Expendedora negra", "icono": "maquina", "camara": "cam01", "px": [380, 272], "tam_m": [0.9, 0.9]},
+    {"id": "expendedora_roja", "nombre": "Expendedora roja", "icono": "maquina", "camara": "cam01", "px": [568, 258], "tam_m": [0.9, 0.9]},
+    {"id": "tacho", "nombre": "Tacho", "icono": "tacho", "camara": "cam01", "px": [855, 425], "tam_m": [0.5, 0.5]},
+    {"id": "reciclaje", "nombre": "Reciclaje", "icono": "reciclaje", "camara": "cam01", "px": [1095, 655], "tam_m": [1.5, 0.5]}
+  ]
+}

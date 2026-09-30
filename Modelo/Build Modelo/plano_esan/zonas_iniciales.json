@@ -1,0 +1,24 @@
+{
+  "descripcion": "Zonas del patio de ESAN trazadas sobre el levantamiento (metros del plano). «Piso» es todo el piso transitable (patio, descanso y tramo norte de la L); la carpa, los ascensores, el tacho, el reciclaje y las expendedoras quedan encima y ganan por ser más chicas. Se crean una sola vez (si el sitio no tiene zonas) y luego se editan desde la web.",
+  "locales": [
+    {"name": "Carpa azul", "category": "Stand", "zonas": [
+      {"name": "Carpa azul", "zone_type": "INTERIOR", "color": "#2563eb",
+       "points": [[1.16, 2.36], [2.8, 2.18], [3.29, 3.48], [1.46, 3.6]]}
+    ]}
+  ],
+  "zonas": [
+    {"name": "Piso", "zone_type": "PASILLO", "color": "#ca8a04",
+     "points": [[-10.7, 4.45], [-4.86, 4.01], [1.93, 3.63], [2.1, 5.2], [8.11, 5.07], [7.34, 3.11], [10.6, 2.9], [9.3, -4.6], [6.21, -4.46],
+                [6.08, -6.24], [4.08, -5.87], [2.09, -5.58], [-1.14, -5.09], [-2.31, -5.19], [-5.37, -4.95], [-7.87, -5.14], [-12.2, -5.1]]},
+    {"name": "Ascensores", "zone_type": "ENTRADA", "color": "#a855f7",
+     "points": [[-1.14, -3.1], [2.09, -3.6], [4.08, -3.9], [6.25, -4.2], [6.21, -4.46], [6.08, -6.24], [4.08, -5.87], [2.09, -5.58], [-1.14, -5.09]]},
+    {"name": "Tacho", "zone_type": "OTRO", "color": "#65a30d",
+     "points": [[-2.4, -5.18], [-1.14, -5.09], [-1.14, -4.0], [-2.4, -4.0]]},
+    {"name": "Reciclaje", "zone_type": "OTRO", "color": "#16a34a",
+     "points": [[-7.9, -5.14], [-6.1, -5.0], [-6.1, -3.95], [-7.9, -3.95]]},
+    {"name": "Expendedora negra", "zone_type": "OTRO", "color": "#475569",
+     "points": [[8.3, 1.8], [9.9, 1.8], [9.9, 2.93], [8.3, 3.02]]},
+    {"name": "Expendedora roja", "zone_type": "OTRO", "color": "#dc2626",
+     "points": [[7.2, -3.6], [8.8, -3.6], [8.8, -2.2], [7.2, -2.2]]}
+  ]
+}

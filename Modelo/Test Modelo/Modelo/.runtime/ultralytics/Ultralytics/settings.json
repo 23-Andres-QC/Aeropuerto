@@ -1,0 +1,19 @@
+{
+  "settings_version": "0.0.8",
+  "datasets_dir": "C:\\Users\\andre\\OneDrive\\Documentos\\Ciclo09\\Caspton Proyect\\Proyecto Final\\proyecto-aeropuerto-2026\\Modelo\\Test Modelo\\datasets",
+  "weights_dir": "weights",
+  "runs_dir": "runs",
+  "uuid": "b34b2026d69025c643e5d2ac0b889d737f4a0de6ee965ff2a91ec997d0235bb2",
+  "sync": true,
+  "api_key": "",
+  "openai_api_key": "",
+  "clearml": true,
+  "comet": true,
+  "dvc": true,
+  "mlflow": true,
+  "raytune": true,
+  "tensorboard": false,
+  "wandb": false,
+  "vscode_msg": true,
+  "openvino_msg": true
+}

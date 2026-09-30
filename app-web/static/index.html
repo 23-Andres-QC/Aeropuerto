@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Cámara ESAN · web</title>
+<link rel="icon" href="icono.svg" type="image/svg+xml">
+<link rel="stylesheet" href="estilo.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<main>
+  <section id="inicio" class="inicio">
+    <div class="marca" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="28" height="28"><path fill="currentColor" d="M9 4 7.2 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.2L15 4H9zm3 4.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9zm0 2a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"/></svg>
+    </div>
+    <h1>Cámara ESAN</h1>
+    <p class="sub">Une este dispositivo como cámara en vivo. El modelo la procesa en la laptop y se ve en <strong>Teléfonos</strong> de la web. El video <strong>no se guarda</strong>.</p>
+
+    <p id="aviso-https" class="aviso" hidden>
+      Este navegador solo permite la cámara por <strong>HTTPS</strong>. Abre esta página con <code>https://</code>.
+    </p>
+
+    <label for="nombre">Nombre de esta cámara</label>
+    <input id="nombre" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Ej. Entrada norte">
+    <button id="unirse" class="primario" type="button">Unirse con la cámara</button>
+    <p id="error-inicio" class="error" role="alert" hidden></p>
+
+    <ol class="pasos">
+      <li>Pulsa <strong>Unirse con la cámara</strong> y permite la cámara.</li>
+      <li>Aparece sola en <strong>Teléfonos</strong> de la web del aeropuerto.</li>
+      <li>Deja esta pantalla abierta y el teléfono fijo.</li>
+    </ol>
+  </section>
+
+  <section id="camara" class="camara" hidden>
+    <video id="video" autoplay playsinline muted></video>
+    <div class="arriba">
+      <span id="estado" class="chip">Conectando…</span>
+      <span id="envio" class="chip tenue" hidden></span>
+    </div>
+    <div class="abajo">
+      <span id="nombre-camara" class="nombre-camara"></span>
+      <span class="espacio"></span>
+      <select id="camaras" aria-label="Cámara" hidden></select>
+      <button id="salir" class="peligro" type="button">Salir</button>
+    </div>
+  </section>
+</main>
+</body>
+</html>

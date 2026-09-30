@@ -1,0 +1,121 @@
+name: aeropuerto-demo
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_DB: aeropuerto
+      POSTGRES_USER: aeropuerto
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-demo_local_only}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U aeropuerto -d aeropuerto"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgres://aeropuerto:${DB_PASSWORD:-demo_local_only}@db:5432/aeropuerto?sslmode=disable
+      MEDIA_DIR: /media
+    volumes:
+      # Archivos que exportó el Build de cada sitio (videos procesados, mapa,
+      # CSV), servidos en /api/v1/sites/<sitio>/media/. No van dentro de la
+      # imagen para no inflarla en cada build.
+      - "./Modelo/Build Modelo/Ouput:/media/esan:ro"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # Lista cuando también responde PostgreSQL: la web arranca recién entonces.
+      test: [CMD-SHELL, "wget -q -O - http://127.0.0.1:8080/health/ready || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+  web:
+    build: ./web
+    ports:
+      # Local: 127.0.0.1. Servidor: BIND_ADDR=0.0.0.0 y WEB_PORT=80 en .env.
+      - "${BIND_ADDR:-127.0.0.1}:${WEB_PORT:-8080}:80"
+      # HTTPS (certificado autofirmado, ver web/docker-entrypoint.sh): hace
+      # falta para usar la cámara desde otro equipo en la misma red, ya que
+      # el navegador solo concede permiso de cámara en contexto seguro.
+      - "${BIND_ADDR:-127.0.0.1}:${WEB_TLS_PORT:-8443}:443"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+  # ---- Cámaras en vivo: separadas del demo (sitios LAP y ESAN) ----
+  # Base propia del modelo en vivo: la memoria de identidades (quién ya se vio,
+  # con su apariencia como vectores Re-ID). Solo la ve backend-vivo.
+  vivo-db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: vivo
+      POSTGRES_USER: vivo
+      POSTGRES_PASSWORD: ${VIVO_DB_PASSWORD:-vivo_local_only}
+    volumes:
+      - vivo-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U vivo -d vivo"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  # Backend de las cámaras en vivo (backend-vivo/): lista de teléfonos, relevo de
+  # video y detecciones, y memoria de identidades para que cada persona
+  # conserve su ID. El modelo (camara_telefono.py) corre en esta máquina y le
+  # habla directo por el 8093; la web, por su nginx en /vivo/.
+  backend-vivo:
+    build: ./backend-vivo
+    environment:
+      DATABASE_URL: postgres://vivo:${VIVO_DB_PASSWORD:-vivo_local_only}@vivo-db:5432/vivo?sslmode=disable
+      # Quien no vuelve a verse en este plazo se borra de la memoria.
+      RETENCION_HORAS: ${VIVO_RETENCION_HORAS:-168}
+    ports:
+      - "127.0.0.1:${VIVO_API_PORT:-8093}:8080"
+    depends_on:
+      vivo-db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, "wget -q -O - http://127.0.0.1:8080/salud || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+  # Cámara web (app-web/): cualquier teléfono con navegador se une como cámara
+  # en vivo abriendo https://<IP-de-esta-laptop>:8444. Se registra sola en la
+  # lista de backend-vivo, que Teléfonos muestra con el proceso del modelo.
+  camara-web:
+    build: ./app-web
+    environment:
+      API_VIVO: http://backend-vivo:8080
+      # De dónde lee el video camara_telefono.py (corre en esta máquina).
+      URL_MJPEG: http://127.0.0.1:${CAMARA_MJPEG_PORT:-8092}
+    ports:
+      # HTTPS para los dispositivos: tiene que verse desde la red (misma Wi-Fi).
+      - "${CAMARA_BIND_ADDR:-0.0.0.0}:${CAMARA_PORT:-8444}:8443"
+      # MJPEG con token para el modelo y sala para Teléfonos: solo esta máquina.
+      - "127.0.0.1:${CAMARA_MJPEG_PORT:-8092}:8080"
+    volumes:
+      # El certificado autofirmado sobrevive a reconstruir el contenedor: los
+      # teléfonos aceptan la advertencia una sola vez.
+      - camara-cert:/home/app/certs
+    depends_on:
+      backend-vivo:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, "wget -q -O - http://127.0.0.1:8080/salud || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+volumes:
+  pgdata:
+  camara-cert:
+  vivo-pgdata:

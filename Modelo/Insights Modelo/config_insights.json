@@ -1,0 +1,37 @@
+{
+  "version": "1.0",
+  "piso": {
+    "margen_m": 0.2
+  },
+  "consolidacion": {
+    "paso_s": 0.2,
+    "velocidad_max_mps": 4.0,
+    "ponderacion": "confianza"
+  },
+  "eventos": {
+    "tolerancia_s": 1.0,
+    "dwell_min_s": 5.0,
+    "retorno_min_s": 10.0,
+    "cola_min_s": 8.0,
+    "cola_velocidad_max_mps": 0.35,
+    "confianza_sin_transicion": 0.5
+  },
+  "kde": {
+    "celda_m": 0.5,
+    "h_m": 1.0,
+    "radio_h": 4.0
+  },
+  "rutas": {
+    "soporte_min_personas": 2,
+    "soporte_min_fraccion": 0.1,
+    "longitud_min": 2,
+    "longitud_max": 5,
+    "maximo": 15
+  },
+  "congestion": {
+    "personas_min": 3,
+    "densidad_min": 0.25,
+    "velocidad_max_mps": 0.5,
+    "duracion_min_s": 5.0
+  }
+}

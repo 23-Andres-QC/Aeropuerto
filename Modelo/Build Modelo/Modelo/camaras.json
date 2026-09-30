@@ -1,0 +1,150 @@
+{
+  "mode": "visual_temporal",
+  "units": "m",
+  "notes": "Tres cámaras con vistas solapadas del mismo recinto. Umbrales de asociación calibrados el 2026-09-13 con 70 tracklets etiquetados a mano (11 personas) de los videos completos. Sin homografía no hay gating métrico ni X/Y reales.",
+  "cameras": {
+    "cam01": {
+      "timestamp_offset": 0.0,
+      "resolution": [
+        1280,
+        720
+      ],
+      "H": null,
+      "coverage_polygon": null,
+      "fit_image": [],
+      "fit_world": [],
+      "control_image": [],
+      "control_world": [],
+      "max_error_m": 0.75,
+      "principal_point": [
+        507.0,
+        360.0
+      ]
+    },
+    "cam02": {
+      "timestamp_offset": 0.0,
+      "resolution": [
+        1280,
+        720
+      ],
+      "H": null,
+      "coverage_polygon": null,
+      "fit_image": [],
+      "fit_world": [],
+      "control_image": [],
+      "control_world": [],
+      "max_error_m": 0.75,
+      "principal_point": [
+        504.0,
+        360.0
+      ]
+    },
+    "cam03": {
+      "timestamp_offset": 0.0,
+      "resolution": [
+        1280,
+        720
+      ],
+      "H": null,
+      "coverage_polygon": null,
+      "fit_image": [],
+      "fit_world": [],
+      "control_image": [],
+      "control_world": [],
+      "max_error_m": 0.75,
+      "principal_point": [
+        545.0,
+        273.0
+      ]
+    }
+  },
+  "overlaps": [
+    [
+      "cam01",
+      "cam02"
+    ],
+    [
+      "cam01",
+      "cam03"
+    ],
+    [
+      "cam02",
+      "cam03"
+    ]
+  ],
+  "transitions": [
+    {
+      "from": "cam01",
+      "to": "cam02",
+      "t_min_s": 0.0,
+      "t_max_s": 60.0,
+      "max_distance_m": 30.0,
+      "min_direction_cos": -0.5
+    },
+    {
+      "from": "cam01",
+      "to": "cam03",
+      "t_min_s": 0.0,
+      "t_max_s": 60.0,
+      "max_distance_m": 30.0,
+      "min_direction_cos": -0.5
+    },
+    {
+      "from": "cam02",
+      "to": "cam01",
+      "t_min_s": 0.0,
+      "t_max_s": 60.0,
+      "max_distance_m": 30.0,
+      "min_direction_cos": -0.5
+    },
+    {
+      "from": "cam02",
+      "to": "cam03",
+      "t_min_s": 0.0,
+      "t_max_s": 60.0,
+      "max_distance_m": 30.0,
+      "min_direction_cos": -0.5
+    },
+    {
+      "from": "cam03",
+      "to": "cam01",
+      "t_min_s": 0.0,
+      "t_max_s": 60.0,
+      "max_distance_m": 30.0,
+      "min_direction_cos": -0.5
+    },
+    {
+      "from": "cam03",
+      "to": "cam02",
+      "t_min_s": 0.0,
+      "t_max_s": 60.0,
+      "max_distance_m": 30.0,
+      "min_direction_cos": -0.5
+    }
+  ],
+  "association": {
+    "sample_interval_s": 0.4,
+    "tracklet_views_target": 10,
+    "identity_views_target": 40,
+    "verify_interval_s": 2.0,
+    "min_samples": 5,
+    "min_query_samples": 4,
+    "min_identity_duration_s": 2.0,
+    "threshold": 0.6,
+    "average_threshold": 0.55,
+    "same_camera_threshold": 0.7,
+    "ambiguity_margin": 0.05,
+    "mutual_best": true,
+    "split_threshold": 0.4,
+    "split_strikes": 2,
+    "candidate_window_s": 90.0,
+    "reentry_window_s": 120.0,
+    "tracklet_gap_s": 2.0,
+    "sync_tolerance_s": 0.15,
+    "overlap_distance_m": 1.5,
+    "max_speed_m_s": 4.0,
+    "min_conf": 0.55,
+    "min_height": 40,
+    "max_occlusion": 0.2
+  }
+}

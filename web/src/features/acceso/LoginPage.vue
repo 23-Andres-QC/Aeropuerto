@@ -1,0 +1,98 @@
+<script setup lang="ts">
+import { ref } from "vue";
+import { useRouter } from "vue-router";
+import { login as iniciarSesion } from "../../core/auth";
+
+const router = useRouter();
+const username = ref("");
+const password = ref("");
+const showPassword = ref(false);
+const error = ref("");
+const submitting = ref(false);
+
+async function login() {
+  error.value = "";
+  if (!username.value.trim() || !password.value) {
+    error.value = "Ingresa tu usuario y contraseña.";
+    return;
+  }
+
+  submitting.value = true;
+  await new Promise((resolve) => setTimeout(resolve, 250));
+
+  if (iniciarSesion(username.value, password.value)) {
+    await router.replace("/");
+  } else {
+    error.value = "Usuario o contraseña incorrectos.";
+    password.value = "";
+  }
+  submitting.value = false;
+}
+</script>
+
+<template>
+  <main class="login-page">
+    <section class="login-visual" aria-label="Información del sistema">
+      <div class="login-brand-row">
+        <div class="login-brand"><span class="brand-icon">✈</span> LAP</div>
+        <span class="login-status"><span></span> Operación aérea</span>
+      </div>
+      <div class="login-visual-copy">
+        <span class="eyebrow">AEROPUERTO INTERNACIONAL</span>
+        <h1>Jorge Chávez<br /><em>Lima, Perú.</em></h1>
+        <p>Centro de control y monitoreo del terminal aéreo.</p>
+      </div>
+      <div class="login-visual-footer">LIMA AIRPORT PARTNERS <span>·</span> JORGE CHÁVEZ</div>
+    </section>
+
+    <section class="login-panel">
+      <div class="login-card">
+        <div class="login-card-top"><span class="login-card-mark">✈</span><span>Terminal · Nivel 3</span></div>
+        <div class="login-card-heading">
+          <span class="login-kicker">ACCESO SEGURO</span>
+          <h2>Bienvenido</h2>
+          <p>Ingresa tus credenciales para continuar al centro de control.</p>
+        </div>
+
+        <form @submit.prevent="login" novalidate>
+          <label for="username">Usuario</label>
+          <input
+            id="username"
+            v-model="username"
+            name="username"
+            type="text"
+            autocomplete="username"
+            placeholder="Ingresa tu usuario"
+            autofocus
+          />
+
+          <label for="password">Contraseña</label>
+          <div class="password-field">
+            <input
+              id="password"
+              v-model="password"
+              name="password"
+              :type="showPassword ? 'text' : 'password'"
+              autocomplete="current-password"
+              placeholder="Ingresa tu contraseña"
+            />
+            <button
+              type="button"
+              class="password-toggle"
+              :aria-label="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+              @click="showPassword = !showPassword"
+            >{{ showPassword ? "Ocultar" : "Mostrar" }}</button>
+          </div>
+
+          <p v-if="error" class="login-error" role="alert">{{ error }}</p>
+          <button class="primary-button login-submit" type="submit" :disabled="submitting">
+            <span>{{ submitting ? "Validando…" : "Ingresar al sistema" }}</span>
+            <span aria-hidden="true">→</span>
+          </button>
+        </form>
+
+        <div class="login-security"><span>⌁</span> Sesión protegida · Acceso interno LAP</div>
+      </div>
+    </section>
+  </main>
+</template>

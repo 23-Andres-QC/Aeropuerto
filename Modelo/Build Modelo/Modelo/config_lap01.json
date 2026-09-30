@@ -1,0 +1,59 @@
+{
+  "detector": {
+    "conf": 0.3,
+    "display_conf": 0.3,
+    "imgsz": 640,
+    "iou": 0.5,
+    "fp16": false
+  },
+  "tracker": {
+    "max_age": 120,
+    "colour_gate": 0.72,
+    "distance_gate": 0.95,
+    "gallery_size": 24,
+    "deep_appearance": true,
+    "min_confirmations": 3,
+    "confirmation_window": 5,
+    "new_track_confidence": 0.6,
+    "association_confidence": 0.35,
+    "active_motion_gate": 0.55,
+    "active_iou_gate": 0.12,
+    "min_person_height": 40,
+    "reid_gate": 0.8,
+    "appearance_interval": 5
+  },
+  "appearance": {
+    "deep_weight": 0.2,
+    "calibration": [
+      1.123,
+      -0.075
+    ]
+  },
+  "weights": {
+    "detector": "yolo26m.pt",
+    "appearance": "resnet18-f37072fd.pth"
+  },
+  "version": "2.0",
+  "reference_fps": 15,
+  "multicamera_encoder": {
+    "type": "onnx",
+    "weights": "yolo26s-reid.onnx",
+    "imgsz": 448,
+    "threads": 2,
+    "batch_size": 8,
+    "device": "auto"
+  },
+  "gender": {
+    "enabled": true,
+    "weights": "clip_genero",
+    "device": "auto",
+    "batch_size": 16,
+    "sample_interval_s": 0.6,
+    "min_votes": 5,
+    "max_votes_per_tracklet": 12,
+    "min_confidence": 0.72,
+    "min_margin": 0.18,
+    "min_height": 96,
+    "min_detection_confidence": 0.65
+  }
+}

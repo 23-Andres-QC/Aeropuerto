@@ -1,0 +1,637 @@
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
+import { cantidad, colorPersona, segundos } from "../../../shared/format";
+import { api, mapaDelSitio, tramos, GENEROS, type Analitica, type Config, type Insights, type Punto, type Replay, type Sesion } from "../api";
+import PlanoSitio, { type FlechaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
+import { useSitios } from "../useSitios";
+
+const route = useRoute();
+const { slug } = useSitios();
+const config = ref<Config>();
+const sesiones = ref<Sesion[]>([]);
+const sesionId = ref("");
+const zonaId = ref<number | null>(null);
+const datos = ref<Insights>();
+const analitica = ref<Analitica | null>(null);
+const replay = ref<Replay>();
+const error = ref("");
+const cargando = ref(true);
+const capaCalor = ref<"ocupacion" | "visitantes">("ocupacion");
+const verFlujos = ref(true);
+
+const mapa = computed(() => mapaDelSitio(config.value));
+const sesion = computed(() => sesiones.value.find((s) => s.session_id === sesionId.value));
+const r = computed(() => datos.value?.resumen);
+const p3 = computed(() => analitica.value?.results);
+const comando = computed(() => `python "Modelo/Insights Modelo/insights_historicos.py" --sitio ${slug.value}`);
+
+// --- Filtro de zona ------------------------------------------------------------
+const zonas = computed(() => config.value?.zones ?? []);
+const zonaSel = computed(() => zonas.value.find((z) => z.zone_id === zonaId.value) ?? null);
+const mz = computed(() => (zonaId.value == null ? null : (p3.value?.zonas.find((z) => z.zone_id === zonaId.value) ?? null)));
+const localSel = computed(() => {
+  const id = zonaSel.value?.local_id;
+  return id == null ? null : (p3.value?.locales.find((l) => l.local_id === id) ?? null);
+});
+const serie = computed(() => {
+  const s = p3.value?.series;
+  if (!s) return null;
+  return zonaId.value == null ? s.total : (s.zonas[String(zonaId.value)] ?? null);
+});
+const alcance = computed(() => zonaSel.value?.name ?? "Todas las zonas");
+
+function elegirZona(id: number) {
+  zonaId.value = zonaId.value === id ? null : id;
+}
+
+// --- Métricas --------------------------------------------------------------------
+const suma = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+const sumaSeries = (series: (number | null)[][]) =>
+  series.length ? series[0].map((_, i) => series.reduce((a, s) => a + (s[i] ?? 0), 0)) : undefined;
+
+/** Visitas y exposición: de todos los locales o del local al que pertenece la zona elegida. */
+function serieDeLocales(clave: "visitas" | "exposicion") {
+  const s = p3.value?.series;
+  if (!s) return undefined;
+  if (zonaId.value == null) return s.total[clave];
+  if (!localSel.value) return undefined;
+  const ids = zonas.value.filter((z) => z.local_id === localSel.value!.local_id).map((z) => String(z.zone_id));
+  return sumaSeries(ids.map((id) => s.zonas[id]?.[clave] ?? []).filter((a) => a.length));
+}
+
+const totalLocales = computed(() => {
+  const ls = p3.value?.locales ?? [];
+  return { visitas: suma(ls.map((l) => l.visitas)), exposicion: suma(ls.map((l) => l.exposicion)), captados: suma(ls.map((l) => l.captados)) };
+});
+const zonaPico = computed(() => [...(p3.value?.zonas ?? [])].sort((a, b) => b.densidad_max - a.densidad_max)[0]);
+
+type Tarjeta = { titulo: string; icono: string; valor: string; detalle: string; serie?: (number | null)[] };
+const tarjetas = computed<Tarjeta[]>(() => {
+  const res = r.value;
+  const a = p3.value;
+  const conLocales = !!a?.locales.length;
+  const enZona = zonaId.value != null;
+  const l = localSel.value;
+  const z = mz.value;
+  const g = res?.genero ?? {};
+  const tasa = enZona ? (l?.tasa_captacion ?? null) : totalLocales.value.exposicion ? (100 * totalLocales.value.captados) / totalLocales.value.exposicion : null;
+  const serieCaptacion = !a?.series ? undefined : enZona ? (l ? a.series.locales[String(l.local_id)]?.captacion : undefined) : a.series.total.captacion;
+  const n = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString());
+  return [
+    {
+      titulo: "PERSONAS",
+      icono: "◍",
+      valor: n(enZona ? z?.visitantes : res?.personas),
+      detalle: res ? (enZona ? `de ${res.personas} en la sesión` : `${g.HOMBRE ?? 0} H · ${g.MUJER ?? 0} M · ${g.SIN_DETERMINAR ?? 0} s/d`) : "sin sesión",
+      serie: serie.value?.personas,
+    },
+    {
+      titulo: "VISITAS",
+      icono: "⬡",
+      valor: n(enZona ? l?.visitas : conLocales ? totalLocales.value.visitas : null),
+      detalle: enZona ? (l ? l.nombre : "zona sin local") : cantidad(a?.locales.length ?? 0, "local", "locales"),
+      serie: serieDeLocales("visitas"),
+    },
+    {
+      titulo: "EXPOSICIÓN",
+      icono: "⇥",
+      valor: n(enZona ? l?.exposicion : conLocales ? totalLocales.value.exposicion : null),
+      detalle: "pasan por el frente",
+      serie: serieDeLocales("exposicion"),
+    },
+    {
+      titulo: "PERMANENCIA",
+      icono: "◷",
+      valor: enZona ? segundos(z?.permanencia_media_s) : segundos(res?.permanencia.media_s),
+      detalle: `mediana ${enZona ? segundos(z?.permanencia_mediana_s) : segundos(res?.permanencia.mediana_s)}`,
+      serie: enZona ? serie.value?.permanencia_s : undefined,
+    },
+    {
+      titulo: "CAPTACIÓN",
+      icono: "◎",
+      valor: tasa == null ? "—" : `${tasa.toFixed(0)} %`,
+      detalle: expuestos(enZona ? l : conLocales ? totalLocales.value : null, enZona ? "zona sin local" : "sin locales"),
+      serie: serieCaptacion,
+    },
+    {
+      titulo: "DENSIDAD MÁX",
+      icono: "▦",
+      valor: enZona ? (z ? z.densidad_max.toFixed(2) : "—") : zonaPico.value ? zonaPico.value.densidad_max.toFixed(2) : "—",
+      detalle: enZona || !zonaPico.value ? "personas / m²" : `personas / m² · ${zonaPico.value.nombre}`,
+      serie: serie.value?.densidad,
+    },
+  ];
+});
+
+function expuestos(m: { captados: number; exposicion: number } | null | undefined, sinLocal: string) {
+  if (!m) return sinLocal;
+  return m.exposicion ? `${m.captados} de ${m.exposicion} expuestos` : "sin expuestos";
+}
+
+function sparkline(valores: (number | null)[] | undefined, w = 72, h = 22, pad = 2) {
+  if (!valores || valores.length < 2) return "";
+  const nums = valores.filter((v): v is number => v != null);
+  if (nums.length < 2) return "";
+  const min = Math.min(...nums);
+  const max = Math.max(...nums, min + 1e-6);
+  const paso = (w - pad * 2) / (valores.length - 1);
+  return valores
+    .flatMap((v, i) => (v == null ? [] : [`${(pad + i * paso).toFixed(1)},${(h - pad - ((v - min) / (max - min)) * (h - pad * 2)).toFixed(1)}`]))
+    .join(" ");
+}
+
+// --- Hombres y mujeres: de la sesión o de quienes pasaron por la zona elegida ---
+const generos = computed(() => {
+  const n: Record<string, number> = { HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0 };
+  for (const p of personasMapa.value) n[p.genero in n ? p.genero : "SIN_DETERMINAR"]++;
+  const total = personasMapa.value.length;
+  return Object.keys(n).map((g) => ({ g, nombre: GENEROS[g], n: n[g], pct: total ? Math.round((100 * n[g]) / total) : 0 }));
+});
+
+// --- Entradas por intervalo --------------------------------------------------
+const barras = computed(() => {
+  const s = p3.value?.series;
+  const valores = serie.value?.entradas;
+  if (!s || !valores?.length || !sesion.value) return [];
+  const inicio = new Date(sesion.value.recording_start).getTime();
+  const max = Math.max(1, ...valores);
+  const formato: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hourCycle: "h23", ...(s.paso_s < 60 ? { second: "2-digit" } : {}) };
+  const cada = Math.ceil(valores.length / 7);
+  return valores.map((v, i) => ({
+    v,
+    alto: 18 + (70 * v) / max,
+    hora: new Date(inicio + i * s.paso_s * 1000).toLocaleTimeString("es-PE", formato),
+    rotulo: i % cada === 0,
+  }));
+});
+
+// --- Mapas --------------------------------------------------------------------------
+function dentro([x, y]: Punto, pol: Punto[]) {
+  let c = false;
+  for (let i = 0, j = pol.length - 1; i < pol.length; j = i++) {
+    const [xi, yi] = pol[i];
+    const [xj, yj] = pol[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
+
+const personasMapa = computed(() =>
+  (replay.value?.personas ?? []).filter((p) => !zonaSel.value || p.x.some((x, i) => dentro([x, p.y[i]], zonaSel.value!.points))),
+);
+// Un trazo por tramo continuo: no se une a una persona a través de un hueco en el que no se la vio.
+const recorridos = computed<RecorridoPlano[]>(() =>
+  personasMapa.value.flatMap((p) =>
+    tramos(p, replay.value?.paso_s ?? 0.2)
+      .filter((puntos) => puntos.length > 1)
+      .map((puntos) => ({ id: p.numero, color: colorPersona(p.numero), puntos })),
+  ),
+);
+
+const celdasKDE = computed<[number, number, number][]>(() => {
+  const k = p3.value?.kde;
+  if (!k) return datos.value?.calor.celdas ?? [];
+  const valores = capaCalor.value === "ocupacion" ? k.ocupacion : k.visitantes;
+  const max = Math.max(...valores, 0);
+  const celdas: [number, number, number][] = [];
+  valores.forEach((v, i) => {
+    if (v <= max * 0.02) return;
+    celdas.push([k.origen[0] + (i % k.columnas) * k.celda_m, k.origen[1] + Math.floor(i / k.columnas) * k.celda_m, v]);
+  });
+  return celdas;
+});
+
+const centroZona = (id: number): Punto | null => {
+  const z = zonas.value.find((o) => o.zone_id === id);
+  if (!z?.points.length) return null;
+  return [suma(z.points.map((p) => p[0])) / z.points.length, suma(z.points.map((p) => p[1])) / z.points.length];
+};
+
+const flujos = computed(() => (p3.value?.origen_destino ?? []).filter((f) => zonaId.value == null || f.desde === zonaId.value || f.hacia === zonaId.value));
+
+const flechas = computed<FlechaPlano[]>(() =>
+  !verFlujos.value
+    ? []
+    : flujos.value.flatMap((f) => {
+        const [desde, hacia] = [centroZona(f.desde), centroZona(f.hacia)];
+        return desde && hacia ? [{ desde, hacia, peso: f.personas }] : [];
+      }),
+);
+
+// --- Comparación entre zonas y rutas -------------------------------------------
+const comparacion = computed(() => {
+  const filas = p3.value
+    ? p3.value.zonas.map((z) => ({ id: z.zone_id, nombre: z.nombre, personas: z.visitantes, permanencia: z.permanencia_media_s, densidad: z.densidad_max }))
+    : (datos.value?.zonas ?? []).map((z) => ({ id: z.zone_id, nombre: z.name, personas: z.visitantes, permanencia: z.permanencia_media_s, densidad: null as number | null }));
+  const max = Math.max(1, ...filas.map((f) => f.permanencia ?? 0));
+  return filas.sort((a, b) => (b.permanencia ?? 0) - (a.permanencia ?? 0)).map((f) => ({ ...f, ancho: (100 * (f.permanencia ?? 0)) / max }));
+});
+
+const rutas = computed(() => (p3.value?.rutas ?? []).filter((ruta) => zonaId.value == null || ruta.zonas.includes(zonaId.value)).slice(0, 8));
+
+// --- Flujo entre zonas: sankey de dos columnas (origen → destino) --------------
+const sankey = computed(() => {
+  const fs = flujos.value.slice(0, 10);
+  const origenes = [...new Map(fs.map((f) => [f.desde, f.desde_nombre])).entries()];
+  const destinos = [...new Map(fs.map((f) => [f.hacia, f.hacia_nombre])).entries()];
+  const max = Math.max(1, ...fs.map((f) => f.personas));
+  const fila = 30;
+  const y = (lista: [number, string][], id: number) => 10 + lista.findIndex(([i]) => i === id) * fila + fila / 2;
+  return {
+    alto: Math.max(origenes.length, destinos.length) * fila + 10,
+    origenes: origenes.map(([id, nombre]) => ({ id, nombre, y: y(origenes, id) })),
+    destinos: destinos.map(([id, nombre]) => ({ id, nombre, y: y(destinos, id) })),
+    enlaces: fs.map((f) => ({ ...f, y1: y(origenes, f.desde), y2: y(destinos, f.hacia), ancho: 1.5 + (7 * f.personas) / max })),
+  };
+});
+
+// --- Exportación: PDF con la impresión del navegador, Excel como CSV ------------
+const generado = ref("");
+function exportarPDF() {
+  generado.value = new Date().toLocaleString("es-PE");
+  window.print();
+}
+const celda = (v: string | number | null | undefined) => {
+  const s = v == null ? "" : String(v);
+  return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+function exportarCSV() {
+  const filas: (string | number | null | undefined)[][] = [
+    [`Insights · ${config.value?.site.name ?? slug.value}`],
+    [`Sesión: ${sesion.value?.name ?? "—"}`, `Zona: ${alcance.value}`],
+    [],
+    ["Indicador", "Valor", "Detalle"],
+    ...tarjetas.value.map((t) => [t.titulo, t.valor, t.detalle]),
+    ...generos.value.map((g) => [g.nombre, g.n, `${g.pct} %`]),
+    [],
+    ["Zona", "Personas", "Permanencia media (s)", "Densidad máx (pers/m²)"],
+    ...comparacion.value.map((z) => [z.nombre, z.personas, z.permanencia, z.densidad]),
+    [],
+    ["Origen", "Destino", "Personas"],
+    ...flujos.value.map((f) => [f.desde_nombre, f.hacia_nombre, f.personas]),
+    [],
+    ["Ruta frecuente", "Personas", "%"],
+    ...rutas.value.map((ruta) => [ruta.secuencia.join(" → "), ruta.frecuencia, ruta.porcentaje]),
+    [],
+    ["Hora", "Entradas"],
+    ...barras.value.map((b) => [b.hora, b.v]),
+  ];
+  const csv = filas.map((f) => f.map(celda).join(",")).join("\r\n");
+  // BOM: Excel detecta UTF-8 (tildes, ñ) solo si el archivo empieza con él.
+  const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `insights-${slug.value}-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// --- Carga ------------------------------------------------------------------------
+async function cargar() {
+  if (!sesionId.value) return;
+  cargando.value = true;
+  error.value = "";
+  try {
+    [datos.value, analitica.value, replay.value] = await Promise.all([
+      api.insights(slug.value, sesionId.value),
+      api.analitica(slug.value, sesionId.value),
+      api.replay(slug.value, sesionId.value),
+    ]);
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    cargando.value = false;
+  }
+}
+watch(sesionId, cargar);
+
+onMounted(async () => {
+  try {
+    [config.value, sesiones.value] = await Promise.all([api.config(slug.value), api.sesiones(slug.value)]);
+    const pedida = typeof route.query.sesion === "string" ? route.query.sesion : "";
+    sesionId.value = sesiones.value.find((s) => s.session_id === pedida)?.session_id ?? sesiones.value[0]?.session_id ?? "";
+    if (!sesionId.value) cargando.value = false;
+  } catch (e) {
+    error.value = (e as Error).message;
+    cargando.value = false;
+  }
+});
+</script>
+
+<template>
+  <section class="page-title">
+    <div>
+      <p class="eyebrow">{{ config?.site.name ?? slug }} · ANÁLISIS ESPACIAL</p>
+      <h1>Comportamiento de personas</h1>
+    </div>
+    <div class="replay-filters">
+      <label
+        >Sesión<select v-model="sesionId" :disabled="!sesiones.length">
+          <option v-if="!sesiones.length" value="">Sin sesiones</option>
+          <option v-for="s in sesiones" :key="s.session_id" :value="s.session_id">
+            {{ s.name || s.session_id.slice(0, 8) }} · {{ new Date(s.recording_start).toLocaleDateString("es-PE") }}
+          </option>
+        </select></label
+      >
+      <label
+        >Zona<select v-model="zonaId" :disabled="!zonas.length">
+          <option :value="null">Todas las zonas</option>
+          <option v-for="z in zonas" :key="z.zone_id" :value="z.zone_id">{{ z.name }}</option>
+        </select></label
+      >
+      <span v-if="analitica" class="pill" :title="`Calculado ${new Date(analitica.computed_at).toLocaleString('es-PE')}`">Parte III</span>
+      <span v-if="analitica?.stale" class="pill aviso-pill" :title="comando">zonas cambiadas · recalcular</span>
+      <span v-else-if="sesionId && !cargando && !analitica" class="pill aviso-pill" :title="comando">Parte III sin calcular</span>
+    </div>
+    <div class="export-actions">
+      <button type="button" :disabled="!datos" @click="exportarPDF">⤓ Exportar PDF</button>
+      <button type="button" :disabled="!datos" @click="exportarCSV">⤓ Exportar Excel (CSV)</button>
+    </div>
+  </section>
+  <div class="print-header">
+    <h1>{{ config?.site.name ?? slug }} · Comportamiento de personas</h1>
+    <p>Sesión: {{ sesion?.name ?? "—" }} · Zona: {{ alcance }}</p>
+    <p>Generado {{ generado }}</p>
+  </div>
+  <p v-if="error" class="error" role="alert">{{ error }}</p>
+
+  <div class="spatial-insights">
+    <section class="spatial-maps">
+      <article class="panel">
+        <div class="panel-heading">
+          <h2>Mapa de movimiento</h2>
+          <span class="pill">{{ cantidad(personasMapa.length, "recorrido") }}</span>
+        </div>
+        <PlanoSitio
+          v-if="mapa"
+          class="plano-tablero"
+          :mapa="mapa"
+          :zonas="zonas"
+          :recorridos="recorridos"
+          :zona-activa="zonaId"
+          :mostrar-camaras="false"
+          zoom
+          @zona="elegirZona"
+        />
+        <p v-else class="empty">Sin plano</p>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <h2>Mapa de calor</h2>
+          <span class="heading-meta">
+            <select v-if="p3" v-model="capaCalor" aria-label="Capa del mapa de calor">
+              <option value="ocupacion">Ocupación</option>
+              <option value="visitantes">Visitantes únicos</option>
+            </select>
+            <label v-if="p3" class="check"><input v-model="verFlujos" type="checkbox" /> Flujos</label>
+          </span>
+        </div>
+        <PlanoSitio
+          v-if="mapa"
+          class="plano-tablero"
+          :mapa="mapa"
+          :zonas="zonas"
+          :calor="celdasKDE"
+          :celda-calor="p3?.kde.celda_m ?? datos?.calor.celda_m"
+          :flechas="flechas"
+          :zona-activa="zonaId"
+          :mostrar-camaras="false"
+          zoom
+          @zona="elegirZona"
+        />
+        <p v-else class="empty">Sin plano</p>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <h2>Comparación entre zonas</h2>
+          <span class="muted">permanencia media</span>
+        </div>
+        <ul v-if="comparacion.length" class="zone-compare-list">
+          <li v-for="z in comparacion" :key="z.id" :class="{ activa: z.id === zonaId }" @click="elegirZona(z.id)">
+            <div class="zone-compare-label">
+              <b>{{ z.nombre }}</b>
+              <span class="muted">{{ z.personas }} pers.<template v-if="z.densidad != null"> · {{ z.densidad.toFixed(2) }} /m²</template></span>
+            </div>
+            <div class="zone-compare-bar-track">
+              <div class="zone-compare-bar" :style="{ width: `${z.ancho}%` }"></div>
+              <span class="zone-compare-value">{{ segundos(z.permanencia) }}</span>
+            </div>
+          </li>
+        </ul>
+        <p v-else class="empty">Sin datos de zonas</p>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <h2>Rutas frecuentes</h2>
+          <span class="pill">{{ rutas.length }}</span>
+        </div>
+        <ul v-if="rutas.length" class="zone-compare-list">
+          <li v-for="(ruta, i) in rutas" :key="i">
+            <div class="zone-compare-label">
+              <b class="ruta">{{ ruta.secuencia.join(" → ") }}</b>
+              <span class="muted">{{ ruta.frecuencia }} pers.</span>
+            </div>
+            <div class="zone-compare-bar-track">
+              <div class="zone-compare-bar" :style="{ width: `${ruta.porcentaje}%` }"></div>
+              <span class="zone-compare-value">{{ ruta.porcentaje.toFixed(0) }} %</span>
+            </div>
+          </li>
+        </ul>
+        <p v-else class="empty">Sin rutas frecuentes</p>
+      </article>
+    </section>
+
+    <aside class="insight-sidebar">
+      <div class="metrics">
+        <article v-for="t in tarjetas" :key="t.titulo" class="panel metric">
+          <p><span class="metric-icon">{{ t.icono }}</span>{{ t.titulo }}</p>
+          <strong>{{ t.valor }}</strong>
+          <svg v-if="sparkline(t.serie)" class="sparkline" viewBox="0 0 72 22" preserveAspectRatio="none">
+            <polyline :points="sparkline(t.serie)" />
+          </svg>
+          <small>{{ t.detalle }}</small>
+        </article>
+      </div>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <h2>Hombres y mujeres</h2>
+          <span class="muted">{{ alcance }}</span>
+        </div>
+        <div class="generos">
+          <div v-for="x in generos" :key="x.g" class="genero">
+            <span class="marca" :class="'g-' + x.g"></span>
+            <strong>{{ replay ? x.n : "—" }}</strong>
+            <small>{{ x.nombre }}<template v-if="replay"> · {{ x.pct }} %</template></small>
+          </div>
+        </div>
+        <div v-if="replay && personasMapa.length" class="barra-genero" aria-hidden="true">
+          <span v-for="x in generos" :key="x.g" :class="'g-' + x.g" :style="{ flex: x.n }"></span>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <h2>Entradas por intervalo</h2>
+          <span class="muted">{{ alcance }}<template v-if="p3?.series"> · {{ p3.series.paso_s }} s</template></span>
+        </div>
+        <div v-if="barras.length" class="chart">
+          <div v-for="(b, i) in barras" :key="i" class="bar-col">
+            <b>{{ b.v }}</b><span class="bar" :style="{ height: `${b.alto}px` }" :title="`${b.hora}: ${b.v}`"></span
+            ><small :class="{ oculto: !b.rotulo }">{{ b.hora }}</small>
+          </div>
+        </div>
+        <p v-else class="empty">Sin datos</p>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <h2>Flujo entre zonas</h2>
+          <span class="pill">{{ flujos.length }}</span>
+        </div>
+        <svg v-if="flujos.length" class="sankey" :viewBox="`0 0 220 ${sankey.alto}`" :style="{ height: sankey.alto * 1.6 + 'px' }">
+          <path
+            v-for="e in sankey.enlaces"
+            :key="`${e.desde}-${e.hacia}`"
+            :d="`M6,${e.y1} C90,${e.y1} 130,${e.y2} 214,${e.y2}`"
+            fill="none"
+            stroke="var(--blue-600)"
+            :stroke-width="e.ancho"
+            stroke-opacity=".5"
+          />
+          <g v-for="o in sankey.origenes" :key="'o' + o.id">
+            <circle cx="6" :cy="o.y" r="3" fill="var(--blue-600)" />
+            <text x="11" :y="o.y" dy="-5" class="sankey-label">{{ o.nombre }}</text>
+          </g>
+          <g v-for="d in sankey.destinos" :key="'d' + d.id">
+            <circle cx="214" :cy="d.y" r="3" fill="var(--good)" />
+            <text x="209" :y="d.y" dy="-5" text-anchor="end" class="sankey-label">{{ d.nombre }}</text>
+          </g>
+          <text v-for="e in sankey.enlaces" :key="`c${e.desde}-${e.hacia}`" x="110" :y="(e.y1 + e.y2) / 2" dy="-3" text-anchor="middle" class="sankey-count">
+            {{ e.personas }}
+          </text>
+        </svg>
+        <p v-else class="empty">Sin transiciones</p>
+      </article>
+    </aside>
+  </div>
+</template>
+
+<style scoped>
+.replay-filters select {
+  max-width: 260px;
+}
+.aviso-pill {
+  background: rgba(245, 158, 11, 0.2);
+  cursor: help;
+}
+.heading-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.heading-meta select {
+  width: auto;
+  min-height: 26px;
+  padding: 3px 6px;
+  font-size: 10.5px;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+}
+.plano-tablero {
+  margin: 10px;
+  width: calc(100% - 20px);
+}
+.plano-tablero :deep(.lienzo-plano) {
+  max-height: 460px;
+}
+.chart {
+  gap: 3px;
+}
+.chart .bar-col {
+  flex: 1;
+  min-width: 18px;
+  overflow: visible;
+}
+.chart small.oculto {
+  visibility: hidden;
+}
+.zone-compare-list li {
+  cursor: pointer;
+  border-radius: 8px;
+}
+.zone-compare-list li.activa .zone-compare-label b {
+  color: var(--blue-600);
+}
+.zone-compare-list li.activa .zone-compare-bar {
+  background: linear-gradient(90deg, var(--blue-600), var(--blue-500));
+}
+.ruta {
+  font-weight: 600;
+}
+.generos {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 13px 4px;
+}
+.genero {
+  display: grid;
+  grid-template-columns: 10px 1fr;
+  align-items: center;
+  column-gap: 7px;
+}
+.genero strong {
+  font-size: 22px;
+  font-weight: 660;
+  letter-spacing: -0.6px;
+}
+.genero small {
+  grid-column: 2;
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+.marca {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.barra-genero {
+  display: flex;
+  height: 10px;
+  margin: 8px 13px 14px;
+  border-radius: 6px;
+  overflow: hidden;
+  gap: 2px;
+}
+.g-HOMBRE {
+  background: #3d8bff;
+}
+.g-MUJER {
+  background: #d9468f;
+}
+.g-SIN_DETERMINAR {
+  background: #8ba4bf;
+}
+/* El valor va sobre la barra: un halo del color del panel lo deja legible aunque la barra lo cubra. */
+.zone-compare-value {
+  color: var(--ink);
+  paint-order: stroke;
+  text-shadow:
+    0 0 3px var(--glass-strong),
+    0 0 6px var(--glass-strong);
+}
+.empty {
+  margin: 12px;
+}
+</style>

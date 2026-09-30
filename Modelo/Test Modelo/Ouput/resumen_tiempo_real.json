@@ -1,0 +1,151 @@
+{
+  "session_id": "20260927_000639_3b5ef1",
+  "session_uuid": "3b5ef151-7fc5-464e-bd4e-a77330bfc15b",
+  "status": "completo",
+  "frames_per_camera": 1889,
+  "frames_by_camera": {
+    "cam01": 1889,
+    "cam02": 1889,
+    "cam03": 1889
+  },
+  "frames_total": 5667,
+  "video_seconds": 125.93333333333334,
+  "timeline_start_s": 0.0,
+  "timeline_end_s": 129.06666666666666,
+  "inicio_grabacion": "2026-09-27T00:06:39.995991-05:00",
+  "wall_seconds": 129.13647710000077,
+  "processing_seconds": 100.03262259995972,
+  "fps_per_camera": 18.883839600550075,
+  "fps_total": 56.651518801650234,
+  "fps_source": {
+    "cam01": 15.0,
+    "cam02": 15.0,
+    "cam03": 15.0
+  },
+  "device": "cuda:0",
+  "timestamp_offsets": {
+    "cam01": 0.0,
+    "cam02": 0.9999999999999999,
+    "cam03": 3.0
+  },
+  "start_frames": {
+    "cam01": 0,
+    "cam02": 0,
+    "cam03": 0
+  },
+  "multicamera": {
+    "mode": "visual_temporal",
+    "geometria_validada": false,
+    "identidades_globales": 22,
+    "pasadas_breves_no_contadas": 18,
+    "tracklets": 101,
+    "identidades_multicamara": 9,
+    "muestras_reid": 1296,
+    "verificaciones": 253,
+    "fusiones": 61,
+    "separaciones": 0,
+    "cambios_de_persona": 12,
+    "ambiguos": 0
+  },
+  "gender": {
+    "crops": 865,
+    "votes": 489,
+    "confirmed": 42,
+    "identidades_confirmadas": 10
+  },
+  "cameras": {
+    "cam01": {
+      "low_quality_rejected": 67,
+      "duplicates_suppressed": 4,
+      "tracks_confirmed": 26,
+      "reid_matches": 69,
+      "short_occlusion_recoveries": 63,
+      "low_confidence_updates": 38,
+      "detections": 6546,
+      "appearance_computed": 1522,
+      "appearance_share": 0.233,
+      "active_tracks": 6,
+      "pending_tracks": 1,
+      "observations": 6208,
+      "frames": 1889
+    },
+    "cam02": {
+      "low_quality_rejected": 106,
+      "duplicates_suppressed": 2,
+      "tracks_confirmed": 29,
+      "reid_matches": 22,
+      "short_occlusion_recoveries": 17,
+      "low_confidence_updates": 4,
+      "detections": 4805,
+      "appearance_computed": 1199,
+      "appearance_share": 0.25,
+      "active_tracks": 5,
+      "pending_tracks": 0,
+      "observations": 4653,
+      "frames": 1889
+    },
+    "cam03": {
+      "low_quality_rejected": 34,
+      "duplicates_suppressed": 0,
+      "tracks_confirmed": 24,
+      "reid_matches": 23,
+      "short_occlusion_recoveries": 15,
+      "low_confidence_updates": 12,
+      "detections": 3462,
+      "appearance_computed": 806,
+      "appearance_share": 0.233,
+      "active_tracks": 4,
+      "pending_tracks": 0,
+      "observations": 3332,
+      "frames": 1889
+    }
+  },
+  "tiempo_real": {
+    "reloj_s": 129.13647710000077,
+    "desfases_s": {
+      "cam01": 0.0,
+      "cam02": 0.9999999999999999,
+      "cam03": 3.0
+    },
+    "videos": [
+      "C:\\Users\\andre\\OneDrive\\Documentos\\Ciclo09\\Caspton Proyect\\Proyecto Final\\proyecto-aeropuerto-2026\\Modelo\\Test Modelo\\Ouput\\cam01_tiempo_real.mp4",
+      "C:\\Users\\andre\\OneDrive\\Documentos\\Ciclo09\\Caspton Proyect\\Proyecto Final\\proyecto-aeropuerto-2026\\Modelo\\Test Modelo\\Ouput\\cam02_tiempo_real.mp4",
+      "C:\\Users\\andre\\OneDrive\\Documentos\\Ciclo09\\Caspton Proyect\\Proyecto Final\\proyecto-aeropuerto-2026\\Modelo\\Test Modelo\\Ouput\\cam03_tiempo_real.mp4",
+      "C:\\Users\\andre\\OneDrive\\Documentos\\Ciclo09\\Caspton Proyect\\Proyecto Final\\proyecto-aeropuerto-2026\\Modelo\\Test Modelo\\Ouput\\pantalla_tiempo_real.mp4"
+    ],
+    "salida_atrasada": 0,
+    "camaras": {
+      "cam01": {
+        "frames_fuente": 1892,
+        "procesados": 1889,
+        "saltados": 3,
+        "fps_fuente": 15.0,
+        "fps_procesados": 14.627935053061693,
+        "latencia_mediana_ms": 55.45903333452884,
+        "latencia_p95_ms": 84.51527333458841
+      },
+      "cam02": {
+        "frames_fuente": 1892,
+        "procesados": 1889,
+        "saltados": 3,
+        "fps_fuente": 15.0,
+        "fps_procesados": 14.74209407619174,
+        "latencia_mediana_ms": 55.565266670114966,
+        "latencia_p95_ms": 84.74112000214687
+      },
+      "cam03": {
+        "frames_fuente": 1892,
+        "procesados": 1889,
+        "saltados": 3,
+        "fps_fuente": 15.0,
+        "fps_procesados": 14.975842384613328,
+        "latencia_mediana_ms": 56.22120000262498,
+        "latencia_p95_ms": 85.41399333543751
+      }
+    }
+  },
+  "modelo": {
+    "carpeta": "Test Modelo\\Modelo",
+    "exportado": "2026-09-27T00:06:25-05:00"
+  }
+}
