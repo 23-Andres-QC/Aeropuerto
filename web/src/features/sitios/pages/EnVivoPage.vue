@@ -27,6 +27,25 @@ const camarasVideo = computed(() =>
   sesion.value?.kind === "BUILD" ? Object.keys(desfases.value).sort() : [],
 );
 const duracion = computed(() => replay.value?.duracion_s ?? 0);
+/** Duración de cada video procesado, leída al cargar sus metadatos. */
+const duracionesVideo = ref<Record<string, number>>({});
+
+/**
+ * Tramo de la sesión que se reproduce: con videos, solo donde todas las cámaras tienen imagen
+ * (cada una cubre [desfase, desfase + duración] del reloj de la sesión), para que empiecen y
+ * terminen juntas. Si no se solapan, la sesión entera.
+ */
+const ventana = computed(() => {
+  let inicio = 0;
+  let fin = duracion.value;
+  for (const cid of camarasVideo.value) {
+    const d = desfases.value[cid] ?? 0;
+    inicio = Math.max(inicio, d);
+    const largo = duracionesVideo.value[cid];
+    if (largo) fin = Math.min(fin, d + largo);
+  }
+  return fin > inicio ? { inicio, fin } : { inicio: 0, fin: duracion.value };
+});
 
 /** Un hueco sin detección de más de esto se ve como tal (punto atenuado, tramo punteado). */
 const HUECO_S = 1;
@@ -110,7 +129,7 @@ async function cargarSesion() {
   error.value = "";
   try {
     replay.value = await api.replay(slug.value, sesionId.value);
-    t.value = 0;
+    t.value = ventana.value.inicio;
     sincronizar(true);
   } catch (e) {
     error.value = (e as Error).message;
@@ -143,18 +162,18 @@ function sincronizar(forzar = false) {
 function avanzar(ahora: number) {
   const dt = anterior ? (ahora - anterior) / 1000 : 0;
   anterior = ahora;
-  t.value = Math.min(duracion.value, t.value + dt * velocidad.value);
+  t.value = Math.min(ventana.value.fin, t.value + dt * velocidad.value);
   if (ahora - ultimaSincronia > 500) {
     ultimaSincronia = ahora;
     sincronizar();
   }
-  if (t.value >= duracion.value) pausar();
+  if (t.value >= ventana.value.fin) pausar();
   else cuadro = requestAnimationFrame(avanzar);
 }
 
 function reproducir() {
   if (!replay.value) return;
-  if (t.value >= duracion.value) t.value = 0;
+  if (t.value >= ventana.value.fin) t.value = ventana.value.inicio;
   reproduciendo.value = true;
   anterior = 0;
   sincronizar(true);
@@ -172,6 +191,17 @@ function buscar(ev: Event) {
   sincronizar(true);
 }
 
+function reiniciar() {
+  t.value = ventana.value.inicio;
+  sincronizar(true);
+}
+
+// La ventana se acota cuando llegan las duraciones de los videos: el instante actual se mete en ella.
+watch(ventana, ({ inicio, fin }) => {
+  if (t.value >= inicio && t.value <= fin) return;
+  t.value = Math.min(Math.max(t.value, inicio), fin);
+  sincronizar(true);
+});
 watch(velocidad, () => sincronizar(true));
 watch(sesionId, cargarSesion);
 
@@ -221,9 +251,9 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
       <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :personas="personas" :recorridos="trazos.recorridos" :camaras="config?.cameras" zoom />
       <div v-if="replay" class="controles">
         <button class="primary-button" type="button" @click="reproduciendo ? pausar() : reproducir()">{{ reproduciendo ? "❚❚ Pausa" : "▶ Reproducir" }}</button>
-        <button type="button" @click="t = 0; sincronizar(true)">↺</button>
-        <input class="linea-tiempo" type="range" min="0" :max="duracion" step="0.05" :value="t" @input="buscar" aria-label="Tiempo de la sesión" />
-        <span class="reloj">{{ t.toFixed(1) }} / {{ duracion.toFixed(1) }} s</span>
+        <button type="button" @click="reiniciar">↺</button>
+        <input class="linea-tiempo" type="range" :min="ventana.inicio" :max="ventana.fin" step="0.05" :value="t" @input="buscar" aria-label="Tiempo de la sesión" />
+        <span class="reloj">{{ (t - ventana.inicio).toFixed(1) }} / {{ (ventana.fin - ventana.inicio).toFixed(1) }} s</span>
         <select v-model.number="velocidad" aria-label="Velocidad">
           <option :value="0.5">0,5×</option><option :value="1">1×</option><option :value="2">2×</option><option :value="4">4×</option>
         </select>
@@ -256,6 +286,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         muted
         playsinline
         preload="auto"
+        @loadedmetadata="(ev) => (duracionesVideo[cid] = (ev.target as HTMLVideoElement).duration)"
       ></video>
       <a class="descarga" :href="api.media(slug, `${cid}_procesado.mp4`)" download>⬇ Descargar</a>
     </article>
