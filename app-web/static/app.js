@@ -18,6 +18,9 @@ const EN_VUELO_MIN = 2;
 const EN_VUELO_MAX = 6;
 // Cajas y estado del modelo: pasado este tiempo sin novedades ya no se muestran.
 const DET_VIGENTE_MS = 1500;
+// Las cajas llegan unos cientos de ms después de su cuadro: sobre el video en vivo cada una sigue moviéndose con la
+// velocidad que traía entre sus dos últimos cuadros procesados, hasta este tiempo después del último (ver cajasAl).
+const PREDICCION_MAX_MS = 700;
 const PROCESO_VIGENTE_MS = 6000;
 
 const $ = (id) => document.getElementById(id);
@@ -45,6 +48,11 @@ const app = {
   horaDet: 0,
   proceso: null, // estado del modelo: el de esta cámara y los totales
   horaProceso: 0,
+  // Cajas sobre el video en vivo: hora de envío de cada cuadro numerado por el servicio (su acuse), las cajas por
+  // hora de su cuadro y las que se muestran ahora.
+  horas: new Map(),
+  instantaneas: [],
+  cajasMostradas: null,
 };
 
 const video = $('video');
@@ -193,12 +201,12 @@ function conectar() {
       $('nombre-camara').textContent = m.nombre;
     } else if (m.tipo === 'ok') {
       const enviado = app.enVuelo.shift();
+      if (enviado !== undefined && m.cuadro) numerar(m.cuadro, enviado);
       if (enviado !== undefined) app.idas.push(performance.now() - enviado);
       if (app.idas.length > 15) app.idas.shift();
       Object.assign(app, { lectores: m.lectores, espectadores: m.espectadores || 0 });
     } else if (m.tipo === 'det') {
-      Object.assign(app, { det: m.datos, horaDet: performance.now() });
-      dibujarCajas();
+      alDetecciones(m.datos);
       return;
     } else if (m.tipo === 'proceso') {
       Object.assign(app, { proceso: m.datos, horaProceso: performance.now() });
@@ -301,6 +309,87 @@ function mostrarEstado() {
   proceso.hidden = !proceso.textContent;
 }
 
+// ---------- Cajas sobre el video en vivo ----------
+
+// El acuse dio el número del cuadro (con él vuelven sus cajas): se guarda cuándo se envió.
+function numerar(seq, enviado) {
+  const ultimo = [...app.horas.keys()].pop();
+  if (ultimo !== undefined && seq < ultimo) {
+    app.horas.clear(); // otra numeración (el servicio se reinició)
+    app.instantaneas = [];
+  }
+  app.horas.set(seq, enviado);
+  while (app.horas.size > 200) app.horas.delete(app.horas.keys().next().value);
+}
+
+function alDetecciones(det) {
+  const ahora = performance.now();
+  const hora = det && det.cuadro != null ? app.horas.get(det.cuadro) : undefined;
+  app.horaDet = ahora;
+  if (hora === undefined) {
+    // Sin número o de un cuadro que ya no está: se dibujan como llegan.
+    app.det = det;
+    app.instantaneas = [];
+    dibujarCajas();
+    return;
+  }
+  app.det = null;
+  app.instantaneas.push({ ...det, t: hora });
+  app.instantaneas.sort((a, b) => a.t - b.t);
+  while (app.instantaneas.length > 2 && app.instantaneas[0].t < ahora - 5000) app.instantaneas.shift();
+}
+
+// Las cajas en el instante t (igual que web/src/features/videos/interpolacion.ts): entre dos cuadros procesados se
+// interpola; después del último, cada persona sigue con la velocidad de su centro entre sus dos últimos cuadros
+// procesados, hasta `horizonte` ms (el tamaño queda el del último, que es lo que más tiembla).
+function cajasAl(instantaneas, t, horizonte) {
+  const n = instantaneas.length;
+  if (!n) return null;
+  let i = n - 1;
+  while (i >= 0 && instantaneas[i].t > t) i--;
+  if (i < 0) return null;
+  const a = instantaneas[i];
+  const b = instantaneas[i + 1];
+  if (b) {
+    const f = Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t)));
+    const siguientes = new Map(b.people.map((p) => [p.local_id, p]));
+    const people = [];
+    for (const p of a.people) {
+      const q = siguientes.get(p.local_id);
+      if (q) {
+        people.push({ ...q, box: p.box.map((v, k) => v + (q.box[k] - v) * f), global_id: q.global_id ?? p.global_id });
+        siguientes.delete(p.local_id);
+      } else if (f < 0.5) {
+        people.push(p);
+      }
+    }
+    if (f >= 0.5) people.push(...siguientes.values());
+    return { frame_w: a.frame_w, frame_h: a.frame_h, people };
+  }
+  const previa = i > 0 ? instantaneas[i - 1] : null;
+  const dt = Math.min(t - a.t, horizonte);
+  const antes = new Map(previa ? previa.people.map((p) => [p.local_id, p]) : []);
+  const people = a.people.map((p) => {
+    const q = antes.get(p.local_id);
+    if (!previa || !q || a.t <= previa.t || dt <= 0) return p;
+    const k = dt / (a.t - previa.t);
+    const dx = ((p.box[0] + p.box[2]) - (q.box[0] + q.box[2])) / 2 * k;
+    const dy = ((p.box[1] + p.box[3]) - (q.box[1] + q.box[3])) / 2 * k;
+    return { ...p, box: [p.box[0] + dx, p.box[1] + dy, p.box[2] + dx, p.box[3] + dy] };
+  });
+  return { frame_w: a.frame_w, frame_h: a.frame_h, people };
+}
+
+const conCuadros = () => app.instantaneas.length > 0 && performance.now() - app.horaDet < DET_VIGENTE_MS;
+
+// Por cuadro de pantalla, con cajas numeradas: las cajas llevadas hasta este instante sobre el video en vivo.
+function animar() {
+  requestAnimationFrame(animar);
+  if (!app.activa || !app.instantaneas.length) return;
+  app.cajasMostradas = conCuadros() ? cajasAl(app.instantaneas, performance.now(), PREDICCION_MAX_MS) : null;
+  dibujarCajas();
+}
+
 // ---------- Proceso del modelo (como en Teléfonos de la web) ----------
 
 // El mismo color por persona que la web (web/src/shared/format.ts).
@@ -320,7 +409,11 @@ function dibujarCajas() {
     const h = video.videoHeight * k;
     Object.assign(capa.style, { left: `${(W - w) / 2}px`, top: `${(H - h) / 2}px`, width: `${w}px`, height: `${h}px` });
   }
-  const det = app.det && performance.now() - app.horaDet < DET_VIGENTE_MS ? app.det : null;
+  const det = app.instantaneas.length
+    ? app.cajasMostradas
+    : app.det && performance.now() - app.horaDet < DET_VIGENTE_MS
+      ? app.det
+      : null;
   if (!det || !det.frame_w || !det.frame_h) {
     g.clearRect(0, 0, capa.width, capa.height);
     return;
@@ -528,6 +621,7 @@ function iniciar() {
   setInterval(() => {
     if (app.activa) ajustarLado();
   }, 1000);
+  requestAnimationFrame(animar);
   setInterval(() => {
     if (!app.activa) return;
     mostrarEstado();

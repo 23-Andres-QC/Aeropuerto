@@ -3,18 +3,18 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { wsUrl } from "../../../core/http";
 import { colorPersona } from "../../../shared/format";
 import type { CuadroDetecciones } from "../../../shared/personas";
-import { cajasEn, type Instantanea } from "../../videos/interpolacion";
+import { cajasAl, type Instantanea } from "../../videos/interpolacion";
 import type { Detecciones, EstadoServicio } from "../api";
 
 // Sala del servicio de cámara web (app-web, vía nginx): todas las cámaras de la
 // lista con su pantalla desde que se unen, y encima las cajas, el ID y el género
 // que publica el modelo cuando está corriendo.
 //
-// Una cámara web llega a su ritmo (~15 fps) y el modelo devuelve las cajas de
-// cada cuadro que procesa unos cientos de ms después, con su número («cuadro»).
-// Para que la caja vaya encima de la persona y no detrás, el video se muestra
-// con ese retraso (medido) y las cajas de cada cuadro mostrado se interpolan
-// entre las de los cuadros procesados vecinos. Sin el modelo, va en directo.
+// Una cámara web se ve en directo, a su ritmo (~15 fps), y el modelo devuelve las
+// cajas de cada cuadro que procesa unos cientos de ms después, con su número
+// («cuadro»). Para que la caja no se quede detrás de la persona, en cada cuadro
+// que se muestra cada caja sigue moviéndose con la velocidad que traía entre sus
+// dos últimos cuadros procesados (cajasAl): el video es el real, sin retraso.
 type CamaraSala = { id: string; nombre: string; web: boolean };
 type MensajeSala = { tipo: string; id?: string; camaras?: CamaraSala[]; datos?: unknown };
 type Cuadro = { seq: number; llegada: number; imagen: ImageBitmap };
@@ -25,13 +25,11 @@ type Pantalla = {
   pendiente?: Uint8Array<ArrayBuffer>;
   decodificando: boolean;
   // Cámara web (cuadros numerados): cola por decodificar, búfer decodificado,
-  // hora de llegada de cada número, cajas por hora de su cuadro y retraso.
+  // hora de llegada de cada número y cajas por hora de su cuadro.
   cola: { seq: number; llegada: number; jpeg: Uint8Array<ArrayBuffer> }[];
   cuadros: Cuadro[];
   llegadas: Map<number, number>;
   instantaneas: Instantanea[];
-  retraso: number;
-  periodoDet: number;
   mostrado: number;
   recibidos: number[];
   /** Las cajas del cuadro que se muestra (interpoladas), para volver a dibujarlas al cambiar el tamaño. */
@@ -43,8 +41,9 @@ const emit = defineEmits<{ disponible: [boolean]; quitar: [CamaraSala] }>();
 
 const DET_VIGENTE_MS = 1500;
 const CUADRO_VIGENTE_MS = 3000;
-// El retraso nunca pasa de esto: con el modelo muy atrasado, mejor cajas atrasadas que un video viejo.
-const RETRASO_MAX_MS = 1500;
+// Hasta dónde se adelanta una caja respecto de su último cuadro procesado: con el modelo más atrasado que esto,
+// la caja se queda donde llegó (adelantarla más sería adivinar).
+const PREDICCION_MAX_MS = 700;
 // Cuadros sin decodificar: si el navegador no da abasto, se saltan los más viejos.
 const COLA_MAX = 6;
 
@@ -81,7 +80,7 @@ function pantalla(id: string): Pantalla {
   if (!p) {
     p = {
       hora: 0, horaDet: 0, decodificando: false, cola: [], cuadros: [], llegadas: new Map(), instantaneas: [],
-      retraso: 0, periodoDet: 0, mostrado: -1, recibidos: [],
+      mostrado: -1, recibidos: [],
     };
     pantallas.set(id, p);
   }
@@ -190,7 +189,7 @@ async function decodificarCola(id: string, p: Pantalla) {
   if (volvio) ahora.value = p.hora; // quita «Esperando…» sin esperar al reloj
 }
 
-/** Cajas de un cuadro procesado: su hora es la de llegada de ese cuadro, y de ahí sale el retraso que hace falta. */
+/** Cajas de un cuadro procesado: su hora es la de llegada de ese cuadro a la sala. */
 function alDetecciones(id: string, det: Detecciones & { cuadro?: number | null }) {
   const p = pantalla(id);
   const ahoraMs = performance.now();
@@ -202,32 +201,22 @@ function alDetecciones(id: string, det: Detecciones & { cuadro?: number | null }
     dibujarCajas(id);
     return;
   }
-  if (p.horaDet) p.periodoDet = p.periodoDet ? p.periodoDet * 0.8 + (ahoraMs - p.horaDet) * 0.2 : ahoraMs - p.horaDet;
   p.horaDet = ahoraMs;
   p.det = undefined;
   p.instantaneas.push({ ...det, t: llegada });
   p.instantaneas.sort((a, b) => a.t - b.t);
   while (p.instantaneas.length && p.instantaneas[0].t < ahoraMs - 5000) p.instantaneas.shift();
-  // Hace falta mostrar el video al menos tan atrasado como tardan las cajas, más lo que falta para las siguientes
-  // (para interpolar entre dos). Sube rápido y baja despacio, así no tiembla.
-  const objetivo = Math.min(RETRASO_MAX_MS, ahoraMs - llegada + Math.min(p.periodoDet, 800) * 1.1 + 30);
-  p.retraso += (objetivo - p.retraso) * (objetivo > p.retraso ? 0.5 : 0.05);
 }
 
-/** Por cuadro de pantalla: cada cámara web muestra el cuadro de hace `retraso` ms con sus cajas interpoladas. */
+/** Por cuadro de pantalla: cada cámara web muestra su último cuadro, con las cajas llevadas hasta ese instante. */
 function animar() {
   if (!activo) return;
   requestAnimationFrame(animar);
   const ahoraMs = performance.now();
   for (const [id, p] of pantallas) {
     if (!p.cuadros.length) continue;
-    // Sin cajas nuevas, el retraso vuelve de a poco a cero: en directo.
-    if (ahoraMs - p.horaDet > 2000) p.retraso = Math.max(0, p.retraso - 8);
-    const hasta = ahoraMs - p.retraso;
-    let i = p.cuadros.length - 1;
-    while (i > 0 && p.cuadros[i].llegada > hasta) i--;
-    // Los anteriores al que se muestra ya no se usan.
-    for (const viejo of p.cuadros.splice(0, i)) viejo.imagen.close();
+    // Los anteriores al último ya no se usan.
+    for (const viejo of p.cuadros.splice(0, p.cuadros.length - 1)) viejo.imagen.close();
     const cuadro = p.cuadros[0];
     if (cuadro.seq === p.mostrado) continue;
     p.mostrado = cuadro.seq;
@@ -240,8 +229,8 @@ function animar() {
       }
       lienzo.getContext("2d")?.drawImage(cuadro.imagen, 0, 0);
     }
-    const vigentes = p.instantaneas.length && ahoraMs - p.horaDet < DET_VIGENTE_MS + p.retraso;
-    p.cajas = vigentes ? cajasEn(p.instantaneas, cuadro.llegada) : undefined;
+    const vigentes = p.instantaneas.length && ahoraMs - p.horaDet < DET_VIGENTE_MS;
+    p.cajas = vigentes ? cajasAl(p.instantaneas, cuadro.llegada, PREDICCION_MAX_MS) : undefined;
     dibujarCajas(id);
   }
 }

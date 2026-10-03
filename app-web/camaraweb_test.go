@@ -175,11 +175,12 @@ func TestUnirseRegistraYTransmiteMJPEG(t *testing.T) {
 		t.Fatalf("el MJPEG no debe ir en chunked: %v", resp.TransferEncoding)
 	}
 
-	// El modelo ya cuenta como lector: el acuse se lo dice a la página (sube a 15 fps).
+	// El modelo ya cuenta como lector: el acuse se lo dice a la página (sube a 15 fps), con el número que se le
+	// dio al cuadro (el mismo que va en X-Cuadro).
 	if err := ws.WriteMessage(websocket.BinaryMessage, jpegDePrueba); err != nil {
 		t.Fatal(err)
 	}
-	if m := leerMensaje(t, ws); m.Tipo != "ok" || m.Lectores != 1 {
+	if m := leerMensaje(t, ws); m.Tipo != "ok" || m.Lectores != 1 || m.Cuadro != 1 {
 		t.Fatalf("acuse = %+v", m)
 	}
 

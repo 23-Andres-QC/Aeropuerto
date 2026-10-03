@@ -36,14 +36,15 @@ type Dispositivo struct {
 	retiro   *time.Timer // vence la espera
 }
 
-// Publicar deja un JPEG nuevo para todos los lectores del MJPEG.
-func (d *Dispositivo) Publicar(jpeg []byte) {
+// Publicar deja un JPEG nuevo para todos los lectores del MJPEG y devuelve su número de cuadro.
+func (d *Dispositivo) Publicar(jpeg []byte) uint64 {
 	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.frame, d.llegada = jpeg, time.Now()
 	d.seq++
 	close(d.cambio)
 	d.cambio = make(chan struct{})
-	d.mu.Unlock()
+	return d.seq
 }
 
 // Ultimo devuelve el frame más reciente, su número y el canal que avisa del siguiente.
@@ -69,6 +70,7 @@ type mensaje struct {
 	Telefono     string `json:"telefono,omitempty"`
 	Lectores     int32  `json:"lectores"`               // conexiones del modelo a su MJPEG
 	Espectadores int    `json:"espectadores,omitempty"` // páginas de la web que miran la sala
+	Cuadro       uint64 `json:"cuadro,omitempty"`       // acuse: número que se le dio al cuadro (vuelve con sus cajas)
 	Mensaje      string `json:"mensaje,omitempty"`
 	Reintentar   bool   `json:"reintentar,omitempty"`
 }

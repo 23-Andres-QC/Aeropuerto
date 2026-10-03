@@ -132,11 +132,12 @@ func (s *Servidor) unirse(w http.ResponseWriter, r *http.Request) {
 		vivo()
 		switch tipo {
 		case websocket.BinaryMessage:
+			var cuadro uint64
 			if esJPEG(datos) {
-				d.Publicar(datos)
+				cuadro = d.Publicar(datos)
 				s.sala.Avisar()
 			}
-			if c.Enviar(mensaje{Tipo: "ok", Lectores: d.Lectores(), Espectadores: s.sala.Espectadores()}) != nil {
+			if c.Enviar(mensaje{Tipo: "ok", Lectores: d.Lectores(), Espectadores: s.sala.Espectadores(), Cuadro: cuadro}) != nil {
 				return
 			}
 		case websocket.TextMessage:

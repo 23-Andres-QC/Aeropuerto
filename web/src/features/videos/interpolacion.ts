@@ -34,3 +34,28 @@ export function cajasEn(instantaneas: Instantanea[], t: number): CuadroDeteccion
   if (f >= 0.5) people.push(...siguientes.values());
   return { frame_w: a.frame_w, frame_h: a.frame_h, people };
 }
+
+/**
+ * Las cajas en el instante `t` de un video en vivo, que va por delante del modelo: si ya hay un frame procesado
+ * después de `t`, se interpola (cajasEn); si no, cada persona sigue moviéndose con la velocidad de su centro entre
+ * sus dos últimos frames procesados, hasta `horizonte` (en las unidades de `t`) más allá del último. Así la caja va
+ * con la persona sobre el video real en vez de quedarse detrás. El tamaño queda el del último frame (es lo que más
+ * tiembla entre frames).
+ */
+export function cajasAl(instantaneas: Instantanea[], t: number, horizonte: number): CuadroDetecciones | undefined {
+  const n = instantaneas.length;
+  if (!n || instantaneas[n - 1].t > t) return cajasEn(instantaneas, t);
+  const a = instantaneas[n - 1];
+  const previa = n > 1 ? instantaneas[n - 2] : undefined;
+  const dt = Math.min(t - a.t, horizonte);
+  const antes = new Map(previa?.people.map((p) => [p.local_id, p]) ?? []);
+  const people = a.people.map((p) => {
+    const q = antes.get(p.local_id);
+    if (!previa || !q || a.t <= previa.t || dt <= 0) return p;
+    const k = dt / (a.t - previa.t);
+    const dx = ((p.box[0] + p.box[2]) - (q.box[0] + q.box[2])) / 2 * k;
+    const dy = ((p.box[1] + p.box[3]) - (q.box[1] + q.box[3])) / 2 * k;
+    return { ...p, box: [p.box[0] + dx, p.box[1] + dy, p.box[2] + dx, p.box[3] + dy] as Persona["box"] };
+  });
+  return { frame_w: a.frame_w, frame_h: a.frame_h, people };
+}
