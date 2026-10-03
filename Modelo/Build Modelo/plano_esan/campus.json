@@ -1,5 +1,5 @@
 {
-  "descripcion": "Dónde está el patio en el plano del campus de ESAN (pdf-mapa-campus-esan: una imagen de 789 × 585 px, redibujada sin textos por dibujar_campus.py en las mismas coordenadas). El patio es el hueco blanco en L entre el Edificio A y el Edificio B, abierto al oeste. Se calzó en su rincón noreste: el tramo norte de la L (el entrante de arriba del piso) en la boca del brazo que sube al norte, el borde de los ascensores contra la pared del escalón del sureste y el descanso bajo el entrepiso en la esquina este (el 92 % del piso cae dentro del hueco, a la escala de los cajones de los estacionamientos). El punto centro_m del patio (metros del plano) cae en centro_px de la imagen, con px_por_metro píxeles de la imagen por metro y el eje este del patio girado angulo_deg en sentido antihorario.",
+  "descripcion": "Dónde está el patio en el plano del campus de ESAN (pdf-mapa-campus-esan: una imagen de 789 × 585 px, redibujada sin textos por dibujar_campus.py en las mismas coordenadas). El patio es el hueco blanco en L entre el Edificio A y el Edificio B, abierto al oeste. Se calzó por los ascensores: el saliente del borde sur del piso (las puertas de los ascensores) entra en el entrante de la pared sur del hueco, con la esquina del escalón del piso en la esquina del escalón del mapa y las puertas a lo largo de esa pared (el 99 % del piso cae dentro del hueco, a la escala de los cajones de los estacionamientos). El punto centro_m del patio (metros del plano) cae en centro_px de la imagen, con px_por_metro píxeles de la imagen por metro y el eje este del patio girado angulo_deg en sentido antihorario.",
   "url": "/planos/esan-campus.svg",
   "fuente": "Mapa del campus de la Universidad ESAN, redibujado sin textos",
   "nombre": "Patio · zona grabada",
@@ -8,13 +8,13 @@
     585
   ],
   "centro_px": [
-    418.1,
-    457.7
+    406.5,
+    469.3
   ],
   "centro_m": [
     -0.8,
     -0.52
   ],
-  "px_por_metro": 1.51,
-  "angulo_deg": 34.9
+  "px_por_metro": 1.54,
+  "angulo_deg": 36.6
 }
