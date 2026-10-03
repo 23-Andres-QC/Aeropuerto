@@ -183,7 +183,13 @@ function reproducir() {
 function pausar() {
   reproduciendo.value = false;
   cancelAnimationFrame(cuadro);
-  sincronizar();
+  sincronizar(true);
+}
+
+/** Cada video, al conocer su duración, acota el tramo común y se pone en el instante actual. */
+function videoListo(cid: string, ev: Event) {
+  duracionesVideo.value[cid] = (ev.target as HTMLVideoElement).duration;
+  sincronizar(true);
 }
 
 function buscar(ev: Event) {
@@ -286,7 +292,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         muted
         playsinline
         preload="auto"
-        @loadedmetadata="(ev) => (duracionesVideo[cid] = (ev.target as HTMLVideoElement).duration)"
+        @loadedmetadata="videoListo(cid, $event)"
       ></video>
       <a class="descarga" :href="api.media(slug, `${cid}_procesado.mp4`)" download>⬇ Descargar</a>
     </article>
