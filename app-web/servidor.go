@@ -204,7 +204,10 @@ func (s *Servidor) video(w http.ResponseWriter, r *http.Request) {
 		if frame != nil && seq != visto {
 			visto = seq
 			_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if _, err := fmt.Fprintf(w, "--%s\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n", limite, len(frame)); err != nil {
+			// X-Cuadro: el número del cuadro; el modelo lo devuelve con sus cajas («cuadro») para que la sala
+			// las dibuje sobre ese mismo cuadro.
+			if _, err := fmt.Fprintf(w, "--%s\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\nX-Cuadro: %d\r\n\r\n",
+				limite, len(frame), seq); err != nil {
 				return
 			}
 			if _, err := w.Write(frame); err != nil {

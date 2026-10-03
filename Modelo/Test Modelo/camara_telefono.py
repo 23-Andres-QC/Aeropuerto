@@ -122,18 +122,22 @@ class LectorMjpeg:
             self._parar.wait(2)
 
     def _leer_partes(self, respuesta):
-        """Decodifica cada JPEG del stream y lo deja como el más reciente."""
+        """Decodifica cada JPEG del stream y lo deja como el más reciente, con su número de cuadro (X-Cuadro, el
+        de la cámara web): vuelve con las cajas para que la sala las dibuje sobre ese mismo cuadro."""
         while not self._parar.is_set():
             linea = respuesta.readline(1024)
             if not linea:
                 raise ConnectionError("el teléfono cerró la transmisión")
             if not linea.startswith(b"--"):
                 continue
-            largo = None
+            largo = cuadro = None
             while cabecera := respuesta.readline(1024).strip():
                 nombre, _, valor = cabecera.partition(b":")
-                if nombre.strip().lower() == b"content-length":
+                nombre = nombre.strip().lower()
+                if nombre == b"content-length":
                     largo = int(valor)
+                elif nombre == b"x-cuadro":
+                    cuadro = int(valor)
             if not largo:
                 raise ValueError("el stream MJPEG no indica Content-Length")
             frame = cv2.imdecode(np.frombuffer(respuesta.read(largo), np.uint8), cv2.IMREAD_COLOR)
@@ -142,10 +146,10 @@ class LectorMjpeg:
             self.leidos += 1
             self.error = None
             with self._lock:
-                self._ultimo = (self.leidos, frame, time.perf_counter())
+                self._ultimo = (self.leidos, frame, time.perf_counter(), cuadro)
 
     def tomar(self, despues_de):
-        """(número, frame, llegada) del frame más reciente posterior a `despues_de`, o None."""
+        """(número, frame, llegada, cuadro) del frame más reciente posterior a `despues_de`, o None."""
         with self._lock:
             return self._ultimo if self._ultimo is not None and self._ultimo[0] > despues_de else None
 
@@ -289,7 +293,7 @@ class SesionEnVivo:
         """Un instante con el frame nuevo de cada teléfono que lo tenga; devuelve las filas por teléfono."""
         self.t = max(self.t + 1e-3, time.perf_counter() - self.t0)
         frames = {}
-        for cid, (numero, frame, _) in datos.items():
+        for cid, (numero, frame, _, _) in datos.items():
             self.saltados[cid] += max(0, numero - self.ultimo[cid] - 1)
             self.ultimo[cid] = numero
             self.procesados[cid] += 1
@@ -297,7 +301,7 @@ class SesionEnVivo:
         self._ritmo_genero()
         filas = lap01.procesar_instante(self.motor, self.asociador, self.t, frames, dict(self.procesados))
         ahora = time.perf_counter()
-        for cid, (_, _, llegada) in datos.items():
+        for cid, (_, _, llegada, _) in datos.items():
             self.latencias[cid].append(ahora - llegada)
             self.tiempos[cid].append(ahora)
             self.personas[cid] = len(filas[cid])
@@ -431,9 +435,9 @@ def main():
                     motor.calentar({cid: d[1] for cid, d in datos.items()})
                     calentado = True
                 filas = sesion.procesar(datos)
-                for cid, (_, frame, _) in datos.items():
+                for cid, (_, frame, _, cuadro) in datos.items():
                     relevo.video(cid, frame)
-                    relevo.detecciones(cid, {"ts": time.time(), "frame_w": ANCHO_RELEVO,
+                    relevo.detecciones(cid, {"ts": time.time(), "cuadro": cuadro, "frame_w": ANCHO_RELEVO,
                                              "frame_h": round(frame.shape[0] * ANCHO_RELEVO / frame.shape[1]),
                                              "people": personas_para_web(filas[cid], frame.shape[1])})
             elif not hubo_video:

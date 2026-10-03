@@ -6,8 +6,9 @@ const FPS_VIVO = 15;
 const FPS_EN_ESPERA = 1;
 const LADO_MAX = 1280;
 // Lo que viaja: 960 px en JPEG 0,6 pesa la mitad que 1280 px en 0,7 y sobra para el
-// detector (640 px en la laptop, 480 en el servidor).
-const LADO_ENVIO = 960;
+// detector (640 px en la laptop, 480 en el servidor). Si la subida no alcanza para
+// FPS_VIVO (la web se vería a saltos), baja a 800 y a 640 px; vuelve a subir cuando sobra.
+const LADOS_ENVIO = [960, 800, 640];
 const CALIDAD = 0.6;
 // Cuadros enviados sin acuse todavía: los que caben en una ida y vuelta al ritmo
 // pedido, más uno. Con el servidor lejos (ida y vuelta de ~400 ms desde un
@@ -36,6 +37,8 @@ const app = {
   ultimoEnvio: 0,
   envios: [],
   idas: [], // ms entre enviar un cuadro y su acuse
+  nivel: 0, // índice en LADOS_ENVIO
+  holgura: 0, // segundos seguidos en que la subida alcanzó de sobra
   reintento: null,
   wakeLock: null,
   det: null, // últimas cajas del modelo para esta cámara
@@ -214,6 +217,26 @@ function conectar() {
   };
 }
 
+// Cada segundo, con alguien mirando: si no se llega a FPS_VIVO, cuadros más chicos;
+// tras 8 s llegando de sobra, uno más grande.
+function ajustarLado() {
+  if (!app.unida || !(app.lectores > 0 || app.espectadores > 0)) return;
+  const ahora = performance.now();
+  const fps = app.envios.filter((t) => ahora - t < 1000).length;
+  if (fps < FPS_VIVO * 0.8 && app.nivel < LADOS_ENVIO.length - 1) {
+    app.nivel++;
+    app.holgura = 0;
+  } else if (fps >= FPS_VIVO - 1) {
+    app.holgura++;
+    if (app.holgura >= 8 && app.nivel > 0) {
+      app.nivel--;
+      app.holgura = 0;
+    }
+  } else {
+    app.holgura = 0;
+  }
+}
+
 function enVueloPermitido(fps) {
   const idas = [...app.idas].sort((a, b) => a - b);
   const ida = idas.length ? idas[idas.length >> 1] : 300;
@@ -234,7 +257,7 @@ function bucleEnvio() {
   if (ahora - app.ultimoEnvio < 1000 / fps - 4) return;
   app.codificando = true;
   app.ultimoEnvio = ahora;
-  const k = Math.min(1, LADO_ENVIO / Math.max(video.videoWidth, video.videoHeight));
+  const k = Math.min(1, LADOS_ENVIO[app.nivel] / Math.max(video.videoWidth, video.videoHeight));
   const w = Math.round(video.videoWidth * k);
   const h = Math.round(video.videoHeight * k);
   if (lienzo.width !== w || lienzo.height !== h) {
@@ -272,7 +295,7 @@ function mostrarEstado() {
   const idas = [...app.idas].sort((a, b) => a - b);
   const envio = $('envio');
   envio.hidden = !app.unida;
-  envio.textContent = `${app.envios.length} fps${idas.length ? ` · ${Math.round(idas[idas.length >> 1])} ms` : ''}`;
+  envio.textContent = `${app.envios.length} fps · ${LADOS_ENVIO[app.nivel]} px${idas.length ? ` · ${Math.round(idas[idas.length >> 1])} ms` : ''}`;
   const proceso = $('proceso');
   proceso.textContent = app.unida ? textoProceso() : '';
   proceso.hidden = !proceso.textContent;
@@ -502,6 +525,9 @@ function iniciar() {
     if (app.ws && app.ws.readyState === WebSocket.OPEN) app.ws.send(JSON.stringify({ tipo: 'salir' }));
   });
   window.addEventListener('resize', dibujarCajas);
+  setInterval(() => {
+    if (app.activa) ajustarLado();
+  }, 1000);
   setInterval(() => {
     if (!app.activa) return;
     mostrarEstado();

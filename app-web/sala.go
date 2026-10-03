@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"strings"
 	"sync"
@@ -282,7 +283,7 @@ func (s *Sala) Atender(ws *websocket.Conn) {
 			if c.frame == nil || len(c.id) > 255 || enviado[clave] == c.seq {
 				continue
 			}
-			if enviarCuadro(ws, c.id, c.fuente, c.frame) != nil {
+			if enviarCuadro(ws, c.id, c.fuente, c.seq, c.frame) != nil {
 				return
 			}
 			enviado[clave] = c.seq
@@ -375,12 +376,14 @@ func enviarJSON(ws *websocket.Conn, prefijo string, datos []byte) error {
 	return ws.WriteMessage(websocket.TextMessage, mensaje)
 }
 
-// enviarCuadro: [largo del id][id][fuente][JPEG].
-func enviarCuadro(ws *websocket.Conn, id string, fuente byte, jpeg []byte) error {
-	mensaje := make([]byte, 0, 2+len(id)+len(jpeg))
+// enviarCuadro: [largo del id][id][fuente][número del cuadro: 4 bytes big-endian][JPEG]. El número de una
+// cámara web es el mismo que su MJPEG le pasa al modelo (X-Cuadro) y que vuelve con sus cajas («cuadro»).
+func enviarCuadro(ws *websocket.Conn, id string, fuente byte, seq uint64, jpeg []byte) error {
+	mensaje := make([]byte, 0, 6+len(id)+len(jpeg))
 	mensaje = append(mensaje, byte(len(id)))
 	mensaje = append(mensaje, id...)
 	mensaje = append(mensaje, fuente)
+	mensaje = binary.BigEndian.AppendUint32(mensaje, uint32(seq))
 	mensaje = append(mensaje, jpeg...)
 	_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	return ws.WriteMessage(websocket.BinaryMessage, mensaje)

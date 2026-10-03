@@ -184,7 +184,7 @@ func TestUnirseRegistraYTransmiteMJPEG(t *testing.T) {
 	}
 
 	lector := bufio.NewReader(resp.Body)
-	esperado := fmt.Sprintf("--frameesan\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n", len(jpegDePrueba))
+	esperado := fmt.Sprintf("--frameesan\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\nX-Cuadro: 1\r\n\r\n", len(jpegDePrueba))
 	parte := make([]byte, len(esperado)+len(jpegDePrueba)+2)
 	if _, err := io.ReadFull(lector, parte); err != nil {
 		t.Fatal(err)
@@ -281,7 +281,7 @@ type mensajeSala struct {
 
 func cuadroDeSala(datos []byte) (id string, fuente byte, jpeg []byte) {
 	n := int(datos[0])
-	return string(datos[1 : 1+n]), datos[1+n], datos[2+n:]
+	return string(datos[1 : 1+n]), datos[1+n], datos[6+n:]
 }
 
 func TestSalaReparteElProcesoDelModelo(t *testing.T) {
