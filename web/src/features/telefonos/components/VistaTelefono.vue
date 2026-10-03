@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { wsUrl } from "../../../core/http";
-import { colorPersona } from "../../../shared/format";
+import { dibujarPersonas } from "../../../shared/personas";
 import { RELEVO_VIVO, type EstadoTelefono } from "../api";
 
 type Persona = {
@@ -38,34 +38,7 @@ const aviso = computed(() => {
 });
 
 function dibujar() {
-  const c = lienzo.value;
-  const m = ultimo.value;
-  if (!c || !m || !m.frame_w) return;
-  if (c.width !== m.frame_w || c.height !== m.frame_h) {
-    c.width = m.frame_w;
-    c.height = m.frame_h;
-  }
-  const ctx = c.getContext("2d");
-  if (!ctx) return;
-  ctx.clearRect(0, 0, c.width, c.height);
-  ctx.lineWidth = 2;
-  ctx.font = "600 13px system-ui, sans-serif";
-  for (const p of m.people) {
-    const [x1, y1, x2, y2] = p.box;
-    const color = p.global_id != null ? colorPersona(p.global_id) : "#8ba4bf";
-    ctx.strokeStyle = color;
-    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-    const genero = p.gender ? `${p.gender}${p.gender_conf ? " " + Math.round(p.gender_conf * 100) + "%" : ""}` : "";
-    // Solo el ID global (el de la memoria); mientras se confirma (~1 s) la caja va sin número.
-    const texto = [p.global_id != null ? "G" + p.global_id : "", genero].filter(Boolean).join(" · ");
-    if (!texto) continue;
-    const ancho = ctx.measureText(texto).width + 10;
-    const y = Math.max(18, y1);
-    ctx.fillStyle = "rgba(10, 20, 35, 0.82)";
-    ctx.fillRect(x1, y - 18, ancho, 18);
-    ctx.fillStyle = color;
-    ctx.fillText(texto, x1 + 5, y - 5);
-  }
+  if (lienzo.value && ultimo.value) dibujarPersonas(lienzo.value, ultimo.value);
 }
 
 function conectar(ruta: string, binario: boolean, alRecibir: (ev: MessageEvent) => void): WebSocket {

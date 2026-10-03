@@ -85,6 +85,28 @@ func (r *relayRoom) removeWatcher(c *websocket.Conn) {
 
 const maxRelayFrame = 512 * 1024
 
+// watchPing es cada cuánto se le hace ping a quien mira: el navegador responde
+// con un pong, que renueva el plazo de lectura de 60 s. Sin pings la conexión
+// se cortaba cada minuto y la vista quedaba congelada hasta reconectar.
+var watchPing = 20 * time.Second
+
+// keepAlive hace ping a quien mira hasta que termine su conexión.
+func keepAlive(c *websocket.Conn, done <-chan struct{}) {
+	t := time.NewTicker(watchPing)
+	defer t.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-t.C:
+			// WriteControl puede llamarse a la vez que las escrituras del broadcast.
+			if c.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)) != nil {
+				return
+			}
+		}
+	}
+}
+
 var relayUpgrader = websocket.Upgrader{
 	ReadBufferSize:  4096,
 	WriteBufferSize: 4096,
@@ -144,6 +166,9 @@ func (h *Hub) watchCamera(w http.ResponseWriter, r *http.Request) {
 	room := h.room("video:" + r.PathValue("id"))
 	room.addWatcher(conn, websocket.BinaryMessage)
 	defer room.removeWatcher(conn)
+	done := make(chan struct{})
+	defer close(done)
+	go keepAlive(conn, done)
 	conn.SetReadLimit(1024)
 	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	conn.SetPongHandler(func(string) error {
@@ -197,6 +222,9 @@ func (h *Hub) watchDetections(w http.ResponseWriter, r *http.Request) {
 	room := h.room("det:" + r.PathValue("id"))
 	room.addWatcher(conn, websocket.TextMessage)
 	defer room.removeWatcher(conn)
+	done := make(chan struct{})
+	defer close(done)
+	go keepAlive(conn, done)
 	conn.SetReadLimit(1024)
 	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	conn.SetPongHandler(func(string) error {

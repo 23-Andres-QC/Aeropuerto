@@ -88,14 +88,14 @@ def clothing_signature(image, box, all_boxes=None):
 
     safe_mask = np.full(crop.shape[:2], 255, dtype=np.uint8)
     if all_boxes is not None:
-        for other in np.asarray(all_boxes, dtype=np.float32):
-            if np.allclose(other, np.asarray(box, dtype=np.float32), atol=1.0):
-                continue
-            ox1, oy1, ox2, oy2 = map(int, other)
-            ix1, iy1 = max(x1, ox1), max(y1, oy1)
-            ix2, iy2 = min(x2, ox2), min(y2, oy2)
-            if ix2 > ix1 and iy2 > iy1:
-                safe_mask[iy1 - y1:iy2 - y1, ix1 - x1:ix2 - x1] = 0
+        others = np.asarray(all_boxes, dtype=np.float32).reshape(-1, 4)
+        own = np.asarray(box, dtype=np.float32)
+        # La propia caja (a ≤ 1 px, como np.allclose(atol=1)) no se tapa a sí misma; las demás se revisan a la vez.
+        others = others[~np.all(np.abs(others - own) <= 1.0 + 1e-5 * np.abs(own), axis=1)].astype(np.int64)
+        ix1, iy1 = np.maximum(x1, others[:, 0]), np.maximum(y1, others[:, 1])
+        ix2, iy2 = np.minimum(x2, others[:, 2]), np.minimum(y2, others[:, 3])
+        for a, b, c, d in zip(*(v[(ix2 > ix1) & (iy2 > iy1)] for v in (ix1, iy1, ix2, iy2))):
+            safe_mask[b - y1:d - y1, a - x1:c - x1] = 0
 
     h, w = crop.shape[:2]
     head_top, head_bottom = int(0.02 * h), int(0.28 * h)

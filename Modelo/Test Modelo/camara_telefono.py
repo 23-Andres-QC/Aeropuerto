@@ -4,6 +4,9 @@ Habla solo con backend-vivo (separado del backend del demo): de ahí toma la lis
 las detecciones, y ahí guarda la memoria de identidades, para que cada persona conserve su ID (y su color y género)
 aunque salga y vuelva, pase a otro teléfono, entre o salga un teléfono de la lista o el modelo se reinicie.
 No se guarda video ni fotos: solo la apariencia como vectores Re-ID, el género y cuándo y dónde se vio a cada persona.
+
+También procesa el video que se sube en la sección Videos de la web (videos_subidos.py), con un motor y un asociador
+aparte: ese video no se guarda ni entra a la memoria de identidades.
 """
 import argparse
 import json
@@ -36,9 +39,12 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"websocke
 
 import lap01
 from memoria_identidades import AsociadorConMemoria, MemoriaIdentidades
+from videos_subidos import CANAL_ESTADO as CANAL_VIDEOS, VideosSubidos, genero_por_votos
 
 CANAL_ESTADO = "telefonos"
 ANCHO_RELEVO = 640
+# Un frame del relevo no puede pasar de 512 KB (maxRelayFrame en backend-vivo): se baja la calidad si hace falta.
+MAX_JPEG_RELEVO = 480 * 1024
 FPS_NOMINAL = 15.0
 TRANSICION_MAX_S = 60.0
 # Un teléfono ve a la gente de cerca: quien sale cortado por el borde del cuadro también da muestras de Re-ID (en las
@@ -48,6 +54,9 @@ MARGEN_BORDE_TELEFONO = -1
 # 5 vistas y 2 s), a cambio de un poco más de riesgo de confundir a dos personas parecidas. Vale para el asociador y
 # para la memoria, así quien vuelve se compara con la memoria con las mismas vistas con que se confirma.
 ASOCIACION_TELEFONO = {"min_samples": 3, "min_query_samples": 3, "min_identity_duration_s": 1.0, "sample_interval_s": 0.3}
+# El seguidor abre tracks desde 0,3 de confianza (el Build pide 0,6): quien se ve de lejos o a medias en un teléfono
+# también recibe su caja.
+SEGUIDOR_TELEFONO = {"new_track_confidence": 0.3}
 PUERTO_CAMARA = int(os.environ.get("CAMARA_PORT", "8444"))  # el de la página de cámara (compose: camara-web)  # como en camaras.json: alguien puede pasar de un teléfono a otro en hasta 60 s
 
 
@@ -194,22 +203,25 @@ class Relevo:
                 socket.close()
             self.reintento[ruta] = time.monotonic() + 2
 
-    def video(self, cid, frame):
-        """Publica el frame (reducido a 640 px) para que la web lo muestre."""
+    def video(self, cid, frame, ancho=ANCHO_RELEVO, calidad=70):
+        """Publica el frame (reducido a `ancho` px) para que la web lo muestre."""
         def codificar():
-            alto = round(frame.shape[0] * ANCHO_RELEVO / frame.shape[1])
-            ok, jpeg = cv2.imencode(".jpg", cv2.resize(frame, (ANCHO_RELEVO, alto), interpolation=cv2.INTER_AREA),
-                                    [cv2.IMWRITE_JPEG_QUALITY, 70])
-            return jpeg.tobytes() if ok else None
+            alto = round(frame.shape[0] * ancho / frame.shape[1])
+            imagen = frame if frame.shape[1] == ancho else cv2.resize(frame, (ancho, alto), interpolation=cv2.INTER_AREA)
+            for q in (calidad, 60, 45):
+                ok, jpeg = cv2.imencode(".jpg", imagen, [cv2.IMWRITE_JPEG_QUALITY, q])
+                if ok and len(jpeg) <= MAX_JPEG_RELEVO:
+                    return jpeg.tobytes()
+            return None
         self._encolar(f"{cid}/publish", codificar)
 
     def detecciones(self, cid, mensaje):
         """Publica las cajas, IDs y género de un teléfono."""
         self._encolar(f"{cid}/detections/publish", json.dumps(mensaje))
 
-    def estado(self, mensaje):
-        """Publica el estado global del servicio y de cada teléfono."""
-        self._encolar(f"{CANAL_ESTADO}/detections/publish", json.dumps({"ts": time.time(), **mensaje}))
+    def estado(self, mensaje, canal=CANAL_ESTADO):
+        """Publica el estado global del servicio y de cada teléfono (o, con canal="videos", el del video subido)."""
+        self._encolar(f"{canal}/detections/publish", json.dumps({"ts": time.time(), **mensaje}))
 
     def cerrar(self):
         """Manda lo pendiente (el último estado) y cierra las conexiones."""
@@ -290,7 +302,7 @@ class SesionEnVivo:
             self.tiempos[cid].append(ahora)
             self.personas[cid] = len(filas[cid])
             for fila in filas[cid]:
-                self._genero(fila)
+                self._genero(cid, fila)
         return filas
 
     def _ritmo_genero(self):
@@ -303,18 +315,26 @@ class SesionEnVivo:
         for cid in self.telefonos:
             genero.sample_frames[cid] = max(1, round(genero.sample_s * (self.fps(cid) or FPS_NOMINAL)))
 
-    def _genero(self, fila):
-        """Quien ya se vio muestra su género al reconocerlo; un género nuevo y confiable se guarda en la memoria."""
+    def _genero(self, cid, fila):
+        """Quien ya se vio muestra su género al reconocerlo; un género nuevo y confiable se guarda en la memoria.
+
+        Mientras el género no se confirma (5 votos de CLIP con consenso), se muestra el que va ganando entre los votos
+        que ya tiene: el primero desde que lo hay, y así hasta confirmarlo. Ese provisional no se guarda en la memoria.
+        """
         pid = fila["global_id"]
-        if pid is None:
-            return
-        persona = self.memoria.personas.get(pid)
+        persona = self.memoria.personas.get(pid) if pid is not None else None
         if fila.get("genero") in ("Hombre", "Mujer") and fila.get("confianza_genero"):
             if persona is not None:
                 self.memoria.genero(pid, fila["genero"], fila["confianza_genero"])
         elif persona is not None and persona.genero:
             fila["genero"], fila["confianza_genero"] = persona.genero, persona.confianza_genero
-        self.generos[pid] = fila.get("genero") or "Sin determinar"
+        else:
+            votos = self.motor.genero.memory.get((cid, fila["local_id"]), {}).get("votes", [])
+            etiqueta, certeza = genero_por_votos(votos)
+            if etiqueta is not None:
+                fila["genero"], fila["confianza_genero"] = etiqueta, certeza
+        if pid is not None:
+            self.generos[pid] = fila.get("genero") or "Sin determinar"
 
     def fps(self, cid):
         """FPS procesados de un teléfono en sus últimos 30 frames."""
@@ -334,9 +354,9 @@ class SesionEnVivo:
                 "genero": dict(Counter(g for pid, g in self.generos.items() if pid in vigentes))}
 
 
-def personas_para_web(filas, ancho):
+def personas_para_web(filas, ancho, ancho_relevo=ANCHO_RELEVO):
     """Cajas escaladas al video relevado, con ID global (o local mientras no se confirma) y género."""
-    escala = ANCHO_RELEVO / ancho
+    escala = ancho_relevo / ancho
     personas = []
     for fila in filas:
         genero = fila.get("genero") if fila.get("genero") in ("Hombre", "Mujer") else None
@@ -356,10 +376,12 @@ def main():
     args = parser.parse_args()
     url_api = args.api.rstrip("/")
     config = json.loads((MODELO / "config_lap01.json").read_text())
+    config["tracker"].update(SEGUIDOR_TELEFONO)
     # En un servidor sin GPU el detector va a menos resolución (ej. 480): en CPU es lo que más pesa por cuadro.
     if os.environ.get("MODELO_IMGSZ"):
         config["detector"]["imgsz"] = int(os.environ["MODELO_IMGSZ"])
-    asociacion = {**json.loads((MODELO / "camaras.json").read_text()).get("association", {}), **ASOCIACION_TELEFONO}
+    asociacion_build = json.loads((MODELO / "camaras.json").read_text()).get("association", {})
+    asociacion = {**asociacion_build, **ASOCIACION_TELEFONO}
     print("Cargando el modelo final (YOLO26m, tracker, Re-ID, género)...", flush=True)
     motor = lap01.MotorLAP01(MODELO, config, device="auto", batch=True)
     reid = lap01.crear_asociador(motor, {"mode": "visual_temporal", "units": "m", "cameras": {"x": {}}}).reid
@@ -368,6 +390,8 @@ def main():
     memoria = MemoriaIdentidades(url_api, asociacion)
     relevo = Relevo(url_api)
     sesion = SesionEnVivo(motor, reid, asociacion, memoria)
+    # Los videos subidos van con la asociación del Build, sin los ajustes para teléfonos.
+    videos = VideosSubidos(url_api, motor, reid, asociacion_build, relevo, personas_para_web)
     lectores, nombres, calentado = {}, {}, False
     revisado, publicado = 0.0, 0.0
     enlace, enlace_visto = None, -math.inf
@@ -391,7 +415,12 @@ def main():
                     if sesion.clave != clave:
                         sesion.cambiar_telefonos(sorted(lectores), clave)
                         print(f"Procesando {len(lectores)} teléfono(s): {', '.join(nombres.values()) or 'ninguno'}", flush=True)
+                    try:
+                        videos.revisar(leer_json(f"{url_api}/api/v1/videos"))
+                    except OSError:
+                        pass  # backend-vivo sin la sección Videos: solo teléfonos
 
+            hubo_video = videos.paso()
             datos = {}
             for cid in sesion.telefonos:
                 dato = lectores[cid].tomar(sesion.ultimo[cid])
@@ -407,7 +436,7 @@ def main():
                     relevo.detecciones(cid, {"ts": time.time(), "frame_w": ANCHO_RELEVO,
                                              "frame_h": round(frame.shape[0] * ANCHO_RELEVO / frame.shape[1]),
                                              "people": personas_para_web(filas[cid], frame.shape[1])})
-            else:
+            elif not hubo_video:
                 time.sleep(0.003)
 
             if time.monotonic() - publicado > 0.5:
@@ -424,12 +453,15 @@ def main():
                                               latencia_ms=round(1000 * float(np.median(sesion.latencias[cid])), 0) if sesion.latencias[cid] else None)
                 relevo.estado({"estado": "procesando" if lectores else "sin_telefonos", "dispositivo": motor.device,
                                "enlace": enlace, "telefonos": telefonos, **sesion.resumen()})
+                relevo.estado({"dispositivo": motor.device, **videos.estado()}, canal=CANAL_VIDEOS)
     except KeyboardInterrupt:
         print("Detenido. La memoria de identidades queda guardada en backend-vivo.", flush=True)
     finally:
         for lector in lectores.values():
             lector.detener()
+        videos.cerrar()
         relevo.estado({"estado": "detenido", "telefonos": {}})
+        relevo.estado({"estado": "detenido"}, canal=CANAL_VIDEOS)
         relevo.cerrar()
         memoria.cerrar()
 

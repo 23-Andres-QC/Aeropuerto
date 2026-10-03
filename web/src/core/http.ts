@@ -25,3 +25,26 @@ export const json = (method: string, body: unknown): RequestInit => ({ method, b
 export function wsUrl(path: string): string {
   return `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}${path}`;
 }
+
+/** WebSocket a una ruta de la API que se reconecta cada 2 s si se corta; la función devuelta lo cierra. */
+export function socketPersistente(ruta: string, binario: boolean, alRecibir: (ev: MessageEvent) => void): () => void {
+  let socket: WebSocket | undefined;
+  let reintento: ReturnType<typeof setTimeout> | undefined;
+  let activo = true;
+  const abrir = () => {
+    const s = new WebSocket(wsUrl(ruta));
+    if (binario) s.binaryType = "arraybuffer";
+    s.addEventListener("message", alRecibir);
+    s.addEventListener("close", () => {
+      if (activo) reintento = setTimeout(abrir, 2000);
+    });
+    s.addEventListener("error", () => s.close());
+    socket = s;
+  };
+  abrir();
+  return () => {
+    activo = false;
+    clearTimeout(reintento);
+    socket?.close();
+  };
+}

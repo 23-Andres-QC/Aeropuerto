@@ -1,6 +1,7 @@
 // Command api es el backend de las cámaras en vivo, separado del backend del
-// demo (sitios LAP y ESAN): lista de teléfonos, relevo de video y detecciones, y
-// la memoria de identidades del modelo sobre su propia base (PostgreSQL + pgvector).
+// demo (sitios LAP y ESAN): lista de teléfonos, el video subido para probar el
+// modelo (sección Videos), relevo de video y detecciones, y la memoria de
+// identidades del modelo sobre su propia base (PostgreSQL + pgvector).
 package main
 
 import (
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -20,6 +22,7 @@ import (
 	"vivo/internal/memoria"
 	"vivo/internal/relevo"
 	"vivo/internal/telefonos"
+	"vivo/internal/videos"
 )
 
 func main() {
@@ -40,6 +43,15 @@ func correr() error {
 	if err != nil || retencion < 1 {
 		return errors.New("RETENCION_HORAS debe ser un entero positivo")
 	}
+	maximoMB, err := strconv.Atoi(env("VIDEO_MAX_MB", "1024"))
+	if err != nil || maximoMB < 1 {
+		return errors.New("VIDEO_MAX_MB debe ser un entero positivo")
+	}
+	// Disco temporal del contenedor, nunca la base: el video vive solo mientras se procesa.
+	subidos, err := videos.NuevoRegistro(env("VIDEOS_DIR", filepath.Join(os.TempDir(), "videos")), int64(maximoMB)<<20)
+	if err != nil {
+		return err
+	}
 	db, err := pgxpool.New(ctx, urlBase)
 	if err != nil {
 		return errors.New("configuración de base de datos inválida")
@@ -55,10 +67,10 @@ func correr() error {
 	}
 
 	repo := memoria.NuevoPostgres(db)
-	go purgar(ctx, repo, time.Duration(retencion)*time.Hour)
+	go purgar(ctx, repo, time.Duration(retencion)*time.Hour, subidos)
 	servidor := &http.Server{Addr: env("HTTP_ADDR", ":8080"), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second,
-		Handler: httpapi.Nuevo(httpapi.Opciones{Telefonos: telefonos.NuevoRegistro(), Memoria: repo, Relevo: relevo.NewHub(),
-			Lista: db.Ping, RetencionHoras: retencion})}
+		Handler: httpapi.Nuevo(httpapi.Opciones{Telefonos: telefonos.NuevoRegistro(), Videos: subidos, Memoria: repo,
+			Relevo: relevo.NewHub(), Lista: db.Ping, RetencionHoras: retencion})}
 	go func() {
 		<-ctx.Done()
 		c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -86,8 +98,13 @@ func esperarBase(ctx context.Context, db *pgxpool.Pool) error {
 	}
 }
 
-// purgar borra cada 10 minutos a quienes no se ven hace más que la retención.
-func purgar(ctx context.Context, repo memoria.Repositorio, retencion time.Duration) {
+// videoMaximo es lo que puede quedar un video subido si el modelo no lo toma (no
+// corre) o no lo quita al terminar.
+const videoMaximo = 6 * time.Hour
+
+// purgar borra cada 10 minutos a quienes no se ven hace más que la retención, y
+// el video subido que lleve más de videoMaximo.
+func purgar(ctx context.Context, repo memoria.Repositorio, retencion time.Duration, subidos *videos.Registro) {
 	t := time.NewTicker(10 * time.Minute)
 	defer t.Stop()
 	for {
@@ -98,6 +115,9 @@ func purgar(ctx context.Context, repo memoria.Repositorio, retencion time.Durati
 			slog.Info("retención aplicada", "personas_borradas", n)
 		}
 		cancel()
+		if subidos.Purgar(time.Now().Add(-videoMaximo)) {
+			slog.Info("video subido borrado por antigüedad")
+		}
 		select {
 		case <-ctx.Done():
 			return

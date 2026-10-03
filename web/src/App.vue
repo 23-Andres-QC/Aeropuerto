@@ -28,8 +28,10 @@ function toggleTheme() {
 const seccion = computed(() => (route.meta.seccion as string | undefined) ?? "");
 const sitioNav = computed(() => slug.value || ultimoSitio());
 const telefonos = computed(() => route.path === "/telefonos");
+const videos = computed(() => route.path === "/videos");
 const title = computed(() => {
   if (telefonos.value) return "Cámaras de teléfono · modelo final";
+  if (videos.value) return "Videos · modelo final sin guardar nada";
   const nombre = SECCIONES.find((s) => s.id === seccion.value)?.nombre ?? "";
   return `${actual.value?.name ?? slug.value} · ${nombre}`;
 });
@@ -53,6 +55,7 @@ onMounted(recargar);
       <div class="airport-switch">
         <span class="airport-symbol">⌖</span>
         <div v-if="telefonos"><b>Teléfonos</b><small>Modelo final en vivo · IDs estables</small></div>
+        <div v-else-if="videos"><b>Videos</b><small>Modelo final sobre un archivo · nada se guarda</small></div>
         <div v-else>
           <b>{{ actual?.name ?? slug }}</b
           ><small>{{ actual ? `${actual.description || "Sitio"} · ${actual.cameras} cámaras` : "Cargando sitio…" }}</small>
@@ -68,12 +71,14 @@ onMounted(recargar);
           ><span>{{ s.icono }}</span><span class="nav-label"><b class="nav-step">{{ i + 1 }}.</b>{{ s.nombre }}</span></RouterLink
         ><RouterLink to="/telefonos"
           ><span>📱</span><span class="nav-label"><b class="nav-step">4.</b>Teléfonos</span></RouterLink
+        ><RouterLink to="/videos"
+          ><span>🎞</span><span class="nav-label"><b class="nav-step">5.</b>Videos</span></RouterLink
         >
       </nav>
       <div class="sidebar-bottom">
         <span class="demo-indicator"></span>
         <div>
-          <b>Modelo LAP01</b><small>{{ telefonos ? "Procesamiento en memoria" : "Resultados reales guardados en la base" }}</small>
+          <b>Modelo LAP01</b><small>{{ telefonos || videos ? "Procesamiento en memoria" : "Resultados reales guardados en la base" }}</small>
         </div>
       </div>
     </aside>
@@ -103,8 +108,8 @@ onMounted(recargar);
         </nav>
         <RouterView :key="`${slug}:${seccion}`" />
       </main>
-      <!-- Teléfonos va sin textos: solo el enlace y las cámaras. -->
-      <footer v-if="!telefonos">
+      <!-- Teléfonos y Videos van sin textos: solo el enlace o el video y el modelo. -->
+      <footer v-if="!telefonos && !videos">
         <span>Modelo LAP01 · YOLO26m + tracking + Re-ID + mapa 2D</span><span>Datos del modelo en PostgreSQL/PostGIS</span>
       </footer>
     </div>

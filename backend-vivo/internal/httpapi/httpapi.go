@@ -1,11 +1,13 @@
 // Package httpapi expone el backend de las cámaras en vivo: la lista de
-// teléfonos, el relevo de video y detecciones, y la memoria de identidades.
+// teléfonos, el video que se sube para probar el modelo, el relevo de video y
+// detecciones, y la memoria de identidades.
 package httpapi
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -15,12 +17,15 @@ import (
 
 	"vivo/internal/memoria"
 	"vivo/internal/telefonos"
+	"vivo/internal/videos"
 )
 
 // Opciones de lo que el router expone.
 type Opciones struct {
 	Telefonos *telefonos.Registro
-	Memoria   memoria.Repositorio
+	// Videos guarda el video subido mientras el modelo lo procesa (sin él no hay rutas de videos).
+	Videos  *videos.Registro
+	Memoria memoria.Repositorio
 	// Relevo registra los WebSocket de video y detecciones.
 	Relevo interface{ Routes(*http.ServeMux) }
 	// Lista informa si la base responde.
@@ -36,6 +41,13 @@ func Nuevo(o Opciones) http.Handler {
 	m.HandleFunc("GET /api/v1/telefonos", a.telefonos)
 	m.HandleFunc("POST /api/v1/telefonos", a.agregarTelefono)
 	m.HandleFunc("DELETE /api/v1/telefonos/{id}", a.quitarTelefono)
+	if o.Videos != nil {
+		m.HandleFunc("GET /api/v1/videos", a.videos)
+		m.HandleFunc("POST /api/v1/videos", a.subirVideo)
+		m.HandleFunc("GET /api/v1/videos/{id}/archivo", a.archivoVideo)
+		m.HandleFunc("PUT /api/v1/videos/{id}/resumen", a.resumenVideo)
+		m.HandleFunc("DELETE /api/v1/videos/{id}", a.quitarVideo)
+	}
 	m.HandleFunc("GET /api/v1/personas", a.personas)
 	m.HandleFunc("GET /api/v1/personas/resumen", a.resumen)
 	m.HandleFunc("GET /api/v1/personas/fichas", a.fichas)
@@ -84,6 +96,72 @@ func (a api) agregarTelefono(w http.ResponseWriter, r *http.Request) {
 func (a api) quitarTelefono(w http.ResponseWriter, r *http.Request) {
 	if err := a.Telefonos.Quitar(r.PathValue("id")); err != nil {
 		fallar(w, http.StatusNotFound, "Teléfono no encontrado")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a api) videos(w http.ResponseWriter, r *http.Request) {
+	escribir(w, http.StatusOK, a.Videos.Lista())
+}
+
+// subirVideo recibe el archivo tal cual en el cuerpo; nombre y modo van en la query.
+func (a api) subirVideo(w http.ResponseWriter, r *http.Request) {
+	if r.ContentLength > a.Videos.Maximo() {
+		fallar(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("El video supera %d MB", a.Videos.Maximo()>>20))
+		return
+	}
+	q := r.URL.Query()
+	v, err := a.Videos.Subir(q.Get("nombre"), q.Get("modo"), r.Body)
+	switch {
+	case err == nil:
+		escribir(w, http.StatusCreated, v)
+	case errors.Is(err, videos.ErrMuyGrande):
+		fallar(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("El video supera %d MB", a.Videos.Maximo()>>20))
+	case errors.Is(err, videos.ErrInvalido):
+		fallar(w, http.StatusBadRequest, err.Error())
+	default:
+		errorInterno(w, "no se pudo recibir el video", err)
+	}
+}
+
+// archivoVideo entrega el video al modelo y a la web, que lo reproduce mientras se procesa.
+func (a api) archivoVideo(w http.ResponseWriter, r *http.Request) {
+	f, v, err := a.Videos.Abrir(r.PathValue("id"))
+	if err != nil {
+		fallar(w, http.StatusNotFound, "Video no encontrado")
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeContent(w, r, v.Nombre, v.Subido, f)
+}
+
+// resumenVideo recibe el resumen del modelo al terminar; el archivo se borra (nginx no publica esta ruta).
+func (a api) resumenVideo(w http.ResponseWriter, r *http.Request) {
+	resumen, err := io.ReadAll(http.MaxBytesReader(w, r.Body, videos.MaxResumen))
+	if err != nil {
+		fallar(w, http.StatusBadRequest, "resumen demasiado grande")
+		return
+	}
+	switch err = a.Videos.Terminar(r.PathValue("id"), resumen); {
+	case err == nil:
+		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, videos.ErrNoEncontrado):
+		fallar(w, http.StatusNotFound, "Video no encontrado")
+	case errors.Is(err, videos.ErrInvalido):
+		fallar(w, http.StatusBadRequest, err.Error())
+	default:
+		errorInterno(w, "no se pudo guardar el resumen", err)
+	}
+}
+
+func (a api) quitarVideo(w http.ResponseWriter, r *http.Request) {
+	if err := a.Videos.Quitar(r.PathValue("id")); errors.Is(err, videos.ErrNoEncontrado) {
+		fallar(w, http.StatusNotFound, "Video no encontrado")
+		return
+	} else if err != nil {
+		errorInterno(w, "no se pudo borrar el video", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -20,10 +20,22 @@ CCTV / dataset → Modelo LAP01 (Python, GPU) → API Go → PostgreSQL/PostGIS 
 ## Ejecutar
 
 ```bash
-docker compose up -d --build
+scripts/levantar.sh
 ```
 
-Web en http://localhost:8080 (usuario y contraseña de la demo: `LAP` / `LAP`). Cada sección es la misma para todos los sitios: `/sitios/<sitio>/en-vivo`, `/sitios/<sitio>/insights` y `/sitios/<sitio>/configuracion`, con pestañas para cambiar de sitio. `/telefonos` procesa cámaras de teléfono en vivo.
+El mismo comando sirve en la laptop y en el servidor: el script reconoce si corre en la VM de Google Cloud y toma la configuración de cada lugar.
+
+| | Laptop | Servidor (VM de Google Cloud) |
+|---|---|---|
+| Configuración | valores por defecto de `compose.yaml` | `servidor.env` (versionado) |
+| Web | http://localhost:8080 · https://localhost:8443 | http://IP-pública · https://IP-pública |
+| Cámara web | https://IP-de-la-laptop:8444 | https://IP-pública/camara/ |
+| Modelo en vivo | fuera de Docker, con la GPU | contenedor `modelo-vivo`, en CPU |
+| Contraseñas de las bases | las de demostración | aleatorias en `.env` (las crea el script la primera vez) |
+
+En el servidor la IP pública se lee de la propia VM en cada arranque, así que si cambia al encenderla basta volver a correr el script. `.env` (no versionado) tiene prioridad sobre `servidor.env` para ajustes de una sola máquina; ver `.env.example`. En la laptop también funciona `docker compose up -d --build` directamente.
+
+Web en http://localhost:8080 (usuario y contraseña de la demo: `LAP` / `LAP`). Cada sección es la misma para todos los sitios: `/sitios/<sitio>/en-vivo`, `/sitios/<sitio>/insights` y `/sitios/<sitio>/configuracion`, con pestañas para cambiar de sitio. `/telefonos` procesa cámaras de teléfono en vivo y `/videos` prueba el modelo con un video de tu computadora, sin guardar nada.
 
 Los datos se conservan en el volumen `aeropuerto-demo_pgdata`. La base se crea vacía con dos sitios (ESAN y LAP) y **sin datos de ejemplo**: todo lo que muestra lo publica el modelo o se configura en la web.
 
@@ -48,7 +60,18 @@ Los datos se conservan en el volumen `aeropuerto-demo_pgdata`. La base se crea v
    Lee de la base los puntos de la sesión, el plano y los locales y zonas configurados. Primero lleva cada posición al **piso transitable**: la que cae fuera del piso o dentro (o a menos de 0,2 m) de un obstáculo pasa al punto libre más cercano, y si dos cámaras promedian dentro de un obstáculo se unen fuera de él; la base guarda la posición ajustada (En vivo e Insights la usan) y conserva la del modelo en `raw_x`/`raw_y`. Después calcula: consolidación de observaciones simultáneas, zona de cada posición (INTERIOR primero, luego la de menor área), eventos espaciales (EXPOSURE, ENTER, DWELL, EXIT, RETURN, QUEUE; una salida o un roce del INTERIOR más corto que la tolerancia de 1 s se trata como ruido del borde), mapa de calor KDE (ocupación y visitantes únicos), rutas frecuentes con PrefixSpan, grafo origen-destino, permanencia, visitas, exposición, tasa de captación, densidad, congestión y las series por intervalo del tablero. Lo publica en `trajectory_points.zone_id`, `spatial_events` y `session_analytics`. Parámetros versionados en `Modelo/Insights Modelo/config_insights.json`; `--exportar` guarda además CSV/JSON en `Insights Modelo/Ouput/<sitio>/`. Vuelve a ejecutarlo cada vez que cambies locales o zonas: Insights avisa cuando el análisis quedó desactualizado.
 4. **Ver resultados (web → En vivo / Insights).** En vivo reproduce la sesión sobre el plano con los videos sincronizados; Insights es un tablero de métricas (mapas de movimiento y de calor, comparación entre zonas, rutas, personas, visitas, exposición, permanencia, captación, densidad, entradas por intervalo y flujos), filtrable por sesión y zona y exportable a PDF y CSV.
 
-**Cámaras en vivo (separadas del demo).** Tienen su propio backend (`backend-vivo/`) y su propia base (`vivo-db`, PostgreSQL + pgvector); los sitios LAP y ESAN siguen en el backend y la base de siempre. `app-web/` convierte el navegador de cualquier teléfono en cámara, sin instalar nada: se abre `https://<IP-de-la-laptop>:8444`, se pulsa **Unirse con la cámara** y la cámara se registra sola en **Teléfonos**, que muestra todas las pantallas conectadas con el proceso del modelo (cajas, ID, género, personas, fps y latencia). `python "Modelo/Test Modelo/camara_telefono.py"` corre el modelo final en la GPU sobre todas a la vez y guarda una **memoria de identidades**: cada persona conserva su ID (y su color y género) aunque salga y vuelva, pase a otro teléfono o el modelo se reinicie. Se guarda solo su apariencia como vectores Re-ID, su género y cuándo y dónde se vio (nada de video ni fotos); se borra sola tras 7 días sin verla o con **Olvidar a todos** en Teléfonos. Detalles en [backend-vivo/README.md](backend-vivo/README.md) y [app-web/README.md](app-web/README.md).
+**Cámaras en vivo (separadas del demo).** Tienen su propio backend (`backend-vivo/`) y su propia base (`vivo-db`, PostgreSQL + pgvector); los sitios LAP y ESAN siguen en el backend y la base de siempre. `app-web/` convierte el navegador de cualquier teléfono en cámara, sin instalar nada: se abre `https://<IP-de-la-laptop>:8444`, se pulsa **Unirse con la cámara** y la cámara se registra sola en **Teléfonos**, que muestra todas las pantallas conectadas con el proceso del modelo (cajas, ID, género, personas, fps y latencia). `python "Modelo/Test Modelo/camara_telefono.py"` corre el modelo final en la GPU sobre todas a la vez (el seguidor abre tracks desde 0,3 de confianza, no 0,6; mientras el género no se confirma con 5 votos de CLIP se muestra el que va ganando desde el primer voto, sin guardarlo) y guarda una **memoria de identidades**: cada persona conserva su ID (y su color y género) aunque salga y vuelva, pase a otro teléfono o el modelo se reinicie. Se guarda solo su apariencia como vectores Re-ID, su género y cuándo y dónde se vio (nada de video ni fotos); se borra sola tras 7 días sin verla o con **Olvidar a todos** en Teléfonos. Detalles en [backend-vivo/README.md](backend-vivo/README.md) y [app-web/README.md](app-web/README.md).
+
+**Videos (probar el modelo sin guardar nada).** En **5. Videos** se elige un video de la computadora y se ve cómo lo procesa el modelo final en tiempo real: el video se reproduce a su velocidad normal con las cajas, el ID y el género encima, más FPS del modelo, ms por frame, personas y avance. El video va un poco detrás del modelo (unas décimas a 1,5 s, según su ritmo) y en cada cuadro de pantalla cada caja se interpola entre los dos frames procesados que rodean ese instante, así acompaña a la persona en vez de saltar detrás de ella (`web/src/features/videos/interpolacion.ts`). Si el modelo se atrasa, el video espera en lugar de adelantarse. El archivo se sube tal cual a backend-vivo, que lo guarda en disco temporal (nunca en una base) mientras el modelo lo procesa. El modelo lo lee con OpenCV a su resolución original, sin recomprimir ni redimensionar antes de procesarlo. Al terminar se borran las dos copias del archivo y queda a la vista el **resumen**: personas contadas, reparto por género, cada persona con su ID, su género y en qué segundos del video aparece, duración, tiempo de proceso, FPS y ms por frame promedio, frames procesados y el último frame con sus cajas. El resumen vive en la memoria de backend-vivo hasta que se pulsa **Quitar video**, que lo borra; quitar el video mientras se procesa lo detiene sin dejar resumen. Lo procesa el mismo servicio que los teléfonos (`camara_telefono.py`, o `modelo-vivo` en el servidor), pero con un motor y un asociador propios: no toca la sesión de los teléfonos ni la memoria de identidades. Los ajustes son más sensibles que los del Build, pensados para cualquier video y no solo para las cámaras de ESAN:
+
+- **Detector:** 1280 px en la GPU (en CPU, la del Build), con confianza 0,10 y media precisión: en un video de un centro comercial pasa de unas 12 a unas 40 personas por frame. `VIDEO_IMGSZ` fija otra resolución.
+- **Seguidor:** abre tracks desde 0,15 de confianza, acepta personas desde 12 px de alto y olvida en pocos segundos a quien se fue. Re-ID y género muestrean a cada persona una vez por segundo.
+- **IDs estables:** con recortes chicos el Re-ID es ruidoso. El asociador corta una identidad solo con 3 vistas seguidas muy distintas y une más fácil a quien reaparece; el seguidor recupera a quien perdió un momento con menos parecido. En un video de un centro comercial: de 70 a 58 identidades en 25 s, sin cortes.
+- **Lo quieto no cuenta:** maniquíes, afiches o estatuas que el detector toma por personas. Si en 4 s a la vista no se alejan más de un 20 % de su altura de donde aparecieron (descontando el movimiento de la cámara), no se dibujan ni se cuentan. Quien se mueve una vez cuenta para siempre. Una persona que se queda totalmente quieta todo ese tiempo también se oculta.
+- **IDs:** se confirman con 3 vistas y 2 s a la vista.
+- **Género:** se muestra desde la primera vista, con la certeza promedio de CLIP, en vez de «Sin determinar» hasta juntar 5 votos de personas de 96 px o más.
+
+Con mucha gente el modelo va a unos 3–4 FPS en una RTX 4060. El video se ve fluido igual, pero las cajas se actualizan menos seguido. A cambio de detectar a casi todos, hay más falsos positivos y géneros menos seguros en las personas lejanas. Los valores están en `AJUSTES` de `Modelo/Test Modelo/videos_subidos.py`. El modelo procesa en tiempo real, como una cámara en vivo: si no alcanza al video, salta frames. Se procesa un video a la vez y subir otro reemplaza al anterior; el máximo es 1 GB.
 
 ## Estructura
 
@@ -69,6 +92,7 @@ web/src/                      Vue 3 + TypeScript
   shared/                     utilidades comunes
   features/sitios/            En vivo, Insights, Configuración y el plano
   features/telefonos/         cámaras de teléfono en vivo
+  features/videos/            probar el modelo con un video subido (sin guardar nada)
   features/acceso/            login
 Modelo/Build Modelo/          Partes I y II: construcción del modelo y publicación
   plano_esan/                 levantamiento del piso de ESAN y zonas iniciales
@@ -78,6 +102,7 @@ backend-vivo/                 Go · backend de las cámaras en vivo: teléfonos,
   migrations/                 esquema de su base propia (pgvector)
 app-web/                      Cámara ESAN desde el navegador (Go, página sin build)
 Modelo/Test Modelo/memoria_identidades.py   IDs estables: memoria de largo plazo sobre el asociador LAP01
+Modelo/Test Modelo/videos_subidos.py        sección Videos: el modelo sobre un video subido, sin guardar nada
 ```
 
 ## API
@@ -97,6 +122,7 @@ Todas las rutas de sitio siguen `/api/v1/sites/<sitio>/…`:
 | `GET /{sitio}/sessions/{id}/points` · `GET/PUT /analytics` | entrada (posiciones del modelo) y resultados de la Parte III (zona y posición ajustada de cada punto, eventos, análisis) |
 | `GET /{sitio}/media/{archivo}` | archivos exportados por el Build |
 | `GET/POST /api/v1/telefonos` · `DELETE /{id}` | teléfonos (solo en memoria) |
+| `GET/POST /vivo/api/v1/videos` · `DELETE /{id}` | video subido en Videos con su resumen al terminar (disco temporal y memoria de backend-vivo, uno a la vez) |
 | `/api/v1/cameras/{id}/publish·watch·detections/…` | relé WebSocket de video y detecciones |
 | `GET /health/live` · `/health/ready` | salud del servicio y de PostgreSQL |
 

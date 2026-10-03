@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"vivo/internal/memoria"
 	"vivo/internal/telefonos"
+	"vivo/internal/videos"
 )
 
 // memoriaFalsa guarda en un mapa lo que recibe.
@@ -217,5 +219,92 @@ func TestTelefonosPorHTTP(t *testing.T) {
 	}
 	if resp, cuerpo = pedir(t, http.MethodGet, s.URL+"/salud", nil); resp.StatusCode != http.StatusOK || cuerpo["estado"] != "lista" {
 		t.Fatalf("salud = %d %v", resp.StatusCode, cuerpo)
+	}
+}
+
+func TestVideosPorHTTP(t *testing.T) {
+	registro, err := videos.NuevoRegistro(t.TempDir(), 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := httptest.NewServer(Nuevo(Opciones{Telefonos: telefonos.NuevoRegistro(), Videos: registro, Memoria: &memoriaFalsa{}}))
+	t.Cleanup(s.Close)
+	subir := func(query string, cuerpo io.Reader, cabeceras ...string) (*http.Response, map[string]any) {
+		req, _ := http.NewRequest(http.MethodPost, s.URL+"/api/v1/videos?"+query, cuerpo)
+		for i := 0; i+1 < len(cabeceras); i += 2 {
+			req.Header.Set(cabeceras[i], cabeceras[i+1])
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var salida map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&salida)
+		return resp, salida
+	}
+
+	resp, cuerpo := subir("nombre=pasillo.mp4&modo=todos", strings.NewReader("datos del video"))
+	if resp.StatusCode != http.StatusCreated || cuerpo["nombre"] != "pasillo.mp4" || cuerpo["modo"] != "todos" || cuerpo["bytes"].(float64) != 15 {
+		t.Fatalf("POST = %d %v", resp.StatusCode, cuerpo)
+	}
+	id := cuerpo["id"].(string)
+	lista, err := http.Get(s.URL + "/api/v1/videos")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var videosSubidos []map[string]any
+	_ = json.NewDecoder(lista.Body).Decode(&videosSubidos)
+	_ = lista.Body.Close()
+	if len(videosSubidos) != 1 || videosSubidos[0]["id"] != id {
+		t.Fatalf("GET = %v", videosSubidos)
+	}
+
+	archivo, err := http.Get(s.URL + "/api/v1/videos/" + id + "/archivo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contenido, _ := io.ReadAll(archivo.Body)
+	_ = archivo.Body.Close()
+	if archivo.StatusCode != http.StatusOK || string(contenido) != "datos del video" {
+		t.Fatalf("archivo = %d %q", archivo.StatusCode, contenido)
+	}
+
+	// Sin Content-Length (como un envío por partes): lo corta al leer, pasado el máximo.
+	if resp, cuerpo = subir("nombre=x.mp4", struct{ io.Reader }{bytes.NewReader(make([]byte, 1<<20+1))}); resp.StatusCode != http.StatusRequestEntityTooLarge ||
+		!strings.Contains(cuerpo["error"].(string), "1 MB") {
+		t.Fatalf("grande = %d %v", resp.StatusCode, cuerpo)
+	}
+	if resp, _ = subir("modo=rapido", strings.NewReader("x")); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("modo inválido = %d", resp.StatusCode)
+	}
+	if resp, _ = subir("nombre=x.mp4", strings.NewReader("x"), "Origin", "https://otra.example"); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("otro origen = %d", resp.StatusCode)
+	}
+
+	if resp, cuerpo = pedir(t, http.MethodPut, s.URL+"/api/v1/videos/"+id+"/resumen", []int{1}); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("resumen que no es un objeto = %d %v", resp.StatusCode, cuerpo)
+	}
+	if resp, _ = pedir(t, http.MethodPut, s.URL+"/api/v1/videos/"+id+"/resumen", map[string]any{"estado": "terminado", "personas_total": 4}); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("PUT resumen = %d", resp.StatusCode)
+	}
+	lista, _ = http.Get(s.URL + "/api/v1/videos")
+	videosSubidos = nil
+	_ = json.NewDecoder(lista.Body).Decode(&videosSubidos)
+	_ = lista.Body.Close()
+	if len(videosSubidos) != 1 || videosSubidos[0]["resumen"].(map[string]any)["personas_total"].(float64) != 4 {
+		t.Fatalf("el resumen se ve en la lista: %v", videosSubidos)
+	}
+	if resp, _ = pedir(t, http.MethodGet, s.URL+"/api/v1/videos/"+id+"/archivo", nil); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("con el resumen, el archivo ya se borró = %d", resp.StatusCode)
+	}
+	if resp, _ = pedir(t, http.MethodDelete, s.URL+"/api/v1/videos/"+id, nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("DELETE = %d", resp.StatusCode)
+	}
+	if resp, _ = pedir(t, http.MethodGet, s.URL+"/api/v1/videos/"+id+"/archivo", nil); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("archivo quitado = %d", resp.StatusCode)
+	}
+	if resp, _ = pedir(t, http.MethodDelete, s.URL+"/api/v1/videos/"+id, nil); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("DELETE repetido = %d", resp.StatusCode)
 	}
 }

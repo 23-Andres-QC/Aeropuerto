@@ -19,6 +19,7 @@ export const router = createRouter({
     },
     { path: "/sitios/:sitio", redirect: (to) => `/sitios/${to.params.sitio}/en-vivo` },
     { path: "/telefonos", component: () => import("../features/telefonos/pages/TelefonosPage.vue") },
+    { path: "/videos", component: () => import("../features/videos/pages/VideosPage.vue") },
     { path: "/:pathMatch(.*)*", redirect: inicio },
   ],
 });

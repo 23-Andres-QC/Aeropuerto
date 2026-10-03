@@ -22,7 +22,6 @@ from IPython.display import Image, display
 from scipy.optimize import linear_sum_assignment
 from torch import nn
 from threadpoolctl import threadpool_limits
-from .tracking_local import _iou
 
 
 def _puntos(values, minimo=1):
@@ -292,16 +291,19 @@ def vistas_confiables(rows, shape, min_conf=0.55, min_alto=40, max_iou=0.2, marg
         if (box[0] < x0 + margen_borde or box[1] < y0 + margen_borde
                 or box[2] > width - margen_borde or box[3] > height - margen_borde):
             continue
-        covered = False
-        for other in others:
-            if np.allclose(box, other, atol=1):
+        # Contra todas las demás cajas a la vez (con mucha gente, caja por caja eran miles de llamadas por frame).
+        # La propia detección (a ≤ 1 px, como np.allclose(atol=1)) no la tapa.
+        otras = others[~np.all(np.abs(box - others) <= 1 + 1e-5 * np.abs(others), axis=1)]
+        if len(otras):
+            ancho = np.maximum(0, np.minimum(box[2], otras[:, 2]) - np.maximum(box[0], otras[:, 0]))
+            alto = np.maximum(0, np.minimum(box[3], otras[:, 3]) - np.maximum(box[1], otras[:, 1]))
+            interseccion = ancho * alto
+            area = max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
+            areas = np.maximum(0, otras[:, 2] - otras[:, 0]) * np.maximum(0, otras[:, 3] - otras[:, 1])
+            iou = interseccion / (area + areas - interseccion + 1e-8)
+            if np.any(iou > max_iou) or np.any(interseccion / max(1, np.prod(box[2:] - box[:2])) > max_iou):
                 continue
-            intersection = np.prod(np.maximum(0, np.minimum(box[2:], other[2:]) - np.maximum(box[:2], other[:2])))
-            if _iou(box, other) > max_iou or intersection / max(1, np.prod(box[2:] - box[:2])) > max_iou:
-                covered = True
-                break
-        if not covered:
-            keep.append(index)
+        keep.append(index)
     return keep
 
 
