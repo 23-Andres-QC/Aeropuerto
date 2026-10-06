@@ -51,7 +51,7 @@ async function cargar(id: string) {
         sinDeterminar: g.SIN_DETERMINAR ?? 0,
         permanenciaMedia: ins.resumen.permanencia.media_s,
         permanenciaMediana: ins.resumen.permanencia.mediana_s,
-        duracion: ins.session.duration_s,
+        duracion: props.sesiones.find((s) => s.session_id === id)?.duration_s ?? null,
         densidad: zonas.length ? Math.max(...zonas.map((z) => z.densidad_max)) : null,
       },
     };
