@@ -43,7 +43,7 @@ const DET_VIGENTE_MS = 1500;
 const CUADRO_VIGENTE_MS = 3000;
 // Hasta dónde se adelanta una caja respecto de su último cuadro procesado: con el modelo más atrasado que esto,
 // la caja se queda donde llegó (adelantarla más sería adivinar).
-const PREDICCION_MAX_MS = 700;
+const PREDICCION_MAX_MS = 1100;
 // Cuadros sin decodificar: si el navegador no da abasto, se saltan los más viejos.
 const COLA_MAX = 6;
 
