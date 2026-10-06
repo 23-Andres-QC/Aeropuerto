@@ -17,10 +17,10 @@ const CALIDAD = 0.6;
 const EN_VUELO_MIN = 2;
 const EN_VUELO_MAX = 6;
 // Cajas y estado del modelo: pasado este tiempo sin novedades ya no se muestran.
-const DET_VIGENTE_MS = 1500;
+const DET_VIGENTE_MS = 2500;
 // Las cajas llegan unos cientos de ms después de su cuadro: sobre el video en vivo cada una sigue moviéndose con la
 // velocidad que traía entre sus dos últimos cuadros procesados, hasta este tiempo después del último (ver cajasAl).
-const PREDICCION_MAX_MS = 700;
+const PREDICCION_MAX_MS = 1500;
 const PROCESO_VIGENTE_MS = 6000;
 
 const $ = (id) => document.getElementById(id);
@@ -366,18 +366,47 @@ function cajasAl(instantaneas, t, horizonte) {
     if (f >= 0.5) people.push(...siguientes.values());
     return { frame_w: a.frame_w, frame_h: a.frame_h, people };
   }
-  const previa = i > 0 ? instantaneas[i - 1] : null;
-  const dt = Math.min(t - a.t, horizonte);
-  const antes = new Map(previa ? previa.people.map((p) => [p.local_id, p]) : []);
+  // Después del último cuadro procesado: cada persona sigue con la velocidad de su centro (promedio de sus últimos pasos).
+  const d = Math.min(Math.max(0, t - a.t), horizonte);
+  const dt = d <= HORIZONTE_PLENO ? d : HORIZONTE_PLENO + (d - HORIZONTE_PLENO) / 2;
   const people = a.people.map((p) => {
-    const q = antes.get(p.local_id);
-    if (!previa || !q || a.t <= previa.t || dt <= 0) return p;
-    const k = dt / (a.t - previa.t);
-    const dx = ((p.box[0] + p.box[2]) - (q.box[0] + q.box[2])) / 2 * k;
-    const dy = ((p.box[1] + p.box[3]) - (q.box[1] + q.box[3])) / 2 * k;
-    return { ...p, box: [p.box[0] + dx, p.box[1] + dy, p.box[2] + dx, p.box[3] + dy] };
+    if (dt <= 0 || n < 2) return p;
+    let [vx, vy] = velocidadDe(instantaneas, p.local_id);
+    const tope = TOPE_ALTURAS_POR_S * Math.max(1, p.box[3] - p.box[1]);
+    const rapidez = Math.hypot(vx, vy) * 1000;
+    if (rapidez > tope) {
+      vx *= tope / rapidez;
+      vy *= tope / rapidez;
+    }
+    return { ...p, box: [p.box[0] + vx * dt, p.box[1] + vy * dt, p.box[2] + vx * dt, p.box[3] + vy * dt] };
   });
   return { frame_w: a.frame_w, frame_h: a.frame_h, people };
+}
+
+// Velocidad del centro de una persona (px por ms): promedio de sus últimos pasos entre cuadros procesados, los más
+// recientes pesan más. Un solo paso temblaba y la caja se adelantaba o se quedaba atrás.
+const PASOS_VELOCIDAD = 3;
+const TOPE_ALTURAS_POR_S = 2.5; // una pareja mal emparejada no la lanza lejos
+const HORIZONTE_PLENO = 900; // más allá (el modelo se atrasó mucho) la caja avanza a media velocidad
+function velocidadDe(instantaneas, localId) {
+  const n = instantaneas.length;
+  let vx = 0;
+  let vy = 0;
+  let peso = 0;
+  let sig = instantaneas[n - 1].people.find((p) => p.local_id === localId);
+  let tSig = instantaneas[n - 1].t;
+  for (let k = n - 2; k >= Math.max(0, n - 1 - PASOS_VELOCIDAD) && sig; k--) {
+    const q = instantaneas[k].people.find((p) => p.local_id === localId);
+    const dt = tSig - instantaneas[k].t;
+    if (!q || dt <= 0) break;
+    const w = 1 / (1 + (n - 2 - k));
+    vx += (w * ((sig.box[0] + sig.box[2]) - (q.box[0] + q.box[2]))) / 2 / dt;
+    vy += (w * ((sig.box[1] + sig.box[3]) - (q.box[1] + q.box[3]))) / 2 / dt;
+    peso += w;
+    sig = q;
+    tSig = instantaneas[k].t;
+  }
+  return peso ? [vx / peso, vy / peso] : [0, 0];
 }
 
 const conCuadros = () => app.instantaneas.length > 0 && performance.now() - app.horaDet < DET_VIGENTE_MS;
