@@ -50,7 +50,7 @@ Los datos se conservan en el volumen `aeropuerto-demo_pgdata`. La base se crea v
    python "Modelo/Build Modelo/plano_esan/generar_plano.py" --publicar --zonas
    ```
 
-   `--zonas` crea las zonas de `zonas_iniciales.json` (Piso, Ascensores, Tacho, Reciclaje, Expendedora negra, Expendedora roja y el local Carpa azul) solo si el sitio aún no tiene zonas; después se editan desde la web.
+   `--zonas` crea las zonas de `zonas_iniciales.json` (Piso, Ascensores, Tacho, Reciclaje y los locales Carpa azul, Expendedora negra y Expendedora roja, cada uno con su zona INTERIOR: llegar a una expendedora cuenta como una visita) solo si el sitio aún no tiene zonas; después se editan desde la web.
 3. **Procesamiento histórico (Parte III).**
 
    ```bash
