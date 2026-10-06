@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, GENEROS, type Config, type Replay, type Sesion } from "../api";
 import PlanoSitio, { type PersonaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
-import { CELDA_CALOR, SESION_VIVO, fijarModoVivo, guardando, guardarCapturaVivo, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarVivo } from "../enVivo";
+import { CELDA_CALOR, SESION_VIVO, capturasVersion, fijarModoVivo, guardando, guardarCapturaVivo, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura } from "../enVivo";
 import { useSitios } from "../useSitios";
 
 const { slug } = useSitios();
@@ -243,6 +243,10 @@ watch(velocidad, () => sincronizar(true));
 watch(sesionId, cargarSesion);
 // Al entrar o salir del modo en vivo: lo guardado se suelta o se vuelve a cargar.
 watch(modoVivo, cargarSesion);
+// Cada captura en vivo que se guarda (sola o a pedido) aparece enseguida en el selector.
+watch(capturasVersion, async () => {
+  sesiones.value = await api.sesiones(slug.value);
+});
 
 onMounted(async () => {
   try {
@@ -299,8 +303,8 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <h2>Plano · {{ (mapa.tam_px[0] / mapa.px_por_metro).toFixed(0) }} × {{ (mapa.tam_px[1] / mapa.px_por_metro).toFixed(0) }} m</h2>
         <span v-if="modoVivo" class="heading-meta">
           <label class="check"><input v-model="verCalor" type="checkbox" /> Mapa de calor</label>
-          <button type="button" class="reiniciar-calor" :disabled="!vivo.calor.value.length" @click="reiniciarVivo()">Reiniciar</button>
-          <button type="button" class="reiniciar-calor guardar" :disabled="guardando || !vivo.historias.value.length" @click="guardarYRefrescar()">
+          <button type="button" class="reiniciar-calor" :disabled="!vivo.calor.value.length" title="Guarda esta captura y empieza una nueva" @click="reiniciarCaptura()">Reiniciar</button>
+          <button type="button" class="reiniciar-calor guardar" title="Se guarda sola cada 20 s y al salir del modo en vivo" :disabled="guardando || !vivo.historias.value.length" @click="guardarYRefrescar()">
             {{ guardando ? "Guardando…" : "Guardar captura" }}
           </button>
           <span v-if="mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
