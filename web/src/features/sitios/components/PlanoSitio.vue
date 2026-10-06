@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { recordarVista, vistaRecordada } from "../vistaPlano";
 import type { Camara, Mapa, Punto, Zona } from "../api";
 
 /** `estimado`: en un hueco de detección (posición interpolada); `salio`: ya dejó el plano (su última posición). */
@@ -176,11 +177,18 @@ function reiniciarVista() {
   vista.value = acotar(campus.value && props.inicio === "campus" ? vistaTodo.value : vistaSitio.value);
 }
 // Solo se reinicia si cambia el marco del plano, no cada vez que se recarga la configuración.
-watch(
-  () => `${props.mapa.tam_px.join()}|${props.mapa.px_por_metro}|${props.mapa.origen_m.join()}|${campus.value?.url ?? ""}`,
-  reiniciarVista,
-  { immediate: true },
-);
+const claveVista = computed(() => `${props.mapa.tam_px.join()}|${props.mapa.px_por_metro}|${props.mapa.origen_m.join()}|${campus.value?.url ?? ""}`);
+/** Al abrir el plano: la vista que se dejó la última vez con este sitio (en cualquier sección), o la inicial. */
+function iniciarVista() {
+  const guardada = props.zoom ? vistaRecordada(claveVista.value) : undefined;
+  if (guardada) vista.value = acotar(guardada);
+  else reiniciarVista();
+}
+watch(claveVista, iniciarVista, { immediate: true });
+// Cada cambio de zoom o de desplazamiento se recuerda para la próxima vez que se abra el plano.
+watch(vista, (v) => {
+  if (props.zoom && v.w > 0) recordarVista(claveVista.value, v);
+});
 
 // Acercar al sitio (o alejarse al campus) en un movimiento: el ancho cambia en escala logarítmica
 // (el zoom se siente parejo) y el centro se desplaza a la vez.
