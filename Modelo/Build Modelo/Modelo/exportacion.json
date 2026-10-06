@@ -19,7 +19,7 @@
     "Modelo/resnet18-f37072fd.pth": "f37072fd47e89c5e827621c5baffa7500819f7896bbacec160b1a16c560e07ec",
     "Modelo/yolo26m.pt": "401cea9ab23ad19246ff7744859816bc599f350e93c9dd30367b6f0a0745d0b7",
     "Modelo/yolo26s-reid.onnx": "1cfff339245e6564f64e9e9a985b11fa55d5be939d1ac72da64ac5fcd9efa271",
-    "Modelo/config_lap01.json": "3f4f59bc53a96a7eaa6a675b95f096d4debd5e1288a9a19d79158fefda29b868",
+    "Modelo/config_lap01.json": "4c7ea90efe23ad0c068528d7f9c0a9b7148c82cfec93e846374ce0898016ed60",
     "Modelo/camaras.json": "8e7a5f9164f33961a43481add525e1c049913d90a91a493293154b60d3519f99",
     "Modelo/mapa_piso.json": "f34066926454a95285aeaf5c256357a7a682c671e0d32cc270496c816b9f5457",
     "Modelo/clip_genero\\config.json": "4e5821fb0c597724c7f92b278e540e69fd981dc99dfd241450b8505dc23ba1c6",
