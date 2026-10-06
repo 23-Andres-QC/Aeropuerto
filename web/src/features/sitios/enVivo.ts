@@ -8,8 +8,12 @@ import { json, request, socketPersistente } from "../../core/http";
 import { colorPersona } from "../../shared/format";
 import { api as apiVivo, RELEVO_VIVO, type Detecciones, type EstadoServicio, type EstadoTelefono, type Telefono } from "../telefonos/api";
 import { api, mapaDelSitio, type Camara, type Config, type Mapa, type Punto } from "./api";
+import { CELDA_CALOR, dentro, entradasPorIntervalo as entradasEntre, resumir, type ResumenVivo } from "./analisisVivo";
 import type { PersonaPlano, RecorridoPlano } from "./components/PlanoSitio.vue";
-import { construirSesion, uuid, type TrazaViva } from "./sesionVivo";
+
+export { CELDA_CALOR };
+export type { ResumenVivo };
+import { construirSesion, uuid, type CargaSesion, type TrazaViva } from "./sesionVivo";
 
 /** Valor de la opción «En vivo» en los desplegables de sesión. */
 export const SESION_VIVO = "__vivo__";
@@ -22,14 +26,10 @@ const RASTRO_MS = 8000;
 const PUNTOS_RASTRO = 80;
 /** Puntos que se guardan de la historia de cada persona (para su recorrido en Insights). */
 const PUNTOS_HISTORIA = 600;
-/** Lado de cada celda del calor acumulado, en metros. */
-export const CELDA_CALOR = 0.5;
 /** Cada tick del motor dura esto: es el tiempo que se suma a la celda y a la zona de cada persona presente. */
 const TICK_S = 0.25;
 /** Tope de posiciones guardadas por persona (a una por segundo, más de cinco horas). */
 const MAX_TRAZAS = 20000;
-/** Ancho de cada intervalo de «Entradas por intervalo», en segundos. */
-export const PASO_VIVO_S = 10;
 
 // --- Modo global (se recuerda en el navegador) -------------------------------------
 const CLAVE_MODO = "modo-vivo";
@@ -72,17 +72,6 @@ export type HistoriaViva = {
   zonaActual: number | null;
   /** Posiciones con su instante y cámara: lo que se guarda al «Guardar captura». */
   trazas: TrazaViva[];
-};
-
-export type ResumenVivo = {
-  personas: number;
-  genero: Record<"HOMBRE" | "MUJER" | "SIN_DETERMINAR", number>;
-  permanenciaMedia: number | null;
-  permanenciaMediana: number | null;
-  densidadMax: { valor: number; zona: string } | null;
-  zonas: { id: number; nombre: string; visitantes: number; permanencia: number | null; densidad: number }[];
-  rutas: { secuencia: string[]; zonas: number[]; frecuencia: number; porcentaje: number }[];
-  flujos: { desde: number; hacia: number; desde_nombre: string; hacia_nombre: string; personas: number }[];
 };
 
 export type RanuraVivo = {
@@ -132,16 +121,6 @@ export function proyector(camara: Camara | undefined, mapa: Mapa): ((u: number, 
   };
 }
 
-function dentro([x, y]: Punto, pol: Punto[]) {
-  let c = false;
-  for (let i = 0, j = pol.length - 1; i < pol.length; j = i++) {
-    const [xi, yi] = pol[i];
-    const [xj, yj] = pol[j];
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
-  }
-  return c;
-}
-
 // --- Estado del motor (uno solo para toda la aplicación) ------------------------
 const sitio = ref("");
 const config = shallowRef<Config>();
@@ -173,9 +152,12 @@ const historias = shallowRef<HistoriaViva[]>([]);
 let ticks = 0;
 /** Identificador de la captura en vivo actual: guardar otra vez la actualiza; Reiniciar empieza una nueva. */
 let sesionId = uuid();
+/** Posiciones que ya estaban guardadas en el último guardado: sin posiciones nuevas no se vuelve a guardar. */
+let trazasGuardadas = 0;
 let sondeo: ReturnType<typeof setInterval> | undefined;
 let reloj: ReturnType<typeof setInterval> | undefined;
 let sondeoConfig: ReturnType<typeof setInterval> | undefined;
+let sondeoGuardado: ReturnType<typeof setInterval> | undefined;
 let cierraServicio: (() => void) | undefined;
 let corriendo = false;
 
@@ -266,8 +248,6 @@ async function cargarConfig() {
     /* se reintenta en el próximo sondeo */
   }
 }
-
-const claveGenero = (g: string | null): "HOMBRE" | "MUJER" | "SIN_DETERMINAR" => (g === "Hombre" ? "HOMBRE" : g === "Mujer" ? "MUJER" : "SIN_DETERMINAR");
 
 /** Une lo que ven los teléfonos: una persona vista por dos cámaras se promedia (pesa más la que la ve más grande). */
 function componer() {
@@ -377,88 +357,20 @@ export function reiniciarVivo() {
   historias.value = [];
   inicio.value = Date.now();
   sesionId = uuid();
+  trazasGuardadas = 0;
 }
 
-const mediana = (xs: number[]) => {
-  if (!xs.length) return null;
-  const o = [...xs].sort((a, b) => a - b);
-  return o.length % 2 ? o[(o.length - 1) / 2] : (o[o.length / 2 - 1] + o[o.length / 2]) / 2;
-};
-
-/** Métricas de Insights sobre lo acumulado en vivo. */
-const resumen = computed<ResumenVivo>(() => {
-  const hs = historias.value;
-  const nombre = (id: number) => zonas.value.find((z) => z.zone_id === id)?.name ?? `Zona ${id}`;
-  const genero = { HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0 };
-  for (const h of hs) genero[claveGenero(h.genero)]++;
-  const visibles = hs.map((h) => (h.ultima - h.primera) / 1000);
-
-  const porZona = [...zonas.value].map((z) => {
-    const tiempos = hs.filter((h) => h.zonas.has(z.zone_id)).map((h) => h.zonas.get(z.zone_id) as number);
-    return {
-      id: z.zone_id,
-      nombre: z.name,
-      visitantes: tiempos.length,
-      permanencia: tiempos.length ? tiempos.reduce((a, b) => a + b, 0) / tiempos.length : null,
-      densidad: densidadMax.get(z.zone_id) ?? 0,
-    };
-  });
-  const pico = porZona.reduce<{ valor: number; zona: string } | null>((m, z) => (z.densidad > (m?.valor ?? 0) ? { valor: z.densidad, zona: z.nombre } : m), null);
-
-  const rutas = new Map<string, { zonas: number[]; frecuencia: number }>();
-  const pares = new Map<string, Set<number>>();
-  for (const h of hs) {
-    if (!h.secuencia.length) continue;
-    const clave = h.secuencia.join(">");
-    const r = rutas.get(clave) ?? { zonas: h.secuencia, frecuencia: 0 };
-    r.frecuencia++;
-    rutas.set(clave, r);
-    for (let i = 1; i < h.secuencia.length; i++) {
-      if (h.secuencia[i - 1] === h.secuencia[i]) continue;
-      const par = `${h.secuencia[i - 1]}>${h.secuencia[i]}`;
-      pares.set(par, (pares.get(par) ?? new Set<number>()).add(h.id));
-    }
-  }
-  return {
-    personas: hs.length,
-    genero,
-    permanenciaMedia: visibles.length ? visibles.reduce((a, b) => a + b, 0) / visibles.length : null,
-    permanenciaMediana: mediana(visibles),
-    densidadMax: pico,
-    zonas: porZona,
-    rutas: [...rutas.values()]
-      .sort((a, b) => b.frecuencia - a.frecuencia)
-      .slice(0, 12)
-      .map((r) => ({ secuencia: r.zonas.map(nombre), zonas: r.zonas, frecuencia: r.frecuencia, porcentaje: (100 * r.frecuencia) / Math.max(1, hs.length) })),
-    flujos: [...pares]
-      .map(([par, quienes]) => {
-        const [desde, hacia] = par.split(">").map(Number);
-        return { desde, hacia, desde_nombre: nombre(desde), hacia_nombre: nombre(hacia), personas: quienes.size };
-      })
-      .sort((a, b) => b.personas - a.personas),
-  };
-});
+/** Métricas de Insights sobre lo acumulado en vivo (el mismo cálculo que usa una captura guardada). */
+const resumen = computed<ResumenVivo>(() => resumir(historias.value, zonas.value, densidadMax));
 
 /** Personas que pasaron por la zona (o todas, sin zona). */
 export function historiasDe(zonaId: number | null): HistoriaViva[] {
   return zonaId == null ? historias.value : historias.value.filter((h) => h.zonas.has(zonaId));
 }
 
-/** Entradas (personas que aparecen por primera vez) por intervalo de PASO_VIVO_S, de los últimos 12. */
+/** Entradas (personas que aparecen por primera vez) por intervalo de 10 s, de los últimos 12. */
 export function entradasPorIntervalo(zonaId: number | null): { v: number; hora: string }[] {
-  const hs = historiasDe(zonaId);
-  const paso = PASO_VIVO_S * 1000;
-  const total = Math.max(1, Math.floor((ahora.value - inicio.value) / paso) + 1);
-  const desde = Math.max(0, total - 12);
-  const cuentas = new Array<number>(total - desde).fill(0);
-  for (const h of hs) {
-    const i = Math.floor((h.primera - inicio.value) / paso) - desde;
-    if (i >= 0 && i < cuentas.length) cuentas[i]++;
-  }
-  return cuentas.map((v, i) => ({
-    v,
-    hora: new Date(inicio.value + (desde + i) * paso).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }),
-  }));
+  return entradasEntre(historiasDe(zonaId), inicio.value, ahora.value);
 }
 
 const ranuras = computed<RanuraVivo[]>(() => {
@@ -486,28 +398,37 @@ const servicioActivo = computed(() => ahora.value - ultimoServicio.value < 6000 
 
 export const guardando = ref(false);
 export const mensajeGuardado = ref("");
+/** Sube cada vez que una captura se guarda: las páginas recargan su lista de sesiones. */
+export const capturasVersion = ref(0);
 
-/** Guarda lo capturado en vivo como una sesión LIVE del sitio (aparece en «Guardado en vivo»); volver a guardar la actualiza. */
-export async function guardarCapturaVivo(): Promise<boolean> {
+/** Cada cuánto se guarda sola la captura en vivo. */
+const AUTOGUARDADO_MS = 20000;
+
+type Pendiente = { sitio: string; carga: CargaSesion };
+
+const totalTrazas = () => [...historia.values()].reduce((n, h) => n + h.trazas.length, 0);
+
+/** Foto de lo capturado hasta ahora, lista para enviar; null si todavía no hay personas con ID. */
+function prepararCaptura(): Pendiente | null {
   const quien = sitio.value;
-  if (!quien) {
-    mensajeGuardado.value = "Abre un sitio para guardar la captura.";
-    return false;
-  }
+  if (!quien) return null;
   const personas = [...historia.values()]
     .filter((h) => h.trazas.length)
     .map((h) => ({ id: h.id, genero: h.genero, conf: h.conf, primera: h.primera, ultima: h.ultima, trazas: h.trazas }));
-  if (!personas.length) {
-    mensajeGuardado.value = "Todavía no hay personas con ID para guardar.";
-    return false;
-  }
+  if (!personas.length) return null;
+  const hora = new Date(inicio.value).toLocaleString("es-PE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const nombre = `${config.value?.site.name ?? quien} · en vivo · ${hora}`;
+  return { sitio: quien, carga: construirSesion(personas, { sesionId, nombre, inicio: inicio.value, fin: Date.now() }) };
+}
+
+/** Envía la captura como sesión LIVE del sitio: el backend reemplaza la anterior con el mismo identificador. */
+async function enviarCaptura(p: Pendiente, automatico: boolean): Promise<boolean> {
   guardando.value = true;
-  mensajeGuardado.value = "";
   try {
-    const hora = new Date(inicio.value).toLocaleString("es-PE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-    const carga = construirSesion(personas, { sesionId, nombre: `${config.value?.site.name ?? quien} · en vivo · ${hora}`, inicio: inicio.value, fin: Date.now() });
-    const r = await request<{ identities: number; points: number }>(`/api/v1/sites/${encodeURIComponent(quien)}/sessions`, json("POST", carga));
-    mensajeGuardado.value = `Guardada: ${r.identities} personas y ${r.points.toLocaleString()} puntos.`;
+    const r = await request<{ identities: number; points: number }>(`/api/v1/sites/${encodeURIComponent(p.sitio)}/sessions`, json("POST", p.carga));
+    const hora = new Date().toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+    mensajeGuardado.value = `${automatico ? "Guardado automático" : "Guardada"} ${hora}: ${r.identities} personas y ${r.points.toLocaleString()} puntos.`;
+    capturasVersion.value++;
     return true;
   } catch (e) {
     mensajeGuardado.value = `No se pudo guardar: ${(e as Error).message}`;
@@ -515,6 +436,43 @@ export async function guardarCapturaVivo(): Promise<boolean> {
   } finally {
     guardando.value = false;
   }
+}
+
+/** Guarda ya, a pedido (el botón). Lo normal es que se guarde sola. */
+export async function guardarCapturaVivo(): Promise<boolean> {
+  const p = prepararCaptura();
+  if (!p) {
+    mensajeGuardado.value = sitio.value ? "Todavía no hay personas con ID para guardar." : "Abre un sitio para guardar la captura.";
+    return false;
+  }
+  trazasGuardadas = totalTrazas();
+  return enviarCaptura(p, false);
+}
+
+/** Guardado automático: solo si hubo posiciones nuevas desde el último guardado. */
+async function autoguardar() {
+  if (!corriendo || guardando.value) return;
+  const n = totalTrazas();
+  if (n === trazasGuardadas) return;
+  const p = prepararCaptura();
+  if (!p) return;
+  trazasGuardadas = n;
+  await enviarCaptura(p, true);
+}
+
+/** Reiniciar: lo capturado queda guardado y empieza una captura nueva. */
+export function reiniciarCaptura() {
+  const p = prepararCaptura();
+  reiniciarVivo();
+  if (p) void enviarCaptura(p, true);
+}
+
+/** Al apagar el modo en vivo: la captura se guarda por última vez y el motor se detiene. */
+function cerrarCaptura() {
+  if (!corriendo) return;
+  const p = prepararCaptura();
+  detener();
+  if (p) void enviarCaptura(p, true);
 }
 
 function arrancar() {
@@ -525,6 +483,7 @@ function arrancar() {
   cargarConfig();
   sondeo = setInterval(sondear, 3000);
   sondeoConfig = setInterval(cargarConfig, 5000);
+  sondeoGuardado = setInterval(autoguardar, AUTOGUARDADO_MS);
   reloj = setInterval(componer, TICK_S * 1000);
   cierraServicio = socketPersistente(`${RELEVO_VIVO}/telefonos/detections/watch`, false, (ev) => {
     try {
@@ -542,6 +501,7 @@ function detener() {
   clearInterval(sondeo);
   clearInterval(reloj);
   clearInterval(sondeoConfig);
+  clearInterval(sondeoGuardado);
   cierraServicio?.();
   cierraServicio = undefined;
   sincronizarSockets();
@@ -553,11 +513,14 @@ function detener() {
 /** El sitio sobre el que se proyecta (lo fija el shell según la ruta; en Teléfonos y Videos se queda el último). */
 export function usarSitioVivo(slug: string) {
   if (!slug || slug === sitio.value) return;
+  // Lo capturado hasta ahora pertenece al sitio anterior: se guarda ahí antes de empezar de nuevo.
+  const pendiente = corriendo ? prepararCaptura() : null;
   sitio.value = slug;
   config.value = undefined;
   if (corriendo) {
     reiniciarVivo();
     cargarConfig();
+    if (pendiente) void enviarCaptura(pendiente, true);
   }
 }
 
@@ -566,7 +529,7 @@ watch(
   [modoVivo, sitio],
   ([activo, quien]) => {
     if (activo && quien) arrancar();
-    else detener();
+    else cerrarCaptura();
   },
   { immediate: true },
 );
