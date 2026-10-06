@@ -770,8 +770,6 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
         Flujo entre zonas (personas)
       </li>
     </ul>
-    <p v-if="mapa.fondo?.fuente" class="fuente-plano">Plano: {{ mapa.fondo.fuente }}</p>
-    <p v-if="campus?.fuente" class="fuente-plano">Campus: {{ campus.fuente }}</p>
   </div>
 </template>
 

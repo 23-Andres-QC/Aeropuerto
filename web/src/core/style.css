@@ -27,6 +27,8 @@
   --pill-fg: var(--blue-700);
   --heading-glow-1: rgba(255, 255, 255, 0.55);
   --heading-glow-2: rgba(255, 255, 255, 0.15);
+  --panel-brillo-1: rgba(255, 255, 255, 0.5);
+  --panel-brillo-2: rgba(255, 255, 255, 0.08);
   --glass-blur: blur(22px) saturate(170%);
   --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.9);
   --shadow-s: 0 4px 14px rgba(10, 45, 92, 0.07);
@@ -63,19 +65,21 @@
    (persistido en localStorage como data-theme en <html>). */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --ink: #e7f0fb;
-    --ink-soft: #a9c0dc;
-    --ink-faint: #7391b3;
+    --ink: #f3f8ff;
+    --ink-soft: #c3d5ea;
+    --ink-faint: #93adca;
     --danger-soft: rgba(207, 64, 64, 0.18);
-    --glass: rgba(18, 34, 56, 0.66);
-    --glass-strong: rgba(22, 40, 64, 0.85);
-    --glass-line: rgba(255, 255, 255, 0.1);
+    --glass: rgba(11, 22, 40, 0.88);
+    --glass-strong: rgba(14, 28, 50, 0.94);
+    --glass-line: rgba(140, 180, 230, 0.2);
     --pill-bg: rgba(61, 139, 255, 0.22);
     --pill-border: rgba(255, 255, 255, 0.14);
     --pill-fg: #bcdcff;
-    --accent-ink: #7cc4ff;
-    --heading-glow-1: rgba(255, 255, 255, 0.07);
-    --heading-glow-2: rgba(255, 255, 255, 0.015);
+    --accent-ink: #8fd0ff;
+    --heading-glow-1: rgba(61, 139, 255, 0.1);
+  --panel-brillo-1: rgba(255, 255, 255, 0.04);
+  --panel-brillo-2: rgba(255, 255, 255, 0);
+    --heading-glow-2: rgba(61, 139, 255, 0.02);
     --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.06);
     --shadow-s: 0 4px 14px rgba(0, 0, 0, 0.25);
     --shadow-m: 0 12px 34px rgba(0, 0, 0, 0.32);
@@ -84,19 +88,21 @@
   }
 }
 :root[data-theme="dark"] {
-  --ink: #e7f0fb;
-  --ink-soft: #a9c0dc;
-  --ink-faint: #7391b3;
+  --ink: #f3f8ff;
+  --ink-soft: #c3d5ea;
+  --ink-faint: #93adca;
   --danger-soft: rgba(207, 64, 64, 0.18);
-  --glass: rgba(18, 34, 56, 0.66);
-  --glass-strong: rgba(22, 40, 64, 0.85);
-  --glass-line: rgba(255, 255, 255, 0.1);
+  --glass: rgba(11, 22, 40, 0.88);
+  --glass-strong: rgba(14, 28, 50, 0.94);
+  --glass-line: rgba(140, 180, 230, 0.2);
   --pill-bg: rgba(61, 139, 255, 0.22);
   --pill-border: rgba(255, 255, 255, 0.14);
   --pill-fg: #bcdcff;
-  --accent-ink: #7cc4ff;
-  --heading-glow-1: rgba(255, 255, 255, 0.07);
-  --heading-glow-2: rgba(255, 255, 255, 0.015);
+  --accent-ink: #8fd0ff;
+  --heading-glow-1: rgba(61, 139, 255, 0.1);
+  --panel-brillo-1: rgba(255, 255, 255, 0.04);
+  --panel-brillo-2: rgba(255, 255, 255, 0);
+  --heading-glow-2: rgba(61, 139, 255, 0.02);
   --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --shadow-s: 0 4px 14px rgba(0, 0, 0, 0.25);
   --shadow-m: 0 12px 34px rgba(0, 0, 0, 0.32);
@@ -597,8 +603,8 @@ footer {
   pointer-events: none;
   background: linear-gradient(
     142deg,
-    rgba(255, 255, 255, 0.5) 0%,
-    rgba(255, 255, 255, 0.08) 34%,
+    var(--panel-brillo-1) 0%,
+    var(--panel-brillo-2) 34%,
     rgba(255, 255, 255, 0) 62%
   );
 }
