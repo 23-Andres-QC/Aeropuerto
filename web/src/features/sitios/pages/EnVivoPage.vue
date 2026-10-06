@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, GENEROS, type Config, type Replay, type Sesion } from "../api";
 import PlanoSitio, { type PersonaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
-import { CELDA_CALOR, SESION_VIVO, fijarModoVivo, modoVivo, motorVivo as vivo, reiniciarVivo } from "../enVivo";
+import { CELDA_CALOR, SESION_VIVO, fijarModoVivo, guardando, guardarCapturaVivo, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarVivo } from "../enVivo";
 import { useSitios } from "../useSitios";
 
 const { slug } = useSitios();
@@ -37,6 +37,13 @@ const valorSesion = computed({
   },
 });
 const verCalor = ref(true);
+const guardadasVivo = computed(() => sesiones.value.filter((s) => s.kind === "LIVE"));
+const grabadas = computed(() => sesiones.value.filter((s) => s.kind === "BUILD"));
+
+/** Guarda la captura en vivo y recarga la lista para que aparezca en «Guardado en vivo». */
+async function guardarYRefrescar() {
+  if (await guardarCapturaVivo()) sesiones.value = await api.sesiones(slug.value);
+}
 const calorVivo = computed(() => (modoVivo.value && verCalor.value ? vivo.calor.value : []));
 const desfases = computed(() => mapa.value?.desfases_s ?? {});
 const camarasVideo = computed(() =>
@@ -264,11 +271,19 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
     </div>
     <label class="selector-sesion">Sesión
       <select v-model="valorSesion">
-        <option :value="SESION_VIVO">● En vivo · teléfonos</option>
-        <option v-if="!sesiones.length" value="" disabled>Sin sesiones guardadas</option>
-        <option v-for="s in sesiones" :key="s.session_id" :value="s.session_id">
-          {{ s.name || s.session_id.slice(0, 8) }} · {{ s.kind === "BUILD" ? "dataset" : "en vivo" }} · {{ s.identities }} personas
-        </option>
+        <optgroup label="Tiempo real">
+          <option :value="SESION_VIVO">● En vivo · teléfonos</option>
+        </optgroup>
+        <optgroup v-if="guardadasVivo.length" label="Guardado en vivo">
+          <option v-for="s in guardadasVivo" :key="s.session_id" :value="s.session_id">
+            {{ s.name || s.session_id.slice(0, 8) }} · {{ s.identities }} personas
+          </option>
+        </optgroup>
+        <optgroup v-if="grabadas.length" label="Grabado (dataset)">
+          <option v-for="s in grabadas" :key="s.session_id" :value="s.session_id">
+            {{ s.name || s.session_id.slice(0, 8) }} · {{ s.identities }} personas
+          </option>
+        </optgroup>
       </select>
     </label>
   </section>
@@ -285,6 +300,10 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <span v-if="modoVivo" class="heading-meta">
           <label class="check"><input v-model="verCalor" type="checkbox" /> Mapa de calor</label>
           <button type="button" class="reiniciar-calor" :disabled="!vivo.calor.value.length" @click="reiniciarVivo()">Reiniciar</button>
+          <button type="button" class="reiniciar-calor guardar" :disabled="guardando || !vivo.historias.value.length" @click="guardarYRefrescar()">
+            {{ guardando ? "Guardando…" : "Guardar captura" }}
+          </button>
+          <span v-if="mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
           <span class="pill en-vivo">● EN VIVO</span><span class="pill">{{ enPlano.length }} en el plano</span>
         </span>
         <span v-else-if="replay" class="heading-meta"><span class="pill">{{ enPlano.length }} en el plano</span><span class="pill">{{ replay.personas.length }} personas</span></span>
@@ -486,6 +505,14 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   padding: 4px 10px;
   font-size: 11.5px;
   border-radius: 999px;
+}
+.guardar {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(180deg, #4a95ff 0%, var(--blue-600) 100%);
+}
+.mensaje-guardado {
+  font-size: 11.5px;
 }
 .en-vivo {
   color: #fff;
