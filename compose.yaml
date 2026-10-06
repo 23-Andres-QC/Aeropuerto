@@ -135,7 +135,7 @@ services:
       # Enlace que Teléfonos muestra para unir un teléfono: el público, no la IP
       # de la red interna del servidor (ej. https://34.70.132.18/camara/).
       ENLACE_CAMARA: ${ENLACE_CAMARA:-}
-      # Resolución del detector en CPU (vacío = la del Build, 640). 480 es ~1,6x más rápido.
+      # Resolución del detector en CPU (vacío = 640 con yolo26s). 480 es ~1,5x más rápido pero ve peor a lo lejos.
       MODELO_IMGSZ: ${MODELO_IMGSZ:-}
       OMP_NUM_THREADS: ${MODELO_CPUS:-3}
     # Deja un núcleo libre para que la web y la API sigan respondiendo.
