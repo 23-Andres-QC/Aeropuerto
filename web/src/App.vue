@@ -12,6 +12,7 @@ const { sitios, slug, actual, recargar } = useSitios();
 const SECCIONES = [
   { id: "en-vivo", nombre: "En vivo", icono: "⌖" },
   { id: "insights", nombre: "Insights", icono: "▥" },
+  { id: "registros", nombre: "Registros", icono: "☰" },
   { id: "configuracion", nombre: "Configuración", icono: "◇" },
 ];
 
@@ -80,9 +81,9 @@ onMounted(recargar);
           :class="{ 'router-link-active': seccion === s.id }"
           ><span>{{ s.icono }}</span><span class="nav-label"><b class="nav-step">{{ i + 1 }}.</b>{{ s.nombre }}</span></RouterLink
         ><RouterLink to="/telefonos"
-          ><span>📱</span><span class="nav-label"><b class="nav-step">4.</b>Teléfonos</span></RouterLink
+          ><span>📱</span><span class="nav-label"><b class="nav-step">5.</b>Teléfonos</span></RouterLink
         ><RouterLink to="/videos"
-          ><span>🎞</span><span class="nav-label"><b class="nav-step">5.</b>Videos</span></RouterLink
+          ><span>🎞</span><span class="nav-label"><b class="nav-step">6.</b>Videos</span></RouterLink
         >
       </nav>
       <div class="sidebar-bottom">

@@ -443,6 +443,8 @@ onMounted(async () => {
     [config.value, sesiones.value] = await Promise.all([api.config(slug.value), api.sesiones(slug.value)]);
     const pedida = typeof route.query.sesion === "string" ? route.query.sesion : "";
     sesionId.value = sesiones.value.find((s) => s.session_id === pedida)?.session_id ?? sesiones.value[0]?.session_id ?? "";
+    // Venir desde Registros con una captura elegida: se muestra esa, no lo que pasa ahora.
+    if (pedida && sesionId.value === pedida) fijarModoVivo(false);
     if (!sesionId.value) cargando.value = false;
   } catch (e) {
     error.value = (e as Error).message;

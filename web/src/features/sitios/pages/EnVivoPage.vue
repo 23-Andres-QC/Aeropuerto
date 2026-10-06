@@ -4,8 +4,10 @@ import { colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, GENEROS, type Config, type Replay, type Sesion } from "../api";
 import PlanoSitio, { type PersonaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
 import { CELDA_CALOR, SESION_VIVO, capturasVersion, fijarModoVivo, guardando, guardarCapturaVivo, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura } from "../enVivo";
+import { useRoute } from "vue-router";
 import { useSitios } from "../useSitios";
 
+const route = useRoute();
 const { slug } = useSitios();
 const config = ref<Config>();
 const sesiones = ref<Sesion[]>([]);
@@ -251,7 +253,11 @@ watch(capturasVersion, async () => {
 onMounted(async () => {
   try {
     [config.value, sesiones.value] = await Promise.all([api.config(slug.value), api.sesiones(slug.value)]);
-    const build = sesiones.value.find((s) => s.kind === "BUILD" && s.points > 0) ?? sesiones.value[0];
+    const pedida = typeof route.query.sesion === "string" ? route.query.sesion : "";
+    const elegida = sesiones.value.find((s) => s.session_id === pedida);
+    // Venir desde Registros con una captura elegida: se recorre esa en el plano, no lo que pasa ahora.
+    if (elegida) fijarModoVivo(false);
+    const build = elegida ?? sesiones.value.find((s) => s.kind === "BUILD" && s.points > 0) ?? sesiones.value[0];
     if (build) sesionId.value = build.session_id;
     else cargando.value = false;
   } catch (e) {

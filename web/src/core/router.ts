@@ -12,6 +12,7 @@ export const router = createRouter({
     { path: "/login", component: () => import("../features/acceso/LoginPage.vue"), meta: { public: true } },
     { path: "/sitios/:sitio/en-vivo", component: () => import("../features/sitios/pages/EnVivoPage.vue"), meta: { seccion: "en-vivo" } },
     { path: "/sitios/:sitio/insights", component: () => import("../features/sitios/pages/InsightsPage.vue"), meta: { seccion: "insights" } },
+    { path: "/sitios/:sitio/registros", component: () => import("../features/sitios/pages/RegistrosPage.vue"), meta: { seccion: "registros" } },
     {
       path: "/sitios/:sitio/configuracion",
       component: () => import("../features/sitios/pages/ConfiguracionPage.vue"),
