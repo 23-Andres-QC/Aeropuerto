@@ -4,6 +4,7 @@ import { useRoute } from "vue-router";
 import { cantidad, colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, GENEROS, type Analitica, type Config, type Insights, type Punto, type Replay, type Sesion } from "../api";
 import PlanoSitio, { type FlechaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
+import { CELDA_CALOR, SESION_VIVO, entradasPorIntervalo, fijarModoVivo, historiasDe, modoVivo, motorVivo as vivo, reiniciarVivo } from "../enVivo";
 import { useSitios } from "../useSitios";
 
 const route = useRoute();
@@ -19,6 +20,19 @@ const error = ref("");
 const cargando = ref(true);
 const capaCalor = ref<"ocupacion" | "visitantes">("ocupacion");
 const verFlujos = ref(true);
+
+// «En vivo» es un modo de todo el sistema: aquí Insights se calcula sobre lo que ven los teléfonos ahora mismo.
+const valorSesion = computed({
+  get: () => (modoVivo.value ? SESION_VIVO : sesionId.value),
+  set: (v: string) => {
+    if (v === SESION_VIVO) {
+      fijarModoVivo(true);
+      return;
+    }
+    fijarModoVivo(false);
+    sesionId.value = v;
+  },
+});
 
 const mapa = computed(() => mapaDelSitio(config.value));
 const sesion = computed(() => sesiones.value.find((s) => s.session_id === sesionId.value));
@@ -68,6 +82,7 @@ const zonaPico = computed(() => [...(p3.value?.zonas ?? [])].sort((a, b) => b.de
 
 type Tarjeta = { titulo: string; icono: string; valor: string; detalle: string; serie?: (number | null)[] };
 const tarjetas = computed<Tarjeta[]>(() => {
+  if (modoVivo.value) return tarjetasVivo.value;
   const res = r.value;
   const a = p3.value;
   const conLocales = !!a?.locales.length;
@@ -124,10 +139,53 @@ const tarjetas = computed<Tarjeta[]>(() => {
   ];
 });
 
+/** Las mismas seis tarjetas, sobre lo acumulado en vivo. Visitas, exposición y captación salen de las zonas de cada local. */
+const tarjetasVivo = computed<Tarjeta[]>(() => {
+  const res = vivo.resumen.value;
+  const enZona = zonaId.value != null;
+  const z = enZona ? (res.zonas.find((o) => o.id === zonaId.value) ?? null) : null;
+  const hs = historiasDe(zonaId.value);
+  const g = { HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0 };
+  for (const h of hs) g[h.genero === "Hombre" ? "HOMBRE" : h.genero === "Mujer" ? "MUJER" : "SIN_DETERMINAR"]++;
+  const tiene = (h: (typeof hs)[number], tipo: string) => zonas.value.some((o) => o.zone_type === tipo && h.zonas.has(o.zone_id));
+  const hayLocales = zonas.value.some((o) => o.zone_type === "INTERIOR" || o.zone_type === "FRONTAGE");
+  const expuestos = hs.filter((h) => tiene(h, "FRONTAGE"));
+  const entraron = hs.filter((h) => tiene(h, "INTERIOR"));
+  const captados = expuestos.filter((h) => tiene(h, "INTERIOR"));
+  const permanencia = enZona ? (z?.permanencia ?? null) : res.permanenciaMedia;
+  const pico = enZona ? (z?.densidad ?? 0) : (res.densidadMax?.valor ?? 0);
+  return [
+    { titulo: "PERSONAS", icono: "◍", valor: hs.length.toLocaleString(), detalle: enZona ? `de ${res.personas} en vivo` : `${g.HOMBRE} H · ${g.MUJER} M · ${g.SIN_DETERMINAR} s/d` },
+    { titulo: "VISITAS", icono: "⬡", valor: hayLocales ? entraron.length.toLocaleString() : "—", detalle: hayLocales ? "entraron a un local" : "sin locales" },
+    { titulo: "EXPOSICIÓN", icono: "⇥", valor: hayLocales ? expuestos.length.toLocaleString() : "—", detalle: "pasan por el frente" },
+    {
+      titulo: "PERMANENCIA",
+      icono: "◷",
+      valor: segundos(permanencia),
+      detalle: enZona ? "tiempo en la zona" : `mediana ${segundos(res.permanenciaMediana)}`,
+    },
+    {
+      titulo: "CAPTACIÓN",
+      icono: "◎",
+      valor: expuestos.length ? `${((100 * captados.length) / expuestos.length).toFixed(0)} %` : "—",
+      detalle: expuestos.length ? `${captados.length} de ${expuestos.length} expuestos` : "sin expuestos",
+    },
+    {
+      titulo: "DENSIDAD MÁX",
+      icono: "▦",
+      valor: pico ? pico.toFixed(2) : "—",
+      detalle: enZona || !res.densidadMax ? "personas / m²" : `personas / m² · ${res.densidadMax.zona}`,
+    },
+  ];
+});
+
 function expuestos(m: { captados: number; exposicion: number } | null | undefined, sinLocal: string) {
   if (!m) return sinLocal;
   return m.exposicion ? `${m.captados} de ${m.exposicion} expuestos` : "sin expuestos";
 }
+
+/** Una tarjeta sin dato ("—" o "0") se atenúa para que no compita con las que sí tienen. */
+const esVacio = (valor: string) => valor === "—" || /^0([.,]0+)?( [%a-z]+)?$/i.test(valor.trim());
 
 function sparkline(valores: (number | null)[] | undefined, w = 72, h = 22, pad = 2) {
   if (!valores || valores.length < 2) return "";
@@ -144,13 +202,22 @@ function sparkline(valores: (number | null)[] | undefined, w = 72, h = 22, pad =
 // --- Hombres y mujeres: de la sesión o de quienes pasaron por la zona elegida ---
 const generos = computed(() => {
   const n: Record<string, number> = { HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0 };
-  for (const p of personasMapa.value) n[p.genero in n ? p.genero : "SIN_DETERMINAR"]++;
-  const total = personasMapa.value.length;
+  const lista: { genero: string }[] = modoVivo.value
+    ? historiasDe(zonaId.value).map((h) => ({ genero: h.genero === "Hombre" ? "HOMBRE" : h.genero === "Mujer" ? "MUJER" : "SIN_DETERMINAR" }))
+    : personasMapa.value;
+  for (const p of lista) n[p.genero in n ? p.genero : "SIN_DETERMINAR"]++;
+  const total = lista.length;
   return Object.keys(n).map((g) => ({ g, nombre: GENEROS[g], n: n[g], pct: total ? Math.round((100 * n[g]) / total) : 0 }));
 });
 
 // --- Entradas por intervalo --------------------------------------------------
 const barras = computed(() => {
+  if (modoVivo.value) {
+    const e = entradasPorIntervalo(zonaId.value);
+    const max = Math.max(1, ...e.map((b) => b.v));
+    const cada = Math.ceil(e.length / 7);
+    return e.map((b, i) => ({ v: b.v, alto: b.v ? 6 + (74 * b.v) / max : 3, hora: b.hora, rotulo: i % cada === 0 }));
+  }
   const s = p3.value?.series;
   const valores = serie.value?.entradas;
   if (!s || !valores?.length || !sesion.value) return [];
@@ -160,7 +227,7 @@ const barras = computed(() => {
   const cada = Math.ceil(valores.length / 7);
   return valores.map((v, i) => ({
     v,
-    alto: 18 + (70 * v) / max,
+    alto: v ? 6 + (74 * v) / max : 3,
     hora: new Date(inicio + i * s.paso_s * 1000).toLocaleTimeString("es-PE", formato),
     rotulo: i % cada === 0,
   }));
@@ -182,14 +249,21 @@ const personasMapa = computed(() =>
 );
 // Un trazo por tramo continuo: no se une a una persona a través de un hueco en el que no se la vio.
 const recorridos = computed<RecorridoPlano[]>(() =>
-  personasMapa.value.flatMap((p) =>
+  modoVivo.value
+    ? historiasDe(zonaId.value)
+        .filter((h) => h.puntos.length > 1)
+        .map((h) => ({ id: h.id, color: colorPersona(h.id), puntos: h.puntos }))
+    : personasMapa.value.flatMap((p) =>
     tramos(p, replay.value?.paso_s ?? 0.2)
       .filter((puntos) => puntos.length > 1)
       .map((puntos) => ({ id: p.numero, color: colorPersona(p.numero), puntos })),
   ),
 );
 
+const nRecorridos = computed(() => (modoVivo.value ? recorridos.value.length : personasMapa.value.length));
+
 const celdasKDE = computed<[number, number, number][]>(() => {
+  if (modoVivo.value) return vivo.calor.value;
   const k = p3.value?.kde;
   if (!k) return datos.value?.calor.celdas ?? [];
   const valores = capaCalor.value === "ocupacion" ? k.ocupacion : k.visitantes;
@@ -208,7 +282,7 @@ const centroZona = (id: number): Punto | null => {
   return [suma(z.points.map((p) => p[0])) / z.points.length, suma(z.points.map((p) => p[1])) / z.points.length];
 };
 
-const flujos = computed(() => (p3.value?.origen_destino ?? []).filter((f) => zonaId.value == null || f.desde === zonaId.value || f.hacia === zonaId.value));
+const flujos = computed(() => (modoVivo.value ? vivo.resumen.value.flujos : (p3.value?.origen_destino ?? [])).filter((f) => zonaId.value == null || f.desde === zonaId.value || f.hacia === zonaId.value));
 
 const flechas = computed<FlechaPlano[]>(() =>
   !verFlujos.value
@@ -221,14 +295,16 @@ const flechas = computed<FlechaPlano[]>(() =>
 
 // --- Comparación entre zonas y rutas -------------------------------------------
 const comparacion = computed(() => {
-  const filas = p3.value
+  const filas = modoVivo.value
+    ? vivo.resumen.value.zonas.map((z) => ({ id: z.id, nombre: z.nombre, personas: z.visitantes, permanencia: z.permanencia, densidad: z.densidad as number | null }))
+    : p3.value
     ? p3.value.zonas.map((z) => ({ id: z.zone_id, nombre: z.nombre, personas: z.visitantes, permanencia: z.permanencia_media_s, densidad: z.densidad_max }))
     : (datos.value?.zonas ?? []).map((z) => ({ id: z.zone_id, nombre: z.name, personas: z.visitantes, permanencia: z.permanencia_media_s, densidad: null as number | null }));
   const max = Math.max(1, ...filas.map((f) => f.permanencia ?? 0));
   return filas.sort((a, b) => (b.permanencia ?? 0) - (a.permanencia ?? 0)).map((f) => ({ ...f, ancho: (100 * (f.permanencia ?? 0)) / max }));
 });
 
-const rutas = computed(() => (p3.value?.rutas ?? []).filter((ruta) => zonaId.value == null || ruta.zonas.includes(zonaId.value)).slice(0, 8));
+const rutas = computed(() => (modoVivo.value ? vivo.resumen.value.rutas : (p3.value?.rutas ?? [])).filter((ruta) => zonaId.value == null || ruta.zonas.includes(zonaId.value)).slice(0, 8));
 
 // --- Flujo entre zonas: sankey de dos columnas (origen → destino) --------------
 const sankey = computed(() => {
@@ -236,7 +312,7 @@ const sankey = computed(() => {
   const origenes = [...new Map(fs.map((f) => [f.desde, f.desde_nombre])).entries()];
   const destinos = [...new Map(fs.map((f) => [f.hacia, f.hacia_nombre])).entries()];
   const max = Math.max(1, ...fs.map((f) => f.personas));
-  const fila = 30;
+  const fila = 34;
   const y = (lista: [number, string][], id: number) => 10 + lista.findIndex(([i]) => i === id) * fila + fila / 2;
   return {
     alto: Math.max(origenes.length, destinos.length) * fila + 10,
@@ -291,6 +367,10 @@ function exportarCSV() {
 
 // --- Carga ------------------------------------------------------------------------
 async function cargar() {
+  if (modoVivo.value) {
+    cargando.value = false;
+    return;
+  }
   if (!sesionId.value) return;
   cargando.value = true;
   error.value = "";
@@ -307,6 +387,9 @@ async function cargar() {
   }
 }
 watch(sesionId, cargar);
+watch(modoVivo, (v) => {
+  if (!v) cargar();
+});
 
 onMounted(async () => {
   try {
@@ -329,8 +412,9 @@ onMounted(async () => {
     </div>
     <div class="replay-filters">
       <label
-        >Sesión<select v-model="sesionId" :disabled="!sesiones.length">
-          <option v-if="!sesiones.length" value="">Sin sesiones</option>
+        >Sesión<select v-model="valorSesion">
+          <option :value="SESION_VIVO">● En vivo · teléfonos</option>
+          <option v-if="!sesiones.length" value="" disabled>Sin sesiones guardadas</option>
           <option v-for="s in sesiones" :key="s.session_id" :value="s.session_id">
             {{ s.name || s.session_id.slice(0, 8) }} · {{ new Date(s.recording_start).toLocaleDateString("es-PE") }}
           </option>
@@ -342,16 +426,36 @@ onMounted(async () => {
           <option v-for="z in zonas" :key="z.zone_id" :value="z.zone_id">{{ z.name }}</option>
         </select></label
       >
-      <span v-if="analitica" class="pill" :title="`Calculado ${new Date(analitica.computed_at).toLocaleString('es-PE')}`">Parte III</span>
-      <span v-if="analitica?.stale" class="pill aviso-pill" :title="comando">zonas cambiadas · recalcular</span>
-      <span v-else-if="sesionId && !cargando && !analitica" class="pill aviso-pill" :title="comando">Parte III sin calcular</span>
+      <span v-if="modoVivo" class="pill en-vivo">● EN VIVO</span>
+      <span v-if="!modoVivo && analitica" class="pill" :title="`Calculado ${new Date(analitica.computed_at).toLocaleString('es-PE')}`">Parte III</span>
+      <span v-if="!modoVivo && analitica?.stale" class="pill aviso-pill" :title="comando">zonas cambiadas · recalcular</span>
+      <span v-else-if="!modoVivo && sesionId && !cargando && !analitica" class="pill aviso-pill" :title="comando">Parte III sin calcular</span>
     </div>
     <div class="export-actions">
-      <button type="button" :disabled="!datos" @click="exportarPDF">⤓ Exportar PDF</button>
-      <button type="button" :disabled="!datos" @click="exportarCSV">⤓ Exportar Excel (CSV)</button>
+      <button type="button" class="boton-primario" :disabled="!datos && !modoVivo" @click="exportarPDF">⤓ Exportar PDF</button>
+      <button type="button" :disabled="!datos && !modoVivo" @click="exportarCSV">⤓ Exportar Excel (CSV)</button>
+      <button v-if="modoVivo" type="button" @click="reiniciarVivo()">↺ Reiniciar en vivo</button>
     </div>
   </section>
+  <div v-if="modoVivo" class="resumen-sesion" aria-label="Resumen en vivo">
+    <span><small>Modo</small><b>● En vivo</b></span>
+    <span><small>Desde</small><b>{{ new Date(vivo.inicio.value).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }) }}</b></span>
+    <span><small>Duración</small><b>{{ segundos((vivo.ahora.value - vivo.inicio.value) / 1000) }}</b></span>
+    <span><small>Personas</small><b>{{ vivo.resumen.value.personas.toLocaleString() }}</b></span>
+    <span><small>Cámaras transmitiendo</small><b>{{ vivo.ranuras.value.filter((r) => r.activa).length }} de 3</b></span>
+    <span><small>Alcance</small><b>{{ alcance }}</b></span>
+  </div>
+  <div v-else-if="sesion" class="resumen-sesion" aria-label="Resumen de la sesión">
+    <span><small>Sesión</small><b>{{ sesion.name || sesion.session_id.slice(0, 8) }}</b></span>
+    <span><small>Fecha</small><b>{{ new Date(sesion.recording_start).toLocaleDateString("es-PE", { day: "numeric", month: "short", year: "numeric" }) }}</b></span>
+    <span><small>Duración</small><b>{{ segundos(sesion.duration_s) }}</b></span>
+    <span><small>Personas</small><b>{{ sesion.identities.toLocaleString() }}</b></span>
+    <span><small>Puntos de trayectoria</small><b>{{ sesion.points.toLocaleString() }}</b></span>
+    <span><small>Cámaras</small><b>{{ config?.cameras.length ?? "—" }}</b></span>
+    <span><small>Alcance</small><b>{{ alcance }}</b></span>
+  </div>
   <div class="print-header">
+    <p class="print-marca">LAP · Lima Airport Partners</p>
     <h1>{{ config?.site.name ?? slug }} · Comportamiento de personas</h1>
     <p>Sesión: {{ sesion?.name ?? "—" }} · Zona: {{ alcance }}</p>
     <p>Generado {{ generado }}</p>
@@ -359,11 +463,51 @@ onMounted(async () => {
   <p v-if="error" class="error" role="alert">{{ error }}</p>
 
   <div class="spatial-insights">
-    <section class="spatial-maps">
+    <section class="fila-top">
+      <article class="panel panel-genero">
+        <div class="panel-heading">
+          <h2>Hombres y mujeres</h2>
+          <span class="muted">{{ alcance }}</span>
+        </div>
+        <div class="generos">
+          <div v-for="x in generos" :key="x.g" class="genero">
+            <span class="icono-genero" :class="'g-' + x.g" role="img" :aria-label="x.nombre">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="5" r="3" />
+                <path v-if="x.g === 'HOMBRE'" d="M8 10h8a1.2 1.2 0 0 1 1.2 1.2V17h-2.1v5.2h-2.4V17h-1.4v5.2H8.9V17H6.8v-5.8A1.2 1.2 0 0 1 8 10z" />
+                <path v-else-if="x.g === 'MUJER'" d="M9.6 10h4.8l3.8 9h-4.2v3.2h-4V19H5.8z" />
+                <path v-else d="M6 22.2v-3.1a6 6 0 0 1 12 0v3.1z" />
+              </svg>
+            </span>
+            <span class="genero-datos">
+              <strong>{{ replay || modoVivo ? x.n : "—" }}</strong>
+              <small>{{ x.nombre }}</small>
+              <em v-if="replay || modoVivo">{{ x.pct }} %</em>
+            </span>
+          </div>
+        </div>
+        <div v-if="(replay || modoVivo) && generos.some((x) => x.n)" class="barra-genero" aria-hidden="true">
+          <span v-for="x in generos" :key="x.g" :class="'g-' + x.g" :style="{ flex: x.n }"></span>
+        </div>
+      </article>
+      <div class="metrics">
+        <article v-for="t in tarjetas" :key="t.titulo" class="panel metric" :class="{ vacio: esVacio(t.valor) }">
+          <p><span class="metric-icon">{{ t.icono }}</span>{{ t.titulo }}</p>
+          <strong>{{ t.valor }}</strong>
+          <svg v-if="sparkline(t.serie)" class="sparkline" viewBox="0 0 72 22" preserveAspectRatio="none">
+            <polygon :points="`2,20 ${sparkline(t.serie)} 70,20`" class="sparkline-area" />
+            <polyline :points="sparkline(t.serie)" />
+          </svg>
+          <small>{{ t.detalle }}</small>
+        </article>
+      </div>
+    </section>
+
+    <section class="fila fila-2">
       <article class="panel">
         <div class="panel-heading">
           <h2>Mapa de movimiento</h2>
-          <span class="pill">{{ cantidad(personasMapa.length, "recorrido") }}</span>
+          <span class="pill">{{ cantidad(nRecorridos, "recorrido") }}</span>
         </div>
         <PlanoSitio
           v-if="mapa"
@@ -396,7 +540,7 @@ onMounted(async () => {
           :mapa="mapa"
           :zonas="zonas"
           :calor="celdasKDE"
-          :celda-calor="p3?.kde.celda_m ?? datos?.calor.celda_m"
+          :celda-calor="modoVivo ? CELDA_CALOR : (p3?.kde.celda_m ?? datos?.calor.celda_m)"
           :flechas="flechas"
           :zona-activa="zonaId"
           :mostrar-camaras="false"
@@ -405,7 +549,9 @@ onMounted(async () => {
         />
         <p v-else class="empty">Sin plano</p>
       </article>
+    </section>
 
+    <section class="fila fila-2">
       <article class="panel">
         <div class="panel-heading">
           <h2>Comparación entre zonas</h2>
@@ -447,34 +593,7 @@ onMounted(async () => {
       </article>
     </section>
 
-    <aside class="insight-sidebar">
-      <div class="metrics">
-        <article v-for="t in tarjetas" :key="t.titulo" class="panel metric">
-          <p><span class="metric-icon">{{ t.icono }}</span>{{ t.titulo }}</p>
-          <strong>{{ t.valor }}</strong>
-          <svg v-if="sparkline(t.serie)" class="sparkline" viewBox="0 0 72 22" preserveAspectRatio="none">
-            <polyline :points="sparkline(t.serie)" />
-          </svg>
-          <small>{{ t.detalle }}</small>
-        </article>
-      </div>
-
-      <article class="panel">
-        <div class="panel-heading">
-          <h2>Hombres y mujeres</h2>
-          <span class="muted">{{ alcance }}</span>
-        </div>
-        <div class="generos">
-          <div v-for="x in generos" :key="x.g" class="genero">
-            <span class="marca" :class="'g-' + x.g"></span>
-            <strong>{{ replay ? x.n : "—" }}</strong>
-            <small>{{ x.nombre }}<template v-if="replay"> · {{ x.pct }} %</template></small>
-          </div>
-        </div>
-        <div v-if="replay && personasMapa.length" class="barra-genero" aria-hidden="true">
-          <span v-for="x in generos" :key="x.g" :class="'g-' + x.g" :style="{ flex: x.n }"></span>
-        </div>
-      </article>
+    <section class="fila fila-2">
 
       <article class="panel">
         <div class="panel-heading">
@@ -519,13 +638,35 @@ onMounted(async () => {
         </svg>
         <p v-else class="empty">Sin transiciones</p>
       </article>
-    </aside>
+    </section>
   </div>
 </template>
 
 <style scoped>
+.replay-filters {
+  gap: 14px;
+}
+.replay-filters label {
+  gap: 9px;
+  font-size: 13px;
+  font-weight: 650;
+}
 .replay-filters select {
-  max-width: 260px;
+  max-width: 320px;
+  min-height: 44px;
+  padding: 9px 14px;
+  font-size: 15px;
+  font-weight: 560;
+  border-radius: 12px;
+}
+.replay-filters .pill {
+  padding: 8px 15px;
+  font-size: 13px;
+}
+.en-vivo {
+  color: #fff;
+  background: #d92d4a;
+  border-color: transparent;
 }
 .aviso-pill {
   background: rgba(245, 158, 11, 0.2);
@@ -581,30 +722,85 @@ onMounted(async () => {
 }
 .generos {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  padding: 12px 13px 4px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  padding: 14px 15px 6px;
+}
+.panel-genero {
+  display: flex;
+  flex-direction: column;
+}
+.panel-genero .generos {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  flex: 1;
+  gap: 14px;
+  padding: 16px 18px 6px;
+}
+.panel-genero .icono-genero {
+  width: 54px;
+  height: 54px;
+}
+.panel-genero .icono-genero svg {
+  width: 32px;
+  height: 32px;
+}
+.panel-genero .genero strong {
+  font-size: 32px;
+}
+.panel-genero .genero small,
+.panel-genero .genero em {
+  font-size: 13px;
+}
+.panel-genero .genero {
+  gap: 14px;
+}
+.panel-genero .barra-genero {
+  height: 12px;
+  margin: 10px 18px 18px;
 }
 .genero {
-  display: grid;
-  grid-template-columns: 10px 1fr;
+  display: flex;
   align-items: center;
-  column-gap: 7px;
+  gap: 10px;
+  min-width: 0;
+}
+.icono-genero {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: #fff;
+}
+.icono-genero svg {
+  width: 26px;
+  height: 26px;
+  fill: currentColor;
+}
+.genero-datos {
+  display: grid;
+  min-width: 0;
 }
 .genero strong {
-  font-size: 22px;
-  font-weight: 660;
-  letter-spacing: -0.6px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.8px;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
 }
 .genero small {
-  grid-column: 2;
-  font-size: 10px;
-  color: var(--ink-faint);
+  font-size: 11px;
+  color: var(--ink-soft);
+  white-space: nowrap;
 }
-.marca {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
+.genero em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-faint);
 }
 .barra-genero {
   display: flex;

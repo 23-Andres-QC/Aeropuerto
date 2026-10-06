@@ -605,6 +605,10 @@ footer {
 .panel > * {
   position: relative;
 }
+.panel-heading h2 {
+  font-size: 14px;
+  letter-spacing: -0.2px;
+}
 .panel-heading {
   display: flex;
   align-items: center;
@@ -801,56 +805,99 @@ footer {
   font-weight: 500;
 }
 .spatial-insights {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 1.05fr);
-  gap: 14px;
-  align-items: start;
-}
-.spatial-maps,
-.insight-sidebar {
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-width: 0;
 }
+/* Cada fila reparte sus tarjetas una al lado de la otra; al estrecharse se apilan. */
+.fila {
+  display: grid;
+  gap: 14px;
+  align-items: start;
+  min-width: 0;
+}
+.fila > * {
+  min-width: 0;
+}
+.fila-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.fila-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+/* Arriba: Hombres y mujeres a la izquierda, los seis indicadores a su lado. */
+.fila-top {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(0, 2.4fr);
+  gap: 14px;
+  align-items: stretch;
+  min-width: 0;
+}
+.fila-top > * {
+  min-width: 0;
+}
 .metrics {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 .metric {
-  padding: 12px 13px;
+  padding: 14px 15px 12px;
+  border-top: 3px solid var(--blue-500);
 }
 .metric p {
-  font-size: 8.5px;
-  letter-spacing: 1.3px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  letter-spacing: 1.1px;
   font-weight: 700;
-  color: var(--accent-ink);
+  color: var(--ink-soft);
 }
 .metric strong {
   display: block;
-  font-size: 25px;
-  font-weight: 660;
-  letter-spacing: -0.8px;
-  margin: 3px 0 2px;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -1.2px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  margin: 6px 0 4px;
 }
 .metric small {
-  font-size: 9.5px;
-  color: var(--ink-faint);
-  line-height: 1.45;
+  display: block;
+  font-size: 11px;
+  color: var(--ink-soft);
+  line-height: 1.4;
 }
 .metric-icon {
-  display: inline-block;
-  margin-right: 4px;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
   font-size: 11px;
-  color: var(--cyan-400);
+  color: var(--blue-600);
+  background: var(--pill-bg);
+}
+/* Sin dato: la tarjeta se atenua para que no compita con las que sí tienen. */
+.metric.vacio {
+  border-top-color: var(--glass-line);
+}
+.metric.vacio strong {
+  color: var(--ink-faint);
 }
 .sparkline {
   display: block;
   width: 100%;
-  height: 22px;
-  margin: 2px 0 4px;
+  height: 26px;
+  margin: 4px 0 6px;
   overflow: visible;
+}
+.sparkline-area {
+  fill: var(--blue-500);
+  opacity: 0.12;
+  stroke: none;
 }
 .sparkline polyline {
   fill: none;
@@ -866,8 +913,59 @@ footer {
   flex-basis: 100%;
 }
 .export-actions button {
-  font-size: 10.5px;
-  padding: 6px 12px;
+  font-size: 13.5px;
+  font-weight: 640;
+  padding: 11px 22px;
+  border-radius: 999px;
+}
+.export-actions .boton-primario {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(180deg, #4a95ff 0%, var(--blue-600) 100%);
+}
+.export-actions .boton-primario:disabled {
+  opacity: 0.55;
+}
+
+/* Franja con los datos de la sesión que se está viendo. */
+.resumen-sesion {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 0 0 14px;
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius);
+  background: var(--glass);
+  box-shadow: var(--shadow-m);
+  overflow: hidden;
+}
+.resumen-sesion span {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1 1 150px;
+  min-width: 0;
+  padding: 18px 22px;
+  border-right: 1px solid var(--glass-line);
+}
+.resumen-sesion span:last-child {
+  border-right: 0;
+}
+.resumen-sesion small {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.resumen-sesion b {
+  font-size: 21px;
+  font-weight: 680;
+  letter-spacing: -0.4px;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .print-header {
   display: none;
@@ -885,15 +983,15 @@ footer {
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  font-size: 11px;
-  margin-bottom: 4px;
+  font-size: 11.5px;
+  margin-bottom: 5px;
 }
 .zone-compare-label b {
-  font-size: 12px;
+  font-size: 13px;
 }
 .zone-compare-bar-track {
   position: relative;
-  height: 20px;
+  height: 24px;
   border-radius: 7px;
   background: rgba(120, 150, 190, 0.16);
   overflow: hidden;
@@ -909,8 +1007,8 @@ footer {
   right: 8px;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 9.5px;
-  font-weight: 650;
+  font-size: 11px;
+  font-weight: 700;
   color: var(--ink-soft);
 }
 .sankey {
@@ -919,20 +1017,21 @@ footer {
   padding: 4px 13px 14px;
 }
 .sankey-label {
-  font-size: 6.4px;
-  fill: var(--ink-soft);
+  font-size: 7.6px;
+  font-weight: 600;
+  fill: var(--ink);
 }
 .sankey-count {
-  font-size: 6.4px;
+  font-size: 7.6px;
   font-weight: 700;
-  fill: var(--ink-faint);
+  fill: var(--ink-soft);
 }
 .chart {
   display: flex;
   align-items: flex-end;
-  gap: 5px;
+  gap: 6px;
   overflow-x: auto;
-  padding: 14px 13px 10px;
+  padding: 16px 14px 12px;
 }
 .bar-col {
   display: flex;
@@ -942,11 +1041,12 @@ footer {
   min-width: 26px;
 }
 .bar-col b {
-  font-size: 9.5px;
-  color: var(--ink-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
 }
 .bar-col small {
-  font-size: 8px;
+  font-size: 9.5px;
   color: var(--ink-faint);
   white-space: nowrap;
 }
@@ -964,11 +1064,21 @@ footer {
   .app-shell {
     grid-template-columns: 236px minmax(0, 1fr);
   }
-  .spatial-insights {
+  .sidebar nav a {
+    font-size: 15px;
+    padding: 12px 12px;
+  }
+  .fila-top {
     grid-template-columns: minmax(0, 1fr);
   }
-  .metrics {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  .fila-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .fila-2,
+  .fila-3 {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 900px) {
@@ -1058,9 +1168,28 @@ footer {
     display: block;
     margin-bottom: 14px;
   }
+  .print-header {
+    padding-bottom: 10px;
+    border-bottom: 3px solid var(--blue-600);
+  }
+  .print-marca {
+    font-size: 9px !important;
+    font-weight: 700;
+    letter-spacing: 1.8px;
+    text-transform: uppercase;
+    color: var(--blue-600) !important;
+  }
   .print-header h1 {
-    font-size: 18px;
+    font-size: 22px;
     margin-bottom: 4px;
+  }
+  .resumen-sesion {
+    box-shadow: none;
+    break-inside: avoid;
+    margin-bottom: 12px;
+  }
+  .metric {
+    break-inside: avoid;
   }
   .print-header p {
     font-size: 10px;
@@ -1073,9 +1202,18 @@ footer {
   .spatial-insights {
     display: block;
   }
-  .spatial-maps,
-  .insight-sidebar {
+  .fila {
     display: block;
+  }
+  .fila-top {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 2fr);
+    margin-bottom: 12px;
+  }
+  .fila-2,
+  .fila-3 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
   }
   .panel {
     box-shadow: none;
@@ -1089,5 +1227,6 @@ footer {
   }
   .metrics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-bottom: 12px;
   }
 }
