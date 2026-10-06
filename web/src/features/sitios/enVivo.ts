@@ -4,11 +4,12 @@
 // calibración de esa cámara y su pose actual, y va acumulando lo que En vivo e Insights muestran: posiciones,
 // rastros, mapa de calor, tiempo en cada zona, rutas y flujos.
 import { computed, ref, shallowRef, watch } from "vue";
-import { socketPersistente } from "../../core/http";
+import { json, request, socketPersistente } from "../../core/http";
 import { colorPersona } from "../../shared/format";
 import { api as apiVivo, RELEVO_VIVO, type Detecciones, type EstadoServicio, type EstadoTelefono, type Telefono } from "../telefonos/api";
 import { api, mapaDelSitio, type Camara, type Config, type Mapa, type Punto } from "./api";
 import type { PersonaPlano, RecorridoPlano } from "./components/PlanoSitio.vue";
+import { construirSesion, uuid, type TrazaViva } from "./sesionVivo";
 
 /** Valor de la opción «En vivo» en los desplegables de sesión. */
 export const SESION_VIVO = "__vivo__";
@@ -25,6 +26,8 @@ const PUNTOS_HISTORIA = 600;
 export const CELDA_CALOR = 0.5;
 /** Cada tick del motor dura esto: es el tiempo que se suma a la celda y a la zona de cada persona presente. */
 const TICK_S = 0.25;
+/** Tope de posiciones guardadas por persona (a una por segundo, más de cinco horas). */
+const MAX_TRAZAS = 20000;
 /** Ancho de cada intervalo de «Entradas por intervalo», en segundos. */
 export const PASO_VIVO_S = 10;
 
@@ -48,7 +51,7 @@ export function fijarModoVivo(valor: boolean) {
   }
 }
 
-type Observacion = { clave: string; id: number | null; x: number; y: number; alto: number; genero: string | null; conf: number | null };
+type Observacion = { clave: string; id: number | null; x: number; y: number; alto: number; genero: string | null; conf: number | null; cam: string };
 type Cuadro = { llegada: number; observaciones: Observacion[] };
 
 export type PersonaViva = { clave: string; id: number | null; genero: string | null; conf: number | null; camaras: string[] };
@@ -67,6 +70,8 @@ export type HistoriaViva = {
   /** Zonas por las que fue pasando (la más pequeña que la contiene), sin repetir seguidas. */
   secuencia: number[];
   zonaActual: number | null;
+  /** Posiciones con su instante y cámara: lo que se guarda al «Guardar captura». */
+  trazas: TrazaViva[];
 };
 
 export type ResumenVivo = {
@@ -166,6 +171,8 @@ const calor = shallowRef<[number, number, number][]>([]);
 /** Foto de la historia, renovada una vez por segundo: lo que lee Insights. */
 const historias = shallowRef<HistoriaViva[]>([]);
 let ticks = 0;
+/** Identificador de la captura en vivo actual: guardar otra vez la actualiza; Reiniciar empieza una nueva. */
+let sesionId = uuid();
 let sondeo: ReturnType<typeof setInterval> | undefined;
 let reloj: ReturnType<typeof setInterval> | undefined;
 let sondeoConfig: ReturnType<typeof setInterval> | undefined;
@@ -219,6 +226,7 @@ function alDetecciones(id: string, ev: MessageEvent) {
       alto: Math.max(1, y2 - y1),
       genero: p.gender,
       conf: p.gender_conf,
+      cam: cid,
     });
   }
   cuadros.set(id, { llegada: Date.now(), observaciones });
@@ -265,18 +273,19 @@ const claveGenero = (g: string | null): "HOMBRE" | "MUJER" | "SIN_DETERMINAR" =>
 function componer() {
   const t = Date.now();
   ahora.value = t;
-  type Acum = { x: number; y: number; peso: number; id: number | null; genero: string | null; conf: number | null; mejor: number; camaras: Set<string> };
+  type Acum = { x: number; y: number; peso: number; id: number | null; genero: string | null; conf: number | null; mejor: number; camaras: Set<string>; altoMax: number; camMejor: string };
   const acumulado = new Map<string, Acum>();
   for (const [tel, cuadro] of cuadros) {
     if (t - cuadro.llegada > VIGENCIA_MS) continue;
     const cid = camaraDe(tel);
     for (const o of cuadro.observaciones) {
-      const a = acumulado.get(o.clave) ?? { x: 0, y: 0, peso: 0, id: o.id, genero: null, conf: null, mejor: 0, camaras: new Set<string>() };
+      const a = acumulado.get(o.clave) ?? { x: 0, y: 0, peso: 0, id: o.id, genero: null, conf: null, mejor: 0, camaras: new Set<string>(), altoMax: 0, camMejor: "" };
       a.x += o.x * o.alto;
       a.y += o.y * o.alto;
       a.peso += o.alto;
       if (o.genero && o.alto >= a.mejor) [a.genero, a.conf, a.mejor] = [o.genero, o.conf, o.alto];
       if (cid) a.camaras.add(cid);
+      if (cid && o.alto >= a.altoMax) [a.altoMax, a.camMejor] = [o.alto, cid];
       acumulado.set(o.clave, a);
     }
   }
@@ -304,7 +313,7 @@ function componer() {
 
     // Solo quien tiene ID global entra a las estadísticas: una caja sin ID puede ser un falso positivo pasajero.
     if (a.id != null) {
-      const nueva: HistoriaViva = { id: a.id, genero: null, conf: null, primera: t, ultima: t, camaras: new Set(), puntos: [], zonas: new Map(), secuencia: [], zonaActual: null };
+      const nueva: HistoriaViva = { id: a.id, genero: null, conf: null, primera: t, ultima: t, camaras: new Set(), puntos: [], zonas: new Map(), secuencia: [], zonaActual: null, trazas: [] };
       const h = historia.get(a.id) ?? nueva;
       h.ultima = t;
       if (a.genero) [h.genero, h.conf] = [a.genero, a.conf];
@@ -313,6 +322,11 @@ function componer() {
       if (!fin || Math.hypot(punto[0] - fin[0], punto[1] - fin[1]) > 0.05) {
         h.puntos.push(punto);
         if (h.puntos.length > PUNTOS_HISTORIA) h.puntos.shift();
+      }
+      const ultimaTraza = h.trazas[h.trazas.length - 1];
+      if (!ultimaTraza || t - ultimaTraza.t >= 1000 || Math.hypot(punto[0] - ultimaTraza.x, punto[1] - ultimaTraza.y) > 0.1) {
+        h.trazas.push({ t, x: punto[0], y: punto[1], cam: a.camMejor || [...a.camaras][0] || "cam01" });
+        if (h.trazas.length > MAX_TRAZAS) h.trazas.shift();
       }
       const contenidas = zonas.value.filter((z) => dentro(punto, z.points));
       for (const z of contenidas) {
@@ -362,6 +376,7 @@ export function reiniciarVivo() {
   calor.value = [];
   historias.value = [];
   inicio.value = Date.now();
+  sesionId = uuid();
 }
 
 const mediana = (xs: number[]) => {
@@ -468,6 +483,39 @@ const sobrantes = computed(() => {
   return telefonos.value.filter((t) => !asignacion.has(t.id));
 });
 const servicioActivo = computed(() => ahora.value - ultimoServicio.value < 6000 && servicio.value?.estado !== "detenido");
+
+export const guardando = ref(false);
+export const mensajeGuardado = ref("");
+
+/** Guarda lo capturado en vivo como una sesión LIVE del sitio (aparece en «Guardado en vivo»); volver a guardar la actualiza. */
+export async function guardarCapturaVivo(): Promise<boolean> {
+  const quien = sitio.value;
+  if (!quien) {
+    mensajeGuardado.value = "Abre un sitio para guardar la captura.";
+    return false;
+  }
+  const personas = [...historia.values()]
+    .filter((h) => h.trazas.length)
+    .map((h) => ({ id: h.id, genero: h.genero, conf: h.conf, primera: h.primera, ultima: h.ultima, trazas: h.trazas }));
+  if (!personas.length) {
+    mensajeGuardado.value = "Todavía no hay personas con ID para guardar.";
+    return false;
+  }
+  guardando.value = true;
+  mensajeGuardado.value = "";
+  try {
+    const hora = new Date(inicio.value).toLocaleString("es-PE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+    const carga = construirSesion(personas, { sesionId, nombre: `${config.value?.site.name ?? quien} · en vivo · ${hora}`, inicio: inicio.value, fin: Date.now() });
+    const r = await request<{ identities: number; points: number }>(`/api/v1/sites/${encodeURIComponent(quien)}/sessions`, json("POST", carga));
+    mensajeGuardado.value = `Guardada: ${r.identities} personas y ${r.points.toLocaleString()} puntos.`;
+    return true;
+  } catch (e) {
+    mensajeGuardado.value = `No se pudo guardar: ${(e as Error).message}`;
+    return false;
+  } finally {
+    guardando.value = false;
+  }
+}
 
 function arrancar() {
   if (corriendo) return;
