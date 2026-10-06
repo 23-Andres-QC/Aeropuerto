@@ -53,10 +53,25 @@ MARGEN_BORDE_TELEFONO = -1
 # La web de Teléfonos muestra solo el ID global: se confirma con 3 vistas en ~1 s (las cámaras fijas del Build piden
 # 5 vistas y 2 s), a cambio de un poco más de riesgo de confundir a dos personas parecidas. Vale para el asociador y
 # para la memoria, así quien vuelve se compara con la memoria con las mismas vistas con que se confirma.
-ASOCIACION_TELEFONO = {"min_samples": 3, "min_query_samples": 3, "min_identity_duration_s": 1.0, "sample_interval_s": 0.3}
-# El seguidor abre tracks desde 0,3 de confianza (el Build pide 0,6): quien se ve de lejos o a medias en un teléfono
-# también recibe su caja.
-SEGUIDOR_TELEFONO = {"new_track_confidence": 0.3}
+ASOCIACION_TELEFONO = {"min_samples": 3, "min_query_samples": 3, "min_identity_duration_s": 1.0, "sample_interval_s": 0.3,
+                       # Vistas más lejanas y menos nítidas también cuentan, y el ID se mantiene más fácil: con un teléfono
+                       # el modelo ve pocos cuadros por segundo y una persona quieta en un lado no debe cambiar de ID
+                       # (los mismos ajustes que dieron IDs estables en Videos: 70 -> 58 identidades sin cortes).
+                       "min_conf": 0.35, "min_height": 28, "max_occlusion": 0.3,
+                       "split_threshold": 0.25, "split_strikes": 3,
+                       "threshold": 0.58, "same_camera_threshold": 0.62, "tracklet_gap_s": 4.0}
+# El seguidor abre tracks desde 0,25 de confianza (el Build pide 0,6) y acepta personas desde 24 px (el Build, 40): quien
+# se ve de lejos o a medias en un teléfono también recibe su caja. Con pocos cuadros por segundo cada persona se mueve más
+# entre uno y otro, así que las compuertas de movimiento son más amplias y quien se pierde un momento se recupera con menos
+# parecido (0,72).
+SEGUIDOR_TELEFONO = {"new_track_confidence": 0.25, "association_confidence": 0.20, "min_person_height": 24,
+                     "reid_gate": 0.72, "active_motion_gate": 0.80, "distance_gate": 1.20, "active_iou_gate": 0.06}
+# Detector más sensible (el Build usa 0,30) para captar a quien está lejos; con GPU además a mayor resolución.
+DETECTOR_TELEFONO = {"conf": 0.15}
+IMGSZ_GPU_TELEFONO = 960
+DETECTOR_CPU_TELEFONO = "yolo26s.pt"
+# Género: personas más chicas y detecciones menos seguras también votan (el consenso y el margen se mantienen).
+GENERO_TELEFONO = {"min_height": 56, "min_detection_confidence": 0.35}
 PUERTO_CAMARA = int(os.environ.get("CAMARA_PORT", "8444"))  # el de la página de cámara (compose: camara-web)  # como en camaras.json: alguien puede pasar de un teléfono a otro en hasta 60 s
 
 
@@ -263,9 +278,24 @@ class SesionEnVivo:
         self.ultimo, self.procesados, self.saltados = {}, {}, {}
         self.latencias, self.tiempos, self.personas = {}, {}, {}
         self.generos = {}
+        # Dos carriles: el rápido (detectar y seguir, que da las cajas) corre en el lazo principal y publica enseguida;
+        # el lento (género con CLIP, Re-ID y memoria de identidades) corre en un hilo aparte con el último instante
+        # que le llegó. Así las cajas no esperan a lo más pesado y el ID/género de cada persona se actualiza solo
+        # unos instantes después. `bloqueo` evita tocar el estado del modelo mientras cambia la lista de teléfonos.
+        self.bloqueo, self.generacion = threading.RLock(), 0
+        self._trabajos, self._hay_trabajo, self._cerrado = deque(maxlen=2), threading.Condition(), False
+        self._hilo = threading.Thread(target=self._lazo_lento, daemon=True)
+        self._hilo.start()
 
     def cambiar_telefonos(self, telefonos, clave):
         """Ajusta la sesión a otra lista: un teléfono que sigue (mismo id y URL) conserva su tracking y votos de género."""
+        with self.bloqueo:
+            self.generacion += 1
+            with self._hay_trabajo:
+                self._trabajos.clear()
+            self._cambiar_telefonos(telefonos, clave)
+
+    def _cambiar_telefonos(self, telefonos, clave):
         antes, urls = dict(self.clave), dict(clave)
         siguen = {cid: self.motor.trackers[cid] for cid in telefonos
                   if antes.get(cid) == urls[cid] and cid in self.motor.trackers}
@@ -290,7 +320,8 @@ class SesionEnVivo:
         self.telefonos, self.clave = list(telefonos), clave
 
     def procesar(self, datos):
-        """Un instante con el frame nuevo de cada teléfono que lo tenga; devuelve las filas por teléfono."""
+        """Carril rápido: detecta y sigue los frames nuevos de cada teléfono y devuelve las filas por teléfono, ya con
+        el ID global y el género que se saben hasta ahora. El carril lento se encarga del resto."""
         self.t = max(self.t + 1e-3, time.perf_counter() - self.t0)
         frames = {}
         for cid, (numero, frame, _, _) in datos.items():
@@ -299,15 +330,64 @@ class SesionEnVivo:
             self.procesados[cid] += 1
             frames[cid] = frame
         self._ritmo_genero()
-        filas = lap01.procesar_instante(self.motor, self.asociador, self.t, frames, dict(self.procesados))
+        fuente = dict(self.procesados)
+        filas = self.motor.seguir(frames, fuente, self.motor.detectar(frames))
+        # El carril lento recibe copias: modifica sus filas mientras el lazo principal publica las suyas.
+        trabajo = (self.generacion, self.t, frames, fuente, {cid: [dict(f) for f in fs] for cid, fs in filas.items()},
+                   dict(self.motor.detecciones_actuales))
+        with self._hay_trabajo:
+            self._trabajos.append(trabajo)
+            self._hay_trabajo.notify()
         ahora = time.perf_counter()
         for cid, (_, _, llegada, _) in datos.items():
             self.latencias[cid].append(ahora - llegada)
             self.tiempos[cid].append(ahora)
             self.personas[cid] = len(filas[cid])
             for fila in filas[cid]:
+                self._conocido(cid, fila)
                 self._genero(cid, fila)
         return filas
+
+    def _conocido(self, cid, fila):
+        """ID global y género que el carril lento ya le dio a esta persona (si no, sin ID y sin género todavía)."""
+        fila["global_id"], fila["genero"], fila["confianza_genero"] = None, "Sin determinar", None
+        asociador = self.asociador
+        tramo = asociador.locales.get((cid, fila["local_id"])) if asociador is not None else None
+        if tramo is not None:
+            try:
+                tramo = asociador.resolver(tramo.uid, self.t)
+            except KeyError:
+                pass
+            fila["global_id"] = asociador.confirmadas.get(tramo.global_id)
+        estado = self.motor.genero.memory.get((cid, fila["local_id"]))
+        if estado is not None and estado["genero"] in ("Hombre", "Mujer"):
+            fila["genero"], fila["confianza_genero"] = estado["genero"], estado["confianza"]
+
+    def _lazo_lento(self):
+        """Carril lento: género (CLIP) y Re-ID con memoria de identidades; siempre con el instante más reciente."""
+        while True:
+            with self._hay_trabajo:
+                while not self._trabajos and not self._cerrado:
+                    self._hay_trabajo.wait()
+                if self._cerrado:
+                    return
+                generacion, t, frames, fuente, filas, ocluyentes = self._trabajos.pop()
+                self._trabajos.clear()  # los instantes más viejos ya no aportan: se salta a lo último
+            try:
+                with self.bloqueo:
+                    if generacion != self.generacion or self.asociador is None:
+                        continue
+                    self.motor.genero.actualizar(frames, fuente, filas)
+                    self.asociador.actualizar(t, frames, filas, occluders=ocluyentes)
+            except Exception as error:  # un instante fallido no debe detener el carril
+                print(f"Carril lento: {type(error).__name__}: {error}", flush=True)
+
+    def cerrar(self):
+        """Detiene el carril lento."""
+        with self._hay_trabajo:
+            self._cerrado = True
+            self._hay_trabajo.notify()
+        self._hilo.join(timeout=5)
 
     def _ritmo_genero(self):
         """Muestrea el género cada sample_interval_s de reloj según los FPS medidos de cada teléfono. El Build cuenta
@@ -381,12 +461,26 @@ def main():
     url_api = args.api.rstrip("/")
     config = json.loads((MODELO / "config_lap01.json").read_text())
     config["tracker"].update(SEGUIDOR_TELEFONO)
+    config["detector"].update(DETECTOR_TELEFONO)
+    config["gender"].update(GENERO_TELEFONO)
+    if torch.cuda.is_available():
+        config["detector"]["imgsz"] = IMGSZ_GPU_TELEFONO
+    else:
+        # Sin GPU el detector es yolo26s (mismo modelo, más chico): a 640 px tarda ~0,9 s por 2 cuadros contra ~1,5 s de
+        # yolo26m a 480, y ve mejor a quien está lejos. MODELO_DETECTOR=yolo26m.pt vuelve al grande.
+        chico = os.environ.get("MODELO_DETECTOR", DETECTOR_CPU_TELEFONO)
+        if (MODELO / chico).is_file():
+            config["weights"]["detector"] = chico
+        # Sin GPU el modelo usa casi todos los núcleos: PyTorch (detector, CLIP) y ONNX Runtime (Re-ID) comparten el trabajo.
+        nucleos = int(os.environ.get("OMP_NUM_THREADS") or os.cpu_count() or 4)
+        torch.set_num_threads(nucleos)
+        config["multicamera_encoder"]["threads"] = int(os.environ.get("MODELO_ORT_THREADS") or max(2, nucleos // 2))
     # En un servidor sin GPU el detector va a menos resolución (ej. 480): en CPU es lo que más pesa por cuadro.
     if os.environ.get("MODELO_IMGSZ"):
         config["detector"]["imgsz"] = int(os.environ["MODELO_IMGSZ"])
     asociacion_build = json.loads((MODELO / "camaras.json").read_text()).get("association", {})
     asociacion = {**asociacion_build, **ASOCIACION_TELEFONO}
-    print("Cargando el modelo final (YOLO26m, tracker, Re-ID, género)...", flush=True)
+    print("Cargando el modelo final (YOLO26, tracker, Re-ID, género)...", flush=True)
     motor = lap01.MotorLAP01(MODELO, config, device="auto", batch=True)
     reid = lap01.crear_asociador(motor, {"mode": "visual_temporal", "units": "m", "cameras": {"x": {}}}).reid
     print(f"Modelo listo en {motor.device} · detector a {config['detector']['imgsz']} px · "
@@ -463,6 +557,7 @@ def main():
     finally:
         for lector in lectores.values():
             lector.detener()
+        sesion.cerrar()
         videos.cerrar()
         relevo.estado({"estado": "detenido", "telefonos": {}})
         relevo.estado({"estado": "detenido"}, canal=CANAL_VIDEOS)
