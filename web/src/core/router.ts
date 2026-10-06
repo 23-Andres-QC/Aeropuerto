@@ -24,6 +24,19 @@ export const router = createRouter({
   ],
 });
 
+// Tras reconstruir la web, una pestaña que ya estaba abierta pide archivos con nombres que dejaron de existir y la
+// navegación no responde: se vuelve a cargar la página destino una vez para tomar la versión nueva.
+router.onError((error, to) => {
+  if (!/dynamically imported module|Importing a module script failed|Loading chunk|error loading dynamically/i.test(String((error as Error)?.message ?? error))) return;
+  try {
+    if (sessionStorage.getItem("recarga-por-version") === to.fullPath) return;
+    sessionStorage.setItem("recarga-por-version", to.fullPath);
+  } catch {
+    /* sin sessionStorage se recarga igual, pero sin freno ante un fallo que se repita */
+  }
+  location.assign(to.fullPath);
+});
+
 router.beforeEach((to) => {
   const autenticado = isAuthenticated();
   if (to.meta.public && autenticado) return inicio();
