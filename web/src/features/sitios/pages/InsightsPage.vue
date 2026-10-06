@@ -30,9 +30,18 @@ async function guardarYRefrescar() {
 }
 
 // «En vivo» es un modo de todo el sistema: aquí Insights se calcula sobre lo que ven los teléfonos ahora mismo.
+// «Comparar» es una vista aparte (grabado · guardado en vivo · ahora): necesita el modo en vivo para tener la columna Ahora.
+const SESION_COMPARAR = "__comparar__";
+const comparando = ref(false);
 const valorSesion = computed({
-  get: () => (modoVivo.value ? SESION_VIVO : sesionId.value),
+  get: () => (comparando.value ? SESION_COMPARAR : modoVivo.value ? SESION_VIVO : sesionId.value),
   set: (v: string) => {
+    if (v === SESION_COMPARAR) {
+      comparando.value = true;
+      fijarModoVivo(true);
+      return;
+    }
+    comparando.value = false;
     if (v === SESION_VIVO) {
       fijarModoVivo(true);
       return;
@@ -396,7 +405,9 @@ async function cargar() {
 }
 watch(sesionId, cargar);
 watch(modoVivo, (v) => {
-  if (!v) cargar();
+  if (v) return;
+  comparando.value = false;
+  cargar();
 });
 
 onMounted(async () => {
@@ -424,6 +435,9 @@ onMounted(async () => {
           <optgroup label="Tiempo real">
             <option :value="SESION_VIVO">● En vivo · teléfonos</option>
           </optgroup>
+          <optgroup label="Contraste">
+            <option :value="SESION_COMPARAR">⇄ Comparar · grabado, guardado y ahora</option>
+          </optgroup>
           <optgroup v-if="guardadasVivo.length" label="Guardado en vivo">
             <option v-for="s in guardadasVivo" :key="s.session_id" :value="s.session_id">
               {{ s.name || s.session_id.slice(0, 8) }} · {{ s.identities }} personas
@@ -450,14 +464,14 @@ onMounted(async () => {
     <div class="export-actions">
       <button type="button" class="boton-primario" :disabled="!datos && !modoVivo" @click="exportarPDF">⤓ Exportar PDF</button>
       <button type="button" :disabled="!datos && !modoVivo" @click="exportarCSV">⤓ Exportar Excel (CSV)</button>
-      <button v-if="modoVivo" type="button" class="boton-primario" :disabled="guardando || !vivo.historias.value.length" @click="guardarYRefrescar()">
+      <button v-if="modoVivo && !comparando" type="button" class="boton-primario" :disabled="guardando || !vivo.historias.value.length" @click="guardarYRefrescar()">
         {{ guardando ? "Guardando…" : "Guardar captura en vivo" }}
       </button>
-      <button v-if="modoVivo" type="button" @click="reiniciarVivo()">↺ Reiniciar en vivo</button>
-      <span v-if="modoVivo && mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
+      <button v-if="modoVivo && !comparando" type="button" @click="reiniciarVivo()">↺ Reiniciar en vivo</button>
+      <span v-if="modoVivo && !comparando && mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
     </div>
   </section>
-  <div v-if="modoVivo" class="resumen-sesion" aria-label="Resumen en vivo">
+  <div v-if="!comparando && modoVivo" class="resumen-sesion" aria-label="Resumen en vivo">
     <span><small>Modo</small><b>● En vivo</b></span>
     <span><small>Desde</small><b>{{ new Date(vivo.inicio.value).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }) }}</b></span>
     <span><small>Duración</small><b>{{ segundos((vivo.ahora.value - vivo.inicio.value) / 1000) }}</b></span>
@@ -465,7 +479,7 @@ onMounted(async () => {
     <span><small>Cámaras transmitiendo</small><b>{{ vivo.ranuras.value.filter((r) => r.activa).length }} de 3</b></span>
     <span><small>Alcance</small><b>{{ alcance }}</b></span>
   </div>
-  <div v-else-if="sesion" class="resumen-sesion" aria-label="Resumen de la sesión">
+  <div v-else-if="!comparando && sesion" class="resumen-sesion" aria-label="Resumen de la sesión">
     <span><small>Sesión</small><b>{{ sesion.name || sesion.session_id.slice(0, 8) }}</b></span>
     <span><small>Fecha</small><b>{{ new Date(sesion.recording_start).toLocaleDateString("es-PE", { day: "numeric", month: "short", year: "numeric" }) }}</b></span>
     <span><small>Duración</small><b>{{ segundos(sesion.duration_s) }}</b></span>
@@ -474,7 +488,7 @@ onMounted(async () => {
     <span><small>Cámaras</small><b>{{ config?.cameras.length ?? "—" }}</b></span>
     <span><small>Alcance</small><b>{{ alcance }}</b></span>
   </div>
-  <ContrasteSesiones :sitio="slug" :sesiones="sesiones" :vivo-activo="modoVivo" />
+  <ContrasteSesiones v-if="comparando" :sitio="slug" :sesiones="sesiones" :vivo-activo="modoVivo" />
   <div class="print-header">
     <p class="print-marca">LAP · Lima Airport Partners</p>
     <h1>{{ config?.site.name ?? slug }} · Comportamiento de personas</h1>
@@ -483,7 +497,7 @@ onMounted(async () => {
   </div>
   <p v-if="error" class="error" role="alert">{{ error }}</p>
 
-  <div class="spatial-insights">
+  <div v-if="!comparando" class="spatial-insights">
     <section class="fila-top">
       <article class="panel panel-genero">
         <div class="panel-heading">
