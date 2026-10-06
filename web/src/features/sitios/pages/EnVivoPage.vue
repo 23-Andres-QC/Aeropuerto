@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, GENEROS, type Config, type Replay, type Sesion } from "../api";
 import PlanoSitio, { type PersonaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
+import { CELDA_CALOR, SESION_VIVO, fijarModoVivo, modoVivo, motorVivo as vivo, reiniciarVivo } from "../enVivo";
 import { useSitios } from "../useSitios";
 
 const { slug } = useSitios();
@@ -22,6 +23,21 @@ let ultimaSincronia = 0;
 
 const sesion = computed(() => sesiones.value.find((s) => s.session_id === sesionId.value));
 const mapa = computed(() => mapaDelSitio(config.value));
+// «En vivo» es un modo de todo el sistema (lo recuerda el navegador y sigue al cambiar de sección): los teléfonos
+// conectados son las cámaras del sitio (el primero cam01, luego cam02 y cam03). Elegir una sesión guardada lo apaga.
+const valorSesion = computed({
+  get: () => (modoVivo.value ? SESION_VIVO : sesionId.value),
+  set: (v: string) => {
+    if (v === SESION_VIVO) {
+      fijarModoVivo(true);
+      return;
+    }
+    fijarModoVivo(false);
+    sesionId.value = v;
+  },
+});
+const verCalor = ref(true);
+const calorVivo = computed(() => (modoVivo.value && verCalor.value ? vivo.calor.value : []));
 const desfases = computed(() => mapa.value?.desfases_s ?? {});
 const camarasVideo = computed(() =>
   sesion.value?.kind === "BUILD" ? Object.keys(desfases.value).sort() : [],
@@ -114,7 +130,8 @@ const trazos = computed(() => {
   }
   return { personas, recorridos };
 });
-const personas = computed(() => trazos.value.personas);
+const personas = computed(() => (modoVivo.value ? vivo.vivas.value.personas : trazos.value.personas));
+const recorridos = computed(() => (modoVivo.value ? vivo.vivas.value.recorridos : trazos.value.recorridos));
 const enPlano = computed(() => personas.value.filter((p) => p.estado !== "salio"));
 
 const presentes = computed(() => {
@@ -124,6 +141,13 @@ const presentes = computed(() => {
 
 async function cargarSesion() {
   if (!sesionId.value) return;
+  if (modoVivo.value) {
+    pausar();
+    replay.value = undefined;
+    cargando.value = false;
+    error.value = "";
+    return;
+  }
   pausar();
   cargando.value = true;
   error.value = "";
@@ -210,6 +234,8 @@ watch(ventana, ({ inicio, fin }) => {
 });
 watch(velocidad, () => sincronizar(true));
 watch(sesionId, cargarSesion);
+// Al entrar o salir del modo en vivo: lo guardado se suelta o se vuelve a cargar.
+watch(modoVivo, cargarSesion);
 
 onMounted(async () => {
   try {
@@ -230,11 +256,16 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
     <div>
       <p class="eyebrow">{{ config?.site.name ?? slug }} · EN VIVO DEL MODELO</p>
       <h1>Personas sobre el plano y cámaras sincronizadas</h1>
-      <p>Reproduce una sesión guardada en la base: posiciones en metros, IDs globales y los videos procesados, en el mismo reloj.</p>
+      <p v-if="modoVivo">
+        Tracking en tiempo real: cada teléfono que se une en <RouterLink to="/telefonos">Teléfonos</RouterLink> toma una cámara del plano, en orden de llegada
+        (cam01, cam02, cam03), y sus personas se ubican con la posición de esa cámara.
+      </p>
+      <p v-else>Reproduce una sesión guardada en la base: posiciones en metros, IDs globales y los videos procesados, en el mismo reloj.</p>
     </div>
     <label class="selector-sesion">Sesión
-      <select v-model="sesionId" :disabled="!sesiones.length">
-        <option v-if="!sesiones.length" value="">Sin sesiones</option>
+      <select v-model="valorSesion">
+        <option :value="SESION_VIVO">● En vivo · teléfonos</option>
+        <option v-if="!sesiones.length" value="" disabled>Sin sesiones guardadas</option>
         <option v-for="s in sesiones" :key="s.session_id" :value="s.session_id">
           {{ s.name || s.session_id.slice(0, 8) }} · {{ s.kind === "BUILD" ? "dataset" : "en vivo" }} · {{ s.identities }} personas
         </option>
@@ -251,11 +282,16 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
     <section class="panel plano-panel">
       <div class="panel-heading">
         <h2>Plano · {{ (mapa.tam_px[0] / mapa.px_por_metro).toFixed(0) }} × {{ (mapa.tam_px[1] / mapa.px_por_metro).toFixed(0) }} m</h2>
-        <span v-if="replay" class="heading-meta"><span class="pill">{{ enPlano.length }} en el plano</span><span class="pill">{{ replay.personas.length }} personas</span></span>
+        <span v-if="modoVivo" class="heading-meta">
+          <label class="check"><input v-model="verCalor" type="checkbox" /> Mapa de calor</label>
+          <button type="button" class="reiniciar-calor" :disabled="!vivo.calor.value.length" @click="reiniciarVivo()">Reiniciar</button>
+          <span class="pill en-vivo">● EN VIVO</span><span class="pill">{{ enPlano.length }} en el plano</span>
+        </span>
+        <span v-else-if="replay" class="heading-meta"><span class="pill">{{ enPlano.length }} en el plano</span><span class="pill">{{ replay.personas.length }} personas</span></span>
         <span v-else-if="!cargando && !sesiones.length" class="pill">sin sesiones</span>
       </div>
-      <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :personas="personas" :recorridos="trazos.recorridos" :camaras="config?.cameras" zoom />
-      <div v-if="replay" class="controles">
+      <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :personas="personas" :recorridos="recorridos" :calor="calorVivo" :celda-calor="CELDA_CALOR" :camaras="config?.cameras" zoom />
+      <div v-if="replay && !modoVivo" class="controles">
         <button class="primary-button" type="button" @click="reproduciendo ? pausar() : reproducir()">{{ reproduciendo ? "❚❚ Pausa" : "▶ Reproducir" }}</button>
         <button type="button" @click="reiniciar">↺</button>
         <input class="linea-tiempo" type="range" :min="ventana.inicio" :max="ventana.fin" step="0.05" :value="t" @input="buscar" aria-label="Tiempo de la sesión" />
@@ -266,7 +302,19 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
       </div>
     </section>
 
-    <aside class="panel presentes">
+    <aside v-if="modoVivo" class="panel presentes">
+      <div class="panel-heading"><h2>Ahora mismo</h2><span class="pill">{{ vivo.vivas.value.lista.length }}</span></div>
+      <ul>
+        <li v-for="p in vivo.vivas.value.lista" :key="p.clave">
+          <span class="punto" :style="{ background: p.id != null ? colorPersona(p.id) : '#8ba4bf' }"></span>
+          <b>{{ p.id != null ? `G${p.id}` : "?" }}</b>
+          <span>{{ p.genero ?? "Sin determinar" }}<template v-if="p.conf"> · {{ Math.round(p.conf * 100) }}%</template></span>
+          <small class="muted">{{ p.camaras.join(", ") }}</small>
+        </li>
+        <li v-if="!vivo.vivas.value.lista.length" class="muted vacio">Nadie en el plano. Une teléfonos en Teléfonos y camina frente a ellos.</li>
+      </ul>
+    </aside>
+    <aside v-else class="panel presentes">
       <div class="panel-heading"><h2>En este instante</h2><span class="pill">{{ presentes.length }}</span></div>
       <ul>
         <li v-for="p in presentes" :key="p.numero">
@@ -279,6 +327,28 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
       </ul>
     </aside>
   </div>
+
+  <section v-if="modoVivo" class="ranuras" aria-label="Teléfonos y cámaras del plano">
+    <article v-for="r in vivo.ranuras.value" :key="r.camara" class="panel ranura" :class="{ activa: r.activa, libre: !r.telefono }">
+      <div class="panel-heading">
+        <h2>{{ r.camara }}</h2>
+        <span class="pill" :class="r.activa ? 'good' : 'warn'">{{ r.activa ? "transmitiendo" : r.telefono ? "sin detecciones" : "libre" }}</span>
+      </div>
+      <p v-if="r.telefono" class="ranura-datos">
+        <b>{{ r.telefono.nombre }}</b>
+        <span v-if="r.estado">{{ r.estado.fps ?? "—" }} FPS · {{ r.activa ? r.personas : 0 }} en cuadro</span>
+        <span v-else class="muted">Esperando al modelo…</span>
+      </p>
+      <p v-else class="ranura-datos muted">Esperando el {{ r.camara === "cam01" ? "primer" : r.camara === "cam02" ? "segundo" : "tercer" }} teléfono.</p>
+      <p v-if="r.sinCalibracion" class="aviso-ranura">Este sitio no tiene calibración para {{ r.camara }}: no se pueden ubicar personas.</p>
+    </article>
+    <p v-if="vivo.sobrantes.value.length" class="muted ranura-nota">
+      {{ vivo.sobrantes.value.length }} teléfono(s) más conectado(s) sin cámara libre: el plano admite tres.
+    </p>
+    <p v-if="!vivo.servicioActivo.value" class="muted ranura-nota">
+      El modelo no está publicando. Con Docker: <code>docker compose --profile modelo up -d</code>.
+    </p>
+  </section>
 
   <section v-if="replay && camarasVideo.length" class="videos-esan">
     <article v-for="cid in camarasVideo" :key="cid" class="panel">
@@ -372,6 +442,56 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   height: 10px;
   border-radius: 50%;
 }
+.ranuras {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+.ranura.libre {
+  opacity: 0.75;
+}
+.ranura.activa {
+  border-color: var(--good);
+}
+.ranura-datos {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 12px 14px;
+  font-size: 13px;
+}
+.ranura-datos b {
+  font-size: 16px;
+}
+.aviso-ranura {
+  margin: 0;
+  padding: 0 14px 12px;
+  font-size: 11.5px;
+  color: var(--warn);
+}
+.ranura-nota {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 12px;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+.reiniciar-calor {
+  padding: 4px 10px;
+  font-size: 11.5px;
+  border-radius: 999px;
+}
+.en-vivo {
+  color: #fff;
+  background: #d92d4a;
+  border-color: transparent;
+}
 .videos-esan {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -393,6 +513,9 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
 }
 @media (max-width: 980px) {
   .envivo-esan {
+    grid-template-columns: 1fr;
+  }
+  .ranuras {
     grid-template-columns: 1fr;
   }
 }
