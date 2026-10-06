@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { logout } from "./core/auth";
+import { fijarModoVivo, modoVivo, usarSitioVivo } from "./features/sitios/enVivo";
 import { recordarSitio, ultimoSitio, useSitios } from "./features/sitios/useSitios";
 
 const route = useRoute();
@@ -41,7 +42,16 @@ function salir() {
   router.replace("/login");
 }
 
-watch(slug, (s) => s && recordarSitio(s), { immediate: true });
+// El motor del modo en vivo proyecta sobre el último sitio visitado: en Teléfonos y Videos (sin sitio en la ruta) se queda el de antes.
+watch(
+  slug,
+  (s) => {
+    if (!s) return;
+    recordarSitio(s);
+    usarSitioVivo(s);
+  },
+  { immediate: true },
+);
 onMounted(recargar);
 </script>
 
@@ -86,6 +96,15 @@ onMounted(recargar);
       <header class="workspace-header">
         <div><span class="breadcrumb">LAP /</span> {{ title }}</div>
         <div class="workspace-meta">
+          <button
+            class="modo-vivo"
+            :class="{ activo: modoVivo }"
+            type="button"
+            :title="modoVivo ? 'Salir del modo en vivo y volver a las sesiones guardadas' : 'Activar el modo en vivo con los teléfonos conectados'"
+            @click="fijarModoVivo(!modoVivo)"
+          >
+            {{ modoVivo ? "● EN VIVO · Salir" : "Activar en vivo" }}
+          </button>
           <span class="live-dot"></span> Demo local
           <button
             class="theme-toggle"
@@ -117,6 +136,18 @@ onMounted(recargar);
 </template>
 
 <style scoped>
+.modo-vivo {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.modo-vivo.activo {
+  color: #fff;
+  border-color: transparent;
+  background: #d92d4a;
+  box-shadow: 0 0 0 3px rgba(217, 45, 74, 0.2);
+}
 .sitio-tabs a.activo {
   color: white;
   background: var(--blue-600);
