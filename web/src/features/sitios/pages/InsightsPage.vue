@@ -4,7 +4,8 @@ import { useRoute } from "vue-router";
 import { cantidad, colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, GENEROS, type Analitica, type Config, type Insights, type Punto, type Replay, type Sesion } from "../api";
 import PlanoSitio, { type FlechaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
-import { CELDA_CALOR, SESION_VIVO, entradasPorIntervalo, fijarModoVivo, historiasDe, modoVivo, motorVivo as vivo, reiniciarVivo } from "../enVivo";
+import { CELDA_CALOR, SESION_VIVO, entradasPorIntervalo, fijarModoVivo, guardando, guardarCapturaVivo, historiasDe, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarVivo } from "../enVivo";
+import ContrasteSesiones from "../components/ContrasteSesiones.vue";
 import { useSitios } from "../useSitios";
 
 const route = useRoute();
@@ -20,6 +21,13 @@ const error = ref("");
 const cargando = ref(true);
 const capaCalor = ref<"ocupacion" | "visitantes">("ocupacion");
 const verFlujos = ref(true);
+const guardadasVivo = computed(() => sesiones.value.filter((s) => s.kind === "LIVE"));
+const grabadas = computed(() => sesiones.value.filter((s) => s.kind === "BUILD"));
+
+/** Guarda la captura en vivo y recarga la lista para que aparezca en «Guardado en vivo». */
+async function guardarYRefrescar() {
+  if (await guardarCapturaVivo()) sesiones.value = await api.sesiones(slug.value);
+}
 
 // «En vivo» es un modo de todo el sistema: aquí Insights se calcula sobre lo que ven los teléfonos ahora mismo.
 const valorSesion = computed({
@@ -413,11 +421,19 @@ onMounted(async () => {
     <div class="replay-filters">
       <label
         >Sesión<select v-model="valorSesion">
-          <option :value="SESION_VIVO">● En vivo · teléfonos</option>
-          <option v-if="!sesiones.length" value="" disabled>Sin sesiones guardadas</option>
-          <option v-for="s in sesiones" :key="s.session_id" :value="s.session_id">
-            {{ s.name || s.session_id.slice(0, 8) }} · {{ new Date(s.recording_start).toLocaleDateString("es-PE") }}
-          </option>
+          <optgroup label="Tiempo real">
+            <option :value="SESION_VIVO">● En vivo · teléfonos</option>
+          </optgroup>
+          <optgroup v-if="guardadasVivo.length" label="Guardado en vivo">
+            <option v-for="s in guardadasVivo" :key="s.session_id" :value="s.session_id">
+              {{ s.name || s.session_id.slice(0, 8) }} · {{ s.identities }} personas
+            </option>
+          </optgroup>
+          <optgroup v-if="grabadas.length" label="Grabado (dataset)">
+            <option v-for="s in grabadas" :key="s.session_id" :value="s.session_id">
+              {{ s.name || s.session_id.slice(0, 8) }} · {{ s.identities }} personas
+            </option>
+          </optgroup>
         </select></label
       >
       <label
@@ -434,7 +450,11 @@ onMounted(async () => {
     <div class="export-actions">
       <button type="button" class="boton-primario" :disabled="!datos && !modoVivo" @click="exportarPDF">⤓ Exportar PDF</button>
       <button type="button" :disabled="!datos && !modoVivo" @click="exportarCSV">⤓ Exportar Excel (CSV)</button>
+      <button v-if="modoVivo" type="button" class="boton-primario" :disabled="guardando || !vivo.historias.value.length" @click="guardarYRefrescar()">
+        {{ guardando ? "Guardando…" : "Guardar captura en vivo" }}
+      </button>
       <button v-if="modoVivo" type="button" @click="reiniciarVivo()">↺ Reiniciar en vivo</button>
+      <span v-if="modoVivo && mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
     </div>
   </section>
   <div v-if="modoVivo" class="resumen-sesion" aria-label="Resumen en vivo">
@@ -454,6 +474,7 @@ onMounted(async () => {
     <span><small>Cámaras</small><b>{{ config?.cameras.length ?? "—" }}</b></span>
     <span><small>Alcance</small><b>{{ alcance }}</b></span>
   </div>
+  <ContrasteSesiones :sitio="slug" :sesiones="sesiones" :vivo-activo="modoVivo" />
   <div class="print-header">
     <p class="print-marca">LAP · Lima Airport Partners</p>
     <h1>{{ config?.site.name ?? slug }} · Comportamiento de personas</h1>
@@ -662,6 +683,10 @@ onMounted(async () => {
 .replay-filters .pill {
   padding: 8px 15px;
   font-size: 13px;
+}
+.mensaje-guardado {
+  align-self: center;
+  font-size: 12.5px;
 }
 .en-vivo {
   color: #fff;
