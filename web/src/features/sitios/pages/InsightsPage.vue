@@ -4,8 +4,9 @@ import { useRoute } from "vue-router";
 import { cantidad, colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, GENEROS, type Analitica, type Config, type Insights, type Punto, type Replay, type Sesion } from "../api";
 import PlanoSitio, { type FlechaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
-import { CELDA_CALOR, SESION_VIVO, entradasPorIntervalo, fijarModoVivo, guardando, guardarCapturaVivo, historiasDe, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarVivo } from "../enVivo";
+import { CELDA_CALOR, SESION_VIVO, capturasVersion, entradasPorIntervalo, fijarModoVivo, guardando, guardarCapturaVivo, historiasDe, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura } from "../enVivo";
 import ContrasteSesiones from "../components/ContrasteSesiones.vue";
+import { desdeReplay, entradasPorIntervalo as entradasEntre, resumir, type HistoriaBasica, type ResumenVivo } from "../analisisVivo";
 import { useSitios } from "../useSitios";
 
 const route = useRoute();
@@ -22,6 +23,33 @@ const cargando = ref(true);
 const capaCalor = ref<"ocupacion" | "visitantes">("ocupacion");
 const verFlujos = ref(true);
 const guardadasVivo = computed(() => sesiones.value.filter((s) => s.kind === "LIVE"));
+
+/**
+ * Una captura en vivo guardada no pasa por la Parte III: sus métricas se calculan aquí desde su reproducción para que se vea
+ * con el mismo tablero que lo grabado. Si ya se corrió la Parte III sobre ella, manda la Parte III.
+ */
+const analisisGuardado = computed(() => {
+  const s = sesion.value;
+  if (modoVivo.value || comparando.value || s?.kind !== "LIVE" || !replay.value || analitica.value) return null;
+  const a = desdeReplay(replay.value, new Date(s.recording_start).getTime(), zonas.value);
+  return { ...a, resumen: resumir(a.historias, zonas.value, a.densidad) };
+});
+
+type Analisis = {
+  resumen: ResumenVivo;
+  historias: (zona: number | null) => HistoriaBasica[];
+  entradas: (zona: number | null) => { v: number; hora: string }[];
+  calor: [number, number, number][];
+  celda: number;
+};
+/** Métricas calculadas en el navegador: lo que pasa ahora (el motor) o una captura guardada; null con una sesión de la Parte III. */
+const analisis = computed<Analisis | null>(() => {
+  if (modoVivo.value) return { resumen: vivo.resumen.value, historias: historiasDe, entradas: entradasPorIntervalo, calor: vivo.calor.value, celda: CELDA_CALOR };
+  const g = analisisGuardado.value;
+  if (!g) return null;
+  const de = (zona: number | null) => (zona == null ? g.historias : g.historias.filter((h) => h.zonas.has(zona)));
+  return { resumen: g.resumen, historias: de, entradas: (zona) => entradasEntre(de(zona), g.inicio, g.fin), calor: g.calor, celda: CELDA_CALOR };
+});
 const grabadas = computed(() => sesiones.value.filter((s) => s.kind === "BUILD"));
 
 /** Guarda la captura en vivo y recarga la lista para que aparezca en «Guardado en vivo». */
@@ -99,7 +127,7 @@ const zonaPico = computed(() => [...(p3.value?.zonas ?? [])].sort((a, b) => b.de
 
 type Tarjeta = { titulo: string; icono: string; valor: string; detalle: string; serie?: (number | null)[] };
 const tarjetas = computed<Tarjeta[]>(() => {
-  if (modoVivo.value) return tarjetasVivo.value;
+  if (analisis.value) return tarjetasVivo.value;
   const res = r.value;
   const a = p3.value;
   const conLocales = !!a?.locales.length;
@@ -158,10 +186,12 @@ const tarjetas = computed<Tarjeta[]>(() => {
 
 /** Las mismas seis tarjetas, sobre lo acumulado en vivo. Visitas, exposición y captación salen de las zonas de cada local. */
 const tarjetasVivo = computed<Tarjeta[]>(() => {
-  const res = vivo.resumen.value;
+  const a = analisis.value;
+  if (!a) return [];
+  const res = a.resumen;
   const enZona = zonaId.value != null;
   const z = enZona ? (res.zonas.find((o) => o.id === zonaId.value) ?? null) : null;
-  const hs = historiasDe(zonaId.value);
+  const hs = a.historias(zonaId.value);
   const g = { HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0 };
   for (const h of hs) g[h.genero === "Hombre" ? "HOMBRE" : h.genero === "Mujer" ? "MUJER" : "SIN_DETERMINAR"]++;
   const tiene = (h: (typeof hs)[number], tipo: string) => zonas.value.some((o) => o.zone_type === tipo && h.zonas.has(o.zone_id));
@@ -229,8 +259,8 @@ const generos = computed(() => {
 
 // --- Entradas por intervalo --------------------------------------------------
 const barras = computed(() => {
-  if (modoVivo.value) {
-    const e = entradasPorIntervalo(zonaId.value);
+  if (analisis.value) {
+    const e = analisis.value.entradas(zonaId.value);
     const max = Math.max(1, ...e.map((b) => b.v));
     const cada = Math.ceil(e.length / 7);
     return e.map((b, i) => ({ v: b.v, alto: b.v ? 6 + (74 * b.v) / max : 3, hora: b.hora, rotulo: i % cada === 0 }));
@@ -280,7 +310,7 @@ const recorridos = computed<RecorridoPlano[]>(() =>
 const nRecorridos = computed(() => (modoVivo.value ? recorridos.value.length : personasMapa.value.length));
 
 const celdasKDE = computed<[number, number, number][]>(() => {
-  if (modoVivo.value) return vivo.calor.value;
+  if (analisis.value) return analisis.value.calor;
   const k = p3.value?.kde;
   if (!k) return datos.value?.calor.celdas ?? [];
   const valores = capaCalor.value === "ocupacion" ? k.ocupacion : k.visitantes;
@@ -299,7 +329,7 @@ const centroZona = (id: number): Punto | null => {
   return [suma(z.points.map((p) => p[0])) / z.points.length, suma(z.points.map((p) => p[1])) / z.points.length];
 };
 
-const flujos = computed(() => (modoVivo.value ? vivo.resumen.value.flujos : (p3.value?.origen_destino ?? [])).filter((f) => zonaId.value == null || f.desde === zonaId.value || f.hacia === zonaId.value));
+const flujos = computed(() => (analisis.value ? analisis.value.resumen.flujos : (p3.value?.origen_destino ?? [])).filter((f) => zonaId.value == null || f.desde === zonaId.value || f.hacia === zonaId.value));
 
 const flechas = computed<FlechaPlano[]>(() =>
   !verFlujos.value
@@ -312,8 +342,8 @@ const flechas = computed<FlechaPlano[]>(() =>
 
 // --- Comparación entre zonas y rutas -------------------------------------------
 const comparacion = computed(() => {
-  const filas = modoVivo.value
-    ? vivo.resumen.value.zonas.map((z) => ({ id: z.id, nombre: z.nombre, personas: z.visitantes, permanencia: z.permanencia, densidad: z.densidad as number | null }))
+  const filas = analisis.value
+    ? analisis.value.resumen.zonas.map((z) => ({ id: z.id, nombre: z.nombre, personas: z.visitantes, permanencia: z.permanencia, densidad: z.densidad as number | null }))
     : p3.value
     ? p3.value.zonas.map((z) => ({ id: z.zone_id, nombre: z.nombre, personas: z.visitantes, permanencia: z.permanencia_media_s, densidad: z.densidad_max }))
     : (datos.value?.zonas ?? []).map((z) => ({ id: z.zone_id, nombre: z.name, personas: z.visitantes, permanencia: z.permanencia_media_s, densidad: null as number | null }));
@@ -321,7 +351,7 @@ const comparacion = computed(() => {
   return filas.sort((a, b) => (b.permanencia ?? 0) - (a.permanencia ?? 0)).map((f) => ({ ...f, ancho: (100 * (f.permanencia ?? 0)) / max }));
 });
 
-const rutas = computed(() => (modoVivo.value ? vivo.resumen.value.rutas : (p3.value?.rutas ?? [])).filter((ruta) => zonaId.value == null || ruta.zonas.includes(zonaId.value)).slice(0, 8));
+const rutas = computed(() => (analisis.value ? analisis.value.resumen.rutas : (p3.value?.rutas ?? [])).filter((ruta) => zonaId.value == null || ruta.zonas.includes(zonaId.value)).slice(0, 8));
 
 // --- Flujo entre zonas: sankey de dos columnas (origen → destino) --------------
 const sankey = computed(() => {
@@ -404,6 +434,10 @@ async function cargar() {
   }
 }
 watch(sesionId, cargar);
+// Cada captura en vivo que se guarda (sola o a pedido) aparece enseguida en el selector y en Contraste.
+watch(capturasVersion, async () => {
+  sesiones.value = await api.sesiones(slug.value);
+});
 watch(modoVivo, (v) => {
   if (v) return;
   comparando.value = false;
@@ -457,9 +491,10 @@ onMounted(async () => {
         </select></label
       >
       <span v-if="modoVivo" class="pill en-vivo">● EN VIVO</span>
+      <span v-if="analisisGuardado" class="pill capturada" title="Guardada del modo en vivo; sus métricas se calculan desde su recorrido">● Captura en vivo guardada</span>
       <span v-if="!modoVivo && analitica" class="pill" :title="`Calculado ${new Date(analitica.computed_at).toLocaleString('es-PE')}`">Parte III</span>
       <span v-if="!modoVivo && analitica?.stale" class="pill aviso-pill" :title="comando">zonas cambiadas · recalcular</span>
-      <span v-else-if="!modoVivo && sesionId && !cargando && !analitica" class="pill aviso-pill" :title="comando">Parte III sin calcular</span>
+      <span v-else-if="!modoVivo && !analisis && sesionId && !cargando && !analitica" class="pill aviso-pill" :title="comando">Parte III sin calcular</span>
     </div>
     <div class="export-actions">
       <button type="button" class="boton-primario" :disabled="!datos && !modoVivo" @click="exportarPDF">⤓ Exportar PDF</button>
@@ -467,7 +502,8 @@ onMounted(async () => {
       <button v-if="modoVivo && !comparando" type="button" class="boton-primario" :disabled="guardando || !vivo.historias.value.length" @click="guardarYRefrescar()">
         {{ guardando ? "Guardando…" : "Guardar captura en vivo" }}
       </button>
-      <button v-if="modoVivo && !comparando" type="button" @click="reiniciarVivo()">↺ Reiniciar en vivo</button>
+      <button v-if="modoVivo && !comparando" type="button" title="Guarda esta captura y empieza una nueva" @click="reiniciarCaptura()">↺ Reiniciar en vivo</button>
+      <span v-if="modoVivo && !comparando" class="muted mensaje-guardado">Se guarda sola cada 20 s y al salir del modo en vivo.</span>
       <span v-if="modoVivo && !comparando && mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
     </div>
   </section>
@@ -575,7 +611,7 @@ onMounted(async () => {
           :mapa="mapa"
           :zonas="zonas"
           :calor="celdasKDE"
-          :celda-calor="modoVivo ? CELDA_CALOR : (p3?.kde.celda_m ?? datos?.calor.celda_m)"
+          :celda-calor="analisis ? analisis.celda : (p3?.kde.celda_m ?? datos?.calor.celda_m)"
           :flechas="flechas"
           :zona-activa="zonaId"
           :mostrar-camaras="false"
@@ -701,6 +737,11 @@ onMounted(async () => {
 .mensaje-guardado {
   align-self: center;
   font-size: 12.5px;
+}
+.capturada {
+  color: #b3243d;
+  background: rgba(217, 45, 74, 0.12);
+  border-color: rgba(217, 45, 74, 0.35);
 }
 .en-vivo {
   color: #fff;
