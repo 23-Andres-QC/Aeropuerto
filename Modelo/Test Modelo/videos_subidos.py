@@ -151,7 +151,8 @@ class Quietud:
     altura, es estático; quien se mueve una vez cuenta para siempre. Cuesta unas operaciones por fila.
     """
 
-    def __init__(self):
+    def __init__(self, estatico_s=ESTATICO_S):
+        self.estatico_s = estatico_s
         self.camara = np.zeros(2)
         self.previos = {}   # local_id -> centro en el frame anterior
         self.origen = {}    # local_id -> (t, centro en el fondo, alto) al aparecer
@@ -175,8 +176,8 @@ class Quietud:
                     self.movidos.add(lid)
 
     def estatico(self, lid, t):
-        """El track lleva ESTATICO_S a la vista sin moverse."""
-        return lid not in self.movidos and lid in self.origen and t - self.origen[lid][0] >= ESTATICO_S
+        """El track lleva `estatico_s` a la vista sin moverse."""
+        return lid not in self.movidos and lid in self.origen and t - self.origen[lid][0] >= self.estatico_s
 
 
 class VideoEnProceso:

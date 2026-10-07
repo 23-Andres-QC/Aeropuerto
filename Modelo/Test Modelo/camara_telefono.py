@@ -39,7 +39,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"websocke
 
 import lap01
 from memoria_identidades import AsociadorConMemoria, MemoriaIdentidades
-from videos_subidos import CANAL_ESTADO as CANAL_VIDEOS, VideosSubidos, genero_por_votos
+from videos_subidos import CANAL_ESTADO as CANAL_VIDEOS, Quietud, VideosSubidos, genero_por_votos
 
 CANAL_ESTADO = "telefonos"
 ANCHO_RELEVO = 640
@@ -71,6 +71,9 @@ DETECTOR_TELEFONO = {"conf": 0.15}
 IMGSZ_GPU_TELEFONO = 960
 DETECTOR_CPU_TELEFONO = "yolo26s.pt"
 # Género: personas más chicas y detecciones menos seguras también votan (el consenso y el margen se mantienen).
+# Lo que en este tiempo a la vista no se mueve (un maniquí, un afiche, un objeto) no se muestra ni se cuenta; quien se mueve
+# una vez cuenta para siempre.
+ESTATICO_TELEFONO_S = 3.0
 # Con esta certeza o más el género de una persona queda fijo y ya no cambia.
 GENERO_FIJO = 0.8
 GENERO_TELEFONO = {"min_height": 56, "min_detection_confidence": 0.35}
@@ -280,6 +283,7 @@ class SesionEnVivo:
         self.ultimo, self.procesados, self.saltados = {}, {}, {}
         self.latencias, self.tiempos, self.personas = {}, {}, {}
         self.generos = {}
+        self.quietud = {}  # teléfono -> Quietud: qué tracks no se mueven
         self.fijos = {}  # (teléfono, track local) -> (género, certeza) ya fijado con certeza >= GENERO_FIJO
         # Dos carriles: el rápido (detectar y seguir, que da las cajas) corre en el lazo principal y publica enseguida;
         # el lento (género con CLIP, Re-ID y memoria de identidades) corre en un hilo aparte con el último instante
@@ -307,6 +311,7 @@ class SesionEnVivo:
         self.motor.trackers.update(siguen)
         self.motor.genero.memory.update(votos)
         self.fijos = {k: v for k, v in self.fijos.items() if k[0] in siguen}
+        self.quietud = {cid: q for cid, q in self.quietud.items() if cid in siguen}
         if telefonos:
             config = config_telefonos(telefonos, self.asociacion)
             if self.asociador is None:
@@ -336,6 +341,10 @@ class SesionEnVivo:
         self._ritmo_genero()
         fuente = dict(self.procesados)
         filas = self.motor.seguir(frames, fuente, self.motor.detectar(frames))
+        for cid, fs in filas.items():
+            quieta = self.quietud.setdefault(cid, Quietud(ESTATICO_TELEFONO_S))
+            quieta.actualizar(self.t, fs)
+            filas[cid] = [f for f in fs if not quieta.estatico(f["local_id"], self.t)]
         # El carril lento recibe copias: modifica sus filas mientras el lazo principal publica las suyas.
         trabajo = (self.generacion, self.t, frames, fuente, {cid: [dict(f) for f in fs] for cid, fs in filas.items()},
                    dict(self.motor.detecciones_actuales))

@@ -118,5 +118,18 @@ class Continuidad(unittest.TestCase):
         self.assertIsNone(self._asociador(11.5, 450.0)._continuacion(2, {5}))
 
 
+class Estaticos(unittest.TestCase):
+    def test_lo_que_no_se_mueve_en_3_s_no_cuenta_y_quien_se_mueve_si(self):
+        from videos_subidos import Quietud
+        q = Quietud(3.0)
+        quieto = {"local_id": 1, "x1": 100, "y1": 100, "x2": 150, "y2": 250}
+        camina = lambda x: {"local_id": 2, "x1": x, "y1": 100, "x2": x + 50, "y2": 250}
+        for k in range(7):
+            q.actualizar(k * 0.5, [quieto, camina(300 + 40 * k)])
+        self.assertTrue(q.estatico(1, 3.5))
+        self.assertFalse(q.estatico(2, 3.5), "quien se mueve cuenta")
+        self.assertFalse(q.estatico(1, 1.0), "todavía no pasaron 3 s")
+
+
 if __name__ == "__main__":
     unittest.main()
