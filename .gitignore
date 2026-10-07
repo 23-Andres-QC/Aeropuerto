@@ -5,3 +5,5 @@ dist/
 output/
 .playwright-cli/
 *.log
+# El informe del Capstone vive en su propio repositorio (23-Andres-QC/informe-captons-final).
+informe-captons-final/
