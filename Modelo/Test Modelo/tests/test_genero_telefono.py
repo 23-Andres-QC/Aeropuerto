@@ -2,6 +2,8 @@
 import sys
 import types
 import unittest
+
+import numpy as np
 from pathlib import Path
 
 TEST = Path(__file__).resolve().parents[1]
@@ -137,6 +139,40 @@ class Estaticos(unittest.TestCase):
         self.assertTrue(q.estatico(1, 3.5))
         self.assertFalse(q.estatico(2, 3.5), "quien se mueve cuenta")
         self.assertFalse(q.estatico(1, 1.0), "todavía no pasaron 3 s")
+
+
+class CajasCenidas(unittest.TestCase):
+    def test_de_pie_sin_los_brazos(self):
+        from camara_telefono import ajustar_cajas
+        cajas, _ = ajustar_cajas([[100, 100, 320, 500]], [0.9])  # 220 de ancho por 400 de alto: brazos abiertos
+        self.assertAlmostEqual(float(cajas[0, 2] - cajas[0, 0]), 0.42 * 400, delta=0.5)
+        self.assertAlmostEqual(float((cajas[0, 0] + cajas[0, 2]) / 2), 210.0, delta=0.5)
+        self.assertEqual((float(cajas[0, 1]), float(cajas[0, 3])), (100.0, 500.0), "el alto no cambia")
+
+    def test_una_caja_angosta_no_se_toca(self):
+        from camara_telefono import ajustar_cajas
+        cajas, _ = ajustar_cajas([[100, 100, 200, 400]], [0.9])
+        self.assertEqual(cajas.tolist(), [[100.0, 100.0, 200.0, 400.0]])
+
+    def test_desde_arriba_queda_la_cabeza(self):
+        from camara_telefono import ajustar_cajas
+        cajas, _ = ajustar_cajas([[100, 100, 180, 170]], [0.9])  # 80x70: casi desde arriba
+        self.assertAlmostEqual(float(cajas[0, 2] - cajas[0, 0]), 0.6 * 70, delta=0.5)
+        self.assertAlmostEqual(float(cajas[0, 3] - cajas[0, 1]), 0.6 * 70, delta=0.5)
+
+    def test_la_caja_que_envuelve_a_varias_personas_se_descarta(self):
+        from camara_telefono import ajustar_cajas
+        grande = [0, 0, 600, 500]
+        a, b = [100, 100, 160, 300], [300, 120, 360, 330]
+        cajas, conf = ajustar_cajas([grande, a, b], [0.5, 0.9, 0.8])
+        self.assertEqual(len(cajas), 2)
+        self.assertEqual(sorted(round(float(c), 2) for c in conf), [0.8, 0.9])
+        self.assertTrue(all(float(c[2] - c[0]) < 100 for c in cajas))
+
+    def test_sin_cajas(self):
+        from camara_telefono import ajustar_cajas
+        cajas, conf = ajustar_cajas(np.empty((0, 4)), np.empty(0))
+        self.assertEqual((len(cajas), len(conf)), (0, 0))
 
 
 if __name__ == "__main__":

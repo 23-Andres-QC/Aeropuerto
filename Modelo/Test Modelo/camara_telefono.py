@@ -67,7 +67,8 @@ ASOCIACION_TELEFONO = {"min_samples": 3, "min_query_samples": 3, "min_identity_d
 SEGUIDOR_TELEFONO = {"new_track_confidence": 0.25, "association_confidence": 0.20, "min_person_height": 24,
                      "reid_gate": 0.72, "active_motion_gate": 0.80, "distance_gate": 1.20, "active_iou_gate": 0.06}
 # Detector más sensible (el Build usa 0,30) para captar a quien está lejos; con GPU además a mayor resolución.
-DETECTOR_TELEFONO = {"conf": 0.15}
+# iou 0,65: en una multitud la supresión de no máximos deja separadas a las personas que se tapan un poco.
+DETECTOR_TELEFONO = {"conf": 0.15, "iou": 0.65}
 IMGSZ_GPU_TELEFONO = 960
 DETECTOR_CPU_TELEFONO = "yolo26s.pt"
 # Género: personas más chicas y detecciones menos seguras también votan (el consenso y el margen se mantienen).
@@ -108,6 +109,51 @@ def sin_token(url):
     """La URL sin su query (para mostrarla sin exponer el token)."""
     partes = urlsplit(url)
     return f"{partes.scheme}://{partes.netloc}{partes.path}"
+
+
+# Forma de la caja de una persona: solo cabeza, tronco y piernas (sin los brazos abiertos ni lo que lleva), y nunca una caja
+# que envuelva a varias personas.
+ASPECTO_DE_PIE = 0.42   # ancho / alto máximo de alguien de pie (alto / ancho >= 1.8)
+ASPECTO_INTERMEDIO = 0.60  # agachado, sentado o visto desde un ángulo alto (alto / ancho entre 1.15 y 1.8)
+ASPECTO_ARRIBA = 1.15   # alto / ancho menor: visto casi desde arriba (solo se ve la cabeza y los hombros)
+CABEZA_DESDE_ARRIBA = 0.6  # lado de la caja (fracción del lado menor) que se queda con la cabeza
+
+
+def ajustar_cajas(cajas, confianzas):
+    """Cajas de personas más ceñidas, y sin las que envuelven a otras.
+
+    - Una caja que contiene el centro de otras (bastante más chicas) es un grupo o un fondo, no una persona: se descarta.
+    - De pie: el ancho se limita a 0,42 del alto, centrado, así no incluye brazos extendidos, bolsos ni a quien está al lado.
+    - Agachada, sentada o vista desde un ángulo alto: ancho máximo de 0,6 del alto.
+    - Vista casi desde arriba (más ancha que alta): queda solo la cabeza, un cuadrado centrado del 60 % del lado menor.
+    """
+    cajas = np.asarray(cajas, np.float32).reshape(-1, 4).copy()
+    confianzas = np.asarray(confianzas, np.float32).reshape(-1)
+    if not len(cajas):
+        return cajas, confianzas
+    ancho, alto = cajas[:, 2] - cajas[:, 0], cajas[:, 3] - cajas[:, 1]
+    centro = np.column_stack(((cajas[:, 0] + cajas[:, 2]) / 2, (cajas[:, 1] + cajas[:, 3]) / 2))
+    area = np.maximum(ancho * alto, 1.0)
+    mantener = np.ones(len(cajas), bool)
+    for i in range(len(cajas)):
+        dentro = ((centro[:, 0] > cajas[i, 0]) & (centro[:, 0] < cajas[i, 2]) & (centro[:, 1] > cajas[i, 1])
+                  & (centro[:, 1] < cajas[i, 3]) & (area < 0.6 * area[i]))
+        dentro[i] = False
+        if dentro.sum() >= 2 or (dentro.sum() >= 1 and ancho[i] / max(alto[i], 1.0) > 0.8):
+            mantener[i] = False
+    for i in np.flatnonzero(mantener):
+        a, h = max(ancho[i], 1.0), max(alto[i], 1.0)
+        cx, cy = centro[i]
+        if h / a >= 1.8:
+            nuevo = min(a, ASPECTO_DE_PIE * h)
+            cajas[i, [0, 2]] = cx - nuevo / 2, cx + nuevo / 2
+        elif h / a >= ASPECTO_ARRIBA:
+            nuevo = min(a, ASPECTO_INTERMEDIO * h)
+            cajas[i, [0, 2]] = cx - nuevo / 2, cx + nuevo / 2
+        else:
+            lado = CABEZA_DESDE_ARRIBA * min(a, h)
+            cajas[i] = cx - lado / 2, cy - lado / 2, cx + lado / 2, cy + lado / 2
+    return cajas[mantener], confianzas[mantener]
 
 
 class LectorMjpeg:
@@ -340,7 +386,8 @@ class SesionEnVivo:
             frames[cid] = frame
         self._ritmo_genero()
         fuente = dict(self.procesados)
-        filas = self.motor.seguir(frames, fuente, self.motor.detectar(frames))
+        detectadas = {cid: ajustar_cajas(*dato) for cid, dato in self.motor.detectar(frames).items()}
+        filas = self.motor.seguir(frames, fuente, detectadas)
         for cid, fs in filas.items():
             quieta = self.quietud.setdefault(cid, Quietud(ESTATICO_TELEFONO_S))
             quieta.actualizar(self.t, fs)
