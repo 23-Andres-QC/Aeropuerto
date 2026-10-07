@@ -11,6 +11,8 @@ export type PersonaGuardable = {
   primera: number;
   ultima: number;
   trazas: TrazaViva[];
+  /** Cámaras que la vieron (para quien no tiene recorrido en el plano). */
+  camaras?: number;
 };
 
 /** UUID v4. No usa crypto.randomUUID: solo existe en HTTPS o localhost y la web también se abre por http://IP. */
@@ -59,9 +61,22 @@ export function construirSesion(personas: PersonaGuardable[], opciones: { sesion
 
   for (const persona of personas) {
     const trazas = [...persona.trazas].sort((a, b) => a.t - b.t);
-    if (!trazas.length) continue;
     const gid = uuid();
     const genero = GENERO_BD[persona.genero ?? ""] ?? "SIN_DETERMINAR";
+    if (!trazas.length) {
+      // Memorizada (tiene ID) pero sin ubicación en el plano: cuenta como persona, con su género, sin recorrido.
+      identities.push({
+        global_id: gid,
+        public_number: persona.id,
+        first_seen: iso(Math.max(inicio, persona.primera)),
+        last_seen: iso(Math.max(inicio, persona.ultima, persona.primera)),
+        n_cameras: Math.max(1, persona.camaras ?? 1),
+        gender: genero,
+        gender_confidence: genero === "SIN_DETERMINAR" ? null : Math.min(1, Math.max(0, persona.conf ?? 0.5)),
+        gender_votes: 0,
+      });
+      continue;
+    }
     identities.push({
       global_id: gid,
       public_number: persona.id,

@@ -13,7 +13,7 @@ import type { PersonaPlano, RecorridoPlano } from "./components/PlanoSitio.vue";
 
 export { CELDA_CALOR };
 export type { ResumenVivo };
-import { construirSesion, uuid, type CargaSesion, type TrazaViva } from "./sesionVivo";
+import { construirSesion, uuid, type CargaSesion, type PersonaGuardable, type TrazaViva } from "./sesionVivo";
 
 /** Valor de la opción «En vivo» en los desplegables de sesión. */
 export const SESION_VIVO = "__vivo__";
@@ -178,6 +178,24 @@ const sockets = new Map<string, () => void>();
 const cuadros = new Map<string, Cuadro>();
 const rastros = new Map<string, { puntos: Punto[]; visto: number; color: string }>();
 const suavizadas = new Map<string, Punto>();
+/**
+ * Personas que el modelo memorizó (con ID global) mientras se graba, las ubique o no el plano: la captura las guarda a
+ * todas (con su recorrido si lo tienen). Una caja sin ID no cuenta: puede ser un falso positivo pasajero.
+ */
+type Memorizada = { genero: string | null; conf: number | null; primera: number; ultima: number; camaras: Set<string> };
+const memorizadas = new Map<number, Memorizada>();
+function memorizar(m: Detecciones, cid: string | undefined) {
+  const t = Date.now();
+  for (const p of m.people ?? []) {
+    if (p.global_id == null) continue;
+    const r = memorizadas.get(p.global_id) ?? { genero: null, conf: null, primera: t, ultima: t, camaras: new Set<string>() };
+    r.ultima = t;
+    if (p.gender && p.gender !== "Sin determinar" && (p.gender_conf ?? 0) >= (r.conf ?? 0)) [r.genero, r.conf] = [p.gender, p.gender_conf ?? null];
+    if (cid) r.camaras.add(cid);
+    memorizadas.set(p.global_id, r);
+  }
+}
+
 /** Teléfono del que sale la posición de cada persona (ver componer). */
 const camaraPreferida = new Map<string, string>();
 /** Otra cámara toma a una persona solo si la ve al menos esto más grande que la que ya la ubicaba. */
@@ -320,6 +338,7 @@ function alDetecciones(id: string, ev: MessageEvent) {
     return;
   }
   const cid = camaraDe(id);
+  if (grabando.value) memorizar(m, cid);
   // Solo un cuadro que el modelo ubicó en el plano de este sitio entra al plano: estimar por el tamaño de la persona lo
   // ponía mal y duplicaba a la gente. Sin ubicación el teléfono se ve igual en Teléfonos, pero no en el plano.
   const plano = m.plano && m.plano.sitio === sitio.value && m.plano.H?.length === 9 ? m.plano : null;
@@ -506,6 +525,7 @@ function componer() {
 export function reiniciarVivo() {
   celdas.clear();
   historia.clear();
+  memorizadas.clear();
   densidadMax.clear();
   rastros.clear();
   suavizadas.clear();
@@ -563,15 +583,21 @@ export const capturasVersion = ref(0);
 
 type Pendiente = { sitio: string; carga: CargaSesion };
 
-const totalTrazas = () => [...historia.values()].reduce((n, h) => n + h.trazas.length, 0);
+/** Lo que cambió la captura (recorridos y personas memorizadas): si no cambió, no hace falta volver a guardarla. */
+const totalTrazas = () => [...historia.values()].reduce((n, h) => n + h.trazas.length, 0) + 1_000_000 * memorizadas.size;
 
 /** Foto de lo capturado hasta ahora, lista para enviar; null si todavía no hay personas con ID. */
 function prepararCaptura(): Pendiente | null {
   const quien = sitio.value;
   if (!quien) return null;
-  const personas = [...historia.values()]
+  // Las que tienen recorrido en el plano, y además las memorizadas que no se ubicaron (solo cuentan como personas).
+  const personas: PersonaGuardable[] = [...historia.values()]
     .filter((h) => h.trazas.length)
     .map((h) => ({ id: h.id, genero: h.genero, conf: h.conf, primera: h.primera, ultima: h.ultima, trazas: h.trazas }));
+  const conRecorrido = new Set(personas.map((p) => p.id));
+  for (const [id, r] of memorizadas) {
+    if (!conRecorrido.has(id)) personas.push({ id, genero: r.genero, conf: r.conf, primera: r.primera, ultima: r.ultima, trazas: [], camaras: r.camaras.size });
+  }
   if (!personas.length) return null;
   const hora = new Date(inicio.value).toLocaleString("es-PE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const nombre = `${config.value?.site.name ?? quien} · en vivo · ${hora}`;
