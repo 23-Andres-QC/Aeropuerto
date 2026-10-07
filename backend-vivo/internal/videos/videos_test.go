@@ -131,7 +131,7 @@ func TestResumen(t *testing.T) {
 	if _, _, err := r.Abrir(v.ID); !errors.Is(err, ErrNoEncontrado) {
 		t.Fatalf("ya no hay archivo que leer: %v", err)
 	}
-	if r.Purgar(time.Now().Add(time.Hour)) || len(r.Lista()) != 1 {
+	if r.Purgar(time.Now().Add(time.Hour)) != 0 || len(r.Lista()) != 1 {
 		t.Fatal("el resumen se queda hasta que lo quiten")
 	}
 	if err := r.Quitar(v.ID); err != nil || len(r.Lista()) != 0 {
