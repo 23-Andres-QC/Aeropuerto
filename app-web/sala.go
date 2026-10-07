@@ -141,6 +141,18 @@ func (s *Sala) avisarLocked() {
 	s.cambio = make(chan struct{})
 }
 
+// CamaraDe es el número de cámara (orden de ingreso) de un teléfono de la lista, o 0.
+func (s *Sala) CamaraDe(telefono string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.lista {
+		if t.ID == telefono {
+			return t.Camara
+		}
+	}
+	return 0
+}
+
 // Espectadores cuenta cuántas páginas de la web miran la sala ahora.
 func (s *Sala) Espectadores() int {
 	s.mu.Lock()
@@ -358,11 +370,12 @@ func (s *Sala) enviarLista(ws *websocket.Conn, lista []Telefono) error {
 	type camara struct {
 		ID     string `json:"id"`
 		Nombre string `json:"nombre"`
+		Camara int    `json:"camara,omitempty"`
 		Web    bool   `json:"web"` // se unió con la página de cámara (no se agregó por otra vía)
 	}
 	camaras := make([]camara, 0, len(lista))
 	for _, t := range lista {
-		camaras = append(camaras, camara{ID: t.ID, Nombre: t.Nombre, Web: s.camaras.PorTelefono(t.ID) != nil})
+		camaras = append(camaras, camara{ID: t.ID, Nombre: t.Nombre, Camara: t.Camara, Web: s.camaras.PorTelefono(t.ID) != nil})
 	}
 	_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	return ws.WriteJSON(map[string]any{"tipo": "sala", "camaras": camaras})

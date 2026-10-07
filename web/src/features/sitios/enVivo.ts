@@ -6,7 +6,7 @@
 import { computed, ref, shallowRef, watch } from "vue";
 import { json, request, socketPersistente } from "../../core/http";
 import { colorPersona } from "../../shared/format";
-import { api as apiVivo, RELEVO_VIVO, type Detecciones, type EstadoServicio, type EstadoTelefono, type Telefono } from "../telefonos/api";
+import { api as apiVivo, RELEVO_VIVO, type Detecciones, type EstadoServicio, type EstadoTelefono, type Telefono, type UbicacionPlano } from "../telefonos/api";
 import { api, mapaDelSitio, type Camara, type Config, type Mapa, type Punto } from "./api";
 import { CELDA_CALOR, dentro, entradasPorIntervalo as entradasEntre, resumir, type ResumenVivo } from "./analisisVivo";
 import type { PersonaPlano, RecorridoPlano } from "./components/PlanoSitio.vue";
@@ -216,7 +216,16 @@ function asignar(lista: Telefono[]) {
     asignacion.delete(id);
     cuadros.delete(id);
   }
+  // Cada teléfono va a la cámara de su número (por orden de ingreso: el primero cam01, a la izquierda; el segundo cam02, a la
+  // derecha); uno sin número toma la primera libre.
   for (const t of lista) {
+    const propia = t.camara != null && t.camara >= 1 && t.camara <= CAMARAS_VIVO.length ? t.camara - 1 : -1;
+    if (propia >= 0 && asignacion.get(t.id) === propia) continue;
+    if (propia >= 0) {
+      for (const [otro, i] of [...asignacion]) if (i === propia && otro !== t.id) asignacion.delete(otro);
+      asignacion.set(t.id, propia);
+      continue;
+    }
     if (asignacion.has(t.id)) continue;
     const usadas = new Set(asignacion.values());
     const libre = CAMARAS_VIVO.findIndex((_, i) => !usadas.has(i));
@@ -287,33 +296,15 @@ function alPiso(p: Punto, piso: Punto[] | null | undefined): Punto {
   return mejor;
 }
 
-// --- Calibración de teléfonos --------------------------------------------------------
-// Un teléfono calibrado (web/public/calibracion/<sitio>.json) se ubica con su homografía píxeles del cuadro → metros del plano:
-// sale de una grabación de alguien caminando (escala por la altura de la persona y referencias del plano) y vale mientras el
-// teléfono siga donde estaba. Se reconoce por el nombre del dispositivo y la forma del cuadro. Sin calibración se ubica por el
-// tamaño de la persona (proyectorAlcance).
-type CalibracionTelefono = { nombre_contiene: string; frame: [number, number]; H: number[] };
-const calibraciones = shallowRef<CalibracionTelefono[]>([]);
-let calibracionDelSitio = "";
-async function cargarCalibracion() {
-  const quien = sitio.value;
-  if (!quien || calibracionDelSitio === quien) return;
-  calibracionDelSitio = quien;
-  try {
-    const r = await fetch(`/calibracion/${encodeURIComponent(quien)}.json`, { cache: "no-cache" });
-    const d = r.ok ? ((await r.json()) as { camaras?: CalibracionTelefono[] }) : {};
-    calibraciones.value = (d.camaras ?? []).filter((c) => Array.isArray(c.H) && c.H.length === 9 && c.frame?.length === 2);
-  } catch {
-    calibraciones.value = [];
-  }
-}
+// --- Ubicación de los teléfonos en el plano ----------------------------------------------
+// El modelo manda, con las cajas de cada cuadro, la homografía de sus píxeles a metros del plano (Modelo/Test Modelo/ubicacion.py):
+// compara el cuadro con imágenes de referencia calibradas de cada cámara, así que vale aunque el teléfono se mueva en la mano.
+/** Teléfonos cuyo último cuadro el modelo ubicó en el plano de este sitio. */
+const ubicados = shallowRef<Set<string>>(new Set());
 
-function calibracionDe(nombre: string, anchoFrame: number, altoFrame: number): CalibracionTelefono | undefined {
-  return calibraciones.value.find((c) => nombre.includes(c.nombre_contiene) && Math.abs(c.frame[0] / c.frame[1] - anchoFrame / altoFrame) < 0.03);
-}
-
-function proyectarCalibrado(c: CalibracionTelefono, x: number, y: number, anchoFrame: number, altoFrame: number): Punto | null {
-  const [u, v] = [(x * c.frame[0]) / anchoFrame, (y * c.frame[1]) / altoFrame];
+function proyectarCalibrado(c: UbicacionPlano, x: number, y: number, anchoFrame: number): Punto | null {
+  const k = c.ancho / anchoFrame;
+  const [u, v] = [x * k, y * k];
   const h = c.H;
   const w = h[6] * u + h[7] * v + h[8];
   if (!Number.isFinite(w) || Math.abs(w) < 1e-9) return null;
@@ -329,10 +320,16 @@ function alDetecciones(id: string, ev: MessageEvent) {
     return;
   }
   const cid = camaraDe(id);
-  // Solo un teléfono calibrado se ubica en el plano: estimar por el tamaño de la persona desde otro lado lo ponía mal y
-  // duplicaba a la gente que el calibrado ya ubicaba. Uno sin calibrar se ve igual en Teléfonos, pero no en el plano.
-  const calibrada = calibracionDe(telefonos.value.find((t) => t.id === id)?.nombre ?? "", m.frame_w, m.frame_h);
-  if (!cid || !calibrada || !m.frame_w || !m.frame_h) return;
+  // Solo un cuadro que el modelo ubicó en el plano de este sitio entra al plano: estimar por el tamaño de la persona lo
+  // ponía mal y duplicaba a la gente. Sin ubicación el teléfono se ve igual en Teléfonos, pero no en el plano.
+  const plano = m.plano && m.plano.sitio === sitio.value && m.plano.H?.length === 9 ? m.plano : null;
+  if (plano ? !ubicados.value.has(id) : ubicados.value.has(id)) {
+    const nuevos = new Set(ubicados.value);
+    if (plano) nuevos.add(id);
+    else nuevos.delete(id);
+    ubicados.value = nuevos;
+  }
+  if (!cid || !plano || !m.frame_w || !m.frame_h) return;
   const observaciones: Observacion[] = [];
   for (const p of m.people ?? []) {
     // Solo quien tiene ID global va al plano: sin él, la misma persona que otra cámara ya identificó saldría dos veces.
@@ -340,7 +337,7 @@ function alDetecciones(id: string, ev: MessageEvent) {
     const [x1, y1, x2, y2] = p.box;
     // Con los pies cortados por el borde del cuadro la proyección no vale (igual que en el Build).
     if (y2 >= m.frame_h - 3) continue;
-    const bruto = proyectarCalibrado(calibrada, (x1 + x2) / 2, y2, m.frame_w, m.frame_h);
+    const bruto = proyectarCalibrado(plano, (x1 + x2) / 2, y2, m.frame_w);
     if (!bruto) continue;
     const punto = alPiso([bruto[0] + ajusteMapa.value.dx, bruto[1] + ajusteMapa.value.dy], config.value?.plano?.piso_m);
     observaciones.push({
@@ -545,8 +542,8 @@ const ranuras = computed<RanuraVivo[]>(() => {
       estado: telefono ? servicio.value?.telefonos[telefono.id] : undefined,
       activa: vigente,
       personas: vigente && cuadro ? cuadro.observaciones.length : 0,
-      // Sin calibración el teléfono no se ubica en el plano (ver alDetecciones): su nombre debe contener el de una calibración.
-      sinCalibracion: !telefono || !calibraciones.value.some((c) => telefono.nombre.includes(c.nombre_contiene)),
+      // El modelo no reconoce lo que ve (no apunta al patio): no se ubica en el plano (ver alDetecciones).
+      sinCalibracion: !!telefono && vigente && !ubicados.value.has(telefono.id),
     };
   });
 });
@@ -596,17 +593,6 @@ async function enviarCaptura(p: Pendiente, automatico: boolean): Promise<boolean
   } finally {
     guardando.value = false;
   }
-}
-
-/** Guarda ya, a pedido (el botón). Lo normal es que se guarde sola. */
-export async function guardarCapturaVivo(): Promise<boolean> {
-  const p = prepararCaptura();
-  if (!p) {
-    mensajeGuardado.value = sitio.value ? "Todavía no hay personas con ID para guardar." : "Abre un sitio para guardar la captura.";
-    return false;
-  }
-  trazasGuardadas = totalTrazas();
-  return enviarCaptura(p, false);
 }
 
 /** «Iniciar captura»: desde ahora se registra la escena (calor, recorridos y estadísticas) hasta que se pulse Terminar. */
@@ -676,7 +662,6 @@ function arrancar() {
   sondeoGuardado = setInterval(() => autoguardar(), AUTOGUARDADO_MS);
   sondear();
   cargarConfig();
-  void cargarCalibracion();
   sondeo = setInterval(sondear, 3000);
   sondeoConfig = setInterval(cargarConfig, 5000);
   reloj = setInterval(componer, TICK_S * 1000);
@@ -714,8 +699,7 @@ export function usarSitioVivo(slug: string) {
   grabando.value = false;
   sitio.value = slug;
   config.value = undefined;
-  calibracionDelSitio = "";
-  if (corriendo) void cargarCalibracion();
+  ubicados.value = new Set();
   if (corriendo) {
     reiniciarVivo();
     cargarConfig();

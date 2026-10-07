@@ -19,6 +19,7 @@ import time
 import urllib.request
 import warnings
 from collections import Counter, deque
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -39,8 +40,10 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"websocke
 
 import lap01
 from lap01.camaras_reid import ReIDPersonas
+from detector_onnx import DetectorONNX
 from detector_pose import DetectorCuerpo, ajustar_cajas
 from memoria_identidades import AsociadorConMemoria, MemoriaIdentidades
+from ubicacion import Ubicador
 from videos_subidos import CANAL_ESTADO as CANAL_VIDEOS, Quietud, VideosSubidos, genero_por_votos
 
 CANAL_ESTADO = "telefonos"
@@ -73,6 +76,8 @@ SEGUIDOR_TELEFONO = {"new_track_confidence": 0.25, "association_confidence": 0.2
 DETECTOR_TELEFONO = {"conf": 0.10, "iou": 0.65}
 IMGSZ_GPU_TELEFONO = 960
 DETECTOR_CPU_TELEFONO = "yolo26s.pt"
+DETECTOR_ONNX_TELEFONO = "yolo26s.onnx"  # el mismo yolo26s en ONNX Runtime: en CPU, casi el doble de rápido (detector_onnx.py)
+SITIO_TELEFONOS = os.environ.get("SITIO_TELEFONOS", "esan")  # plano donde están los teléfonos (Modelo/ubicacion/<sitio>)
 POSE_TELEFONO = "yolo26s-pose.pt"  # detector con puntos del cuerpo: la caja deja fuera los brazos
 # Género: personas más chicas y detecciones menos seguras también votan (el consenso y el margen se mantienen).
 # Lo que en este tiempo a la vista no se mueve (un maniquí, un afiche, un objeto) no se muestra ni se cuenta; quien se mueve
@@ -280,8 +285,11 @@ class SesionEnVivo:
     identidades devuelve su ID a quien vuelve a aparecer.
     """
 
-    def __init__(self, motor, reid, asociacion, memoria):
+    def __init__(self, motor, reid, asociacion, memoria, ubicador=None):
         self.motor, self.reid, self.asociacion, self.memoria = motor, reid, asociacion, memoria
+        # Ubicación en el plano de cada cuadro (ubicacion.py): se calcula en otro hilo mientras el detector trabaja.
+        self.ubicador, self._ubicando = ubicador, ThreadPoolExecutor(max_workers=1)
+        self.camaras, self.planos = {}, {}  # teléfono -> su número de cámara (orden de ingreso) / su última ubicación
         self.asociador, self.telefonos, self.clave = None, [], []
         self.t0, self.t = time.perf_counter(), -1.0
         self.ultimo, self.procesados, self.saltados = {}, {}, {}
@@ -315,6 +323,10 @@ class SesionEnVivo:
         self.motor.trackers.update(siguen)
         self.motor.genero.memory.update(votos)
         self.fijos = {k: v for k, v in self.fijos.items() if k[0] in siguen}
+        for cid in [c for c in self.planos if c not in siguen]:
+            del self.planos[cid]
+            if self.ubicador is not None:
+                self.ubicador.olvidar(cid)
         self.quietud = {cid: q for cid, q in self.quietud.items() if cid in siguen}
         if telefonos:
             config = config_telefonos(telefonos, self.asociacion)
@@ -344,6 +356,7 @@ class SesionEnVivo:
             frames[cid] = frame
         self._ritmo_genero()
         fuente = dict(self.procesados)
+        ubicando = self._ubicando.submit(self._ubicar, frames, time.monotonic()) if self.ubicador is not None else None
         detectadas = self.motor.detectar(frames)
         if not isinstance(self.motor.detector, DetectorCuerpo):  # con pose las cajas ya son de cuerpo sin brazos
             detectadas = {cid: ajustar_cajas(*dato) for cid, dato in detectadas.items()}
@@ -359,6 +372,11 @@ class SesionEnVivo:
             for cid in frames:
                 self._trabajos[cid] = trabajo
             self._hay_trabajo.notify()
+        if ubicando is not None:
+            try:
+                self.planos.update(ubicando.result())
+            except Exception as error:  # sin ubicación esta vez: las cajas salen igual
+                print(f"Ubicación: {type(error).__name__}: {error}", flush=True)
         ahora = time.perf_counter()
         for cid, (_, _, llegada, _) in datos.items():
             self.latencias[cid].append(ahora - llegada)
@@ -368,6 +386,9 @@ class SesionEnVivo:
                 self._conocido(cid, fila)
                 self._genero(cid, fila)
         return filas
+
+    def _ubicar(self, frames, ahora):
+        return {cid: self.ubicador.ubicar(cid, self.camaras.get(cid), frame, ahora) for cid, frame in frames.items()}
 
     def _conocido(self, cid, fila):
         """ID global y género que el carril lento ya le dio a esta persona (si no, sin ID y sin género todavía)."""
@@ -407,11 +428,12 @@ class SesionEnVivo:
                     print(f"Carril lento: {type(error).__name__}: {error}", flush=True)
 
     def cerrar(self):
-        """Detiene el carril lento."""
+        """Detiene el carril lento y el hilo de ubicación."""
         with self._hay_trabajo:
             self._cerrado = True
             self._hay_trabajo.notify()
         self._hilo.join(timeout=5)
+        self._ubicando.shutdown(wait=False)
 
     def _ritmo_genero(self):
         """Muestrea el género cada sample_interval_s de reloj según los FPS medidos de cada teléfono. El Build cuenta
@@ -502,6 +524,7 @@ def main():
     config["tracker"].update(SEGUIDOR_TELEFONO)
     config["detector"].update(DETECTOR_TELEFONO)
     config["gender"].update(GENERO_TELEFONO)
+    con_onnx = False
     if torch.cuda.is_available():
         config["detector"]["imgsz"] = IMGSZ_GPU_TELEFONO
     else:
@@ -513,6 +536,11 @@ def main():
         # Sin GPU el modelo usa casi todos los núcleos: PyTorch (detector, CLIP) y ONNX Runtime (Re-ID) comparten el trabajo.
         nucleos = int(os.environ.get("OMP_NUM_THREADS") or os.cpu_count() or 4)
         torch.set_num_threads(nucleos)
+        con_onnx = os.environ.get("MODELO_ONNX", "si") != "no" and (MODELO / DETECTOR_ONNX_TELEFONO).is_file()
+        if con_onnx:
+            # El detector va en ONNX Runtime con todos los núcleos; a PyTorch le quedan los recortes (puntos del cuerpo,
+            # apariencia) y CLIP en el carril lento: con la mitad no se pisan.
+            torch.set_num_threads(max(2, nucleos // 2))
         config["multicamera_encoder"]["threads"] = int(os.environ.get("MODELO_ORT_THREADS") or max(2, nucleos // 2))
     # En un servidor sin GPU el detector va a menos resolución (ej. 480): en CPU es lo que más pesa por cuadro.
     if os.environ.get("MODELO_IMGSZ"):
@@ -521,16 +549,20 @@ def main():
     asociacion = {**asociacion_build, **ASOCIACION_TELEFONO}
     print("Cargando el modelo final (YOLO26, tracker, Re-ID, género)...", flush=True)
     motor = lap01.MotorLAP01(MODELO, config, device="auto", batch=True)
+    if not torch.cuda.is_available() and con_onnx:
+        motor.detector = DetectorONNX(MODELO / DETECTOR_ONNX_TELEFONO, config["detector"], nucleos)
     pose = MODELO / os.environ.get("MODELO_POSE", POSE_TELEFONO)
     if pose.is_file():
         # Cajas de cuerpo sin brazos: puntos del cuerpo sobre el recorte de quien se ve de cerca; MODELO_POSE=ninguno las desactiva.
         motor.detector = DetectorCuerpo(motor.detector, pose, motor.device)
     reid = lap01.crear_asociador(motor, {"mode": "visual_temporal", "units": "m", "cameras": {"x": {}}}).reid
-    print(f"Modelo listo en {motor.device} · detector a {config['detector']['imgsz']} px · "
+    ubicador = Ubicador.cargar(MODELO / "ubicacion" / SITIO_TELEFONOS)
+    print(f"Modelo listo en {motor.device} · detector {type(getattr(motor.detector, 'base', motor.detector)).__name__} a "
+          f"{config['detector']['imgsz']} px · ubicación: {SITIO_TELEFONOS if ubicador else 'sin referencias'} · "
           f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no'}", flush=True)
     memoria = MemoriaIdentidades(url_api, asociacion)
     relevo = Relevo(url_api)
-    sesion = SesionEnVivo(motor, reid, asociacion, memoria)
+    sesion = SesionEnVivo(motor, reid, asociacion, memoria, ubicador)
     # Los videos subidos van con la asociación del Build, sin los ajustes para teléfonos. Sin GPU tienen su propio Re-ID
     # con todos los núcleos (en el servidor es lo que más tarda por frame): corre en el hilo principal, sin esperar al de
     # los teléfonos, que usa el carril lento.
@@ -560,6 +592,7 @@ def main():
                         if cid not in lectores:
                             lectores[cid] = LectorMjpeg(telefono["url"])
                     nombres = {cid: t["nombre"] for cid, t in lista.items()}
+                    sesion.camaras = {cid: t.get("camara") for cid, t in lista.items()}
                     clave = sorted((cid, lector.url) for cid, lector in lectores.items())
                     if sesion.clave != clave:
                         sesion.cambiar_telefonos(sorted(lectores), clave)
@@ -586,7 +619,8 @@ def main():
                     relevo.video(cid, frame)
                     relevo.detecciones(cid, {"ts": time.time(), "cuadro": cuadro, "frame_w": ANCHO_RELEVO,
                                              "frame_h": round(frame.shape[0] * ANCHO_RELEVO / frame.shape[1]),
-                                             "people": personas_para_web(filas[cid], frame.shape[1])})
+                                             "people": personas_para_web(filas[cid], frame.shape[1]),
+                                             "plano": sesion.planos.get(cid)})
             elif not hubo_video:
                 time.sleep(0.003)
 

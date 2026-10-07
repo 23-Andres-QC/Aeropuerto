@@ -206,7 +206,7 @@ function conectar() {
       if (enviado !== undefined && m.cuadro) numerar(m.cuadro, captura ?? enviado);
       if (enviado !== undefined) app.idas.push(performance.now() - enviado);
       if (app.idas.length > 15) app.idas.shift();
-      Object.assign(app, { lectores: m.lectores, espectadores: m.espectadores || 0 });
+      Object.assign(app, { lectores: m.lectores, espectadores: m.espectadores || 0, camara: m.camara || 0 });
     } else if (m.tipo === 'det') {
       alDetecciones(m.datos);
       return;
@@ -298,9 +298,9 @@ function mostrarEstado() {
     chip.className = 'chip error';
     chip.textContent = app.motivo ? `${app.motivo} · reintentando…` : 'Conectando…';
   } else {
-    // Solo la cámara en vivo: sin datos del procesamiento (ritmo, latencia, estado del modelo).
+    // Solo la cámara en vivo y su número (por orden de ingreso: 1 izquierda, 2 derecha), sin datos del procesamiento.
     chip.className = 'chip procesando';
-    chip.textContent = 'En vivo';
+    chip.textContent = app.camara ? `En vivo · Cámara ${app.camara}` : 'En vivo';
   }
   const ahora = performance.now();
   app.envios = app.envios.filter((t) => ahora - t < 1000);

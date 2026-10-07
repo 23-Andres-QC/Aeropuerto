@@ -71,6 +71,7 @@ type mensaje struct {
 	Lectores     int32  `json:"lectores"`               // conexiones del modelo a su MJPEG
 	Espectadores int    `json:"espectadores,omitempty"` // páginas de la web que miran la sala
 	Cuadro       uint64 `json:"cuadro,omitempty"`       // acuse: número que se le dio al cuadro (vuelve con sus cajas)
+	Camara       int    `json:"camara,omitempty"`       // su número de cámara (orden de ingreso), para mostrarlo
 	Mensaje      string `json:"mensaje,omitempty"`
 	Reintentar   bool   `json:"reintentar,omitempty"`
 }

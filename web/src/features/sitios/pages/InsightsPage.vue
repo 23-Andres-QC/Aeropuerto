@@ -4,7 +4,7 @@ import { useRoute } from "vue-router";
 import { cantidad, colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, GENEROS, type Analitica, type Config, type Insights, type Punto, type Replay, type Sesion } from "../api";
 import PlanoSitio, { type FlechaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
-import { CELDA_CALOR, SESION_VIVO, capturasVersion, entradasPorIntervalo, fijarModoVivo, guardando, guardarCapturaVivo, historiasDe, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura } from "../enVivo";
+import { CELDA_CALOR, SESION_VIVO, capturasVersion, entradasPorIntervalo, fijarModoVivo, historiasDe, mensajeGuardado, modoVivo, motorVivo as vivo } from "../enVivo";
 import ContrasteSesiones from "../components/ContrasteSesiones.vue";
 import { desdeReplay, entradasPorIntervalo as entradasEntre, resumir, type HistoriaBasica, type ResumenVivo } from "../analisisVivo";
 import { useSitios } from "../useSitios";
@@ -51,11 +51,6 @@ const analisis = computed<Analisis | null>(() => {
   return { resumen: g.resumen, historias: de, entradas: (zona) => entradasEntre(de(zona), g.inicio, g.fin), calor: g.calor, celda: CELDA_CALOR };
 });
 const grabadas = computed(() => sesiones.value.filter((s) => s.kind === "BUILD"));
-
-/** Guarda la captura en vivo y recarga la lista para que aparezca en «Guardado en vivo». */
-async function guardarYRefrescar() {
-  if (await guardarCapturaVivo()) sesiones.value = await api.sesiones(slug.value);
-}
 
 // «En vivo» es un modo de todo el sistema: aquí Insights se calcula sobre lo que ven los teléfonos ahora mismo.
 // «Guardado en vivo» agrupa las capturas que el modo en vivo fue guardando; mientras no haya ninguna, queda un aviso en su lugar.
@@ -493,11 +488,7 @@ onMounted(async () => {
     <div class="export-actions">
       <button type="button" class="boton-primario" :disabled="!datos && !modoVivo" @click="exportarPDF">⤓ Exportar PDF</button>
       <button type="button" :disabled="!datos && !modoVivo" @click="exportarCSV">⤓ Exportar Excel (CSV)</button>
-      <button v-if="modoVivo" type="button" class="boton-primario" :disabled="guardando || !vivo.historias.value.length" @click="guardarYRefrescar()">
-        {{ guardando ? "Guardando…" : "Guardar captura en vivo" }}
-      </button>
-      <button v-if="modoVivo" type="button" title="Guarda esta captura y empieza una nueva" @click="reiniciarCaptura()">↺ Reiniciar en vivo</button>
-      <span v-if="modoVivo" class="muted mensaje-guardado">Se guarda al pulsar «Terminar y guardar» en En vivo (o al salir del modo en vivo mientras se graba).</span>
+      <span v-if="modoVivo" class="muted mensaje-guardado">La captura se guarda con «Terminar y guardar» en En vivo.</span>
       <span v-if="modoVivo && mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
     </div>
   </section>

@@ -27,6 +27,7 @@ type Aeropuerto interface {
 type Telefono struct {
 	ID     string `json:"id"`
 	Nombre string `json:"nombre"`
+	Camara int    `json:"camara,omitempty"` // 1, 2, … por orden de ingreso (lo asigna backend-vivo)
 }
 
 // APIAeropuerto habla con /api/v1/telefonos del backend.

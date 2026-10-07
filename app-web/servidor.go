@@ -137,7 +137,8 @@ func (s *Servidor) unirse(w http.ResponseWriter, r *http.Request) {
 				cuadro = d.Publicar(datos)
 				s.sala.Avisar()
 			}
-			if c.Enviar(mensaje{Tipo: "ok", Lectores: d.Lectores(), Espectadores: s.sala.Espectadores(), Cuadro: cuadro}) != nil {
+			if c.Enviar(mensaje{Tipo: "ok", Lectores: d.Lectores(), Espectadores: s.sala.Espectadores(), Cuadro: cuadro,
+				Camara: s.sala.CamaraDe(d.telefono)}) != nil {
 				return
 			}
 		case websocket.TextMessage:

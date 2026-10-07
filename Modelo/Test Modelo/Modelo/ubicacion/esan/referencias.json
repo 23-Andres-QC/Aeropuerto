@@ -1,0 +1,109 @@
+{
+ "sitio": "esan",
+ "fecha": "2026-10-07",
+ "nota": "Referencias de los teléfonos del patio de ESAN (edificios A y B). Cada una es un cuadro del relevo (640 px de ancho) con su homografía de píxeles a metros del plano. Cámara 1: balcón del oeste (izquierda del plano), mirando al este; A0 se calibró con el reciclaje, el tacho verde y las dos expendedoras y A1-A2 se alinearon con A0 por las baldosas. Cámara 2: balcón de la baranda roja al este (derecha del plano), mirando al oeste; B0-B1 se alinearon con A0 por las baldosas que ven las dos cámaras y B2 con B0.",
+ "referencias": [
+  {
+   "nombre": "A0",
+   "camara": 1,
+   "imagen": "A0.jpg",
+   "origen": "tel-54de6d4a_00149",
+   "H": [
+    -0.008658932,
+    -0.061634334,
+    14.464016396,
+    -0.03955333,
+    0.018889233,
+    8.215944789,
+    -0.000286492,
+    0.00207557,
+    1.0
+   ]
+  },
+  {
+   "nombre": "A1",
+   "camara": 1,
+   "imagen": "A1.jpg",
+   "origen": "tel-d96487fa_01550",
+   "H": [
+    -0.002257042,
+    -0.033293523,
+    0.556924156,
+    -0.02413391,
+    0.010054616,
+    5.022515571,
+    -0.000426631,
+    0.000867276,
+    1.0
+   ]
+  },
+  {
+   "nombre": "A2",
+   "camara": 1,
+   "imagen": "A2.jpg",
+   "origen": "tel-84288a4a_01219",
+   "H": [
+    -0.003031526,
+    -0.034144742,
+    2.920534487,
+    -0.022924242,
+    0.009318039,
+    5.989324484,
+    -0.000254812,
+    0.001066377,
+    1.0
+   ]
+  },
+  {
+   "nombre": "B0",
+   "camara": 2,
+   "imagen": "B0.jpg",
+   "origen": "tel-b91cc409_00243",
+   "H": [
+    0.007683049,
+    0.032001885,
+    -11.778250582,
+    0.029994575,
+    -0.007852487,
+    -5.464884648,
+    -0.000123339,
+    0.002040687,
+    1.0
+   ]
+  },
+  {
+   "nombre": "B1",
+   "camara": 2,
+   "imagen": "B1.jpg",
+   "origen": "tel-e1aa3078_01134",
+   "H": [
+    0.01245235,
+    0.085699884,
+    -41.896490062,
+    0.076919134,
+    -0.002981056,
+    -19.503359815,
+    -2.482e-06,
+    0.006421483,
+    1.0
+   ]
+  },
+  {
+   "nombre": "B2",
+   "camara": 2,
+   "imagen": "B2.jpg",
+   "origen": "tel-f0d26aba_01614",
+   "H": [
+    0.003629365,
+    0.019439269,
+    -3.711341073,
+    0.019219366,
+    -0.002583203,
+    -4.442299132,
+    -6.5837e-05,
+    0.000906039,
+    1.0
+   ]
+  }
+ ]
+}

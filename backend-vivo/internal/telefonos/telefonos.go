@@ -25,6 +25,9 @@ type Telefono struct {
 	ID     string `json:"id"`
 	Nombre string `json:"nombre"`
 	URL    string `json:"url"`
+	// Camara es su número (1, 2, …) por orden de ingreso: el menor libre al unirse. La web lo pone en el plano como
+	// cam01, cam02… y el modelo prueba primero las referencias de esa cámara para ubicarlo.
+	Camara int `json:"camara"`
 }
 
 type Registro struct {
@@ -65,7 +68,15 @@ func (r *Registro) Agregar(nombre, direccion string) (Telefono, error) {
 	}
 	b := make([]byte, 4)
 	_, _ = rand.Read(b)
-	t := Telefono{ID: "tel-" + hex.EncodeToString(b), Nombre: nombre, URL: direccion}
+	usadas := map[int]bool{}
+	for _, otro := range r.telefonos {
+		usadas[otro.Camara] = true
+	}
+	camara := 1
+	for usadas[camara] {
+		camara++
+	}
+	t := Telefono{ID: "tel-" + hex.EncodeToString(b), Nombre: nombre, URL: direccion, Camara: camara}
 	r.telefonos = append(r.telefonos, t)
 	return t, nil
 }

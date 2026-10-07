@@ -6,7 +6,8 @@ const VIVO = "/vivo/api/v1";
 /** Relevo de video y detecciones de las cámaras en vivo (WebSocket). */
 export const RELEVO_VIVO = `${VIVO}/cameras`;
 
-export type Telefono = { id: string; nombre: string; url: string };
+/** `camara`: su número por orden de ingreso (1, 2, …), que lo pone en cam01, cam02… del plano. */
+export type Telefono = { id: string; nombre: string; url: string; camara?: number };
 
 export type EstadoTelefono = {
   nombre: string;
@@ -62,7 +63,9 @@ export type PersonaDetectada = {
   gender_conf: number | null;
 };
 
-export type Detecciones = { ts: number; frame_w: number; frame_h: number; people: PersonaDetectada[] };
+/** Dónde cae en el plano cada píxel de este cuadro: homografía (de a 3 por fila) de píxeles de un cuadro de `ancho` px a metros. */
+export type UbicacionPlano = { sitio: string; ancho: number; H: number[]; referencia?: string };
+export type Detecciones = { ts: number; frame_w: number; frame_h: number; people: PersonaDetectada[]; plano?: UbicacionPlano | null };
 
 export const api = {
   telefonos: () => request<Telefono[]>(`${VIVO}/telefonos`),

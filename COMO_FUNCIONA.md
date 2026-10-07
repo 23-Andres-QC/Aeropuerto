@@ -195,15 +195,17 @@ Los resultados se guardan en `trajectory_points.zone_id`, `spatial_events` y `se
 Se activa con el botón de la cabecera, y también entra solo cuando se conecta un teléfono procesado. Lo calcula un solo motor en el navegador, que sigue corriendo al cambiar de sección.
 
 - **Orden de llegada:**
-  - el primer teléfono que procesa el modelo es `cam01`, el segundo `cam02` y el tercero `cam03`;
-  - si uno se va, su cámara queda libre para el siguiente;
-  - la pose de cada teléfono es la de su cámara en Configuración.
+  - cada teléfono recibe un número al unirse (backend-vivo): el menor libre. El primero es la **Cámara 1** (`cam01`, izquierda del plano) y el segundo la **Cámara 2** (`cam02`, derecha);
+  - si uno se va y vuelve a entrar, recupera el número libre más bajo;
+  - el número se ve en la página de cámara («En vivo · Cámara 1») y en Teléfonos.
 - **Cómo se ubica a una persona en el plano:**
-  1. **Con calibración:** si el teléfono tiene una en `web/public/calibracion/<sitio>.json`, se usa su homografía de píxeles a metros. La calibración sale de grabar a **una persona caminando** con `Modelo/Test Modelo/calibrar_telefono.py`: escala por su altura (1,70 m), focal y referencias del plano.
-  2. **Sin calibración:** la distancia sale del tamaño de la persona (`d = f · 1,70 m / alto en píxeles`, con unos 65° de campo de visión) y el lado sale de dónde queda en el cuadro, girado según el rumbo del teléfono. Si la caja es casi tan alta como el cuadro, no se ubica.
-  3. **Ajuste fino:** un desplazamiento en metros que se mueve con los botones del plano y se recuerda en el navegador. Lo que aun así cae fuera del piso pasa al borde más cercano.
+  1. **Referencias de cada cámara:** `Modelo/Test Modelo/Modelo/ubicacion/<sitio>/` guarda cuadros calibrados de cada cámara (`referencias.json`: imagen y homografía de píxeles a metros). La Cámara 1 se calibró con el reciclaje, el tacho verde y las dos expendedoras; la Cámara 2, con las baldosas que ven las dos cámaras.
+  2. **Cuadro a cuadro:** el modelo compara cada cuadro con la referencia (puntos ORB del piso y RANSAC) y manda, con las cajas, la homografía del cuadro al plano. Así ubica bien aunque el teléfono se mueva en la mano o se vuelva a poner un poco distinto. Prueba primero las referencias de su cámara.
+  3. **Sin referencia reconocida** (el teléfono no apunta al patio): ese teléfono no se ubica en el plano; se sigue viendo en Teléfonos.
+  4. **Una persona, un punto:** solo entra quien tiene ID global y su posición sale de una sola cámara, la que la ve más grande.
+  5. **Ajuste fino:** un desplazamiento en metros que se mueve con los botones del plano y se recuerda en el navegador. Lo que aun así cae fuera del piso pasa al borde más cercano.
 - **Captura:**
-  - solo se registra y se guarda lo grabado entre **Iniciar captura** y **Terminar y guardar**;
+  - empieza sola al activar el modo en vivo; **Terminar y guardar** (En vivo) la guarda y la deja en Registros. Mientras se graba también se guarda sola cada 30 s y al cerrar la página;
   - la captura queda como una sesión `LIVE`, que se ve en Registros e Insights con el tablero completo;
   - **Reiniciar** guarda antes de empezar una nueva.
 

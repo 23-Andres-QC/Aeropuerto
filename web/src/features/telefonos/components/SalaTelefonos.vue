@@ -15,7 +15,7 @@ import type { Detecciones, EstadoServicio } from "../api";
 // («cuadro»). Para que la caja no se quede detrás de la persona, en cada cuadro
 // que se muestra cada caja sigue moviéndose con la velocidad que traía entre sus
 // dos últimos cuadros procesados (cajasAl): el video es el real, sin retraso.
-type CamaraSala = { id: string; nombre: string; web: boolean };
+type CamaraSala = { id: string; nombre: string; web: boolean; camara?: number };
 type MensajeSala = { tipo: string; id?: string; camaras?: CamaraSala[]; datos?: unknown };
 type Cuadro = { seq: number; llegada: number; imagen: ImageBitmap };
 type Pantalla = {
@@ -392,7 +392,7 @@ onUnmounted(() => {
         <canvas :ref="(el) => fijar(lienzos, c.id, el)" class="medio"></canvas>
         <canvas :ref="(el) => fijar(capas, c.id, el)" class="capa"></canvas>
         <p v-if="!conVideo(c.id)" class="espera">{{ espera(c) }}</p>
-        <span class="etiqueta">{{ c.nombre }}</span>
+        <span class="etiqueta">{{ c.camara ? `Cámara ${c.camara} · ${c.nombre}` : c.nombre }}</span>
         <span v-if="insignias(c)" class="insignias">{{ insignias(c) }}</span>
         <button
           class="danger-button icon-button quitar"

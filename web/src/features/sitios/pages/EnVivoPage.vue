@@ -325,7 +325,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
           <button v-else type="button" class="reiniciar-calor terminar" title="Deja de registrar y guarda la captura" :disabled="guardando" @click="terminarYRefrescar()">
             {{ guardando ? "Guardando…" : "■ Terminar y guardar" }}
           </button>
-          <span v-if="!grabando" class="muted">En vivo: pulsa «Iniciar captura» para registrar esta escena.</span>
+          <span v-if="!grabando" class="muted">Pulsa «Iniciar captura» para registrar esta escena; «Terminar y guardar» la deja en Registros.</span>
           <span v-if="mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
           <span v-if="grabando" class="pill grabando">● GRABANDO</span><span class="pill en-vivo">● EN VIVO</span><span class="pill">{{ enPlano.length }} en el plano</span>
         </span>
@@ -382,7 +382,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <span v-else class="muted">Esperando al modelo…</span>
       </p>
       <p v-else class="ranura-datos muted">Esperando el {{ r.camara === "cam01" ? "primer" : r.camara === "cam02" ? "segundo" : "tercer" }} teléfono.</p>
-      <p v-if="r.telefono && r.sinCalibracion" class="aviso-ranura">{{ r.telefono.nombre }} no está calibrado: no se ubica en el plano (su nombre en la página de cámara debe ser el de su calibración, por ejemplo «iPhone oeste»).</p>
+      <p v-if="r.telefono && r.sinCalibracion" class="aviso-ranura">{{ r.camara }} no reconoce el patio en lo que ve: apunta el teléfono al piso del patio para ubicar a las personas.</p>
     </article>
     <p v-if="vivo.sobrantes.value.length" class="muted ranura-nota">
       {{ vivo.sobrantes.value.length }} teléfono(s) más conectado(s) sin cámara libre: el plano admite tres.

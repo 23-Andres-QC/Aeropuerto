@@ -39,3 +39,21 @@ func TestRegistro(t *testing.T) {
 		t.Fatalf("quitar dos veces: %v", err)
 	}
 }
+
+func TestCamaraPorOrdenDeIngreso(t *testing.T) {
+	r := NuevoRegistro()
+	uno, _ := r.Agregar("izquierda", "http://h/video?token=1")
+	dos, _ := r.Agregar("derecha", "http://h/video?token=2")
+	if uno.Camara != 1 || dos.Camara != 2 {
+		t.Fatalf("cámaras = %d, %d; quiero 1 y 2", uno.Camara, dos.Camara)
+	}
+	// Si la cámara 1 sale y vuelve a entrar, recupera el 1 (el menor libre); la 2 sigue siendo la 2.
+	if err := r.Quitar(uno.ID); err != nil {
+		t.Fatal(err)
+	}
+	otra, _ := r.Agregar("izquierda", "http://h/video?token=3")
+	tres, _ := r.Agregar("", "http://h/video?token=4")
+	if otra.Camara != 1 || tres.Camara != 3 {
+		t.Fatalf("al volver: %d y %d; quiero 1 y 3", otra.Camara, tres.Camara)
+	}
+}
