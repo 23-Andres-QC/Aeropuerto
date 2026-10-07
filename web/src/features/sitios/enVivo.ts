@@ -121,6 +121,42 @@ export function proyector(camara: Camara | undefined, mapa: Mapa): ((u: number, 
   };
 }
 
+/** Altura de una persona (m) y distancia máxima a la que se ubica; más allá es un error, no una persona. */
+const ALTURA_PERSONA_M = 1.7;
+const ALCANCE_MAX_M = 30;
+/** Focal de un teléfono en fracción del ancho del cuadro (≈ 65° de campo de visión horizontal). */
+const FOCAL_RELATIVA = 0.78;
+
+/**
+ * De la caja de una persona en el cuadro a metros del plano, para un teléfono que se mueve y no está donde estuvo
+ * la cámara del Build: no depende de cómo apunte (inclinación) sino de la posición y el rumbo del teléfono en el plano
+ * (los de su cámara en Configuración). La distancia sale del tamaño de la persona (d = f · 1.70 m / alto en píxeles) y
+ * el lado, de dónde queda en el cuadro: el punto está a esa distancia en la dirección del rumbo girada por el ángulo
+ * que le corresponde a su posición horizontal. Con la caja casi tan alta como el cuadro (muy cerca) la distancia
+ * pierde sentido y no se ubica.
+ */
+export function proyectorAlcance(camara: Camara | undefined, mapa: Mapa): ((caja: [number, number, number, number], anchoFrame: number, altoFrame: number) => Punto | null) | null {
+  if (!camara?.position) return null;
+  const [px, py] = camara.position;
+  const rumbo = ((camara.angle_deg ?? 0) * Math.PI) / 180;
+  const [x0, y1] = mapa.origen_m;
+  const [anchoM, altoM] = [mapa.tam_px[0] / mapa.px_por_metro, mapa.tam_px[1] / mapa.px_por_metro];
+  const margen = 3;
+  return ([bx1, by1, bx2, by2], anchoFrame, altoFrame) => {
+    const alto = by2 - by1;
+    if (!(alto > 8) || alto > altoFrame * 0.97) return null;
+    const f = FOCAL_RELATIVA * anchoFrame;
+    const distancia = (f * ALTURA_PERSONA_M) / alto;
+    if (!Number.isFinite(distancia) || distancia > ALCANCE_MAX_M) return null;
+    // A la derecha del centro del cuadro es girar en sentido horario (el plano tiene y hacia arriba).
+    const lado = Math.atan(((bx1 + bx2) / 2 - anchoFrame / 2) / f);
+    const x = px + distancia * Math.cos(rumbo - lado);
+    const y = py + distancia * Math.sin(rumbo - lado);
+    if (x < x0 - margen || x > x0 + anchoM + margen || y > y1 + margen || y < y1 - altoM - margen) return null;
+    return [x, y];
+  };
+}
+
 // --- Estado del motor (uno solo para toda la aplicación) ------------------------
 const sitio = ref("");
 const config = shallowRef<Config>();
@@ -164,7 +200,7 @@ let corriendo = false;
 const camaraDe = (id: string) => CAMARAS_VIVO[asignacion.get(id) ?? -1];
 const proyectores = computed(() => {
   const m = mapa.value;
-  return new Map(CAMARAS_VIVO.map((cid) => [cid, m ? proyector(camaras.value?.find((c) => c.camera_id === cid), m) : null] as const));
+  return new Map(CAMARAS_VIVO.map((cid) => [cid, m ? proyectorAlcance(camaras.value?.find((c) => c.camera_id === cid), m) : null] as const));
 });
 
 function asignar(lista: Telefono[]) {
@@ -198,7 +234,7 @@ function alDetecciones(id: string, ev: MessageEvent) {
     const [x1, y1, x2, y2] = p.box;
     // Con los pies cortados por el borde del cuadro la proyección no vale (igual que en el Build).
     if (y2 >= m.frame_h - 3) continue;
-    const punto = proyecta((x1 + x2) / 2, y2, m.frame_w, m.frame_h);
+    const punto = proyecta([x1, y1, x2, y2], m.frame_w, m.frame_h);
     if (!punto) continue;
     observaciones.push({
       clave: p.global_id != null ? `g${p.global_id}` : `${cid}-${p.local_id}`,

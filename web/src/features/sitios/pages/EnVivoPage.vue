@@ -369,7 +369,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <span v-else class="muted">Esperando al modelo…</span>
       </p>
       <p v-else class="ranura-datos muted">Esperando el {{ r.camara === "cam01" ? "primer" : r.camara === "cam02" ? "segundo" : "tercer" }} teléfono.</p>
-      <p v-if="r.sinCalibracion" class="aviso-ranura">Este sitio no tiene calibración para {{ r.camara }}: no se pueden ubicar personas.</p>
+      <p v-if="r.sinCalibracion" class="aviso-ranura">{{ r.camara }} no tiene posición en el plano: ponla en Configuración para ubicar personas.</p>
     </article>
     <p v-if="vivo.sobrantes.value.length" class="muted ranura-nota">
       {{ vivo.sobrantes.value.length }} teléfono(s) más conectado(s) sin cámara libre: el plano admite tres.

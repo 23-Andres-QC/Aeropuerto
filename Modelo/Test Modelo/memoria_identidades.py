@@ -514,6 +514,8 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
         if (creada is None or self.last_timestamp - creada > REVISAR_NUEVAS_S
                 or self.last_timestamp - self._revisado.get(gid, -math.inf) < REVISAR_CADA_S):
             return
+        if not self._con_vistas(gid):
+            return  # heredó su ID por continuidad y aún no tiene vistas Re-ID con qué compararse
         self._revisado[gid] = self.last_timestamp
         suma, prototipos, camaras = self._grupo(gid)
         antigua, _ = self.memoria.reconocer(suma, prototipos, camaras, ocupadas=self._ocupadas(excepto=gid), ignorar={pid})

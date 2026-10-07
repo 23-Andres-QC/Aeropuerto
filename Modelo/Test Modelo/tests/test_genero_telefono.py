@@ -114,6 +114,14 @@ class Continuidad(unittest.TestCase):
         self.assertIsNone(self._asociador(11.5, 1200.0)._continuacion(2, set()))
         self.assertIsNone(self._asociador(25.0, 450.0)._continuacion(2, set()))
 
+    def test_quien_hereda_el_id_sin_vistas_no_rompe_la_revision(self):
+        a = self._asociador(11.5, 450.0)
+        a.memoria.personas = {5: object()}
+        a.confirmadas[2] = 5
+        a._creadas, a._revisado, a.min_query_samples = {5: 11.0}, {}, 3
+        a._con_vistas = lambda gid: []
+        a._revisar(2, 0.0)  # antes: ValueError "need at least one array to stack"
+
     def test_si_la_persona_esta_ocupada_por_otro_no_hereda(self):
         self.assertIsNone(self._asociador(11.5, 450.0)._continuacion(2, {5}))
 
