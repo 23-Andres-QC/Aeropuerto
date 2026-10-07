@@ -291,10 +291,10 @@ class SesionEnVivo:
         self.fijos = {}  # (teléfono, track local) -> (género, certeza) ya fijado con certeza >= GENERO_FIJO
         # Dos carriles: el rápido (detectar y seguir, que da las cajas) corre en el lazo principal y publica enseguida;
         # el lento (género con CLIP, Re-ID y memoria de identidades) corre en un hilo aparte con el último instante
-        # que le llegó. Así las cajas no esperan a lo más pesado y el ID/género de cada persona se actualiza solo
+        # de cada teléfono. Así las cajas no esperan a lo más pesado y el ID/género de cada persona se actualiza solo
         # unos instantes después. `bloqueo` evita tocar el estado del modelo mientras cambia la lista de teléfonos.
         self.bloqueo, self.generacion = threading.RLock(), 0
-        self._trabajos, self._hay_trabajo, self._cerrado = deque(maxlen=2), threading.Condition(), False
+        self._trabajos, self._hay_trabajo, self._cerrado = {}, threading.Condition(), False  # teléfono -> último trabajo
         self._hilo = threading.Thread(target=self._lazo_lento, daemon=True)
         self._hilo.start()
 
@@ -356,7 +356,8 @@ class SesionEnVivo:
         trabajo = (self.generacion, self.t, frames, fuente, {cid: [dict(f) for f in fs] for cid, fs in filas.items()},
                    dict(self.motor.detecciones_actuales))
         with self._hay_trabajo:
-            self._trabajos.append(trabajo)
+            for cid in frames:
+                self._trabajos[cid] = trabajo
             self._hay_trabajo.notify()
         ahora = time.perf_counter()
         for cid, (_, _, llegada, _) in datos.items():
@@ -391,16 +392,19 @@ class SesionEnVivo:
                     self._hay_trabajo.wait()
                 if self._cerrado:
                     return
-                generacion, t, frames, fuente, filas, ocluyentes = self._trabajos.pop()
-                self._trabajos.clear()  # los instantes más viejos ya no aportan: se salta a lo último
-            try:
-                with self.bloqueo:
-                    if generacion != self.generacion or self.asociador is None:
-                        continue
-                    self.motor.genero.actualizar(frames, fuente, filas)
-                    self.asociador.actualizar(t, frames, filas, occluders=ocluyentes)
-            except Exception as error:  # un instante fallido no debe detener el carril
-                print(f"Carril lento: {type(error).__name__}: {error}", flush=True)
+                # El último instante de cada teléfono, en orden: los más viejos ya no aportan, pero ningún teléfono
+                # se queda sin su turno aunque otro publique más seguido.
+                pendientes = sorted({id(tr): tr for tr in self._trabajos.values()}.values(), key=lambda tr: tr[1])
+                self._trabajos.clear()
+            for generacion, t, frames, fuente, filas, ocluyentes in pendientes:
+                try:
+                    with self.bloqueo:
+                        if generacion != self.generacion or self.asociador is None:
+                            continue
+                        self.motor.genero.actualizar(frames, fuente, filas)
+                        self.asociador.actualizar(t, frames, filas, occluders=ocluyentes)
+                except Exception as error:  # un instante fallido no debe detener el carril
+                    print(f"Carril lento: {type(error).__name__}: {error}", flush=True)
 
     def cerrar(self):
         """Detiene el carril lento."""
@@ -566,11 +570,13 @@ def main():
                         pass  # backend-vivo sin la sección Videos: solo teléfonos
 
             hubo_video = videos.paso()
+            # Cada teléfono por su cuenta: en cada vuelta se procesa el que tiene esperando el cuadro más viejo y sus
+            # cajas salen enseguida, sin esperar a los demás (procesarlos juntos sumaba el tiempo de todos a cada uno).
             datos = {}
             for cid in sesion.telefonos:
                 dato = lectores[cid].tomar(sesion.ultimo[cid])
-                if dato is not None:
-                    datos[cid] = dato
+                if dato is not None and (not datos or dato[2] < next(iter(datos.values()))[2]):
+                    datos = {cid: dato}
             if datos:
                 if not calentado:
                     motor.calentar({cid: d[1] for cid, d in datos.items()})

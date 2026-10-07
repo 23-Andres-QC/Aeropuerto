@@ -178,6 +178,12 @@ const sockets = new Map<string, () => void>();
 const cuadros = new Map<string, Cuadro>();
 const rastros = new Map<string, { puntos: Punto[]; visto: number; color: string }>();
 const suavizadas = new Map<string, Punto>();
+/** Teléfono del que sale la posición de cada persona (ver componer). */
+const camaraPreferida = new Map<string, string>();
+/** Otra cámara toma a una persona solo si la ve al menos esto más grande que la que ya la ubicaba. */
+const CAMBIO_DE_CAMARA = 1.3;
+/** Cada cuánto se guarda sola la captura que se está grabando. */
+const AUTOGUARDADO_MS = 30_000;
 const celdas = new Map<string, { cx: number; cy: number; s: number }>();
 const historia = new Map<number, HistoriaViva>();
 const densidadMax = new Map<number, number>();
@@ -323,15 +329,18 @@ function alDetecciones(id: string, ev: MessageEvent) {
     return;
   }
   const cid = camaraDe(id);
-  const proyecta = cid ? proyectores.value.get(cid) : null;
+  // Solo un teléfono calibrado se ubica en el plano: estimar por el tamaño de la persona desde otro lado lo ponía mal y
+  // duplicaba a la gente que el calibrado ya ubicaba. Uno sin calibrar se ve igual en Teléfonos, pero no en el plano.
   const calibrada = calibracionDe(telefonos.value.find((t) => t.id === id)?.nombre ?? "", m.frame_w, m.frame_h);
-  if (!cid || (!proyecta && !calibrada) || !m.frame_w || !m.frame_h) return;
+  if (!cid || !calibrada || !m.frame_w || !m.frame_h) return;
   const observaciones: Observacion[] = [];
   for (const p of m.people ?? []) {
+    // Solo quien tiene ID global va al plano: sin él, la misma persona que otra cámara ya identificó saldría dos veces.
+    if (p.global_id == null) continue;
     const [x1, y1, x2, y2] = p.box;
     // Con los pies cortados por el borde del cuadro la proyección no vale (igual que en el Build).
     if (y2 >= m.frame_h - 3) continue;
-    const bruto = calibrada ? proyectarCalibrado(calibrada, (x1 + x2) / 2, y2, m.frame_w, m.frame_h) : proyecta?.([x1, y1, x2, y2], m.frame_w, m.frame_h);
+    const bruto = proyectarCalibrado(calibrada, (x1 + x2) / 2, y2, m.frame_w, m.frame_h);
     if (!bruto) continue;
     const punto = alPiso([bruto[0] + ajusteMapa.value.dx, bruto[1] + ajusteMapa.value.dy], config.value?.plano?.piso_m);
     observaciones.push({
@@ -383,26 +392,39 @@ async function cargarConfig() {
   }
 }
 
-/** Une lo que ven los teléfonos: una persona vista por dos cámaras se promedia (pesa más la que la ve más grande). */
+/**
+ * Une lo que ven los teléfonos: un ID es una sola persona en el plano. Su posición sale de una sola cámara, la que la ve
+ * más grande (más cerca), y se queda con ella mientras la siga viendo y otra no la vea bastante más grande: promediar
+ * o alternar entre cámaras calibradas de forma distinta dejaba dos rastros paralelos de la misma persona.
+ */
 function componer() {
   const t = Date.now();
   ahora.value = t;
   type Acum = { x: number; y: number; peso: number; id: number | null; genero: string | null; conf: number | null; mejor: number; camaras: Set<string>; altoMax: number; camMejor: string };
-  const acumulado = new Map<string, Acum>();
+  const vistas = new Map<string, { tel: string; cid: string | undefined; o: Observacion }[]>();
   for (const [tel, cuadro] of cuadros) {
     if (t - cuadro.llegada > VIGENCIA_MS) continue;
     const cid = camaraDe(tel);
     for (const o of cuadro.observaciones) {
-      const a = acumulado.get(o.clave) ?? { x: 0, y: 0, peso: 0, id: o.id, genero: null, conf: null, mejor: 0, camaras: new Set<string>(), altoMax: 0, camMejor: "" };
-      a.x += o.x * o.alto;
-      a.y += o.y * o.alto;
-      a.peso += o.alto;
-      if (o.genero && o.alto >= a.mejor) [a.genero, a.conf, a.mejor] = [o.genero, o.conf, o.alto];
-      if (cid) a.camaras.add(cid);
-      if (cid && o.alto >= a.altoMax) [a.altoMax, a.camMejor] = [o.alto, cid];
-      acumulado.set(o.clave, a);
+      const lista = vistas.get(o.clave) ?? [];
+      lista.push({ tel, cid, o });
+      vistas.set(o.clave, lista);
     }
   }
+  const acumulado = new Map<string, Acum>();
+  for (const [clave, lista] of vistas) {
+    const mayor = lista.reduce((a, b) => (b.o.alto > a.o.alto ? b : a));
+    const actual = lista.find((v) => v.tel === camaraPreferida.get(clave));
+    const elegida = actual && mayor.o.alto <= CAMBIO_DE_CAMARA * actual.o.alto ? actual : mayor;
+    camaraPreferida.set(clave, elegida.tel);
+    const a: Acum = { x: elegida.o.x, y: elegida.o.y, peso: 1, id: elegida.o.id, genero: null, conf: null, mejor: 0, camaras: new Set<string>(), altoMax: elegida.o.alto, camMejor: elegida.cid ?? "" };
+    for (const v of lista) {
+      if (v.o.genero && v.o.alto >= a.mejor) [a.genero, a.conf, a.mejor] = [v.o.genero, v.o.conf, v.o.alto];
+      if (v.cid) a.camaras.add(v.cid);
+    }
+    acumulado.set(clave, a);
+  }
+  for (const clave of [...camaraPreferida.keys()]) if (!vistas.has(clave)) camaraPreferida.delete(clave);
   const personas: PersonaPlano[] = [];
   const lista: PersonaViva[] = [];
   const porZona = new Map<number, number>();
@@ -490,6 +512,7 @@ export function reiniciarVivo() {
   densidadMax.clear();
   rastros.clear();
   suavizadas.clear();
+  camaraPreferida.clear();
   calor.value = [];
   historias.value = [];
   inicio.value = Date.now();
@@ -522,7 +545,8 @@ const ranuras = computed<RanuraVivo[]>(() => {
       estado: telefono ? servicio.value?.telefonos[telefono.id] : undefined,
       activa: vigente,
       personas: vigente && cuadro ? cuadro.observaciones.length : 0,
-      sinCalibracion: !proyectores.value.get(camara),
+      // Sin calibración el teléfono no se ubica en el plano (ver alDetecciones): su nombre debe contener el de una calibración.
+      sinCalibracion: !telefono || !calibraciones.value.some((c) => telefono.nombre.includes(c.nombre_contiene)),
     };
   });
 });
@@ -563,7 +587,7 @@ async function enviarCaptura(p: Pendiente, automatico: boolean): Promise<boolean
   try {
     const r = await request<{ identities: number; points: number }>(`/api/v1/sites/${encodeURIComponent(p.sitio)}/sessions`, json("POST", p.carga));
     const hora = new Date().toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
-    mensajeGuardado.value = `${automatico ? "Guardada al salir" : "Guardada"} ${hora}: ${r.identities} personas y ${r.points.toLocaleString()} puntos.`;
+    mensajeGuardado.value = `${automatico ? "Guardada sola" : "Guardada"} ${hora}: ${r.identities} personas y ${r.points.toLocaleString()} puntos.`;
     capturasVersion.value++;
     return true;
   } catch (e) {
@@ -622,11 +646,34 @@ function cerrarCaptura() {
   if (p) void enviarCaptura(p, false);
 }
 
+/**
+ * Mientras se graba, la captura se guarda sola cada AUTOGUARDADO_MS con el mismo identificador (el backend la
+ * reemplaza): así queda en Registros aunque nadie pulse «Terminar y guardar» o se cierre la página.
+ */
+function autoguardar(alSalir = false) {
+  if (!grabando.value || totalTrazas() === trazasGuardadas) return;
+  const p = prepararCaptura();
+  if (!p) return;
+  trazasGuardadas = totalTrazas();
+  if (alSalir) {
+    // La página se cierra: fetch con keepalive sigue aunque la pestaña ya no exista.
+    void fetch(`/api/v1/sites/${encodeURIComponent(p.sitio)}/sessions`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p.carga), keepalive: true,
+    }).catch(() => undefined);
+    return;
+  }
+  if (!guardando.value) void enviarCaptura(p, true);
+}
+window.addEventListener("pagehide", () => autoguardar(true));
+
 function arrancar() {
   if (corriendo) return;
   corriendo = true;
   reiniciarVivo();
-  grabando.value = false;
+  // La captura empieza sola: lo que se ve en vivo queda registrado (Terminar la corta e Iniciar empieza otra).
+  grabando.value = true;
+  mensajeGuardado.value = "Grabando esta escena…";
+  sondeoGuardado = setInterval(() => autoguardar(), AUTOGUARDADO_MS);
   sondear();
   cargarConfig();
   void cargarCalibracion();

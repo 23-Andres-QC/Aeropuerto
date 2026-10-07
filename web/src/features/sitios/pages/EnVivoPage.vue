@@ -382,7 +382,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <span v-else class="muted">Esperando al modelo…</span>
       </p>
       <p v-else class="ranura-datos muted">Esperando el {{ r.camara === "cam01" ? "primer" : r.camara === "cam02" ? "segundo" : "tercer" }} teléfono.</p>
-      <p v-if="r.sinCalibracion" class="aviso-ranura">{{ r.camara }} no tiene posición en el plano: ponla en Configuración para ubicar personas.</p>
+      <p v-if="r.telefono && r.sinCalibracion" class="aviso-ranura">{{ r.telefono.nombre }} no está calibrado: no se ubica en el plano (su nombre en la página de cámara debe ser el de su calibración, por ejemplo «iPhone oeste»).</p>
     </article>
     <p v-if="vivo.sobrantes.value.length" class="muted ranura-nota">
       {{ vivo.sobrantes.value.length }} teléfono(s) más conectado(s) sin cámara libre: el plano admite tres.

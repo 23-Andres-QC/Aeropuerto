@@ -21,7 +21,6 @@ const DET_VIGENTE_MS = 2500;
 // Las cajas llegan unos cientos de ms después de su cuadro: sobre el video en vivo cada una sigue moviéndose con la
 // velocidad que traía entre sus dos últimos cuadros procesados, hasta este tiempo después del último (ver cajasAl).
 const PREDICCION_MAX_MS = 1500;
-const PROCESO_VIGENTE_MS = 6000;
 
 const $ = (id) => document.getElementById(id);
 
@@ -298,25 +297,15 @@ function mostrarEstado() {
   if (!app.unida) {
     chip.className = 'chip error';
     chip.textContent = app.motivo ? `${app.motivo} · reintentando…` : 'Conectando…';
-  } else if (app.lectores > 0) {
-    chip.className = 'chip procesando';
-    chip.textContent = 'El modelo procesa esta cámara';
-  } else if (app.espectadores > 0) {
-    chip.className = 'chip esperando';
-    chip.textContent = 'En vivo en la web · esperando al modelo';
   } else {
-    chip.className = 'chip esperando';
-    chip.textContent = 'Unida · esperando al modelo';
+    // Solo la cámara en vivo: sin datos del procesamiento (ritmo, latencia, estado del modelo).
+    chip.className = 'chip procesando';
+    chip.textContent = 'En vivo';
   }
   const ahora = performance.now();
   app.envios = app.envios.filter((t) => ahora - t < 1000);
-  const idas = [...app.idas].sort((a, b) => a - b);
-  const envio = $('envio');
-  envio.hidden = !app.unida;
-  envio.textContent = `${app.envios.length} fps · ${LADOS_ENVIO[app.nivel]} px${idas.length ? ` · ${Math.round(idas[idas.length >> 1])} ms` : ''}`;
-  const proceso = $('proceso');
-  proceso.textContent = app.unida ? textoProceso() : '';
-  proceso.hidden = !proceso.textContent;
+  $('envio').hidden = true;
+  $('proceso').hidden = true;
 }
 
 // ---------- Cajas sobre el video en vivo ----------
@@ -495,25 +484,6 @@ function colorClaro(numero) {
   return `hsl(${Math.round(((numero * 0.618034) % 1) * 360)}, 90%, 64%)`;
 }
 
-// «1 en cuadro · 2.9 FPS · 470 ms · 12 personas (7 H, 5 M)», como las insignias de Teléfonos.
-function textoProceso() {
-  const p = app.proceso;
-  if (!p || performance.now() - app.horaProceso > PROCESO_VIGENTE_MS || p.estado === 'detenido') return '';
-  const partes = [];
-  const c = p.camara;
-  if (c && c.estado === 'procesando') {
-    partes.push(`${c.personas_ahora ?? 0} en cuadro`, `${c.fps ?? 0} FPS`);
-    if (c.latencia_ms != null) partes.push(`${c.latencia_ms} ms`);
-  } else if (c && c.estado === 'sin_conexion') {
-    partes.push(c.mensaje || 'El modelo no puede leer esta cámara');
-  }
-  if (p.personas_total != null) {
-    const g = p.genero || {};
-    const detalle = [g.Hombre ? `${g.Hombre} H` : '', g.Mujer ? `${g.Mujer} M` : ''].filter(Boolean).join(', ');
-    partes.push(`${p.personas_total} ${p.personas_total === 1 ? 'persona' : 'personas'}${detalle ? ` (${detalle})` : ''}`);
-  }
-  return partes.join(' · ');
-}
 
 // ---------- Personas (memoria de identidades, como la tabla de Teléfonos) ----------
 

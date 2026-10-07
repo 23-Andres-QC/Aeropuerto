@@ -93,14 +93,6 @@ function soltar(p: Pantalla) {
   p.cola = [];
 }
 
-/** Cuadros por segundo del video de una cámara en la sala (lo que llega, no lo que procesa el modelo). */
-function fpsVideo(id: string): number {
-  const p = pantallas.get(id);
-  if (!p) return 0;
-  const desde = performance.now() - 2000;
-  return Math.round(p.recibidos.filter((t) => t > desde).length / 2);
-}
-
 const estadoDe = (id: string) => props.servicio?.telefonos?.[id];
 const procesando = (id: string) => estadoDe(id)?.estado === "procesando";
 const conVideo = (id: string) => ahora.value - (pantallas.get(id)?.hora ?? 0) < CUADRO_VIGENTE_MS;
@@ -112,15 +104,10 @@ function espera(c: CamaraSala): string {
   return props.servicio ? "El modelo se está conectando…" : "Esperando al modelo…";
 }
 
+/** Solo lo que se ve (cuántas personas hay en cuadro), sin datos del procesamiento: ritmo, latencia ni estado del modelo. */
 function insignias(c: CamaraSala): string {
   const e = estadoDe(c.id);
-  const video = c.web && conVideo(c.id) ? `video ${fpsVideo(c.id)} FPS` : "";
-  if (e?.estado === "procesando") {
-    const partes = [`${e.personas_ahora ?? 0} en cuadro`, video, `modelo ${e.fps ?? 0} FPS`];
-    if (e.latencia_ms != null) partes.push(`${e.latencia_ms} ms`);
-    return partes.filter(Boolean).join(" · ");
-  }
-  return conVideo(c.id) ? ["sin procesar", video].filter(Boolean).join(" · ") : "";
+  return e?.estado === "procesando" && conVideo(c.id) ? `${e.personas_ahora ?? 0} en cuadro` : "";
 }
 
 function fijar(mapa: Map<string, HTMLCanvasElement>, id: string, el: unknown) {

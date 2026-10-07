@@ -107,13 +107,6 @@ onUnmounted(() => {
       <canvas v-show="imagen && enVivo" ref="lienzo"></canvas>
       <p v-if="!imagen || !enVivo" class="espera">{{ aviso }}</p>
     </div>
-    <div v-if="enVivo && estado" class="stats">
-      <div><b>{{ estado.fps }}</b><small>FPS</small></div>
-      <div><b>{{ estado.latencia_ms ?? "—" }} ms</b><small>latencia</small></div>
-      <div><b>{{ estado.personas_ahora }}</b><small>personas ahora</small></div>
-      <div><b>{{ estado.saltados }}</b><small>frames saltados</small></div>
-    </div>
-    <p class="fuente muted">{{ estado?.fuente ?? "" }}</p>
   </section>
 </template>
 

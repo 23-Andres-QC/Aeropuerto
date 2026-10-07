@@ -1,31 +1,32 @@
 {
  "version": 1,
- "fecha": "2026-10-06",
- "nota": "Calibración de un teléfono sobre el plano de ESAN: homografía de píxeles del cuadro del relé (640 de ancho) a metros del plano. Salió de una grabación de una persona caminando (escala por altura 1,70 m, focal 575 px, referencias: tachos de reciclaje y tacho verde, y el piso del plano).",
+ "fecha": "2026-10-07",
+ "nota": "Calibración de los teléfonos sobre el plano de ESAN: homografía de píxeles del cuadro del relé (640 de ancho) a metros del plano. Cada teléfono se reconoce por su nombre en la página de cámara (debe contener «nombre_contiene»). «oeste»: el que mira el patio desde el balcón del oeste; pose ajustada a cuatro referencias del suelo (reciclaje, tacho verde y las dos expendedoras) con focal 520 px y 10 m de altura.",
  "camaras": [
   {
-   "nombre_contiene": "iPhone",
+   "nombre_contiene": "oeste",
    "frame": [
     640,
     853
    ],
    "H": [
-    -0.01151562206106209,
-    -0.041572323603714205,
-    10.63902069678336,
-    -0.03039083789372581,
-    0.023802780680714678,
-    5.1628309543042885,
-    -0.00038099386349457184,
-    0.0013792863367348967,
+    -0.008658931680373945,
+    -0.061634333949746205,
+    14.464016396159757,
+    -0.03955332990125564,
+    0.018889232717240967,
+    8.215944788628029,
+    -0.0002864923256354757,
+    0.0020755695858927516,
     1.0
    ],
    "pose": {
-    "x": -11.95800627367054,
-    "y": 8.262603351919395,
-    "rumbo_deg": -30.537914294132452,
-    "altura_m": 11.12791849407111,
-    "focal_px": 590.0
+    "x": -13.65,
+    "y": 4.58,
+    "rumbo_deg": -24.9,
+    "inclinacion_deg": 58.7,
+    "altura_m": 10.0,
+    "focal_px": 520.0
    }
   }
  ]
