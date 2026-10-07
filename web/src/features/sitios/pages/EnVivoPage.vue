@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, GENEROS, type Config, type Replay, type Sesion } from "../api";
 import PlanoSitio, { type PersonaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
-import { CELDA_CALOR, SESION_VIVO, ajusteMapa, capturasVersion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, guardarCapturaVivo, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura } from "../enVivo";
+import { CELDA_CALOR, SESION_VIVO, ajusteMapa, capturasVersion, grabando, iniciarGrabacion, terminarGrabacion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura } from "../enVivo";
 import { useRoute } from "vue-router";
 import { useSitios } from "../useSitios";
 
@@ -42,9 +42,9 @@ const verCalor = ref(true);
 const guardadasVivo = computed(() => sesiones.value.filter((s) => s.kind === "LIVE"));
 const grabadas = computed(() => sesiones.value.filter((s) => s.kind === "BUILD"));
 
-/** Guarda la captura en vivo y recarga la lista para que aparezca en «Guardado en vivo». */
-async function guardarYRefrescar() {
-  if (await guardarCapturaVivo()) sesiones.value = await api.sesiones(slug.value);
+/** Termina la captura (se guarda recién ahora) y recarga la lista para que aparezca en «Guardado en vivo». */
+async function terminarYRefrescar() {
+  if (await terminarGrabacion()) sesiones.value = await api.sesiones(slug.value);
 }
 const calorVivo = computed(() => (modoVivo.value && verCalor.value ? vivo.calor.value : []));
 const desfases = computed(() => mapa.value?.desfases_s ?? {});
@@ -318,12 +318,16 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
             <button type="button" class="reiniciar-calor" title="Volver al ajuste inicial" @click="reponerAjusteMapa()">↺</button>
             <span class="muted">{{ ajusteMapa.dx }} · {{ ajusteMapa.dy }} m</span>
           </span>
-          <button type="button" class="reiniciar-calor" :disabled="!vivo.calor.value.length" title="Guarda esta captura y empieza una nueva" @click="reiniciarCaptura()">Reiniciar</button>
-          <button type="button" class="reiniciar-calor guardar" title="Se guarda sola cada 20 s y al salir del modo en vivo" :disabled="guardando || !vivo.historias.value.length" @click="guardarYRefrescar()">
-            {{ guardando ? "Guardando…" : "Guardar captura" }}
+          <button type="button" class="reiniciar-calor" :disabled="!vivo.calor.value.length" :title="grabando ? 'Guarda esta captura y empieza otra' : 'Limpia el mapa'" @click="reiniciarCaptura()">Reiniciar</button>
+          <button v-if="!grabando" type="button" class="reiniciar-calor guardar" title="Empieza a registrar esta escena: mapa de calor, recorridos y estadísticas" @click="iniciarGrabacion()">
+            ● Iniciar captura
           </button>
+          <button v-else type="button" class="reiniciar-calor terminar" title="Deja de registrar y guarda la captura" :disabled="guardando" @click="terminarYRefrescar()">
+            {{ guardando ? "Guardando…" : "■ Terminar y guardar" }}
+          </button>
+          <span v-if="!grabando" class="muted">En vivo: pulsa «Iniciar captura» para registrar esta escena.</span>
           <span v-if="mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
-          <span class="pill en-vivo">● EN VIVO</span><span class="pill">{{ enPlano.length }} en el plano</span>
+          <span v-if="grabando" class="pill grabando">● GRABANDO</span><span class="pill en-vivo">● EN VIVO</span><span class="pill">{{ enPlano.length }} en el plano</span>
         </span>
         <span v-else-if="replay" class="heading-meta"><span class="pill">{{ enPlano.length }} en el plano</span><span class="pill">{{ replay.personas.length }} personas</span></span>
         <span v-else-if="!cargando && !sesiones.length" class="pill">sin sesiones</span>
@@ -519,6 +523,14 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   align-items: center;
   gap: 5px;
   font-size: 12px;
+}
+.pill.grabando {
+  background: #dc2626;
+  color: #fff;
+}
+.reiniciar-calor.terminar {
+  background: #dc2626;
+  color: #fff;
 }
 .ajuste-mapa {
   display: inline-flex;

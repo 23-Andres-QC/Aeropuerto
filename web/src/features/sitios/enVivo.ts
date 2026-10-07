@@ -385,13 +385,16 @@ function componer() {
     rastro.visto = t;
     rastros.set(clave, rastro);
 
-    const [ci, cj] = [Math.floor(punto[0] / CELDA_CALOR), Math.floor(punto[1] / CELDA_CALOR)];
-    const celda = celdas.get(`${ci},${cj}`) ?? { cx: ci * CELDA_CALOR, cy: cj * CELDA_CALOR, s: 0 };
-    celda.s += TICK_S;
-    celdas.set(`${ci},${cj}`, celda);
+    if (grabando.value) {
+      const [ci, cj] = [Math.floor(punto[0] / CELDA_CALOR), Math.floor(punto[1] / CELDA_CALOR)];
+      const celda = celdas.get(`${ci},${cj}`) ?? { cx: ci * CELDA_CALOR, cy: cj * CELDA_CALOR, s: 0 };
+      celda.s += TICK_S;
+      celdas.set(`${ci},${cj}`, celda);
+    }
 
     // Solo quien tiene ID global entra a las estadísticas: una caja sin ID puede ser un falso positivo pasajero.
-    if (a.id != null) {
+    // Y solo mientras se graba una captura: antes de «Iniciar» el mapa muestra a la gente pero no acumula nada.
+    if (a.id != null && grabando.value) {
       const nueva: HistoriaViva = { id: a.id, genero: null, conf: null, primera: t, ultima: t, camaras: new Set(), puntos: [], zonas: new Map(), secuencia: [], zonaActual: null, trazas: [] };
       const h = historia.get(a.id) ?? nueva;
       h.ultima = t;
@@ -495,13 +498,12 @@ const sobrantes = computed(() => {
 });
 const servicioActivo = computed(() => ahora.value - ultimoServicio.value < 6000 && servicio.value?.estado !== "detenido");
 
+/** Se está grabando una captura: solo entonces se acumulan el mapa de calor y las estadísticas, y se guardan al terminar. */
+export const grabando = ref(false);
 export const guardando = ref(false);
 export const mensajeGuardado = ref("");
 /** Sube cada vez que una captura se guarda: las páginas recargan su lista de sesiones. */
 export const capturasVersion = ref(0);
-
-/** Cada cuánto se guarda sola la captura en vivo. */
-const AUTOGUARDADO_MS = 20000;
 
 type Pendiente = { sitio: string; carga: CargaSesion };
 
@@ -526,7 +528,7 @@ async function enviarCaptura(p: Pendiente, automatico: boolean): Promise<boolean
   try {
     const r = await request<{ identities: number; points: number }>(`/api/v1/sites/${encodeURIComponent(p.sitio)}/sessions`, json("POST", p.carga));
     const hora = new Date().toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
-    mensajeGuardado.value = `${automatico ? "Guardado automático" : "Guardada"} ${hora}: ${r.identities} personas y ${r.points.toLocaleString()} puntos.`;
+    mensajeGuardado.value = `${automatico ? "Guardada al salir" : "Guardada"} ${hora}: ${r.identities} personas y ${r.points.toLocaleString()} puntos.`;
     capturasVersion.value++;
     return true;
   } catch (e) {
@@ -548,41 +550,52 @@ export async function guardarCapturaVivo(): Promise<boolean> {
   return enviarCaptura(p, false);
 }
 
-/** Guardado automático: solo si hubo posiciones nuevas desde el último guardado. */
-async function autoguardar() {
-  if (!corriendo || guardando.value) return;
-  const n = totalTrazas();
-  if (n === trazasGuardadas) return;
-  const p = prepararCaptura();
-  if (!p) return;
-  trazasGuardadas = n;
-  await enviarCaptura(p, true);
-}
-
-/** Reiniciar: lo capturado queda guardado y empieza una captura nueva. */
-export function reiniciarCaptura() {
-  const p = prepararCaptura();
+/** «Iniciar captura»: desde ahora se registra la escena (calor, recorridos y estadísticas) hasta que se pulse Terminar. */
+export function iniciarGrabacion() {
+  if (!corriendo || grabando.value) return;
   reiniciarVivo();
-  if (p) void enviarCaptura(p, true);
+  grabando.value = true;
+  mensajeGuardado.value = "Grabando esta escena…";
 }
 
-/** Al apagar el modo en vivo: la captura se guarda por última vez y el motor se detiene. */
+/** «Terminar»: se deja de registrar y recién ahora se guarda la captura (queda a la vista hasta la próxima). */
+export async function terminarGrabacion(): Promise<boolean> {
+  if (!grabando.value) return false;
+  const p = prepararCaptura();
+  grabando.value = false;
+  if (!p) {
+    mensajeGuardado.value = "No hubo personas con ID en esta captura: no se guardó nada.";
+    return false;
+  }
+  trazasGuardadas = totalTrazas();
+  return enviarCaptura(p, false);
+}
+
+/** Reiniciar: si se está grabando, lo capturado queda guardado y empieza otra captura; si no, solo se limpia el mapa. */
+export function reiniciarCaptura() {
+  const p = grabando.value ? prepararCaptura() : null;
+  reiniciarVivo();
+  if (p) void enviarCaptura(p, false);
+}
+
+/** Al apagar el modo en vivo: lo que se estaba grabando se guarda por última vez y el motor se detiene. */
 function cerrarCaptura() {
   if (!corriendo) return;
-  const p = prepararCaptura();
+  const p = grabando.value ? prepararCaptura() : null;
+  grabando.value = false;
   detener();
-  if (p) void enviarCaptura(p, true);
+  if (p) void enviarCaptura(p, false);
 }
 
 function arrancar() {
   if (corriendo) return;
   corriendo = true;
   reiniciarVivo();
+  grabando.value = false;
   sondear();
   cargarConfig();
   sondeo = setInterval(sondear, 3000);
   sondeoConfig = setInterval(cargarConfig, 5000);
-  sondeoGuardado = setInterval(autoguardar, AUTOGUARDADO_MS);
   reloj = setInterval(componer, TICK_S * 1000);
   cierraServicio = socketPersistente(`${RELEVO_VIVO}/telefonos/detections/watch`, false, (ev) => {
     try {
@@ -597,6 +610,7 @@ function arrancar() {
 function detener() {
   if (!corriendo) return;
   corriendo = false;
+  grabando.value = false;
   clearInterval(sondeo);
   clearInterval(reloj);
   clearInterval(sondeoConfig);
@@ -613,7 +627,8 @@ function detener() {
 export function usarSitioVivo(slug: string) {
   if (!slug || slug === sitio.value) return;
   // Lo capturado hasta ahora pertenece al sitio anterior: se guarda ahí antes de empezar de nuevo.
-  const pendiente = corriendo ? prepararCaptura() : null;
+  const pendiente = corriendo && grabando.value ? prepararCaptura() : null;
+  grabando.value = false;
   sitio.value = slug;
   config.value = undefined;
   if (corriendo) {

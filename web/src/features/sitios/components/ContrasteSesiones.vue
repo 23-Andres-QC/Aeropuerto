@@ -125,7 +125,7 @@ const etiqueta = (s: Sesion) => `${s.name || s.session_id.slice(0, 8)} · ${new 
         <select v-if="guardadas.length" v-model="idGuardada" aria-label="Captura en vivo guardada">
           <option v-for="s in guardadas" :key="s.session_id" :value="s.session_id">{{ etiqueta(s) }}</option>
         </select>
-        <small v-else class="muted">Todavía no hay capturas: se guardan solas al usar el modo en vivo</small>
+        <small v-else class="muted">Todavía no hay capturas: se guardan al terminar una captura en vivo</small>
       </div>
       <div class="cabecera ahora">
         <b>● Ahora</b>

@@ -497,7 +497,7 @@ onMounted(async () => {
         {{ guardando ? "Guardando…" : "Guardar captura en vivo" }}
       </button>
       <button v-if="modoVivo" type="button" title="Guarda esta captura y empieza una nueva" @click="reiniciarCaptura()">↺ Reiniciar en vivo</button>
-      <span v-if="modoVivo" class="muted mensaje-guardado">Se guarda sola cada 20 s y al salir del modo en vivo.</span>
+      <span v-if="modoVivo" class="muted mensaje-guardado">Se guarda al pulsar «Terminar y guardar» en En vivo (o al salir del modo en vivo mientras se graba).</span>
       <span v-if="modoVivo && mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
     </div>
   </section>
@@ -521,8 +521,8 @@ onMounted(async () => {
   <section v-if="vistaSinCapturas" class="panel vacio-guardado">
     <div class="panel-heading"><h2>Guardado en vivo</h2></div>
     <p>
-      Todavía no hay capturas guardadas. Activa el modo en vivo y deja que alguien con el cuerpo completo aparezca frente a un teléfono: la captura se guarda
-      sola cada 20 s y al salir del modo en vivo, y aparece aquí con su propio tablero.
+      Todavía no hay capturas guardadas. Activa el modo en vivo y deja que alguien con el cuerpo completo aparezca frente a un teléfono: pulsa «Iniciar captura» en En vivo y,
+      al terminar, la captura se guarda y aparece aquí con su propio tablero.
     </p>
   </section>
   <div class="print-header">

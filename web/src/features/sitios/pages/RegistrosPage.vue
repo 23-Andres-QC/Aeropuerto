@@ -124,8 +124,8 @@ watch(capturasVersion, cargar);
       </table>
       <p v-else-if="!cargando" class="vacio">
         <template v-if="tipo === 'LIVE' && !fecha">
-          Todavía no hay capturas. Activa el modo en vivo y deja que alguien aparezca de cuerpo completo frente a un teléfono: la captura se guarda sola cada 20 s
-          y al salir del modo en vivo.
+          Todavía no hay capturas. Activa el modo en vivo y deja que alguien aparezca de cuerpo completo frente a un teléfono: pulsa «Iniciar captura» en En vivo y, al terminar,
+          la captura se guarda aquí.
         </template>
         <template v-else>No hay registros con ese filtro.</template>
       </p>
