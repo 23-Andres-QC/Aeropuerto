@@ -169,6 +169,13 @@ class CajasCenidas(unittest.TestCase):
         self.assertEqual(sorted(round(float(c), 2) for c in conf), [0.8, 0.9])
         self.assertTrue(all(float(c[2] - c[0]) < 100 for c in cajas))
 
+    def test_el_brazo_suelto_se_descarta_y_la_persona_se_queda(self):
+        from camara_telefono import ajustar_cajas
+        persona, brazo = [165, 142, 639, 662], [539, 258, 634, 319]  # la caja de la foto con los brazos abiertos y su brazo
+        cajas, _ = ajustar_cajas([persona, brazo], [0.9, 0.5])
+        self.assertEqual(len(cajas), 1)
+        self.assertGreater(float(cajas[0, 3] - cajas[0, 1]), 400)
+
     def test_sin_cajas(self):
         from camara_telefono import ajustar_cajas
         cajas, conf = ajustar_cajas(np.empty((0, 4)), np.empty(0))

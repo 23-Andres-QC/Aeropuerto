@@ -24,31 +24,38 @@ ASPECTO_ARRIBA = 1.15       # alto / ancho menor: visto casi desde arriba (solo 
 CABEZA_DESDE_ARRIBA = 0.6   # lado de la caja (fracción del lado menor) que se queda con la cabeza
 
 
-def ajustar_cajas(cajas, confianzas):
-    """Respaldo sin puntos: cajas más ceñidas, y sin las que envuelven a otras personas.
+def quitar_envolventes(cajas, confianzas):
+    """Sin las cajas que no son una persona: fragmentos y las que envuelven a varias.
 
-    - Una caja que contiene el centro de otras (bastante más chicas) es un grupo o un fondo, no una persona: se descarta.
-    - De pie: el ancho se limita a 0,42 del alto, centrado, así no incluye brazos extendidos ni bolsos.
-    - Agachada, sentada o vista desde un ángulo alto: ancho máximo de 0,6 del alto.
-    - Vista casi desde arriba (más ancha que alta): queda solo la cabeza, un cuadrado centrado del 60 % del lado menor.
+    - Fragmento: una caja ancha y muy chica (menos del 8 % del área) dentro de otra es una mano o un brazo, no alguien.
+    - Envolvente: una caja que contiene a dos o más personas (cajas de pie, de tamaño de persona) es un grupo o un fondo;
+      con una sola, solo si además es casi cuadrada y esa persona ocupa buena parte de ella.
     """
-    cajas = np.asarray(cajas, np.float32).reshape(-1, 4).copy()
+    cajas = np.asarray(cajas, np.float32).reshape(-1, 4)
     confianzas = np.asarray(confianzas, np.float32).reshape(-1)
     if not len(cajas):
         return cajas, confianzas
-    ancho, alto = cajas[:, 2] - cajas[:, 0], cajas[:, 3] - cajas[:, 1]
+    ancho, alto = np.maximum(cajas[:, 2] - cajas[:, 0], 1.0), np.maximum(cajas[:, 3] - cajas[:, 1], 1.0)
     centro = np.column_stack(((cajas[:, 0] + cajas[:, 2]) / 2, (cajas[:, 1] + cajas[:, 3]) / 2))
-    area = np.maximum(ancho * alto, 1.0)
+    area = ancho * alto
     mantener = np.ones(len(cajas), bool)
     for i in range(len(cajas)):
         dentro = ((centro[:, 0] > cajas[i, 0]) & (centro[:, 0] < cajas[i, 2]) & (centro[:, 1] > cajas[i, 1])
                   & (centro[:, 1] < cajas[i, 3]) & (area < 0.6 * area[i]))
         dentro[i] = False
-        if dentro.sum() >= 2 or (dentro.sum() >= 1 and ancho[i] / max(alto[i], 1.0) > 0.8):
+        mantener[dentro & (area < 0.08 * area[i]) & (ancho / alto >= 0.9)] = False  # fragmentos
+        personas = dentro & (alto / ancho >= 1.1) & (area >= 0.01 * area[i])
+        if personas.sum() >= 2 or (personas.sum() == 1 and ancho[i] / alto[i] > 0.8 and area[personas].max() >= 0.15 * area[i]):
             mantener[i] = False
-    for i in np.flatnonzero(mantener):
-        a, h = max(ancho[i], 1.0), max(alto[i], 1.0)
-        cx, cy = centro[i]
+    return cajas[mantener], confianzas[mantener]
+
+
+def cenir_cajas(cajas):
+    """Forma de la caja sin puntos del cuerpo: de pie sin brazos, agachada más angosta, desde arriba solo la cabeza."""
+    cajas = np.asarray(cajas, np.float32).reshape(-1, 4).copy()
+    for i in range(len(cajas)):
+        a, h = max(cajas[i, 2] - cajas[i, 0], 1.0), max(cajas[i, 3] - cajas[i, 1], 1.0)
+        cx, cy = (cajas[i, 0] + cajas[i, 2]) / 2, (cajas[i, 1] + cajas[i, 3]) / 2
         if h / a >= 1.8:
             nuevo = min(a, ASPECTO_DE_PIE * h)
             cajas[i, [0, 2]] = cx - nuevo / 2, cx + nuevo / 2
@@ -58,7 +65,13 @@ def ajustar_cajas(cajas, confianzas):
         else:
             lado = CABEZA_DESDE_ARRIBA * min(a, h)
             cajas[i] = cx - lado / 2, cy - lado / 2, cx + lado / 2, cy + lado / 2
-    return cajas[mantener], confianzas[mantener]
+    return cajas
+
+
+def ajustar_cajas(cajas, confianzas):
+    """Respaldo sin puntos: cajas más ceñidas (de pie sin brazos, desde arriba solo la cabeza) y sin las que envuelven a otras."""
+    cajas, confianzas = quitar_envolventes(cajas, confianzas)
+    return cenir_cajas(cajas), confianzas
 
 
 def caja_de_cuerpo(caja, puntos, confianzas, ancho_frame, alto_frame):
@@ -103,45 +116,65 @@ def caja_de_cuerpo(caja, puntos, confianzas, ancho_frame, alto_frame):
     return np.array([max(0.0, izq), max(0.0, arriba), min(float(ancho_frame), der), min(float(alto_frame), abajo)], np.float32)
 
 
-class DetectorPose:
-    """Como DetectorPersonas (cajas y confianzas por cámara), pero con yolo26-pose y cajas de cuerpo sin brazos."""
+ALTO_MIN_PARA_PUNTOS = 90    # en cuadro de este alto (px) o más una persona se ve de cerca: ahí los brazos deforman la caja
+ASPECTO_SOSPECHOSO = 0.5     # ancho / alto: una caja así de ancha probablemente incluye brazos o a alguien al lado
+MARGEN_RECORTE = 0.12        # el recorte de cada persona para los puntos, con este margen alrededor de su caja
 
-    def __init__(self, pesos, config, device, batch=True):
+
+class DetectorCuerpo:
+    """Detector de personas con cajas de cuerpo sin brazos: el detector normal encuentra a todos, incluso de lejos o desde
+    arriba, y los puntos del cuerpo (yolo26-pose) solo se calculan, sobre un recorte, para quien se ve de cerca o con una
+    caja demasiado ancha. Si los puntos no alcanzan (de muy lejos o casi desde arriba) la caja se cíñe por su forma.
+
+    Usar yolo26-pose en todo el cuadro, en cambio, deja de ver a las personas chicas y vistas desde arriba (en una
+    grabación desde un balcón encontró 0 de 27 que el detector normal sí veía).
+    """
+
+    def __init__(self, base, pesos_pose, device):
         from ultralytics import YOLO
 
-        self.model = YOLO(str(pesos))
-        self.config, self.device, self.batch = config, device, batch
+        self.base, self.device = base, device
+        self.pose = YOLO(str(pesos_pose))
 
     def __call__(self, frames):
-        kwargs = dict(conf=self.config["conf"], iou=self.config["iou"], imgsz=self.config["imgsz"], device=self.device,
-                      verbose=False, rect=True)
-        imagenes = list(frames.values())
-        resultados = (self.model.predict(source=imagenes, **kwargs) if self.batch
-                      else [self.model.predict(source=imagen, **kwargs)[0] for imagen in imagenes])
-        detecciones = {}
-        for cid, imagen, r in zip(frames, imagenes, resultados):
-            if r.boxes is None or not len(r.boxes):
-                detecciones[cid] = (np.empty((0, 4), np.float32), np.empty(0, np.float32))
-                continue
-            cajas = r.boxes.xyxy.cpu().numpy().astype(np.float32)
-            confianzas = r.boxes.conf.cpu().numpy().astype(np.float32)
-            alto, ancho = imagen.shape[:2]
-            puntos = r.keypoints.xy.cpu().numpy() if r.keypoints is not None else None
-            certeza = (r.keypoints.conf.cpu().numpy() if r.keypoints is not None and r.keypoints.conf is not None
-                       else None)
-            propias, respaldo = [], []
-            for i in range(len(cajas)):
-                caja = None
-                if puntos is not None and certeza is not None:
-                    caja = caja_de_cuerpo(cajas[i], puntos[i], certeza[i], ancho, alto)
-                (propias if caja is not None else respaldo).append((caja if caja is not None else cajas[i], confianzas[i]))
-            # Las que no tienen puntos suficientes pasan por el ajuste de respaldo; las demás ya son de cuerpo.
-            if respaldo:
-                b, c = ajustar_cajas([r_[0] for r_ in respaldo], [r_[1] for r_ in respaldo])
-                propias += list(zip(b, c))
-            if propias:
-                detecciones[cid] = (np.array([p[0] for p in propias], np.float32).reshape(-1, 4),
-                                    np.array([p[1] for p in propias], np.float32))
-            else:
-                detecciones[cid] = (np.empty((0, 4), np.float32), np.empty(0, np.float32))
-        return detecciones
+        detectadas = self.base(frames)
+        recortes, destinos = [], []
+        salida = {}
+        for cid, frame in frames.items():
+            cajas, confianzas = quitar_envolventes(*detectadas[cid])
+            alto_f, ancho_f = frame.shape[:2]
+            salida[cid] = [cajas, confianzas, np.zeros(len(cajas), bool)]
+            for i, (x1, y1, x2, y2) in enumerate(cajas):
+                a, h = x2 - x1, y2 - y1
+                if h < ALTO_MIN_PARA_PUNTOS and a / max(h, 1.0) < ASPECTO_SOSPECHOSO:
+                    continue
+                mx, my = MARGEN_RECORTE * a + 6, MARGEN_RECORTE * h + 6
+                cx1, cy1 = int(max(0, x1 - mx)), int(max(0, y1 - my))
+                cx2, cy2 = int(min(ancho_f, x2 + mx)), int(min(alto_f, y2 + my))
+                if cx2 - cx1 < 16 or cy2 - cy1 < 16:
+                    continue
+                recortes.append(frame[cy1:cy2, cx1:cx2])
+                destinos.append((cid, i, cx1, cy1, alto_f, ancho_f))
+        if recortes:
+            resultados = self.pose.predict(source=recortes, conf=0.25, imgsz=320, device=self.device, verbose=False, rect=True)
+            for (cid, i, cx1, cy1, alto_f, ancho_f), r, recorte in zip(destinos, resultados, recortes):
+                if r.boxes is None or not len(r.boxes) or r.keypoints is None or r.keypoints.conf is None:
+                    continue
+                cajas_r = r.boxes.xyxy.cpu().numpy()
+                centro = np.array([recorte.shape[1] / 2, recorte.shape[0] / 2])
+                # La persona del recorte es la instancia más cercana a su centro.
+                j = int(np.argmin(np.hypot(*(((cajas_r[:, :2] + cajas_r[:, 2:]) / 2) - centro).T)))
+                puntos = r.keypoints.xy.cpu().numpy()[j] + np.array([cx1, cy1], np.float32)
+                certeza = r.keypoints.conf.cpu().numpy()[j]
+                caja = caja_de_cuerpo(salida[cid][0][i], puntos, certeza, ancho_f, alto_f)
+                if caja is not None:
+                    salida[cid][0][i] = caja
+                    salida[cid][2][i] = True
+        resultado = {}
+        for cid, (cajas, confianzas, afinadas) in salida.items():
+            if len(cajas):
+                cajas = cajas.copy()
+                sin_puntos = ~afinadas
+                cajas[sin_puntos] = cenir_cajas(cajas[sin_puntos])
+            resultado[cid] = (cajas.astype(np.float32).reshape(-1, 4), confianzas.astype(np.float32))
+        return resultado

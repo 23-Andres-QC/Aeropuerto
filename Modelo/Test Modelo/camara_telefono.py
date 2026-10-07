@@ -38,7 +38,7 @@ from websockets.sync.client import connect
 warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"websockets(\..*)?|__main__")
 
 import lap01
-from detector_pose import DetectorPose, ajustar_cajas
+from detector_pose import DetectorCuerpo, ajustar_cajas
 from memoria_identidades import AsociadorConMemoria, MemoriaIdentidades
 from videos_subidos import CANAL_ESTADO as CANAL_VIDEOS, Quietud, VideosSubidos, genero_por_votos
 
@@ -69,7 +69,7 @@ SEGUIDOR_TELEFONO = {"new_track_confidence": 0.25, "association_confidence": 0.2
                      "reid_gate": 0.72, "active_motion_gate": 0.80, "distance_gate": 1.20, "active_iou_gate": 0.06}
 # Detector más sensible (el Build usa 0,30) para captar a quien está lejos; con GPU además a mayor resolución.
 # iou 0,65: en una multitud la supresión de no máximos deja separadas a las personas que se tapan un poco.
-DETECTOR_TELEFONO = {"conf": 0.15, "iou": 0.65}
+DETECTOR_TELEFONO = {"conf": 0.10, "iou": 0.65}
 IMGSZ_GPU_TELEFONO = 960
 DETECTOR_CPU_TELEFONO = "yolo26s.pt"
 POSE_TELEFONO = "yolo26s-pose.pt"  # detector con puntos del cuerpo: la caja deja fuera los brazos
@@ -344,7 +344,7 @@ class SesionEnVivo:
         self._ritmo_genero()
         fuente = dict(self.procesados)
         detectadas = self.motor.detectar(frames)
-        if not isinstance(self.motor.detector, DetectorPose):  # con pose las cajas ya son de cuerpo sin brazos
+        if not isinstance(self.motor.detector, DetectorCuerpo):  # con pose las cajas ya son de cuerpo sin brazos
             detectadas = {cid: ajustar_cajas(*dato) for cid, dato in detectadas.items()}
         filas = self.motor.seguir(frames, fuente, detectadas)
         for cid, fs in filas.items():
@@ -518,8 +518,8 @@ def main():
     motor = lap01.MotorLAP01(MODELO, config, device="auto", batch=True)
     pose = MODELO / os.environ.get("MODELO_POSE", POSE_TELEFONO)
     if pose.is_file():
-        # Cajas de cabeza, tronco y piernas con los puntos del cuerpo (sin brazos); MODELO_POSE=ninguno usa solo el detector.
-        motor.detector = DetectorPose(pose, config["detector"], motor.device, batch=True)
+        # Cajas de cuerpo sin brazos: puntos del cuerpo sobre el recorte de quien se ve de cerca; MODELO_POSE=ninguno las desactiva.
+        motor.detector = DetectorCuerpo(motor.detector, pose, motor.device)
     reid = lap01.crear_asociador(motor, {"mode": "visual_temporal", "units": "m", "cameras": {"x": {}}}).reid
     print(f"Modelo listo en {motor.device} · detector a {config['detector']['imgsz']} px · "
           f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no'}", flush=True)
