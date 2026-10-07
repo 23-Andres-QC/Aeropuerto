@@ -22,6 +22,7 @@ ASPECTO_DE_PIE = 0.42       # ancho / alto máximo de alguien de pie (alto / anc
 ASPECTO_INTERMEDIO = 0.60   # agachado, sentado o visto desde un ángulo alto (alto / ancho entre 1.15 y 1.8)
 ASPECTO_ARRIBA = 1.15       # alto / ancho menor: visto casi desde arriba (solo se ve la cabeza y los hombros)
 CABEZA_DESDE_ARRIBA = 0.6   # lado de la caja (fracción del lado menor) que se queda con la cabeza
+ALTO_MIN_PARA_PUNTOS = 90   # una caja de este alto (px) o más es alguien de cerca: ahí los brazos deforman la caja
 
 
 def quitar_envolventes(cajas, confianzas):
@@ -62,9 +63,14 @@ def cenir_cajas(cajas):
         elif h / a >= ASPECTO_ARRIBA:
             nuevo = min(a, ASPECTO_INTERMEDIO * h)
             cajas[i, [0, 2]] = cx - nuevo / 2, cx + nuevo / 2
-        else:
+        elif h < ALTO_MIN_PARA_PUNTOS:
+            # Chica y casi cuadrada: una persona vista desde arriba (solo cabeza y hombros).
             lado = CABEZA_DESDE_ARRIBA * min(a, h)
             cajas[i] = cx - lado / 2, cy - lado / 2, cx + lado / 2, cy + lado / 2
+        else:
+            # Grande y ancha: alguien de cerca con los brazos abiertos; no es una cabeza, se angosta sin recortar el alto.
+            nuevo = min(a, ASPECTO_INTERMEDIO * h)
+            cajas[i, [0, 2]] = cx - nuevo / 2, cx + nuevo / 2
     return cajas
 
 
@@ -116,7 +122,6 @@ def caja_de_cuerpo(caja, puntos, confianzas, ancho_frame, alto_frame):
     return np.array([max(0.0, izq), max(0.0, arriba), min(float(ancho_frame), der), min(float(alto_frame), abajo)], np.float32)
 
 
-ALTO_MIN_PARA_PUNTOS = 90    # en cuadro de este alto (px) o más una persona se ve de cerca: ahí los brazos deforman la caja
 ASPECTO_SOSPECHOSO = 0.5     # ancho / alto: una caja así de ancha probablemente incluye brazos o a alguien al lado
 MARGEN_RECORTE = 0.12        # el recorte de cada persona para los puntos, con este margen alrededor de su caja
 
