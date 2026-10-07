@@ -36,6 +36,7 @@ const app = {
   lectores: 0, // el modelo leyendo su video
   espectadores: 0, // páginas de Teléfonos en la web
   enVuelo: [], // hora de envío de cada cuadro sin acuse, en orden
+  capturas: [], // y la hora en que se tomó cada uno (antes de comprimirlo): a esa hora corresponden sus cajas
   codificando: false,
   ultimoEnvio: 0,
   envios: [],
@@ -187,6 +188,7 @@ function conectar() {
   app.ws = ws;
   app.unida = false;
   app.enVuelo = [];
+  app.capturas = [];
   app.codificando = false;
   ws.onmessage = (e) => {
     if (typeof e.data !== 'string') return;
@@ -201,7 +203,8 @@ function conectar() {
       $('nombre-camara').textContent = m.nombre;
     } else if (m.tipo === 'ok') {
       const enviado = app.enVuelo.shift();
-      if (enviado !== undefined && m.cuadro) numerar(m.cuadro, enviado);
+      const captura = app.capturas.shift();
+      if (enviado !== undefined && m.cuadro) numerar(m.cuadro, captura ?? enviado);
       if (enviado !== undefined) app.idas.push(performance.now() - enviado);
       if (app.idas.length > 15) app.idas.shift();
       Object.assign(app, { lectores: m.lectores, espectadores: m.espectadores || 0 });
@@ -259,7 +262,10 @@ function bucleEnvio() {
   const ws = app.ws;
   if (!ws || ws.readyState !== WebSocket.OPEN || !app.unida || video.readyState < 2 || !video.videoWidth) return;
   const ahora = performance.now();
-  if (app.enVuelo.length && ahora - app.enVuelo[0] > 3000) app.enVuelo = []; // acuses perdidos
+  if (app.enVuelo.length && ahora - app.enVuelo[0] > 3000) {
+    app.enVuelo = []; // acuses perdidos
+    app.capturas = [];
+  }
   const fps = app.lectores > 0 || app.espectadores > 0 ? FPS_VIVO : FPS_EN_ESPERA;
   if (app.codificando || app.enVuelo.length >= enVueloPermitido(fps)) return;
   if (ahora - app.ultimoEnvio < 1000 / fps - 4) return;
@@ -272,13 +278,17 @@ function bucleEnvio() {
     lienzo.width = w;
     lienzo.height = h;
   }
+  const captura = performance.now(); // el cuadro es de este instante; comprimirlo tarda unas decenas de ms más
   ctx.drawImage(video, 0, 0, w, h);
   lienzo.toBlob((blob) => {
     app.codificando = false;
     if (!blob || ws.readyState !== WebSocket.OPEN) return;
     ws.send(blob);
     const enviado = performance.now();
-    if (ws === app.ws) app.enVuelo.push(enviado);
+    if (ws === app.ws) {
+      app.enVuelo.push(enviado);
+      app.capturas.push(captura);
+    }
     app.envios.push(enviado);
   }, 'image/jpeg', CALIDAD);
 }
@@ -399,7 +409,7 @@ function velocidadDe(instantaneas, localId) {
     const q = instantaneas[k].people.find((p) => p.local_id === localId);
     const dt = tSig - instantaneas[k].t;
     if (!q || dt <= 0) break;
-    const w = 1 / (1 + (n - 2 - k));
+    const w = Math.pow(0.45, n - 2 - k); // el paso más reciente pesa más
     vx += (w * ((sig.box[0] + sig.box[2]) - (q.box[0] + q.box[2]))) / 2 / dt;
     vy += (w * ((sig.box[1] + sig.box[3]) - (q.box[1] + q.box[3]))) / 2 / dt;
     peso += w;

@@ -53,7 +53,7 @@ function velocidadDe(instantaneas: Instantanea[], local_id: number): [number, nu
     const q = instantaneas[k].people.find((p) => p.local_id === local_id);
     const dt = tSig - instantaneas[k].t;
     if (!q || dt <= 0) break;
-    const w = 1 / (1 + (n - 2 - k));
+    const w = 0.45 ** (n - 2 - k); // el paso más reciente pesa más
     vx += (w * ((sig.box[0] + sig.box[2]) - (q.box[0] + q.box[2]))) / 2 / dt;
     vy += (w * ((sig.box[1] + sig.box[3]) - (q.box[1] + q.box[3]))) / 2 / dt;
     peso += w;
