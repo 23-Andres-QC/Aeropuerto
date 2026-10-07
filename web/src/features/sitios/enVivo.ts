@@ -534,4 +534,19 @@ watch(
   { immediate: true },
 );
 
+// Si se conecta un teléfono y el modelo empieza a procesarlo, el sistema entra solo al modo en vivo: lo que se ve en la web
+// es lo que ven los teléfonos, no una sesión guardada. Solo al pasar de ningún teléfono a alguno (si después se sale a mano,
+// no vuelve a entrar mientras sigan los mismos) y no si se está mirando a propósito una captura (?sesion=).
+let habiaTelefonos = false;
+socketPersistente(`${RELEVO_VIVO}/telefonos/detections/watch`, false, (ev) => {
+  try {
+    const e = JSON.parse(ev.data as string) as EstadoServicio;
+    const hay = Object.values(e.telefonos ?? {}).some((t) => t.estado === "procesando");
+    if (hay && !habiaTelefonos && !modoVivo.value && !location.search.includes("sesion=")) fijarModoVivo(true);
+    habiaTelefonos = hay;
+  } catch {
+    /* un mensaje que no es del servicio: se ignora */
+  }
+});
+
 export const motorVivo = { mapa, config, zonas, ranuras, sobrantes, vivas, calor, historias, resumen, servicioActivo, error, inicio, ahora };
