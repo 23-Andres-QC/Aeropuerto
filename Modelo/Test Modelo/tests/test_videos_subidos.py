@@ -19,8 +19,8 @@ sys.path.insert(0, str(TEST))
 import camara_telefono  # noqa: E402,F401  (prepara lap01 y sus rutas)
 import lap01  # noqa: E402
 from detector_pose import DetectorCuerpo  # noqa: E402
-from videos_subidos import (ESTATICO_S, Quietud, Ritmo, VideosSubidos, genero_por_votos, leer_hasta,  # noqa: E402
-                            motor_aparte)
+from videos_subidos import (ESTATICO_S, MUESTREO_CPU_S, Quietud, Ritmo, VideosSubidos, genero_por_votos,  # noqa: E402
+                            leer_hasta, motor_aparte)
 
 
 class RitmoTiempoReal(unittest.TestCase):
@@ -113,22 +113,24 @@ class MotorAparte(unittest.TestCase):
         otro.genero.memory[("v", 1)] = {"votes": []}
         self.assertEqual(motor.genero.memory, {}, "los votos de género son de cada motor")
 
-    def test_en_cpu_la_misma_resolucion_y_sin_media_precision(self):
-        config = motor_aparte(motor_sin_pesos("cpu")).detector.config
-        self.assertEqual((config["imgsz"], config["fp16"]), (640, False))
+    def test_en_cpu_la_misma_resolucion_sin_media_precision_y_muestreo_cada_2_s(self):
+        otro = motor_aparte(motor_sin_pesos("cpu"))
+        self.assertEqual((otro.detector.config["imgsz"], otro.detector.config["fp16"]), (640, False))
+        self.assertEqual(otro.genero.sample_s, MUESTREO_CPU_S)
+        self.assertEqual(motor_aparte(motor_sin_pesos("cuda:0")).genero.sample_s, 1.0, "con GPU muestrea cada 1 s")
 
-    def test_con_el_detector_de_puntos_del_cuerpo_de_los_telefonos(self):
+    def test_sin_los_puntos_del_cuerpo_de_los_telefonos(self):
         # En el servidor el detector de los teléfonos es un DetectorCuerpo, sin `config`: cada video fallaba al empezar.
+        # Videos usa el YOLO de adentro, sin los puntos del cuerpo, que en CPU cuestan ~120 ms por frame.
         motor = motor_sin_pesos("cpu")
         envoltorio = object.__new__(DetectorCuerpo)
         envoltorio.base, envoltorio.device, envoltorio.pose = motor.detector, "cpu", object()
         motor.detector = envoltorio
         otro = motor_aparte(motor)
-        self.assertIsInstance(otro.detector, DetectorCuerpo, "Videos también usa los puntos del cuerpo")
-        self.assertIs(otro.detector.pose, envoltorio.pose, "comparte el modelo de puntos cargado")
-        self.assertEqual(otro.detector.base.config["conf"], 0.10)
-        self.assertIs(otro.detector.base.model, envoltorio.base.model, "comparte el YOLO cargado")
-        self.assertIs(motor.detector.base, envoltorio.base, "el de los teléfonos no cambia")
+        self.assertNotIsInstance(otro.detector, DetectorCuerpo)
+        self.assertEqual(otro.detector.config["conf"], 0.10)
+        self.assertIs(otro.detector.model, envoltorio.base.model, "comparte el YOLO cargado")
+        self.assertIs(motor.detector, envoltorio, "el de los teléfonos no cambia")
         self.assertEqual(motor.detector.base.config["conf"], 0.3)
 
 
@@ -244,6 +246,23 @@ class QuietudTest(unittest.TestCase):
             q.actualizar(t, maniquies + [fila(9, 50 + cam + 8 * k, 300)])  # 9 camina 8 px por frame
         self.assertTrue(all(q.estatico(lid, 5.9) for lid in (1, 2, 3)), "lo quieto sigue quieto aunque la cámara se mueva")
         self.assertFalse(q.estatico(9, 5.9))
+
+    def test_maniquies_en_un_pasillo_donde_casi_todos_caminan_hacia_el_mismo_lado(self):
+        # Con la mediana de los tracks, la caminata de la mayoría se tomaba por la cámara y los maniquíes «se movían».
+        rng = np.random.default_rng(1)
+        fondo = cv2.resize(rng.integers(0, 255, (60, 120), np.uint8), (1200, 600), interpolation=cv2.INTER_NEAREST)
+        fondo = cv2.cvtColor(cv2.GaussianBlur(fondo, (3, 3), 0), cv2.COLOR_GRAY2BGR)
+        con_frame, sin_frame = Quietud(), Quietud()
+        for k in range(60):  # 6 s a 10 FPS; la cámara se desplaza 3 px por frame
+            t, cam = k / 10, 3 * k
+            frame = np.ascontiguousarray(fondo[50:530, 300 - cam:940 - cam])
+            maniquies = [fila(1, 100 + cam, 200), fila(2, 300 + cam, 220)]
+            caminan = [fila(10 + j, 40 + 90 * j + cam + 8 * k, 300) for j in range(4)]  # 8 px por frame, todos igual
+            con_frame.actualizar(t, maniquies + caminan, frame)
+            sin_frame.actualizar(t, maniquies + caminan)
+        self.assertTrue(all(con_frame.estatico(lid, 5.9) for lid in (1, 2)), "midiendo el fondo, los maniquíes quedan quietos")
+        self.assertFalse(any(con_frame.estatico(10 + j, 5.9) for j in range(4)))
+        self.assertFalse(sin_frame.estatico(1, 5.9), "con la mediana de los tracks se escapaban")
 
     def test_no_es_estatico_antes_de_tiempo_y_quien_se_movio_cuenta_siempre(self):
         q = Quietud()

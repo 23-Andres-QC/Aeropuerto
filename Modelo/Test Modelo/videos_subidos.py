@@ -25,6 +25,7 @@ import cv2
 import numpy as np
 
 import lap01
+from detector_pose import quitar_envolventes
 
 CANAL_ESTADO = "videos"
 # Ancho máximo del frame que ve la web; el modelo procesa el original.
@@ -53,7 +54,11 @@ SIMULTANEOS = int(os.environ.get("VIDEOS_SIMULTANEOS") or 10)
 #   a 58 identidades en 25 s y ningún corte, con las mismas personas a la vista;
 # - lo que no se mueve no cuenta (maniquíes, afiches, estatuas): ver Quietud;
 # - el género vota desde la primera vista, sin mínimos de tamaño, votos ni consenso: se muestra la etiqueta más votada
-#   con su certeza promedio, en vez de «Sin determinar» hasta reunir 5 votos de personas de 96 px o más.
+#   con su certeza promedio, en vez de «Sin determinar» hasta reunir 5 votos de personas de 96 px o más;
+# - sin GPU (el servidor) cada frame debe costar poco para que el seguidor no pierda a la gente entre un frame y otro:
+#   sin los puntos del cuerpo de los teléfonos (~120 ms por frame), Re-ID y género muestrean a cada persona cada 2 s y
+#   el Re-ID usa todos los núcleos. En un video de un centro comercial con ~13 personas a la vista pasó de ~570 a ~200 ms
+#   por frame.
 IMGSZ_GPU = 1280
 IMGSZ_VIDEO = int(os.environ["VIDEO_IMGSZ"]) if os.environ.get("VIDEO_IMGSZ") else None
 DETECTOR_VIDEO = {"conf": 0.10}
@@ -65,11 +70,31 @@ ASOCIACION_VIDEO = {"min_samples": 3, "min_query_samples": 3, "min_identity_dura
                     "split_threshold": 0.25, "split_strikes": 3, "same_camera_threshold": 0.6}
 GENERO_VIDEO = {"min_votes": 1, "min_confidence": 0.0, "min_margin": 0.0, "min_height": 1.0,
                 "min_detection_confidence": 0.0, "sample_s": 1.0, "max_votes": 6}
+# Sin GPU: Re-ID y género muestrean a cada persona cada 2 s (ver AJUSTES).
+MUESTREO_CPU_S = 2.0
 GENEROS = ("Hombre", "Mujer")
 # Una persona que en ESTATICO_S segundos a la vista no se aleja de donde apareció más que esta fracción de su altura
 # (descontando el movimiento de la cámara) es algo quieto: no se dibuja ni se cuenta.
 ESTATICO_S = 4.0
 ESTATICO_DESPLAZAMIENTO = 0.2
+# El movimiento de la cámara se mide sobre el frame reducido a este ancho, con al menos estos puntos del fondo.
+ANCHO_FLUJO = 320
+MIN_PUNTOS_FONDO = 8
+
+
+class SinEnvolventes:
+    """El YOLO de Videos sin las cajas que envuelven a varias personas ni los fragmentos de una (como en los teléfonos)."""
+
+    def __init__(self, base):
+        self.base = base
+
+    def __getattr__(self, nombre):
+        if nombre == "base":  # todavía sin base (al copiarlo): no buscarla en sí mismo
+            raise AttributeError(nombre)
+        return getattr(self.base, nombre)
+
+    def __call__(self, frames):
+        return {cid: quitar_envolventes(*dato) for cid, dato in self.base(frames).items()}
 
 
 def motor_aparte(motor):
@@ -77,8 +102,8 @@ def motor_aparte(motor):
     otro = copy.copy(motor)
     otro.config = copy.deepcopy(motor.config)
     otro.config["tracker"].update(SEGUIDOR_VIDEO)
-    # Con los puntos del cuerpo (teléfonos) el detector es un DetectorCuerpo que envuelve al YOLO: los ajustes de Videos
-    # van en una copia del YOLO de adentro, y el envoltorio se copia para que use esa copia.
+    # Con los puntos del cuerpo (teléfonos) el detector es un DetectorCuerpo que envuelve al YOLO. Videos usa una copia
+    # del YOLO de adentro con sus propios ajustes y sin los puntos del cuerpo (ver AJUSTES).
     base = getattr(motor.detector, "base", motor.detector)
     propio = copy.copy(base)
     propio.config = {**base.config, **DETECTOR_VIDEO}
@@ -87,15 +112,13 @@ def motor_aparte(motor):
         propio.config["imgsz"] = IMGSZ_VIDEO or IMGSZ_GPU
     if gpu:
         propio.config["fp16"] = True
-    if base is motor.detector:
-        otro.detector = propio
-    else:
-        otro.detector = copy.copy(motor.detector)
-        otro.detector.base = propio
+    otro.detector = SinEnvolventes(propio)
     otro.genero = copy.copy(motor.genero)
     if otro.genero.enabled:
         for clave, valor in GENERO_VIDEO.items():
             setattr(otro.genero, clave, valor)
+        if not gpu:
+            otro.genero.sample_s = MUESTREO_CPU_S
     otro.reiniciar({})
     return otro
 
@@ -158,9 +181,11 @@ class Quietud:
     """Qué tracks no se mueven: maniquíes, afiches o estatuas que el detector toma por personas.
 
     Cada track guarda dónde apareció en coordenadas del fondo: a su centro se le resta el movimiento acumulado de la
-    cámara, estimado como la mediana de lo que se movieron entre dos frames los tracks presentes en ambos (un video de
-    teléfono rara vez está quieto). Si en ESTATICO_S segundos no se aleja de ahí más de ESTATICO_DESPLAZAMIENTO de su
-    altura, es estático; quien se mueve una vez cuenta para siempre. Cuesta unas operaciones por fila.
+    cámara (un video de teléfono rara vez está quieto). Ese movimiento se mide con el flujo óptico del fondo, fuera de
+    las cajas de las personas: con la mediana de lo que se movían las personas, en un pasillo donde casi todos caminan
+    hacia el mismo lado se medía su caminata, y los maniquíes parecían moverse. Sin el frame (o sin fondo con textura)
+    se usa esa mediana como respaldo. Si en ESTATICO_S segundos un track no se aleja de su origen más de
+    ESTATICO_DESPLAZAMIENTO de su altura, es estático; quien se mueve una vez cuenta para siempre.
     """
 
     def __init__(self, estatico_s=ESTATICO_S):
@@ -169,12 +194,36 @@ class Quietud:
         self.previos = {}   # local_id -> centro en el frame anterior
         self.origen = {}    # local_id -> (t, centro en el fondo, alto) al aparecer
         self.movidos = set()
+        self.fondo = None   # (gris chico, máscara sin las personas, escala) del frame anterior
 
-    def actualizar(self, t, filas):
-        """Registra las filas de un frame (t: segundo del video)."""
+    def _movimiento_camara(self, frame, filas):
+        """Cuánto se movió la imagen del fondo desde el frame anterior (px del frame), o None si no se puede medir."""
+        escala = min(1.0, ANCHO_FLUJO / frame.shape[1])
+        gris = cv2.cvtColor(cv2.resize(frame, None, fx=escala, fy=escala, interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)
+        mascara = np.full(gris.shape, 255, np.uint8)
+        for f in filas:
+            cv2.rectangle(mascara, (int(f["x1"] * escala), int(f["y1"] * escala)),
+                          (int(f["x2"] * escala), int(f["y2"] * escala)), 0, -1)
+        previo, self.fondo = self.fondo, (gris, mascara, escala)
+        if previo is None or previo[0].shape != gris.shape:
+            return None
+        puntos = cv2.goodFeaturesToTrack(previo[0], maxCorners=200, qualityLevel=0.01, minDistance=6, mask=previo[1])
+        if puntos is None or len(puntos) < MIN_PUNTOS_FONDO:
+            return None
+        nuevos, ok, _ = cv2.calcOpticalFlowPyrLK(previo[0], gris, puntos, None, winSize=(21, 21), maxLevel=3)
+        ok = ok.reshape(-1).astype(bool)
+        if ok.sum() < MIN_PUNTOS_FONDO:
+            return None
+        return np.median((nuevos - puntos).reshape(-1, 2)[ok], axis=0) / escala
+
+    def actualizar(self, t, filas, frame=None):
+        """Registra las filas de un frame (t: segundo del video; frame: la imagen, para medir el movimiento de la cámara)."""
         centros = {f["local_id"]: np.array([(f["x1"] + f["x2"]) / 2, (f["y1"] + f["y2"]) / 2]) for f in filas}
         comunes = [lid for lid in centros if lid in self.previos]
-        if len(comunes) >= 3:
+        movimiento = self._movimiento_camara(frame, filas) if frame is not None else None
+        if movimiento is not None:
+            self.camara += movimiento
+        elif len(comunes) >= 3:
             self.camara += np.median([centros[lid] - self.previos[lid] for lid in comunes], axis=0)
         self.previos = centros
         for f in filas:
@@ -220,6 +269,8 @@ class VideoEnProceso:
         self.motor.calentar({self.id: primero})
         config = {"mode": "visual_temporal", "units": "m", "cameras": {self.id: {"timestamp_offset": 0.0}},
                   "overlaps": [], "transitions": [], "association": {**asociacion, **ASOCIACION_VIDEO}}
+        if not str(motor.device).startswith("cuda"):
+            config["association"]["sample_interval_s"] = MUESTREO_CPU_S
         self.asociador = lap01.AsociadorMulticamara(reid, config)
         self.asociador.quality["margen_borde"] = -1  # quien sale cortado por el borde también cuenta
         self.ritmo = Ritmo(self.fps, self.modo)
@@ -247,7 +298,7 @@ class VideoEnProceso:
         self.procesados += 1
         t = self.ritmo.indice / self.fps
         filas = lap01.procesar_instante(self.motor, self.asociador, t, {self.id: frame}, {self.id: self.procesados})[self.id]
-        self.quietud.actualizar(t, filas)
+        self.quietud.actualizar(t, filas, frame)
         # Lo que no se mueve sigue en el seguidor (si no, volvería como alguien nuevo) pero no se muestra ni cuenta.
         filas = [f for f in filas if not self.quietud.estatico(f["local_id"], t)]
         for fila in filas:

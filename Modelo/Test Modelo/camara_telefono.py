@@ -38,6 +38,7 @@ from websockets.sync.client import connect
 warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"websockets(\..*)?|__main__")
 
 import lap01
+from lap01.camaras_reid import ReIDPersonas
 from detector_pose import DetectorCuerpo, ajustar_cajas
 from memoria_identidades import AsociadorConMemoria, MemoriaIdentidades
 from videos_subidos import CANAL_ESTADO as CANAL_VIDEOS, Quietud, VideosSubidos, genero_por_votos
@@ -349,7 +350,7 @@ class SesionEnVivo:
         filas = self.motor.seguir(frames, fuente, detectadas)
         for cid, fs in filas.items():
             quieta = self.quietud.setdefault(cid, Quietud(ESTATICO_TELEFONO_S))
-            quieta.actualizar(self.t, fs)
+            quieta.actualizar(self.t, fs, frames[cid])
             filas[cid] = [f for f in fs if not quieta.estatico(f["local_id"], self.t)]
         # El carril lento recibe copias: modifica sus filas mientras el lazo principal publica las suyas.
         trabajo = (self.generacion, self.t, frames, fuente, {cid: [dict(f) for f in fs] for cid, fs in filas.items()},
@@ -526,8 +527,16 @@ def main():
     memoria = MemoriaIdentidades(url_api, asociacion)
     relevo = Relevo(url_api)
     sesion = SesionEnVivo(motor, reid, asociacion, memoria)
-    # Los videos subidos van con la asociación del Build, sin los ajustes para teléfonos.
-    videos = VideosSubidos(url_api, motor, reid, asociacion_build, relevo, personas_para_web)
+    # Los videos subidos van con la asociación del Build, sin los ajustes para teléfonos. Sin GPU tienen su propio Re-ID
+    # con todos los núcleos (en el servidor es lo que más tarda por frame): corre en el hilo principal, sin esperar al de
+    # los teléfonos, que usa el carril lento.
+    reid_videos = reid
+    if not str(motor.device).startswith("cuda"):
+        encoder = config["multicamera_encoder"]
+        reid_videos = ReIDPersonas(MODELO / encoder["weights"], imgsz=encoder.get("imgsz"),
+                                   threads=int(os.environ.get("OMP_NUM_THREADS") or os.cpu_count() or 4),
+                                   batch_size=encoder.get("batch_size", 8), device="cpu")
+    videos = VideosSubidos(url_api, motor, reid_videos, asociacion_build, relevo, personas_para_web)
     lectores, nombres, calentado = {}, {}, False
     revisado, publicado = 0.0, 0.0
     enlace, enlace_visto = None, -math.inf
