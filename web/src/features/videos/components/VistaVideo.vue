@@ -7,14 +7,18 @@ import { RELEVO_VIVO } from "../../telefonos/api";
 import type { AvanceVideo, PersonaResumen } from "../api";
 import { cajasEn, type Instantanea } from "../interpolacion";
 
-// Un mismo visor para las dos fases. En vivo, el navegador reproduce el video original (`fuente`) a su velocidad y
-// dibuja encima las cajas del modelo, que procesa en tiempo real; al terminar, el resumen con el último frame.
+// Un mismo visor para las dos fases. El navegador reproduce el video original (`fuente`) y dibuja encima las cajas del
+// modelo; al terminar se suma el resumen (y si el archivo ya no está, queda el último frame procesado).
+// Todos los videos de la página siguen un mismo reloj (`reloj`): empiezan juntos, se pausan juntos y, si el modelo se
+// atrasa en alguno, esperan todos (ver VideosPage).
+export type RelojComun = { t: number | null; detenido: boolean };
 const props = defineProps<{
   video: AvanceVideo & { personas?: PersonaResumen[] };
   estado: "preparando" | "procesando" | "terminado" | "error";
   mensaje?: string | null;
   dispositivo?: string;
   fuente?: string;
+  reloj: RelojComun;
 }>();
 const emit = defineEmits<{ quitar: [] }>();
 
@@ -27,7 +31,7 @@ const ultimo = ref<CuadroDetecciones>();
 let cerrar: (() => void)[] = [];
 
 const final = computed(() => props.estado === "terminado" || props.estado === "error");
-const reproduce = computed(() => !final.value && !!props.fuente && !sinReproductor.value);
+const reproduce = computed(() => !!props.fuente && !sinReproductor.value);
 const visible = computed(() => reproduce.value || !!imagen.value);
 const avance = computed(() => {
   const v = props.video;
@@ -59,18 +63,12 @@ function alVideo(ev: MessageEvent) {
   if (vieja) URL.revokeObjectURL(vieja);
 }
 
-// Reproducción en vivo: el video va un poco detrás del modelo, lo justo para tener siempre el frame procesado
-// siguiente, y cada cuadro de pantalla dibuja las cajas interpoladas en el segundo que se ve (ver cajasEn).
+// Las detecciones de todo el video (el reloj común puede ir bastante detrás del modelo en este video) y cada cuadro de
+// pantalla dibuja las cajas interpoladas en el segundo que se ve (ver cajasEn).
 const instantaneas: Instantanea[] = [];
-let llegada = 0; // performance.now() de la última detección
-let intervalo = 0.35; // segundos de video entre frames procesados (promedio móvil)
+const MAX_INSTANTANEAS = 20000;
 let arrancando = false;
-let iniciado = false;
 let animacion = 0;
-
-/** Cuánto va el video detrás del modelo. El frame procesado siguiente al que se ve llega un intervalo después en el
- * video y otro intervalo más tarde, cuando el modelo termina de procesarlo; con un margen, ~2,5 intervalos. */
-const retraso = () => Math.min(2, Math.max(0.5, 2.5 * intervalo + 0.15));
 
 function alDetecciones(ev: MessageEvent) {
   let m: Instantanea;
@@ -88,53 +86,40 @@ function alDetecciones(ev: MessageEvent) {
   if (previo != null && m.t <= previo) {
     if (m.t > previo - 2) return; // repetida (al reconectar el relevo reenvía la última)
     instantaneas.length = 0; // el video volvió a empezar
-  } else if (previo != null) {
-    intervalo = 0.8 * intervalo + 0.2 * (m.t - previo);
   }
   instantaneas.push(m);
-  llegada = performance.now();
-  while (instantaneas.length > 2 && instantaneas[1].t < m.t - 5) instantaneas.shift();
+  if (instantaneas.length > MAX_INSTANTANEAS) instantaneas.shift();
 }
 
-/** Cada cuadro de pantalla: lleva el video a su lugar detrás del modelo (acelerando o frenando hasta un 8 %, sin
- * saltos) y dibuja las cajas del segundo que se ve. */
+/** Cada cuadro de pantalla: lleva el video al segundo del reloj común (acelerando o frenando hasta un 10 %; salta solo
+ * si se fue lejos) y dibuja las cajas del segundo que se ve. */
 function cuadro() {
   animacion = requestAnimationFrame(cuadro);
   const v = reproductor.value;
   const c = lienzo.value;
-  if (!v || !c || !reproduce.value || !instantaneas.length) return;
-  if (props.estado === "procesando" && !arrancando) {
-    // Desde la última detección el objetivo avanza con el reloj, pero nunca pasa al último frame procesado: siempre
-    // hay uno siguiente con el cual interpolar, aunque el modelo vaya a ritmo irregular.
-    const nuevo = instantaneas.at(-1)!.t;
-    const objetivo = Math.max(0, Math.min(nuevo - 0.05, nuevo - retraso() + (performance.now() - llegada) / 1000));
-    const error = objetivo - v.currentTime;
-    const reproducir = () => {
+  if (!v || !c || !reproduce.value) return;
+  const { t, detenido } = props.reloj;
+  const fin = Number.isFinite(v.duration) ? v.duration : Infinity;
+  const objetivo = Math.min(t ?? 0, fin);
+  const error = objetivo - v.currentTime;
+  if (t == null || detenido || objetivo >= fin) {
+    // Antes de empezar, en pausa, esperando al modelo o al final: quieto en el segundo de todos.
+    if (!v.paused) v.pause();
+    if (Math.abs(error) > 0.04 && !v.seeking) v.currentTime = objetivo;
+  } else {
+    if (Math.abs(error) > 0.6 && !v.seeking) v.currentTime = objetivo;
+    else v.playbackRate = Math.min(1.1, Math.max(0.9, 1 + 0.5 * error));
+    if (v.paused && !arrancando) {
       arrancando = true;
       v.play().catch(() => undefined).finally(() => (arrancando = false));
-    };
-    if (!iniciado) {
-      iniciado = true;
-      v.currentTime = objetivo;
-      reproducir();
-    } else if (v.paused) {
-      // Esperando al modelo: sigue cuando vuelve a haber medio retraso de frames procesados por delante.
-      if (nuevo - v.currentTime > retraso() / 2) reproducir();
-    } else if (v.currentTime >= nuevo - 0.02) {
-      v.pause(); // sin frames procesados por delante: mejor esperar que adelantarse al modelo
-    } else if (Math.abs(error) > 2) {
-      v.currentTime = objetivo;
-    } else {
-      v.playbackRate = Math.min(1.08, Math.max(0.92, 1 + 0.4 * error));
     }
   }
-  const m = cajasEn(instantaneas, v.currentTime);
+  const m = instantaneas.length ? cajasEn(instantaneas, v.currentTime) : undefined;
   if (m) dibujarPersonas(c, m);
   else c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
 }
 
 watch(imagen, () => requestAnimationFrame(dibujar));
-watch(final, (f) => f && reproductor.value?.pause());
 
 onMounted(() => {
   animacion = requestAnimationFrame(cuadro);
