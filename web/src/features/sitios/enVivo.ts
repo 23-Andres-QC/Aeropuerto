@@ -221,10 +221,10 @@ function asignar(lista: Telefono[]) {
 
 // --- Ajuste fino de la ubicación en el plano ------------------------------------------
 // Ubicar por el tamaño de la persona tiene unos decímetros de error y, si el teléfono no está justo donde se puso su
-// cámara, un corrimiento parejo. Se corrige con un desplazamiento en metros (por defecto un poco a la izquierda) que se
+// cámara, un corrimiento parejo. Se corrige con un desplazamiento en metros (por defecto ninguno) que se
 // mueve con los botones del plano y se recuerda en el navegador; lo que aun así cae fuera del piso pasa al borde más cercano.
-const CLAVE_AJUSTE = "ajuste-vivo";
-const AJUSTE_INICIAL = { dx: -1, dy: 0 };
+const CLAVE_AJUSTE = "ajuste-vivo-2";
+const AJUSTE_INICIAL = { dx: 0, dy: 0 };
 function leerAjuste() {
   try {
     const a = JSON.parse(localStorage.getItem(CLAVE_AJUSTE) ?? "null");
@@ -281,6 +281,40 @@ function alPiso(p: Punto, piso: Punto[] | null | undefined): Punto {
   return mejor;
 }
 
+// --- Calibración de teléfonos --------------------------------------------------------
+// Un teléfono calibrado (web/public/calibracion/<sitio>.json) se ubica con su homografía píxeles del cuadro → metros del plano:
+// sale de una grabación de alguien caminando (escala por la altura de la persona y referencias del plano) y vale mientras el
+// teléfono siga donde estaba. Se reconoce por el nombre del dispositivo y la forma del cuadro. Sin calibración se ubica por el
+// tamaño de la persona (proyectorAlcance).
+type CalibracionTelefono = { nombre_contiene: string; frame: [number, number]; H: number[] };
+const calibraciones = shallowRef<CalibracionTelefono[]>([]);
+let calibracionDelSitio = "";
+async function cargarCalibracion() {
+  const quien = sitio.value;
+  if (!quien || calibracionDelSitio === quien) return;
+  calibracionDelSitio = quien;
+  try {
+    const r = await fetch(`/calibracion/${encodeURIComponent(quien)}.json`, { cache: "no-cache" });
+    const d = r.ok ? ((await r.json()) as { camaras?: CalibracionTelefono[] }) : {};
+    calibraciones.value = (d.camaras ?? []).filter((c) => Array.isArray(c.H) && c.H.length === 9 && c.frame?.length === 2);
+  } catch {
+    calibraciones.value = [];
+  }
+}
+
+function calibracionDe(nombre: string, anchoFrame: number, altoFrame: number): CalibracionTelefono | undefined {
+  return calibraciones.value.find((c) => nombre.includes(c.nombre_contiene) && Math.abs(c.frame[0] / c.frame[1] - anchoFrame / altoFrame) < 0.03);
+}
+
+function proyectarCalibrado(c: CalibracionTelefono, x: number, y: number, anchoFrame: number, altoFrame: number): Punto | null {
+  const [u, v] = [(x * c.frame[0]) / anchoFrame, (y * c.frame[1]) / altoFrame];
+  const h = c.H;
+  const w = h[6] * u + h[7] * v + h[8];
+  if (!Number.isFinite(w) || Math.abs(w) < 1e-9) return null;
+  const [X, Y] = [(h[0] * u + h[1] * v + h[2]) / w, (h[3] * u + h[4] * v + h[5]) / w];
+  return Number.isFinite(X) && Number.isFinite(Y) && Math.abs(X) < 80 && Math.abs(Y) < 80 ? [X, Y] : null;
+}
+
 function alDetecciones(id: string, ev: MessageEvent) {
   let m: Detecciones;
   try {
@@ -290,13 +324,14 @@ function alDetecciones(id: string, ev: MessageEvent) {
   }
   const cid = camaraDe(id);
   const proyecta = cid ? proyectores.value.get(cid) : null;
-  if (!cid || !proyecta || !m.frame_w || !m.frame_h) return;
+  const calibrada = calibracionDe(telefonos.value.find((t) => t.id === id)?.nombre ?? "", m.frame_w, m.frame_h);
+  if (!cid || (!proyecta && !calibrada) || !m.frame_w || !m.frame_h) return;
   const observaciones: Observacion[] = [];
   for (const p of m.people ?? []) {
     const [x1, y1, x2, y2] = p.box;
     // Con los pies cortados por el borde del cuadro la proyección no vale (igual que en el Build).
     if (y2 >= m.frame_h - 3) continue;
-    const bruto = proyecta([x1, y1, x2, y2], m.frame_w, m.frame_h);
+    const bruto = calibrada ? proyectarCalibrado(calibrada, (x1 + x2) / 2, y2, m.frame_w, m.frame_h) : proyecta?.([x1, y1, x2, y2], m.frame_w, m.frame_h);
     if (!bruto) continue;
     const punto = alPiso([bruto[0] + ajusteMapa.value.dx, bruto[1] + ajusteMapa.value.dy], config.value?.plano?.piso_m);
     observaciones.push({
@@ -594,6 +629,7 @@ function arrancar() {
   grabando.value = false;
   sondear();
   cargarConfig();
+  void cargarCalibracion();
   sondeo = setInterval(sondear, 3000);
   sondeoConfig = setInterval(cargarConfig, 5000);
   reloj = setInterval(componer, TICK_S * 1000);
@@ -631,6 +667,8 @@ export function usarSitioVivo(slug: string) {
   grabando.value = false;
   sitio.value = slug;
   config.value = undefined;
+  calibracionDelSitio = "";
+  if (corriendo) void cargarCalibracion();
   if (corriendo) {
     reiniciarVivo();
     cargarConfig();

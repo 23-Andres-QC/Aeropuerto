@@ -467,7 +467,12 @@ function dibujarCajas() {
   g.font = `600 ${Math.round(13 * escala)}px system-ui, sans-serif`;
   for (const persona of det.people || []) {
     const [x1, y1, x2, y2] = persona.box;
-    const color = persona.global_id != null ? colorPersona(persona.global_id) : '#8ba4bf';
+    // Colores más claros que los de la web: sobre el video oscuro un tono medio no se ve.
+    const color = persona.global_id != null ? colorClaro(persona.global_id) : '#cfe2f7';
+    g.lineWidth = 3 * escala;
+    g.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+    g.strokeRect(x1 - escala, y1 - escala, x2 - x1 + 2 * escala, y2 - y1 + 2 * escala);
+    g.lineWidth = 2 * escala;
     g.strokeStyle = color;
     g.strokeRect(x1, y1, x2 - x1, y2 - y1);
     const genero = persona.gender
@@ -478,11 +483,16 @@ function dibujarCajas() {
     if (!texto) continue;
     const alto = 18 * escala;
     const y = Math.max(alto, y1);
-    g.fillStyle = 'rgba(10, 20, 35, 0.82)';
-    g.fillRect(x1, y - alto, g.measureText(texto).width + 10 * escala, alto);
     g.fillStyle = color;
+    g.fillRect(x1, y - alto, g.measureText(texto).width + 10 * escala, alto);
+    g.fillStyle = '#0a1428';
     g.fillText(texto, x1 + 5 * escala, y - 5 * escala);
   }
+}
+
+// Como colorPersona, pero claro (más luz y saturación) para dibujar sobre el video.
+function colorClaro(numero) {
+  return `hsl(${Math.round(((numero * 0.618034) % 1) * 360)}, 90%, 64%)`;
 }
 
 // «1 en cuadro · 2.9 FPS · 470 ms · 12 personas (7 H, 5 M)», como las insignias de Teléfonos.

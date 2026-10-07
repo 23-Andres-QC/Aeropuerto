@@ -1,0 +1,32 @@
+{
+ "version": 1,
+ "fecha": "2026-10-06",
+ "nota": "Calibración de un teléfono sobre el plano de ESAN: homografía de píxeles del cuadro del relé (640 de ancho) a metros del plano. Salió de una grabación de una persona caminando (escala por altura 1,70 m, focal 575 px, referencias: tachos de reciclaje y tacho verde, y el piso del plano).",
+ "camaras": [
+  {
+   "nombre_contiene": "iPhone",
+   "frame": [
+    640,
+    853
+   ],
+   "H": [
+    -0.01151562206106209,
+    -0.041572323603714205,
+    10.63902069678336,
+    -0.03039083789372581,
+    0.023802780680714678,
+    5.1628309543042885,
+    -0.00038099386349457184,
+    0.0013792863367348967,
+    1.0
+   ],
+   "pose": {
+    "x": -11.95800627367054,
+    "y": 8.262603351919395,
+    "rumbo_deg": -30.537914294132452,
+    "altura_m": 11.12791849407111,
+    "focal_px": 590.0
+   }
+  }
+ ]
+}
