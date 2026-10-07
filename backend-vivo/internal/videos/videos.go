@@ -1,7 +1,7 @@
 // Package videos guarda los videos que se suben desde la web (sección Videos)
 // solo mientras el modelo los procesa: archivos temporales en disco, nunca en la
-// base. Se pueden subir varios; el modelo los procesa de a uno, en el orden en
-// que se subieron. Al terminar cada uno, el modelo deja su resumen y el archivo
+// base. Se pueden subir varios; el modelo los procesa todos al mismo tiempo.
+// Al terminar cada uno, el modelo deja su resumen y el archivo
 // se borra; el resumen se ve en la web hasta que se quita el video. Todo vive en
 // memoria: un reinicio vacía la lista y borra los archivos que quedaran.
 package videos

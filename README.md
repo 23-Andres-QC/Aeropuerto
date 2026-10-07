@@ -71,7 +71,7 @@ Los datos se conservan en el volumen `aeropuerto-demo_pgdata`. La base se crea v
 - **IDs:** se confirman con 3 vistas y 2 s a la vista.
 - **Género:** se muestra desde la primera vista, con la certeza promedio de CLIP, en vez de «Sin determinar» hasta juntar votos. En el Build y en las cámaras en vivo el género se fuerza a Hombre o Mujer con 2 votos de CLIP (55 % de certeza, personas de 72 px o más); «Sin determinar» queda solo para quien nunca tuvo una vista con evidencia suficiente (`gender` en `config_lap01.json`).
 
-Con mucha gente el modelo va a unos 3–4 FPS en una RTX 4060. El video se ve fluido igual, pero las cajas se actualizan menos seguido. A cambio de detectar a casi todos, hay más falsos positivos y géneros menos seguros en las personas lejanas. Los valores están en `AJUSTES` de `Modelo/Test Modelo/videos_subidos.py`. El modelo procesa en tiempo real, como una cámara en vivo: si no alcanza al video, salta frames. Se pueden elegir varios videos a la vez (hasta 10 en la lista, de hasta 1 GB cada uno): el modelo los procesa de a uno, en el orden en que se subieron, y la página muestra el estado de cada uno (en cola, procesando o terminado) y el resumen del que se elija.
+Con mucha gente el modelo va a unos 3–4 FPS en una RTX 4060. El video se ve fluido igual, pero las cajas se actualizan menos seguido. A cambio de detectar a casi todos, hay más falsos positivos y géneros menos seguros en las personas lejanas. Los valores están en `AJUSTES` de `Modelo/Test Modelo/videos_subidos.py`. El modelo procesa en tiempo real, como una cámara en vivo: si no alcanza al video, salta frames. Se pueden elegir varios videos a la vez (hasta 10 en la lista, de hasta 1 GB cada uno): el modelo los procesa todos al mismo tiempo, turnándose un frame de cada uno, y la página muestra el estado de cada uno (preparando, procesando o terminado) y el video o el resumen del que se elija. Con más videos a la vez, las cajas de cada uno se actualizan menos seguido (`VIDEOS_SIMULTANEOS` limita cuántos).
 
 ## Estructura
 
@@ -122,7 +122,7 @@ Todas las rutas de sitio siguen `/api/v1/sites/<sitio>/…`:
 | `GET /{sitio}/sessions/{id}/points` · `GET/PUT /analytics` | entrada (posiciones del modelo) y resultados de la Parte III (zona y posición ajustada de cada punto, eventos, análisis) |
 | `GET /{sitio}/media/{archivo}` | archivos exportados por el Build |
 | `GET/POST /api/v1/telefonos` · `DELETE /{id}` | teléfonos (solo en memoria) |
-| `GET/POST /vivo/api/v1/videos` · `DELETE /{id}` | videos subidos en Videos con su resumen al terminar (disco temporal y memoria de backend-vivo; hasta 10, procesados en orden) |
+| `GET/POST /vivo/api/v1/videos` · `DELETE /{id}` | videos subidos en Videos con su resumen al terminar (disco temporal y memoria de backend-vivo; hasta 10, procesados al mismo tiempo) |
 | `/api/v1/cameras/{id}/publish·watch·detections/…` | relé WebSocket de video y detecciones |
 | `GET /health/live` · `/health/ready` | salud del servicio y de PostgreSQL |
 

@@ -238,7 +238,7 @@ Se activa con el botón de la cabecera, y también entra solo cuando se conecta 
 
 ## 9. Reglas de Videos: probar el modelo sin guardar nada
 
-- **Varios videos a la vez:** hasta **10** en la lista, de hasta **1 GB** cada uno. El modelo los procesa **de a uno, en el orden en que se subieron**; la página muestra el estado de cada uno (en cola, procesando o terminado) y el resumen del que se elija.
+- **Varios videos a la vez:** hasta **10** en la lista, de hasta **1 GB** cada uno. El modelo los procesa **todos al mismo tiempo**, turnándose un frame de cada uno: con más videos a la vez, las cajas de cada uno se actualizan menos seguido. La página muestra el estado de cada uno (preparando, procesando o terminado) y el video o el resumen del que se elija.
 - El archivo va a disco temporal de `backend-vivo`, **nunca a una base**. El modelo lo lee a su resolución original, sin recomprimir.
 - Los ajustes son más sensibles que los del Build, para que sirvan con cualquier video:
   - detector a 1280 px en GPU con confianza 0,10;

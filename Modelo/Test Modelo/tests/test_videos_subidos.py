@@ -8,6 +8,7 @@ import tempfile
 import threading
 import types
 import unittest
+from collections import deque
 from pathlib import Path
 
 import cv2
@@ -131,40 +132,85 @@ class MotorAparte(unittest.TestCase):
         self.assertEqual(motor.detector.base.config["conf"], 0.3)
 
 
-class Cola(unittest.TestCase):
-    """Varios videos subidos: se procesan de a uno, en el orden en que se subieron."""
+def esperar_hilos():
+    for hilo in threading.enumerate():
+        if hilo is not threading.current_thread() and hilo.daemon:
+            hilo.join(1)
+
+
+class VideoFalso:
+    """Un VideoEnProceso sin modelo: cada paso devuelve un frame hasta llegar a `frames`."""
+
+    def __init__(self, vid, frames):
+        self.id, self.nombre, self.frames, self.procesados, self.terminado = vid, vid, frames, 0, False
+
+    def paso(self):
+        if self.procesados >= self.frames:
+            self.terminado = True
+            return None
+        self.procesados += 1
+        return np.zeros((4, 4, 3), np.uint8), []
+
+    def resumen(self):
+        return {"procesados": self.procesados, "saltados": 0, "personas_total": 0}
+
+    def cerrar(self):
+        pass
+
+
+class Simultaneos(unittest.TestCase):
+    """Varios videos subidos: se procesan al mismo tiempo, turnándose un frame de cada uno."""
 
     def videos(self):
-        descargas = []
+        descargas, publicados, resumenes = [], [], {}
 
         class Prueba(VideosSubidos):
             def _descargar(self, info, cancelar):
                 descargas.append((info["id"], cancelar))
 
-        v = object.__new__(Prueba)
-        v.actual, v.ruta, v.descarga, v.descargado, v.hechos = None, None, None, None, set()
-        return v, descargas
+            def _publicar(self, video, frame, filas):
+                publicados.append(video.id)
 
-    def test_toma_el_primero_sin_resumen_y_espera_a_terminarlo(self):
-        v, descargas = self.videos()
+            def _guardar_resumen(self, vid, resumen):
+                resumenes[vid] = resumen
+
+        v = object.__new__(Prueba)
+        v.activos, v.descargas, v.descargados, v.hechos, v.turno = {}, {}, deque(), set(), 0
+        v.motor = types.SimpleNamespace(device="cpu")
+        return v, descargas, publicados, resumenes
+
+    def test_descarga_todos_los_que_no_tienen_resumen(self):
+        v, descargas, _, _ = self.videos()
         lista = [{"id": "a", "nombre": "a", "bytes": 1, "modo": "tiempo_real", "resumen": {"estado": "terminado"}},
                  {"id": "b", "nombre": "b", "bytes": 1, "modo": "tiempo_real", "resumen": None},
                  {"id": "c", "nombre": "c", "bytes": 1, "modo": "tiempo_real", "resumen": None}]
         v.revisar(lista)
         v.revisar(lista)
-        for hilo in threading.enumerate():
-            if hilo is not threading.current_thread() and hilo.daemon:
-                hilo.join(1)
-        self.assertEqual([d[0] for d in descargas], ["b"], "uno a la vez, en orden")
+        esperar_hilos()
+        self.assertEqual(sorted(d[0] for d in descargas), ["b", "c"], "los dos a la vez, una sola descarga cada uno")
         v.revisar(lista[:1] + lista[2:])  # quitaron «b» mientras se descargaba
-        self.assertTrue(descargas[0][1].is_set(), "se cancela su descarga")
-        for hilo in threading.enumerate():
-            if hilo is not threading.current_thread() and hilo.daemon:
-                hilo.join(1)
-        self.assertEqual([d[0] for d in descargas], ["b", "c"], "y sigue con el próximo")
+        self.assertTrue(dict(descargas)["b"].is_set(), "se cancela su descarga")
+        self.assertFalse(dict(descargas)["c"].is_set(), "la de «c» sigue")
+
+    def test_se_turnan_y_cada_uno_deja_su_resumen(self):
+        v, _, publicados, resumenes = self.videos()
+        with tempfile.TemporaryDirectory() as carpeta:
+            for vid, frames in (("b", 2), ("c", 4)):
+                ruta = Path(carpeta) / f"{vid}.video"
+                ruta.write_bytes(b"x")
+                v.activos[vid] = (VideoFalso(vid, frames), ruta)
+            while v.paso():
+                pass
+            v.paso()
+        self.assertEqual(publicados[:4], ["b", "c", "b", "c"], "un frame de cada uno, por turnos")
+        self.assertEqual(publicados.count("c"), 4)
+        self.assertEqual(sorted(resumenes), ["b", "c"])
+        self.assertEqual(resumenes["b"]["estado"], "terminado")
+        self.assertEqual(v.activos, {})
+        self.assertEqual(v.hechos, {"b", "c"})
 
     def test_no_repite_los_hechos(self):
-        v, descargas = self.videos()
+        v, descargas, _, _ = self.videos()
         v.hechos.add("b")
         v.revisar([{"id": "b", "nombre": "b", "bytes": 1, "modo": "tiempo_real", "resumen": None}])
         self.assertEqual(descargas, [])

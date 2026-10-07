@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { socketPersistente } from "../../../core/http";
 import { RELEVO_VIVO } from "../../telefonos/api";
-import { api, MAX_VIDEOS, subirVideo, type EstadoVideos, type VideoSubido } from "../api";
+import { api, MAX_VIDEOS, subirVideo, type EstadoVideos, type VideoActivo, type VideoSubido } from "../api";
 import VistaVideo from "../components/VistaVideo.vue";
 
 const entrada = ref<HTMLInputElement>();
@@ -11,7 +11,7 @@ const subida = ref<{ nombre: string; indice: number; total: number; fraccion: nu
 let cancelada = false;
 // Los videos subidos, en el orden en que se subieron, cada uno con su resumen cuando el modelo termina; viven en backend-vivo.
 const videos = ref<VideoSubido[]>([]);
-// El video que se mira; sin elegir, el que se procesa (o el primero en cola, o el último terminado).
+// El video que se mira; sin elegir, el primero que se procesa (o el primero sin resumen, o el último terminado).
 const seleccion = ref<string>();
 // Los archivos subidos desde esta pestaña: se reproducen desde la computadora, sin volver a bajarlos.
 const locales = new Map<string, string>();
@@ -22,47 +22,49 @@ const ahora = ref(Date.now());
 let cerrarEstado: (() => void) | undefined;
 let sondeo: ReturnType<typeof setInterval> | undefined;
 let reloj: ReturnType<typeof setInterval> | undefined;
-let procesando: string | undefined;
+let procesando = new Set<string>();
 
 // Al apagarse, el servicio del modelo publica «detenido».
 const conectado = computed(() => ahora.value - ultimoEstado.value < 6000 && servicio.value?.estado !== "detenido");
-// El video con el que está el modelo ahora, si está en la lista y aún sin resumen.
-const enProceso = computed(() => {
-  const s = servicio.value;
-  const id = conectado.value ? s?.video?.id : undefined;
-  return id && videos.value.some((v) => v.id === id && !v.resumen) ? s : undefined;
+// Los videos que el modelo tiene entre manos ahora (los procesa todos a la vez), si están en la lista y aún sin resumen.
+const activos = computed(() => {
+  const mapa = new Map<string, VideoActivo>();
+  if (!conectado.value) return mapa;
+  for (const a of servicio.value?.videos ?? []) {
+    if (videos.value.some((v) => v.id === a.id && !v.resumen)) mapa.set(a.id, a);
+  }
+  return mapa;
 });
-// Los que esperan su turno, en orden.
-const cola = computed(() => videos.value.filter((v) => !v.resumen && v.id !== enProceso.value?.video?.id));
 const elegido = computed(() => {
   const lista = videos.value;
   return (
     lista.find((v) => v.id === seleccion.value) ??
-    lista.find((v) => v.id === enProceso.value?.video?.id) ??
-    cola.value[0] ??
+    lista.find((v) => activos.value.get(v.id)?.estado === "procesando") ??
+    lista.find((v) => !v.resumen) ??
     lista[lista.length - 1]
   );
 });
-const enVivo = computed(() => (elegido.value && enProceso.value?.video?.id === elegido.value.id ? enProceso.value : undefined));
+const enVivo = computed(() => (elegido.value ? activos.value.get(elegido.value.id) : undefined));
 // El video original que reproduce la página mientras el modelo lo procesa (el archivo existe hasta que termina).
 const fuente = computed(() => {
-  const id = enVivo.value?.video?.id;
+  const id = enVivo.value?.id;
   if (!id) return undefined;
   return locales.get(id) ?? `/vivo/api/v1/videos/${encodeURIComponent(id)}/archivo`;
 });
 const lleno = computed(() => videos.value.length >= MAX_VIDEOS);
+const enProceso = computed(() => [...activos.value.values()].filter((a) => a.estado === "procesando").length);
 
 type Fila = { texto: string; clase: "procesando" | "cola" | "listo" | "falla" };
 function estadoDe(v: VideoSubido): Fila {
   if (v.resumen?.estado === "error") return { texto: "Error", clase: "falla" };
   if (v.resumen) return { texto: `Terminado · ${v.resumen.personas_total ?? 0} personas`, clase: "listo" };
-  const avance = enProceso.value?.video;
-  if (avance?.id === v.id) {
+  const avance = activos.value.get(v.id);
+  if (avance?.estado === "procesando") {
     const pct = avance.duracion_s && avance.t_s != null ? Math.min(100, Math.round((100 * avance.t_s) / avance.duracion_s)) : null;
-    return { texto: enProceso.value?.estado === "procesando" ? `Procesando${pct != null ? ` · ${pct} %` : ""}` : "Preparando…", clase: "procesando" };
+    return { texto: `Procesando${pct != null ? ` · ${pct} %` : ""}`, clase: "procesando" };
   }
-  const turno = cola.value.findIndex((c) => c.id === v.id) + 1;
-  return { texto: conectado.value ? `En cola · ${turno}.º` : "Esperando al modelo", clase: "cola" };
+  if (avance) return { texto: "Preparando…", clase: "procesando" };
+  return { texto: conectado.value ? "Por empezar" : "Esperando al modelo", clase: "cola" };
 }
 
 const megas = (bytes: number) => `${(bytes / 2 ** 20).toFixed(bytes < 10 * 2 ** 20 ? 1 : 0)} MB`;
@@ -140,9 +142,9 @@ function alEstado(ev: MessageEvent) {
     return;
   }
   // Cuando el modelo suelta un video, su resumen ya está en backend-vivo: se muestra sin esperar al sondeo.
-  const actual = servicio.value.video?.id;
-  if (procesando && procesando !== actual) cargar();
-  procesando = servicio.value.estado === "procesando" ? actual : undefined;
+  const ahoraProcesa = new Set((servicio.value.videos ?? []).filter((v) => v.estado === "procesando").map((v) => v.id));
+  if ([...procesando].some((id) => !ahoraProcesa.has(id))) cargar();
+  procesando = ahoraProcesa;
 }
 
 onMounted(() => {
@@ -166,8 +168,9 @@ onUnmounted(() => {
     <input ref="entrada" type="file" accept="video/*" multiple hidden @change="elegidos" />
     <button class="primary-button" type="button" :disabled="!!subida || lleno" @click="entrada?.click()">Elegir videos…</button>
     <p class="muted detalle">
-      Puedes elegir varios a la vez: el modelo los procesa de a uno, en el orden en que se subieron, y cada uno se reproduce
-      con sus detecciones encima. Los videos no se guardan: se borran al terminar y su resumen, al quitarlo.
+      Puedes elegir varios a la vez: el modelo los procesa todos al mismo tiempo y cada uno se reproduce con sus detecciones
+      encima (con más videos a la vez, las cajas de cada uno se actualizan menos seguido). Los videos no se guardan: se
+      borran al terminar y su resumen, al quitarlo.
       <span v-if="lleno"><b>La lista está llena ({{ MAX_VIDEOS }}): quita alguno para subir otro.</b></span>
     </p>
     <div v-if="subida" class="subida">
@@ -186,6 +189,7 @@ onUnmounted(() => {
       <div class="panel-heading">
         <h2>Videos</h2>
         <span class="heading-meta">
+          <span v-if="enProceso" class="pill">{{ enProceso }} procesándose</span>
           <span class="pill">{{ videos.length }} / {{ MAX_VIDEOS }}</span>
           <button v-if="videos.some((v) => v.resumen)" class="icon-button" type="button" @click="quitarTerminados">
             Quitar terminados
@@ -217,10 +221,10 @@ onUnmounted(() => {
     />
     <VistaVideo
       v-else-if="enVivo"
-      :key="enVivo.video!.id"
-      :video="enVivo.video!"
-      :estado="enVivo.estado === 'procesando' ? 'procesando' : 'preparando'"
-      :dispositivo="enVivo.dispositivo"
+      :key="enVivo.id"
+      :video="enVivo"
+      :estado="enVivo.estado"
+      :dispositivo="servicio?.dispositivo"
       :fuente="fuente"
       @quitar="quitar(elegido!.id)"
     />
@@ -228,7 +232,6 @@ onUnmounted(() => {
       <template v-if="elegido">
         <p><b>{{ elegido.nombre }}</b></p>
         <p v-if="!conectado">Subido: empieza en cuanto corra el servicio del modelo.</p>
-        <p v-else-if="enProceso">En cola: se procesa cuando terminen los videos anteriores.</p>
         <p v-else>Preparando el video…</p>
       </template>
       <p v-else-if="conectado">Elige uno o varios videos de tu computadora para ver cómo los procesa el modelo.</p>

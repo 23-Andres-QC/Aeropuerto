@@ -2,7 +2,7 @@ import { request } from "../../core/http";
 
 // Los videos van a backend-vivo, como los teléfonos: cada archivo vive en disco temporal mientras el modelo lo procesa
 // (nunca en una base) y el modelo publica el frame procesado y sus detecciones por el mismo relevo. Se pueden subir
-// varios: el modelo los procesa de a uno, en el orden en que se subieron. Al terminar, el resumen queda junto al video
+// varios: el modelo los procesa al mismo tiempo. Al terminar, el resumen queda junto al video
 // (en memoria de backend-vivo) hasta que se quita.
 const VIDEOS = "/vivo/api/v1/videos";
 
@@ -46,12 +46,15 @@ export type ResumenVideo = AvanceVideo & {
   personas?: PersonaResumen[];
 };
 
-/** Lo que publica el servicio del modelo en el canal «videos»; «detenido» sin video es que se apagó. */
+/** Un video que el modelo tiene entre manos: descargándolo (preparando) o procesándolo. */
+export type VideoActivo = AvanceVideo & { estado: "preparando" | "procesando" };
+
+/** Lo que publica el servicio del modelo en el canal «videos» (todos los videos que procesa a la vez); «detenido» es que se apagó. */
 export type EstadoVideos = {
   ts: number;
   estado: "libre" | "preparando" | "procesando" | "detenido";
   dispositivo?: string;
-  video?: AvanceVideo;
+  videos?: VideoActivo[];
 };
 
 export const api = {
