@@ -38,6 +38,7 @@ from websockets.sync.client import connect
 warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"websockets(\..*)?|__main__")
 
 import lap01
+from detector_pose import DetectorPose, ajustar_cajas
 from memoria_identidades import AsociadorConMemoria, MemoriaIdentidades
 from videos_subidos import CANAL_ESTADO as CANAL_VIDEOS, Quietud, VideosSubidos, genero_por_votos
 
@@ -71,6 +72,7 @@ SEGUIDOR_TELEFONO = {"new_track_confidence": 0.25, "association_confidence": 0.2
 DETECTOR_TELEFONO = {"conf": 0.15, "iou": 0.65}
 IMGSZ_GPU_TELEFONO = 960
 DETECTOR_CPU_TELEFONO = "yolo26s.pt"
+POSE_TELEFONO = "yolo26s-pose.pt"  # detector con puntos del cuerpo: la caja deja fuera los brazos
 # Género: personas más chicas y detecciones menos seguras también votan (el consenso y el margen se mantienen).
 # Lo que en este tiempo a la vista no se mueve (un maniquí, un afiche, un objeto) no se muestra ni se cuenta; quien se mueve
 # una vez cuenta para siempre.
@@ -109,51 +111,6 @@ def sin_token(url):
     """La URL sin su query (para mostrarla sin exponer el token)."""
     partes = urlsplit(url)
     return f"{partes.scheme}://{partes.netloc}{partes.path}"
-
-
-# Forma de la caja de una persona: solo cabeza, tronco y piernas (sin los brazos abiertos ni lo que lleva), y nunca una caja
-# que envuelva a varias personas.
-ASPECTO_DE_PIE = 0.42   # ancho / alto máximo de alguien de pie (alto / ancho >= 1.8)
-ASPECTO_INTERMEDIO = 0.60  # agachado, sentado o visto desde un ángulo alto (alto / ancho entre 1.15 y 1.8)
-ASPECTO_ARRIBA = 1.15   # alto / ancho menor: visto casi desde arriba (solo se ve la cabeza y los hombros)
-CABEZA_DESDE_ARRIBA = 0.6  # lado de la caja (fracción del lado menor) que se queda con la cabeza
-
-
-def ajustar_cajas(cajas, confianzas):
-    """Cajas de personas más ceñidas, y sin las que envuelven a otras.
-
-    - Una caja que contiene el centro de otras (bastante más chicas) es un grupo o un fondo, no una persona: se descarta.
-    - De pie: el ancho se limita a 0,42 del alto, centrado, así no incluye brazos extendidos, bolsos ni a quien está al lado.
-    - Agachada, sentada o vista desde un ángulo alto: ancho máximo de 0,6 del alto.
-    - Vista casi desde arriba (más ancha que alta): queda solo la cabeza, un cuadrado centrado del 60 % del lado menor.
-    """
-    cajas = np.asarray(cajas, np.float32).reshape(-1, 4).copy()
-    confianzas = np.asarray(confianzas, np.float32).reshape(-1)
-    if not len(cajas):
-        return cajas, confianzas
-    ancho, alto = cajas[:, 2] - cajas[:, 0], cajas[:, 3] - cajas[:, 1]
-    centro = np.column_stack(((cajas[:, 0] + cajas[:, 2]) / 2, (cajas[:, 1] + cajas[:, 3]) / 2))
-    area = np.maximum(ancho * alto, 1.0)
-    mantener = np.ones(len(cajas), bool)
-    for i in range(len(cajas)):
-        dentro = ((centro[:, 0] > cajas[i, 0]) & (centro[:, 0] < cajas[i, 2]) & (centro[:, 1] > cajas[i, 1])
-                  & (centro[:, 1] < cajas[i, 3]) & (area < 0.6 * area[i]))
-        dentro[i] = False
-        if dentro.sum() >= 2 or (dentro.sum() >= 1 and ancho[i] / max(alto[i], 1.0) > 0.8):
-            mantener[i] = False
-    for i in np.flatnonzero(mantener):
-        a, h = max(ancho[i], 1.0), max(alto[i], 1.0)
-        cx, cy = centro[i]
-        if h / a >= 1.8:
-            nuevo = min(a, ASPECTO_DE_PIE * h)
-            cajas[i, [0, 2]] = cx - nuevo / 2, cx + nuevo / 2
-        elif h / a >= ASPECTO_ARRIBA:
-            nuevo = min(a, ASPECTO_INTERMEDIO * h)
-            cajas[i, [0, 2]] = cx - nuevo / 2, cx + nuevo / 2
-        else:
-            lado = CABEZA_DESDE_ARRIBA * min(a, h)
-            cajas[i] = cx - lado / 2, cy - lado / 2, cx + lado / 2, cy + lado / 2
-    return cajas[mantener], confianzas[mantener]
 
 
 class LectorMjpeg:
@@ -386,7 +343,9 @@ class SesionEnVivo:
             frames[cid] = frame
         self._ritmo_genero()
         fuente = dict(self.procesados)
-        detectadas = {cid: ajustar_cajas(*dato) for cid, dato in self.motor.detectar(frames).items()}
+        detectadas = self.motor.detectar(frames)
+        if not isinstance(self.motor.detector, DetectorPose):  # con pose las cajas ya son de cuerpo sin brazos
+            detectadas = {cid: ajustar_cajas(*dato) for cid, dato in detectadas.items()}
         filas = self.motor.seguir(frames, fuente, detectadas)
         for cid, fs in filas.items():
             quieta = self.quietud.setdefault(cid, Quietud(ESTATICO_TELEFONO_S))
@@ -557,6 +516,10 @@ def main():
     asociacion = {**asociacion_build, **ASOCIACION_TELEFONO}
     print("Cargando el modelo final (YOLO26, tracker, Re-ID, género)...", flush=True)
     motor = lap01.MotorLAP01(MODELO, config, device="auto", batch=True)
+    pose = MODELO / os.environ.get("MODELO_POSE", POSE_TELEFONO)
+    if pose.is_file():
+        # Cajas de cabeza, tronco y piernas con los puntos del cuerpo (sin brazos); MODELO_POSE=ninguno usa solo el detector.
+        motor.detector = DetectorPose(pose, config["detector"], motor.device, batch=True)
     reid = lap01.crear_asociador(motor, {"mode": "visual_temporal", "units": "m", "cameras": {"x": {}}}).reid
     print(f"Modelo listo en {motor.device} · detector a {config['detector']['imgsz']} px · "
           f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no'}", flush=True)
