@@ -41,6 +41,10 @@ REVISAR_CADA_S = 2.0
 MUESTREO_INICIAL_S = 0.1  # una vista Re-ID cada 0,1 s mientras la persona no tiene ID (el Re-ID corre en GPU)
 DURACION_NUEVA_S = 1.0    # visible este tiempo sin parecerse a nadie: recibe un ID nuevo
 ESPERA_DUDA_S = 3.0       # si se parece a alguien ya visto, se espera hasta aquí antes de darle un ID nuevo
+OCUPADA_S = 1.5           # una persona está «ocupada» (ya es otra identidad visible) si se vio hace menos de esto
+CONTINUIDAD_S = 8.0       # un track nuevo que empieza así de pronto después de otro, en el mismo lugar, es la misma persona
+CONTINUIDAD_ALTURAS = 1.3 # y a menos de esta distancia (en alturas de caja) de donde terminó el anterior
+GENERO_FIJO = 0.8         # con esta certeza o más el género de una persona queda fijo
 DUDA = 0.1                # a menos de esto del umbral, una persona ya vista es «parecida»
 
 
@@ -342,6 +346,8 @@ class MemoriaIdentidades:
     def genero(self, pid, genero, confianza):
         """Guarda el género si es más confiable que el que ya tenía."""
         persona = self.personas[pid]
+        if persona.genero is not None and (persona.confianza_genero or 0) >= GENERO_FIJO:
+            return  # ya está fijo: una certeza de 0,8 o más no se cambia
         if persona.genero is None or confianza > (persona.confianza_genero or 0) + 0.01:
             persona.genero, persona.confianza_genero = genero, float(confianza)
             self._marcar(pid)
@@ -402,8 +408,13 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
                 {t.camera_id for t in grupo})
 
     def _ocupadas(self, excepto=None):
-        """Personas que otra identidad visible ahora (o hace < tracklet_gap_s) ya tiene asignadas."""
-        limite = self.last_timestamp - self.gap
+        """Personas que otra identidad visible ahora (hace menos de OCUPADA_S) ya tiene asignadas.
+
+        No se usa tracklet_gap_s: si el seguidor pierde a una persona y la retoma con otro track, el anterior terminó
+        hace un instante y la persona seguiría «ocupada», así que recibía un ID nuevo que unos segundos después se
+        fusionaba con el viejo (el número cambiaba en pantalla). Dos identidades que no coinciden en el tiempo no
+        pueden ser personas distintas por estar «ocupada» la misma."""
+        limite = self.last_timestamp - OCUPADA_S
         return {pid for gid, pid in self.confirmadas.items()
                 if gid != excepto and gid in self.globales and self._fin(gid) >= limite}
 
@@ -436,7 +447,34 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
             return timestamp - track.ultimo_muestreo + 1e-8 >= MUESTREO_INICIAL_S
         return super()._debe_muestrear(track, row, timestamp)
 
+    def _continuacion(self, gid, ocupadas):
+        """Persona de un track de la misma cámara que terminó hace poco justo donde empieza este: es la misma persona.
+
+        El seguidor a veces pierde a alguien un momento (pocos cuadros por segundo, oclusión, la cámara que se mueve) y
+        abre otro track. Con el tiempo y el lugar basta: no hace falta esperar vistas de apariencia para conservar su ID."""
+        nuevos = [t for t in self._miembros(gid) if t.huella and self.last_timestamp - t.inicio_s <= 4.0]
+        mejor = None
+        for t in nuevos:
+            primero = t.huella[0]
+            for o in self.tracklets.values():
+                if (o.camera_id != t.camera_id or o.global_id == gid or not o.huella
+                        or not 0 <= t.inicio_s - o.fin_s <= CONTINUIDAD_S):
+                    continue
+                pid = self.confirmadas.get(o.global_id)
+                if pid is None or pid in ocupadas or pid not in self.memoria.personas:
+                    continue
+                ultimo = o.huella[-1]
+                alto = max(primero[3], ultimo[3], 1.0)
+                distancia = math.hypot(primero[1] - ultimo[1], primero[2] - ultimo[2]) / alto
+                if distancia <= CONTINUIDAD_ALTURAS and (mejor is None or distancia < mejor[0]):
+                    mejor = (distancia, pid)
+        return None if mejor is None else mejor[1]
+
     def _identificar(self, gid, ocupadas, ahora):
+        seguida = self._continuacion(gid, ocupadas)
+        if seguida is not None:
+            self.confirmadas[gid] = seguida
+            return seguida
         if self._n_vistas(gid) < self.min_query_samples:
             return None
         suma, prototipos, camaras = self._grupo(gid)

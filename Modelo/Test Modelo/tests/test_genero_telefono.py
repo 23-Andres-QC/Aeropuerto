@@ -20,7 +20,7 @@ class MemoriaFalsa:
 def sesion(votos, personas=None):
     s = object.__new__(SesionEnVivo)
     s.motor = types.SimpleNamespace(genero=types.SimpleNamespace(memory={("tel-1", 4): {"votes": votos}}))
-    s.memoria, s.generos = MemoriaFalsa(personas), {}
+    s.memoria, s.generos, s.fijos = MemoriaFalsa(personas), {}, {}
     return s
 
 
@@ -35,10 +35,10 @@ class GeneroProvisional(unittest.TestCase):
         self.assertEqual(f["genero"], "Sin determinar")
 
     def test_el_primer_voto_y_despues_el_que_va_ganando_sin_guardarlo(self):
-        s = sesion([("Mujer", 0.8)])
+        s = sesion([("Mujer", 0.7)])
         f = fila()
         s._genero("tel-1", f)
-        self.assertEqual((f["genero"], f["confianza_genero"]), ("Mujer", 0.8))
+        self.assertEqual((f["genero"], f["confianza_genero"]), ("Mujer", 0.7))
         s.motor.genero.memory[("tel-1", 4)]["votes"] += [("Hombre", 0.9), ("Hombre", 0.85)]
         f = fila()
         s._genero("tel-1", f)
@@ -53,6 +53,69 @@ class GeneroProvisional(unittest.TestCase):
         s = sesion([], personas={7: types.SimpleNamespace(genero=None)})
         s._genero("tel-1", fila("Mujer", 0.81))
         self.assertEqual(s.memoria.guardados, [(7, "Mujer", 0.81)])
+
+
+class GeneroFijo(unittest.TestCase):
+    def test_con_certeza_de_0_8_o_mas_queda_fijo_y_no_cambia(self):
+        s = sesion([])
+        f = fila("Mujer", 0.83, pid=None)
+        s._genero("tel-1", f)
+        # el seguidor después vota lo contrario con otra certeza: sigue Mujer
+        f = fila("Hombre", 0.91, pid=None)
+        s._genero("tel-1", f)
+        self.assertEqual((f["genero"], f["confianza_genero"]), ("Mujer", 0.83))
+
+    def test_bajo_0_8_si_puede_cambiar(self):
+        s = sesion([])
+        s._genero("tel-1", fila("Mujer", 0.7, pid=None))
+        f = fila("Hombre", 0.75, pid=None)
+        s._genero("tel-1", f)
+        self.assertEqual(f["genero"], "Hombre")
+
+    def test_el_provisional_de_votos_con_0_8_tambien_se_fija(self):
+        s = sesion([("Hombre", 0.85), ("Hombre", 0.9)], personas={7: types.SimpleNamespace(genero=None, confianza_genero=None)})
+        f = fila(pid=7)
+        s._genero("tel-1", f)
+        self.assertEqual(f["genero"], "Hombre")
+        s.motor.genero.memory[("tel-1", 4)]["votes"] += [("Mujer", 0.99)] * 6
+        f = fila(pid=7)
+        s._genero("tel-1", f)
+        self.assertEqual(f["genero"], "Hombre", "ya estaba fijo")
+
+    def test_la_memoria_no_cambia_un_genero_fijo(self):
+        from memoria_identidades import MemoriaIdentidades
+        m = object.__new__(MemoriaIdentidades)
+        persona = types.SimpleNamespace(genero="Mujer", confianza_genero=0.85)
+        m.personas, m._marcar = {3: persona}, lambda *a, **k: None
+        m.genero(3, "Hombre", 0.99)
+        self.assertEqual(persona.genero, "Mujer")
+
+
+class Continuidad(unittest.TestCase):
+    def _asociador(self, inicio_nuevo, x_nuevo):
+        from collections import deque
+        from lap01.camaras_reid import Tracklet
+        from memoria_identidades import AsociadorConMemoria
+        a = object.__new__(AsociadorConMemoria)
+        viejo = Tracklet("t/L1/T1", "u1", "tel-1", 1, 0.0, 10.0, 1)
+        viejo.huella = deque([(10.0, 400.0, 600.0, 300.0)])
+        nuevo = Tracklet("t/L2/T1", "u2", "tel-1", 2, inicio_nuevo, inicio_nuevo + 1, 2)
+        nuevo.huella = deque([(inicio_nuevo, x_nuevo, 600.0, 300.0)])
+        a.tracklets, a.globales = {viejo.uid: viejo, nuevo.uid: nuevo}, {1: {viejo.uid}, 2: {nuevo.uid}}
+        a.confirmadas, a.last_timestamp = {1: 5}, inicio_nuevo + 1
+        a.memoria = types.SimpleNamespace(personas={5: object()})
+        return a
+
+    def test_el_track_que_sigue_donde_termino_otro_hereda_su_id(self):
+        a = self._asociador(11.5, 450.0)
+        self.assertEqual(a._continuacion(2, set()), 5)
+
+    def test_lejos_o_mucho_despues_no_hereda(self):
+        self.assertIsNone(self._asociador(11.5, 1200.0)._continuacion(2, set()))
+        self.assertIsNone(self._asociador(25.0, 450.0)._continuacion(2, set()))
+
+    def test_si_la_persona_esta_ocupada_por_otro_no_hereda(self):
+        self.assertIsNone(self._asociador(11.5, 450.0)._continuacion(2, {5}))
 
 
 if __name__ == "__main__":

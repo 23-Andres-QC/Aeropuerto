@@ -71,6 +71,8 @@ DETECTOR_TELEFONO = {"conf": 0.15}
 IMGSZ_GPU_TELEFONO = 960
 DETECTOR_CPU_TELEFONO = "yolo26s.pt"
 # Género: personas más chicas y detecciones menos seguras también votan (el consenso y el margen se mantienen).
+# Con esta certeza o más el género de una persona queda fijo y ya no cambia.
+GENERO_FIJO = 0.8
 GENERO_TELEFONO = {"min_height": 56, "min_detection_confidence": 0.35}
 PUERTO_CAMARA = int(os.environ.get("CAMARA_PORT", "8444"))  # el de la página de cámara (compose: camara-web)  # como en camaras.json: alguien puede pasar de un teléfono a otro en hasta 60 s
 
@@ -278,6 +280,7 @@ class SesionEnVivo:
         self.ultimo, self.procesados, self.saltados = {}, {}, {}
         self.latencias, self.tiempos, self.personas = {}, {}, {}
         self.generos = {}
+        self.fijos = {}  # (teléfono, track local) -> (género, certeza) ya fijado con certeza >= GENERO_FIJO
         # Dos carriles: el rápido (detectar y seguir, que da las cajas) corre en el lazo principal y publica enseguida;
         # el lento (género con CLIP, Re-ID y memoria de identidades) corre en un hilo aparte con el último instante
         # que le llegó. Así las cajas no esperan a lo más pesado y el ID/género de cada persona se actualiza solo
@@ -303,6 +306,7 @@ class SesionEnVivo:
         self.motor.reiniciar({cid: FPS_NOMINAL for cid in telefonos})
         self.motor.trackers.update(siguen)
         self.motor.genero.memory.update(votos)
+        self.fijos = {k: v for k, v in self.fijos.items() if k[0] in siguen}
         if telefonos:
             config = config_telefonos(telefonos, self.asociacion)
             if self.asociador is None:
@@ -400,23 +404,38 @@ class SesionEnVivo:
             genero.sample_frames[cid] = max(1, round(genero.sample_s * (self.fps(cid) or FPS_NOMINAL)))
 
     def _genero(self, cid, fila):
-        """Quien ya se vio muestra su género al reconocerlo; un género nuevo y confiable se guarda en la memoria.
+        """Género que se muestra de una persona. Con certeza de GENERO_FIJO (0,8) o más queda fijo: no vuelve a cambiar.
 
-        Mientras el género no se confirma (5 votos de CLIP con consenso), se muestra el que va ganando entre los votos
-        que ya tiene: el primero desde que lo hay, y así hasta confirmarlo. Ese provisional no se guarda en la memoria.
+        Antes de fijarse: quien ya se vio muestra su género al reconocerlo; un género nuevo y confiable se guarda en la
+        memoria. Mientras no se confirma (votos de CLIP con consenso), se muestra el que va ganando entre los votos que ya
+        tiene (y, si su certeza llega a 0,8, también queda fijo); ese provisional no se guarda en la memoria.
         """
         pid = fila["global_id"]
         persona = self.memoria.personas.get(pid) if pid is not None else None
-        if fila.get("genero") in ("Hombre", "Mujer") and fila.get("confianza_genero"):
+        llave = (cid, fila["local_id"])
+        # 1) Ya fijo: por persona (memoria) o, mientras no tiene ID, por su track local.
+        if persona is not None and persona.genero in ("Hombre", "Mujer") and (persona.confianza_genero or 0) >= GENERO_FIJO:
+            fila["genero"], fila["confianza_genero"] = persona.genero, persona.confianza_genero
+        elif llave in self.fijos:
+            fila["genero"], fila["confianza_genero"] = self.fijos[llave]
+            if persona is not None:
+                self.memoria.genero(pid, *self.fijos[llave])
+        elif fila.get("genero") in ("Hombre", "Mujer") and fila.get("confianza_genero"):
             if persona is not None:
                 self.memoria.genero(pid, fila["genero"], fila["confianza_genero"])
+            if fila["confianza_genero"] >= GENERO_FIJO:
+                self.fijos[llave] = (fila["genero"], fila["confianza_genero"])
         elif persona is not None and persona.genero:
             fila["genero"], fila["confianza_genero"] = persona.genero, persona.confianza_genero
         else:
-            votos = self.motor.genero.memory.get((cid, fila["local_id"]), {}).get("votes", [])
+            votos = self.motor.genero.memory.get(llave, {}).get("votes", [])
             etiqueta, certeza = genero_por_votos(votos)
             if etiqueta is not None:
                 fila["genero"], fila["confianza_genero"] = etiqueta, certeza
+                if certeza >= GENERO_FIJO:
+                    self.fijos[llave] = (etiqueta, certeza)
+                    if persona is not None:
+                        self.memoria.genero(pid, etiqueta, certeza)
         if pid is not None:
             self.generos[pid] = fila.get("genero") or "Sin determinar"
 
