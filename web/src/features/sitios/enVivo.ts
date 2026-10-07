@@ -219,6 +219,68 @@ function asignar(lista: Telefono[]) {
   asignacionVersion.value++;
 }
 
+// --- Ajuste fino de la ubicación en el plano ------------------------------------------
+// Ubicar por el tamaño de la persona tiene unos decímetros de error y, si el teléfono no está justo donde se puso su
+// cámara, un corrimiento parejo. Se corrige con un desplazamiento en metros (por defecto un poco a la izquierda) que se
+// mueve con los botones del plano y se recuerda en el navegador; lo que aun así cae fuera del piso pasa al borde más cercano.
+const CLAVE_AJUSTE = "ajuste-vivo";
+const AJUSTE_INICIAL = { dx: -1, dy: 0 };
+function leerAjuste() {
+  try {
+    const a = JSON.parse(localStorage.getItem(CLAVE_AJUSTE) ?? "null");
+    if (a && Number.isFinite(a.dx) && Number.isFinite(a.dy)) return { dx: a.dx as number, dy: a.dy as number };
+  } catch {
+    /* sin localStorage se usa el ajuste inicial */
+  }
+  return { ...AJUSTE_INICIAL };
+}
+/** Desplazamiento (m) que se suma a toda posición ubicada con los teléfonos: dx a la derecha, dy hacia arriba del plano. */
+export const ajusteMapa = ref(leerAjuste());
+function guardarAjuste() {
+  try {
+    localStorage.setItem(CLAVE_AJUSTE, JSON.stringify(ajusteMapa.value));
+  } catch {
+    /* el ajuste no se recuerda tras recargar */
+  }
+}
+export function moverMapa(dx: number, dy: number) {
+  const redondo = (v: number) => Math.round(v * 100) / 100;
+  ajusteMapa.value = { dx: redondo(ajusteMapa.value.dx + dx), dy: redondo(ajusteMapa.value.dy + dy) };
+  guardarAjuste();
+}
+export function reponerAjusteMapa() {
+  ajusteMapa.value = { ...AJUSTE_INICIAL };
+  guardarAjuste();
+}
+
+function dentroDe(p: Punto, poligono: Punto[]): boolean {
+  let dentro = false;
+  for (let i = 0, j = poligono.length - 1; i < poligono.length; j = i++) {
+    const [xi, yi] = poligono[i];
+    const [xj, yj] = poligono[j];
+    if (yi > p[1] !== yj > p[1] && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) dentro = !dentro;
+  }
+  return dentro;
+}
+
+/** El punto, o el más cercano del borde del piso si cae fuera de él. */
+function alPiso(p: Punto, piso: Punto[] | null | undefined): Punto {
+  if (!piso || piso.length < 3 || dentroDe(p, piso)) return p;
+  let mejor = p;
+  let distancia = Infinity;
+  for (let i = 0; i < piso.length; i++) {
+    const [ax, ay] = piso[i];
+    const [bx, by] = piso[(i + 1) % piso.length];
+    const [dx, dy] = [bx - ax, by - ay];
+    const largo = dx * dx + dy * dy;
+    const t = largo > 0 ? Math.max(0, Math.min(1, ((p[0] - ax) * dx + (p[1] - ay) * dy) / largo)) : 0;
+    const q: Punto = [ax + t * dx, ay + t * dy];
+    const d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (d < distancia) [distancia, mejor] = [d, q];
+  }
+  return mejor;
+}
+
 function alDetecciones(id: string, ev: MessageEvent) {
   let m: Detecciones;
   try {
@@ -234,8 +296,9 @@ function alDetecciones(id: string, ev: MessageEvent) {
     const [x1, y1, x2, y2] = p.box;
     // Con los pies cortados por el borde del cuadro la proyección no vale (igual que en el Build).
     if (y2 >= m.frame_h - 3) continue;
-    const punto = proyecta([x1, y1, x2, y2], m.frame_w, m.frame_h);
-    if (!punto) continue;
+    const bruto = proyecta([x1, y1, x2, y2], m.frame_w, m.frame_h);
+    if (!bruto) continue;
+    const punto = alPiso([bruto[0] + ajusteMapa.value.dx, bruto[1] + ajusteMapa.value.dy], config.value?.plano?.piso_m);
     observaciones.push({
       clave: p.global_id != null ? `g${p.global_id}` : `${cid}-${p.local_id}`,
       id: p.global_id,

@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, GENEROS, type Config, type Replay, type Sesion } from "../api";
 import PlanoSitio, { type PersonaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
-import { CELDA_CALOR, SESION_VIVO, capturasVersion, fijarModoVivo, guardando, guardarCapturaVivo, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura } from "../enVivo";
+import { CELDA_CALOR, SESION_VIVO, ajusteMapa, capturasVersion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, guardarCapturaVivo, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura } from "../enVivo";
 import { useRoute } from "vue-router";
 import { useSitios } from "../useSitios";
 
@@ -309,6 +309,15 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <h2>Plano · {{ (mapa.tam_px[0] / mapa.px_por_metro).toFixed(0) }} × {{ (mapa.tam_px[1] / mapa.px_por_metro).toFixed(0) }} m</h2>
         <span v-if="modoVivo" class="heading-meta">
           <label class="check"><input v-model="verCalor" type="checkbox" /> Mapa de calor</label>
+          <span class="ajuste-mapa" title="Mueve donde se ubican las personas de los teléfonos en el plano (0,5 m por pulsación)">
+            Ajuste
+            <button type="button" class="reiniciar-calor" aria-label="Mover a la izquierda" @click="moverMapa(-0.5, 0)">◀</button>
+            <button type="button" class="reiniciar-calor" aria-label="Mover a la derecha" @click="moverMapa(0.5, 0)">▶</button>
+            <button type="button" class="reiniciar-calor" aria-label="Mover hacia arriba" @click="moverMapa(0, 0.5)">▲</button>
+            <button type="button" class="reiniciar-calor" aria-label="Mover hacia abajo" @click="moverMapa(0, -0.5)">▼</button>
+            <button type="button" class="reiniciar-calor" title="Volver al ajuste inicial" @click="reponerAjusteMapa()">↺</button>
+            <span class="muted">{{ ajusteMapa.dx }} · {{ ajusteMapa.dy }} m</span>
+          </span>
           <button type="button" class="reiniciar-calor" :disabled="!vivo.calor.value.length" title="Guarda esta captura y empieza una nueva" @click="reiniciarCaptura()">Reiniciar</button>
           <button type="button" class="reiniciar-calor guardar" title="Se guarda sola cada 20 s y al salir del modo en vivo" :disabled="guardando || !vivo.historias.value.length" @click="guardarYRefrescar()">
             {{ guardando ? "Guardando…" : "Guardar captura" }}
@@ -509,6 +518,12 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   display: flex;
   align-items: center;
   gap: 5px;
+  font-size: 12px;
+}
+.ajuste-mapa {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 12px;
 }
 .reiniciar-calor {
