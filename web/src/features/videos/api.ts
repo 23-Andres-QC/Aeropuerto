@@ -1,9 +1,13 @@
 import { request } from "../../core/http";
 
-// Los videos van a backend-vivo, como los teléfonos: el archivo vive en disco temporal mientras el modelo lo procesa
-// (nunca en una base) y el modelo publica el frame procesado y sus detecciones por el mismo relevo. Al terminar, el
-// resumen queda junto al video (en memoria de backend-vivo) hasta que se quita.
+// Los videos van a backend-vivo, como los teléfonos: cada archivo vive en disco temporal mientras el modelo lo procesa
+// (nunca en una base) y el modelo publica el frame procesado y sus detecciones por el mismo relevo. Se pueden subir
+// varios: el modelo los procesa de a uno, en el orden en que se subieron. Al terminar, el resumen queda junto al video
+// (en memoria de backend-vivo) hasta que se quita.
 const VIDEOS = "/vivo/api/v1/videos";
+
+/** Cuántos videos admite la lista a la vez (videos.MaxVideos en backend-vivo). */
+export const MAX_VIDEOS = 10;
 
 /** tiempo_real salta frames si el modelo no alcanza al video; todos procesa cada frame, más lento si hace falta. */
 export type Modo = "tiempo_real" | "todos";

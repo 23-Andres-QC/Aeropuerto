@@ -23,7 +23,7 @@ import (
 // Opciones de lo que el router expone.
 type Opciones struct {
 	Telefonos *telefonos.Registro
-	// Videos guarda el video subido mientras el modelo lo procesa (sin él no hay rutas de videos).
+	// Videos guarda los videos subidos mientras el modelo los procesa (sin él no hay rutas de videos).
 	Videos  *videos.Registro
 	Memoria memoria.Repositorio
 	// Relevo registra los WebSocket de video y detecciones.
@@ -118,6 +118,8 @@ func (a api) subirVideo(w http.ResponseWriter, r *http.Request) {
 		escribir(w, http.StatusCreated, v)
 	case errors.Is(err, videos.ErrMuyGrande):
 		fallar(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("El video supera %d MB", a.Videos.Maximo()>>20))
+	case errors.Is(err, videos.ErrLleno):
+		fallar(w, http.StatusConflict, fmt.Sprintf("Ya hay %d videos en la lista: quita alguno para subir otro", videos.MaxVideos))
 	case errors.Is(err, videos.ErrInvalido):
 		fallar(w, http.StatusBadRequest, err.Error())
 	default:

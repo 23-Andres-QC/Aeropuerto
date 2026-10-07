@@ -41,12 +41,14 @@ func TestRegistro(t *testing.T) {
 	_ = f.Close()
 
 	dos, err := r.Subir("otro.mov", Todos, strings.NewReader("abc"))
-	if err != nil || dos.Modo != Todos || len(r.Lista()) != 1 || r.Lista()[0].ID != dos.ID || len(archivos(t, dir)) != 1 {
-		t.Fatalf("subir otro debe reemplazar al anterior: %+v %v %v", r.Lista(), err, archivos(t, dir))
+	lista := r.Lista()
+	if err != nil || dos.Modo != Todos || len(lista) != 2 || lista[0].ID != uno.ID || lista[1].ID != dos.ID || len(archivos(t, dir)) != 2 {
+		t.Fatalf("subir otro lo agrega al final, sin tocar al anterior: %+v %v %v", lista, err, archivos(t, dir))
 	}
-	if _, _, err = r.Abrir(uno.ID); !errors.Is(err, ErrNoEncontrado) {
-		t.Fatalf("el anterior ya no se ofrece: %v", err)
+	if f, _, err = r.Abrir(uno.ID); err != nil {
+		t.Fatalf("el primero se sigue ofreciendo: %v", err)
 	}
+	_ = f.Close()
 
 	if _, err = r.Subir("grande.mp4", "", strings.NewReader("12345678901")); !errors.Is(err, ErrMuyGrande) {
 		t.Fatalf("más del máximo: %v", err)
@@ -57,23 +59,50 @@ func TestRegistro(t *testing.T) {
 	if _, err = r.Subir("x.mp4", "rapido", strings.NewReader("1")); !errors.Is(err, ErrInvalido) {
 		t.Fatalf("modo desconocido: %v", err)
 	}
-	if r.Lista()[0].ID != dos.ID || len(archivos(t, dir)) != 1 {
-		t.Fatalf("una subida fallida no toca al actual ni deja archivos: %+v %v", r.Lista(), archivos(t, dir))
+	if len(r.Lista()) != 2 || len(archivos(t, dir)) != 2 {
+		t.Fatalf("una subida fallida no toca la lista ni deja archivos: %+v %v", r.Lista(), archivos(t, dir))
 	}
 
-	if r.Purgar(dos.Subido) || len(r.Lista()) != 1 {
-		t.Fatal("no purga un video reciente")
+	if r.Purgar(dos.Subido) != 0 || len(r.Lista()) != 2 {
+		t.Fatal("no purga videos recientes")
 	}
 	if err = r.Quitar("vid-otro"); !errors.Is(err, ErrNoEncontrado) {
 		t.Fatalf("quitar otro id: %v", err)
+	}
+	if err = r.Quitar(uno.ID); err != nil || len(r.Lista()) != 1 || r.Lista()[0].ID != dos.ID || len(archivos(t, dir)) != 1 {
+		t.Fatalf("quitar uno deja a los demás: %v, %+v, quedan %v", err, r.Lista(), archivos(t, dir))
 	}
 	if err = r.Quitar(dos.ID); err != nil || len(r.Lista()) != 0 || len(archivos(t, dir)) != 0 {
 		t.Fatalf("quitar = %v, quedan %v", err, archivos(t, dir))
 	}
 
 	tres, _ := r.Subir("tres.mp4", "", strings.NewReader("1"))
-	if !r.Purgar(tres.Subido.Add(time.Second)) || len(r.Lista()) != 0 || len(archivos(t, dir)) != 0 {
-		t.Fatal("purgar debe quitar un video viejo sin procesar y su archivo")
+	cuatro, _ := r.Subir("cuatro.mp4", "", strings.NewReader("1"))
+	_ = r.Terminar(cuatro.ID, json.RawMessage(`{}`))
+	if r.Purgar(tres.Subido.Add(time.Second)) != 1 || len(r.Lista()) != 1 || r.Lista()[0].ID != cuatro.ID || len(archivos(t, dir)) != 0 {
+		t.Fatal("purgar quita los videos viejos sin procesar y sus archivos, no los que tienen resumen")
+	}
+}
+
+func TestLleno(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := NuevoRegistro(dir, 10)
+	var ids []string
+	for i := 0; i < MaxVideos; i++ {
+		v, err := r.Subir("v.mp4", "", strings.NewReader("1"))
+		if err != nil {
+			t.Fatalf("video %d: %v", i, err)
+		}
+		ids = append(ids, v.ID)
+	}
+	if _, err := r.Subir("uno-mas.mp4", "", strings.NewReader("1")); !errors.Is(err, ErrLleno) || len(archivos(t, dir)) != MaxVideos {
+		t.Fatalf("con la lista llena no se sube otro ni queda su archivo: %v %d", err, len(archivos(t, dir)))
+	}
+	if err := r.Quitar(ids[3]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Subir("ahora-si.mp4", "", strings.NewReader("1")); err != nil {
+		t.Fatalf("al quitar uno se puede subir otro: %v", err)
 	}
 }
 

@@ -1,5 +1,7 @@
 {
-  "descripcion": "Zonas del patio de ESAN trazadas sobre el levantamiento (metros del plano). «Piso» es todo el piso transitable (patio, descanso y tramo norte de la L); la carpa, los ascensores, el tacho, el reciclaje y las expendedoras quedan encima y ganan por ser más chicas. Se crean una sola vez (si el sitio no tiene zonas) y luego se editan desde la web.",
+  "descripcion": "Zonas del patio de ESAN trazadas sobre el levantamiento (metros del plano): los lugares que se analizan (la carpa, las expendedoras, los ascensores, el tacho y el reciclaje). «piso» es el contorno de todo el piso transitable (patio, descanso y tramo norte de la L): no es una zona, es el suelo donde están las demás; lo usa calibrar_telefono.py. Las zonas se crean una sola vez (si el sitio no tiene zonas) y luego se editan desde la web.",
+  "piso": [[-10.7, 4.45], [-4.86, 4.01], [1.93, 3.63], [2.1, 5.2], [8.11, 5.07], [7.34, 3.11], [10.6, 2.9], [9.3, -4.6], [6.21, -4.46],
+           [6.08, -6.24], [4.08, -5.87], [2.09, -5.58], [-1.14, -5.09], [-2.31, -5.19], [-5.37, -4.95], [-7.87, -5.14], [-12.2, -5.1]],
   "locales": [
     {"name": "Carpa azul", "category": "Stand", "zonas": [
       {"name": "Carpa azul", "zone_type": "INTERIOR", "color": "#2563eb",
@@ -15,9 +17,6 @@
     ]}
   ],
   "zonas": [
-    {"name": "Piso", "zone_type": "PASILLO", "color": "#ca8a04",
-     "points": [[-10.7, 4.45], [-4.86, 4.01], [1.93, 3.63], [2.1, 5.2], [8.11, 5.07], [7.34, 3.11], [10.6, 2.9], [9.3, -4.6], [6.21, -4.46],
-                [6.08, -6.24], [4.08, -5.87], [2.09, -5.58], [-1.14, -5.09], [-2.31, -5.19], [-5.37, -4.95], [-7.87, -5.14], [-12.2, -5.1]]},
     {"name": "Ascensores", "zone_type": "ENTRADA", "color": "#a855f7",
      "points": [[-1.14, -3.1], [2.09, -3.6], [4.08, -3.9], [6.25, -4.2], [6.21, -4.46], [6.08, -6.24], [4.08, -5.87], [2.09, -5.58], [-1.14, -5.09]]},
     {"name": "Tacho", "zone_type": "OTRO", "color": "#65a30d",

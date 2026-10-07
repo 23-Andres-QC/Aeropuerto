@@ -307,4 +307,15 @@ func TestVideosPorHTTP(t *testing.T) {
 	if resp, _ = pedir(t, http.MethodDelete, s.URL+"/api/v1/videos/"+id, nil); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("DELETE repetido = %d", resp.StatusCode)
 	}
+
+	// Varios videos a la vez, hasta videos.MaxVideos; con la lista llena, 409.
+	for i := 0; i < videos.MaxVideos; i++ {
+		if resp, cuerpo = subir("nombre=v.mp4", strings.NewReader("x")); resp.StatusCode != http.StatusCreated {
+			t.Fatalf("video %d = %d %v", i, resp.StatusCode, cuerpo)
+		}
+	}
+	if resp, cuerpo = subir("nombre=otro.mp4", strings.NewReader("x")); resp.StatusCode != http.StatusConflict ||
+		!strings.Contains(cuerpo["error"].(string), "quita alguno") {
+		t.Fatalf("lista llena = %d %v", resp.StatusCode, cuerpo)
+	}
 }

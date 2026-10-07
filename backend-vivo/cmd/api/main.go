@@ -1,5 +1,5 @@
 // Command api es el backend de las cámaras en vivo, separado del backend del
-// demo (sitios LAP y ESAN): lista de teléfonos, el video subido para probar el
+// demo (sitios LAP y ESAN): lista de teléfonos, los videos subidos para probar el
 // modelo (sección Videos), relevo de video y detecciones, y la memoria de
 // identidades del modelo sobre su propia base (PostgreSQL + pgvector).
 package main
@@ -103,7 +103,7 @@ func esperarBase(ctx context.Context, db *pgxpool.Pool) error {
 const videoMaximo = 6 * time.Hour
 
 // purgar borra cada 10 minutos a quienes no se ven hace más que la retención, y
-// el video subido que lleve más de videoMaximo.
+// los videos subidos sin procesar que lleven más de videoMaximo.
 func purgar(ctx context.Context, repo memoria.Repositorio, retencion time.Duration, subidos *videos.Registro) {
 	t := time.NewTicker(10 * time.Minute)
 	defer t.Stop()
@@ -115,8 +115,8 @@ func purgar(ctx context.Context, repo memoria.Repositorio, retencion time.Durati
 			slog.Info("retención aplicada", "personas_borradas", n)
 		}
 		cancel()
-		if subidos.Purgar(time.Now().Add(-videoMaximo)) {
-			slog.Info("video subido borrado por antigüedad")
+		if n := subidos.Purgar(time.Now().Add(-videoMaximo)); n > 0 {
+			slog.Info("videos subidos borrados por antigüedad", "videos", n)
 		}
 		select {
 		case <-ctx.Done():

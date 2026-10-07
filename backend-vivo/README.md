@@ -3,7 +3,7 @@
 Backend de las **cámaras en vivo**, separado del backend del demo (los sitios LAP y ESAN siguen en `backend/` con su base de siempre). Tiene su propia base, `vivo-db` (PostgreSQL 17 + pgvector), y hace cuatro cosas:
 
 1. **Lista de teléfonos** que procesa el modelo. Vive en memoria; las cámaras web se registran solas.
-2. **Video subido** en la sección Videos de la web, guardado en disco temporal solo mientras el modelo lo procesa, y su resumen al terminar.
+2. **Videos subidos** en la sección Videos de la web (hasta 10, procesados en orden), guardados en disco temporal solo mientras el modelo los procesa, y el resumen de cada uno al terminar.
 3. **Relevo** por WebSocket del video y las detecciones que publica el modelo, hacia Teléfonos y Videos de la web.
 4. **Memoria de identidades**: cada persona que el modelo ya vio, para que conserve su ID aunque salga y vuelva, pase a otro teléfono o el modelo se reinicie.
 
@@ -38,9 +38,9 @@ Qué se guarda por persona:
 
 ## Videos
 
-La sección **Videos** de la web prueba el modelo con un archivo de la computadora, sin guardar nada:
+La sección **Videos** de la web prueba el modelo con uno o varios archivos de la computadora, sin guardar nada:
 
-1. La web sube el archivo tal cual (`POST /api/v1/videos?nombre=…&modo=…`, hasta 1 GB) y backend-vivo lo deja en `VIDEOS_DIR` (por defecto `/tmp/videos` del contenedor), **nunca en la base**. Hay uno a la vez: subir otro reemplaza al anterior.
+1. La web sube el archivo tal cual (`POST /api/v1/videos?nombre=…&modo=…`, hasta 1 GB) y backend-vivo lo deja en `VIDEOS_DIR` (por defecto `/tmp/videos` del contenedor), **nunca en la base**. Se pueden subir varios (hasta 10 en la lista; con la lista llena responde 409): el modelo los procesa de a uno, en el orden en que se subieron.
 2. El modelo (`camara_telefono.py`, que delega en `Modelo/Test Modelo/videos_subidos.py`) lo ve en la lista, lo descarga por el 8093 y lo lee con OpenCV a su resolución original. Usa un motor y un asociador propios, con la configuración del Build: no toca la sesión de los teléfonos ni la memoria de identidades.
 3. Publica cada frame procesado (hasta 1280 px de ancho) y sus detecciones por el relevo, con el id del video, y el avance en el canal `videos`.
 4. Al terminar, el modelo deja el **resumen** (`PUT /api/v1/videos/{id}/resumen`) y se borran el archivo de backend-vivo y la copia del modelo. El resumen queda en memoria junto al video y la web lo muestra hasta que se pulsa **Quitar video** (`DELETE`). Quitarlo mientras se procesa lo detiene sin resumen.
@@ -54,7 +54,7 @@ La web reproduce el video original a su velocidad y dibuja encima las deteccione
 |---|---|
 | `GET /salud` | 200 si la base responde |
 | `GET/POST /api/v1/telefonos` · `DELETE /api/v1/telefonos/{id}` | lista de cámaras (`{nombre, url}` del MJPEG) |
-| `GET /api/v1/videos` · `POST /api/v1/videos?nombre=` · `DELETE /api/v1/videos/{id}` | video subido en Videos (el cuerpo del POST es el archivo tal cual; la web siempre usa `modo=tiempo_real`) |
+| `GET /api/v1/videos` · `POST /api/v1/videos?nombre=` · `DELETE /api/v1/videos/{id}` | videos subidos en Videos (el cuerpo del POST es el archivo tal cual; la web siempre usa `modo=tiempo_real`) |
 | `GET /api/v1/videos/{id}/archivo` | el archivo, para el modelo y para que la web lo reproduzca mientras se procesa |
 | `PUT /api/v1/videos/{id}/resumen` | el resumen final, solo para el modelo (no pasa por nginx) |
 | `GET /api/v1/cameras/{id}/publish\|watch\|detections/publish\|detections/watch` | relevo WebSocket (mismo protocolo que el del demo); a quien mira se le hace ping cada 20 s para que la conexión no se corte |

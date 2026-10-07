@@ -101,7 +101,7 @@ def main():
     pp = (ancho / 2, alto / 2)
     anclas = np.array([[float(v) for v in t.split(",")] for t in a.anclas.split(";")])
     px, plano = anclas[:, :2], anclas[:, 2:]
-    piso = np.array(next(z for z in json.load(open(a.zonas, encoding="utf-8"))["zonas"] if z["name"] == "Piso")["points"], float)
+    piso = np.array(json.load(open(a.zonas, encoding="utf-8"))["piso"], float)
 
     obs = observaciones(filas, a.desde, a.persona)
     if len(obs) < 30:

@@ -5,6 +5,7 @@ Usa un reloj falso, un video sintético (cada frame con su número como nivel de
 """
 import sys
 import tempfile
+import threading
 import types
 import unittest
 from pathlib import Path
@@ -16,7 +17,9 @@ TEST = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TEST))
 import camara_telefono  # noqa: E402,F401  (prepara lap01 y sus rutas)
 import lap01  # noqa: E402
-from videos_subidos import ESTATICO_S, Quietud, Ritmo, genero_por_votos, leer_hasta, motor_aparte  # noqa: E402
+from detector_pose import DetectorCuerpo  # noqa: E402
+from videos_subidos import (ESTATICO_S, Quietud, Ritmo, VideosSubidos, genero_por_votos, leer_hasta,  # noqa: E402
+                            motor_aparte)
 
 
 class RitmoTiempoReal(unittest.TestCase):
@@ -112,6 +115,59 @@ class MotorAparte(unittest.TestCase):
     def test_en_cpu_la_misma_resolucion_y_sin_media_precision(self):
         config = motor_aparte(motor_sin_pesos("cpu")).detector.config
         self.assertEqual((config["imgsz"], config["fp16"]), (640, False))
+
+    def test_con_el_detector_de_puntos_del_cuerpo_de_los_telefonos(self):
+        # En el servidor el detector de los teléfonos es un DetectorCuerpo, sin `config`: cada video fallaba al empezar.
+        motor = motor_sin_pesos("cpu")
+        envoltorio = object.__new__(DetectorCuerpo)
+        envoltorio.base, envoltorio.device, envoltorio.pose = motor.detector, "cpu", object()
+        motor.detector = envoltorio
+        otro = motor_aparte(motor)
+        self.assertIsInstance(otro.detector, DetectorCuerpo, "Videos también usa los puntos del cuerpo")
+        self.assertIs(otro.detector.pose, envoltorio.pose, "comparte el modelo de puntos cargado")
+        self.assertEqual(otro.detector.base.config["conf"], 0.10)
+        self.assertIs(otro.detector.base.model, envoltorio.base.model, "comparte el YOLO cargado")
+        self.assertIs(motor.detector.base, envoltorio.base, "el de los teléfonos no cambia")
+        self.assertEqual(motor.detector.base.config["conf"], 0.3)
+
+
+class Cola(unittest.TestCase):
+    """Varios videos subidos: se procesan de a uno, en el orden en que se subieron."""
+
+    def videos(self):
+        descargas = []
+
+        class Prueba(VideosSubidos):
+            def _descargar(self, info, cancelar):
+                descargas.append((info["id"], cancelar))
+
+        v = object.__new__(Prueba)
+        v.actual, v.ruta, v.descarga, v.descargado, v.hechos = None, None, None, None, set()
+        return v, descargas
+
+    def test_toma_el_primero_sin_resumen_y_espera_a_terminarlo(self):
+        v, descargas = self.videos()
+        lista = [{"id": "a", "nombre": "a", "bytes": 1, "modo": "tiempo_real", "resumen": {"estado": "terminado"}},
+                 {"id": "b", "nombre": "b", "bytes": 1, "modo": "tiempo_real", "resumen": None},
+                 {"id": "c", "nombre": "c", "bytes": 1, "modo": "tiempo_real", "resumen": None}]
+        v.revisar(lista)
+        v.revisar(lista)
+        for hilo in threading.enumerate():
+            if hilo is not threading.current_thread() and hilo.daemon:
+                hilo.join(1)
+        self.assertEqual([d[0] for d in descargas], ["b"], "uno a la vez, en orden")
+        v.revisar(lista[:1] + lista[2:])  # quitaron «b» mientras se descargaba
+        self.assertTrue(descargas[0][1].is_set(), "se cancela su descarga")
+        for hilo in threading.enumerate():
+            if hilo is not threading.current_thread() and hilo.daemon:
+                hilo.join(1)
+        self.assertEqual([d[0] for d in descargas], ["b", "c"], "y sigue con el próximo")
+
+    def test_no_repite_los_hechos(self):
+        v, descargas = self.videos()
+        v.hechos.add("b")
+        v.revisar([{"id": "b", "nombre": "b", "bytes": 1, "modo": "tiempo_real", "resumen": None}])
+        self.assertEqual(descargas, [])
 
 
 class GeneroPorVotos(unittest.TestCase):

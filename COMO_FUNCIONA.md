@@ -72,7 +72,8 @@ Usuario y contraseña de la demo: `LAP` / `LAP`. Cada sitio tiene las mismas sec
   - Además hay zonas operativas: pasillo, entrada, cola, check-in, seguridad y puerta.
   - El área de cada zona la calcula la base a partir del polígono.
 - **A qué zona pertenece una posición:** un punto está dentro si cae en el polígono **o sobre su borde** (como `ST_Covers`). Si cae en varias zonas, gana **INTERIOR** y, entre las demás, la **de menor área**.
-- **ESAN:** su piso sale de un levantamiento desde las cámaras (`Modelo/Build Modelo/plano_esan/`). `generar_plano.py --publicar --zonas` crea las zonas iniciales (Piso, Ascensores, Tacho, Reciclaje y los locales Carpa azul, Expendedora negra y Expendedora roja) **solo si el sitio aún no tiene zonas**. Después se editan desde la web.
+- **ESAN:** su piso sale de un levantamiento desde las cámaras (`Modelo/Build Modelo/plano_esan/`). `generar_plano.py --publicar --zonas` crea las zonas iniciales (Ascensores, Tacho, Reciclaje y los locales Carpa azul, Expendedora negra y Expendedora roja) **solo si el sitio aún no tiene zonas**. Después se editan desde la web.
+- **El piso no es una zona:** su contorno es parte del dibujo del plano (dónde se puede caminar). Las zonas son los lugares que se analizan dentro de él; una zona que cubriera todo el piso aparecería en todos los recorridos y flujos sin decir nada.
 
 ---
 
@@ -237,7 +238,7 @@ Se activa con el botón de la cabecera, y también entra solo cuando se conecta 
 
 ## 9. Reglas de Videos: probar el modelo sin guardar nada
 
-- **Un video a la vez**, de hasta **1 GB**. Subir otro reemplaza al anterior.
+- **Varios videos a la vez:** hasta **10** en la lista, de hasta **1 GB** cada uno. El modelo los procesa **de a uno, en el orden en que se subieron**; la página muestra el estado de cada uno (en cola, procesando o terminado) y el resumen del que se elija.
 - El archivo va a disco temporal de `backend-vivo`, **nunca a una base**. El modelo lo lee a su resolución original, sin recomprimir.
 - Los ajustes son más sensibles que los del Build, para que sirvan con cualquier video:
   - detector a 1280 px en GPU con confianza 0,10;

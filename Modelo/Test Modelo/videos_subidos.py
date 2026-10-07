@@ -1,6 +1,7 @@
 """Sección Videos de la web: el modelo final sobre un video subido, sin guardar nada.
 
-backend-vivo guarda el archivo solo mientras se procesa (disco temporal, nunca una base). Aquí se descarga y se lee con
+backend-vivo guarda cada archivo solo mientras se procesa (disco temporal, nunca una base); se pueden subir varios y se
+procesan de a uno, en el orden en que se subieron. Aquí se descarga y se lee con
 OpenCV tal cual: cada frame a su resolución original, sin recomprimir ni redimensionar antes del modelo. Se publica como
 un teléfono (el frame procesado y sus detecciones por el relevo) y el avance va en el canal «videos». Usa un motor (con
 los mismos pesos) y un asociador propios, más sensibles que los del Build (ver AJUSTES): no toca la sesión de los
@@ -73,13 +74,21 @@ def motor_aparte(motor):
     otro = copy.copy(motor)
     otro.config = copy.deepcopy(motor.config)
     otro.config["tracker"].update(SEGUIDOR_VIDEO)
-    otro.detector = copy.copy(motor.detector)
-    otro.detector.config = {**motor.detector.config, **DETECTOR_VIDEO}
+    # Con los puntos del cuerpo (teléfonos) el detector es un DetectorCuerpo que envuelve al YOLO: los ajustes de Videos
+    # van en una copia del YOLO de adentro, y el envoltorio se copia para que use esa copia.
+    base = getattr(motor.detector, "base", motor.detector)
+    propio = copy.copy(base)
+    propio.config = {**base.config, **DETECTOR_VIDEO}
     gpu = str(motor.device).startswith("cuda")
     if IMGSZ_VIDEO or gpu:
-        otro.detector.config["imgsz"] = IMGSZ_VIDEO or IMGSZ_GPU
+        propio.config["imgsz"] = IMGSZ_VIDEO or IMGSZ_GPU
     if gpu:
-        otro.detector.config["fp16"] = True
+        propio.config["fp16"] = True
+    if base is motor.detector:
+        otro.detector = propio
+    else:
+        otro.detector = copy.copy(motor.detector)
+        otro.detector.base = propio
     otro.genero = copy.copy(motor.genero)
     if otro.genero.enabled:
         for clave, valor in GENERO_VIDEO.items():
@@ -311,7 +320,8 @@ class VideoEnProceso:
 
 
 class VideosSubidos:
-    """Sigue el video subido a backend-vivo: lo descarga, lo procesa, lo publica y al terminar deja su resumen."""
+    """Sigue los videos subidos a backend-vivo: descarga el siguiente de la cola, lo procesa, lo publica y al terminar
+    deja su resumen."""
 
     def __init__(self, url_api, motor, reid, asociacion, relevo, personas_para_web):
         self.url_api, self.motor, self.reid, self.asociacion = url_api, motor, reid, asociacion
@@ -323,16 +333,17 @@ class VideosSubidos:
         self.hechos = set()                  # ids ya procesados, quitados o fallidos: no se repiten
 
     def revisar(self, lista):
-        """Ajusta lo que se hace a la lista de backend-vivo (a lo sumo un video)."""
-        info = lista[0] if lista else None
-        vigente = info["id"] if info else None
-        if self.actual is not None and self.actual.id != vigente:
+        """Ajusta lo que se hace a la lista de backend-vivo: los videos se procesan de a uno, en el orden en que se subieron."""
+        vigentes = {v["id"] for v in lista}
+        if self.actual is not None and self.actual.id not in vigentes:
             self._soltar()
-        if self.descarga is not None and self.descarga[0]["id"] != vigente:
+        if self.descarga is not None and self.descarga[0]["id"] not in vigentes:
             self.descarga[1].set()
             self.descarga = None
-        if (info is None or info.get("resumen") is not None or info["id"] in self.hechos
-                or self.actual is not None or self.descarga is not None):
+        if self.actual is not None or self.descarga is not None:
+            return
+        info = next((v for v in lista if v.get("resumen") is None and v["id"] not in self.hechos), None)
+        if info is None:
             return
         cancelar = threading.Event()
         self.descarga = (info, cancelar)
@@ -423,7 +434,7 @@ class VideosSubidos:
         self._guardar_resumen(video.id, resumen)
 
     def _soltar(self):
-        """Se quitó (o reemplazó) el video en la web mientras se procesaba: se detiene sin resumen."""
+        """Se quitó el video en la web mientras se procesaba: se detiene sin resumen."""
         video = self._cerrar_actual()
         print(f"Video {video.nombre}: quitado en la web tras {video.procesados} frames", flush=True)
 

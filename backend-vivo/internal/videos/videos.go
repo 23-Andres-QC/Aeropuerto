@@ -1,9 +1,9 @@
-// Package videos guarda el video que se sube desde la web (sección Videos) solo
-// mientras el modelo lo procesa: un archivo temporal en disco, nunca en la base.
-// Al terminar, el modelo deja su resumen y el archivo se borra; el resumen se ve
-// en la web hasta que se quita el video. Hay uno a la vez: subir otro reemplaza
-// al anterior. Todo vive en memoria: un reinicio vacía la lista y borra los
-// archivos que quedaran.
+// Package videos guarda los videos que se suben desde la web (sección Videos)
+// solo mientras el modelo los procesa: archivos temporales en disco, nunca en la
+// base. Se pueden subir varios; el modelo los procesa de a uno, en el orden en
+// que se subieron. Al terminar cada uno, el modelo deja su resumen y el archivo
+// se borra; el resumen se ve en la web hasta que se quita el video. Todo vive en
+// memoria: un reinicio vacía la lista y borra los archivos que quedaran.
 package videos
 
 import (
@@ -28,10 +28,15 @@ const (
 	Todos      = "todos"
 )
 
+// MaxVideos es cuántos videos (en cola, en proceso o con su resumen) admite la
+// lista a la vez; para subir más hay que quitar alguno.
+const MaxVideos = 10
+
 var (
 	ErrInvalido     = errors.New("dato inválido")
 	ErrMuyGrande    = errors.New("el video supera el tamaño máximo")
 	ErrNoEncontrado = errors.New("video no encontrado")
+	ErrLleno        = fmt.Errorf("ya hay %d videos en la lista: quita alguno para subir otro", MaxVideos)
 )
 
 type Video struct {
@@ -40,7 +45,7 @@ type Video struct {
 	Modo   string    `json:"modo"`
 	Bytes  int64     `json:"bytes"`
 	Subido time.Time `json:"subido"`
-	// Resumen es el que deja el modelo al terminar; null mientras se procesa.
+	// Resumen es el que deja el modelo al terminar; null mientras se procesa o espera.
 	Resumen json.RawMessage `json:"resumen"`
 	// ruta del archivo; vacía desde que llega el resumen (ya se borró).
 	ruta string
@@ -50,7 +55,7 @@ type Registro struct {
 	dir    string
 	maximo int64
 	mu     sync.Mutex
-	actual *Video
+	lista  []*Video // en el orden en que se subieron
 }
 
 // NuevoRegistro usa dir para los archivos (lo crea y borra lo que haya quedado
@@ -72,17 +77,25 @@ func NuevoRegistro(dir string, maximo int64) (*Registro, error) {
 // Maximo es el tamaño máximo de un video en bytes.
 func (r *Registro) Maximo() int64 { return r.maximo }
 
-// Lista devuelve el video actual (o ninguno).
+// Lista devuelve los videos en el orden en que se subieron.
 func (r *Registro) Lista() []Video {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.actual == nil {
-		return []Video{}
+	lista := make([]Video, len(r.lista))
+	for i, v := range r.lista {
+		lista[i] = *v
 	}
-	return []Video{*r.actual}
+	return lista
 }
 
-// Subir copia el video a un archivo temporal y, si llega completo, reemplaza al anterior.
+// Lleno dice si la lista ya no admite otro video.
+func (r *Registro) Lleno() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.lista) >= MaxVideos
+}
+
+// Subir copia el video a un archivo temporal y, si llega completo, lo agrega al final de la lista.
 func (r *Registro) Subir(nombre, modo string, cuerpo io.Reader) (Video, error) {
 	nombre = strings.TrimSpace(filepath.Base(strings.ReplaceAll(nombre, `\`, "/")))
 	if nombre == "" || nombre == "." || nombre == "/" {
@@ -96,6 +109,9 @@ func (r *Registro) Subir(nombre, modo string, cuerpo io.Reader) (Video, error) {
 	}
 	if modo != TiempoReal && modo != Todos {
 		return Video{}, fmt.Errorf("%w: el modo debe ser %s o %s", ErrInvalido, TiempoReal, Todos)
+	}
+	if r.Lleno() {
+		return Video{}, ErrLleno
 	}
 	f, err := os.CreateTemp(r.dir, "*.video")
 	if err != nil {
@@ -121,27 +137,40 @@ func (r *Registro) Subir(nombre, modo string, cuerpo io.Reader) (Video, error) {
 	v := &Video{ID: "vid-" + hex.EncodeToString(b), Nombre: nombre, Modo: modo, Bytes: n,
 		Subido: time.Now().UTC().Truncate(time.Second), ruta: f.Name()}
 	r.mu.Lock()
-	anterior := r.actual
-	r.actual = v
-	r.mu.Unlock()
-	if anterior != nil && anterior.ruta != "" {
-		_ = os.Remove(anterior.ruta)
+	// Otra subida pudo completar la lista mientras se copiaba este archivo.
+	if len(r.lista) >= MaxVideos {
+		r.mu.Unlock()
+		_ = os.Remove(f.Name())
+		return Video{}, ErrLleno
 	}
+	r.lista = append(r.lista, v)
+	r.mu.Unlock()
 	return *v, nil
+}
+
+// buscar devuelve la posición del video id en la lista, o -1. Requiere r.mu.
+func (r *Registro) buscar(id string) int {
+	for i, v := range r.lista {
+		if v.ID == id {
+			return i
+		}
+	}
+	return -1
 }
 
 // Abrir abre el archivo del video para leerlo; sigue legible aunque después se quite.
 func (r *Registro) Abrir(id string) (*os.File, Video, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.actual == nil || r.actual.ID != id || r.actual.ruta == "" {
+	i := r.buscar(id)
+	if i < 0 || r.lista[i].ruta == "" {
 		return nil, Video{}, ErrNoEncontrado
 	}
-	f, err := os.Open(r.actual.ruta)
+	f, err := os.Open(r.lista[i].ruta)
 	if err != nil {
 		return nil, Video{}, err
 	}
-	return f, *r.actual, nil
+	return f, *r.lista[i], nil
 }
 
 // MaxResumen es el tamaño máximo del resumen que deja el modelo.
@@ -153,12 +182,14 @@ func (r *Registro) Terminar(id string, resumen json.RawMessage) error {
 		return fmt.Errorf("%w: el resumen debe ser un objeto JSON de hasta %d KB", ErrInvalido, MaxResumen>>10)
 	}
 	r.mu.Lock()
-	if r.actual == nil || r.actual.ID != id {
+	i := r.buscar(id)
+	if i < 0 {
 		r.mu.Unlock()
 		return ErrNoEncontrado
 	}
-	ruta := r.actual.ruta
-	r.actual.Resumen, r.actual.ruta = append(json.RawMessage{}, resumen...), ""
+	v := r.lista[i]
+	ruta := v.ruta
+	v.Resumen, v.ruta = append(json.RawMessage{}, resumen...), ""
 	r.mu.Unlock()
 	if ruta == "" {
 		return nil
@@ -166,15 +197,16 @@ func (r *Registro) Terminar(id string, resumen json.RawMessage) error {
 	return os.Remove(ruta)
 }
 
-// Quitar deja de ofrecer el video (y su resumen) y borra su archivo si sigue ahí.
+// Quitar saca el video (y su resumen) de la lista y borra su archivo si sigue ahí.
 func (r *Registro) Quitar(id string) error {
 	r.mu.Lock()
-	if r.actual == nil || r.actual.ID != id {
+	i := r.buscar(id)
+	if i < 0 {
 		r.mu.Unlock()
 		return ErrNoEncontrado
 	}
-	ruta := r.actual.ruta
-	r.actual = nil
+	ruta := r.lista[i].ruta
+	r.lista = append(r.lista[:i], r.lista[i+1:]...)
 	r.mu.Unlock()
 	if ruta == "" {
 		return nil
@@ -182,13 +214,23 @@ func (r *Registro) Quitar(id string) error {
 	return os.Remove(ruta)
 }
 
-// Purgar quita el video si se subió antes de `antes` y sigue sin procesar (el
-// modelo no corre): su archivo no queda en disco. Un resumen se queda hasta
-// que lo quiten desde la web.
-func (r *Registro) Purgar(antes time.Time) bool {
+// Purgar quita los videos subidos antes de `antes` que siguen sin procesar (el
+// modelo no corre): sus archivos no quedan en disco. Un resumen se queda hasta
+// que lo quiten desde la web. Devuelve cuántos quitó.
+func (r *Registro) Purgar(antes time.Time) int {
 	r.mu.Lock()
-	v := r.actual
-	vencido := v != nil && v.ruta != "" && v.Subido.Before(antes)
+	var vencidos []string
+	for _, v := range r.lista {
+		if v.ruta != "" && v.Subido.Before(antes) {
+			vencidos = append(vencidos, v.ID)
+		}
+	}
 	r.mu.Unlock()
-	return vencido && r.Quitar(v.ID) == nil
+	n := 0
+	for _, id := range vencidos {
+		if r.Quitar(id) == nil {
+			n++
+		}
+	}
+	return n
 }
