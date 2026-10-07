@@ -98,10 +98,32 @@ watch(
   },
 );
 
-/** 75.4 -> "1:15". */
+/** 75.46 -> "1:15.4" (minuto, segundo y décima). */
 function minutos(s: number): string {
-  const t = Math.floor(s);
-  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+  const d = Math.floor(s * 10);
+  const t = Math.floor(d / 10);
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}.${d % 10}`;
+}
+
+/** Lo que dura el más largo: el final de la barra para ir a un segundo. */
+const duracionTotal = computed(() => {
+  const ds = videos.value.map(duracionDe).filter(Number.isFinite);
+  return ds.length ? Math.max(...ds) : 0;
+});
+
+/** Lleva todos los videos al mismo segundo (nunca más allá de lo que el modelo ya procesó en los que siguen en curso). */
+function irA(segundo: number) {
+  if (comun.t == null) return;
+  const lista = videos.value;
+  const limites = lista.map(disponible);
+  const tope = Math.min(...lista.map((v, i) => (segundo >= duracionDe(v) ? Infinity : (limites[i] ?? 0))));
+  comun.t = Math.max(0, Math.min(segundo, tope));
+  horaComun.value = comun.t;
+}
+
+function desdeElInicio() {
+  irA(0);
+  pausado.value = false;
 }
 const enProceso = computed(() => [...activos.value.values()].filter((a) => a.estado === "procesando").length);
 
@@ -216,18 +238,36 @@ onUnmounted(() => {
       <span v-if="lleno"><b>La lista está llena ({{ MAX_VIDEOS }}): quita alguno para subir otro.</b></span>
     </p>
     <span v-if="videos.length" class="heading-meta">
-      <button class="primary-button" type="button" :disabled="horaComun == null" @click="pausado = !pausado">
-        {{ pausado ? "▶ Reproducir" : "⏸ Pausa" }}
-      </button>
-      <span class="pill reloj-comun">
-        {{ horaComun == null ? "Empiezan juntos cuando todos estén listos…" : `${minutos(horaComun)}${esperandoModelo && !pausado ? " · esperando al modelo" : ""}` }}
-      </span>
       <span v-if="enProceso" class="pill vivo">{{ enProceso }} procesándose</span>
       <span class="pill">{{ videos.length }} / {{ MAX_VIDEOS }}</span>
       <button v-if="videos.some((v) => v.resumen)" class="icon-button" type="button" @click="quitarTerminados">
         Quitar terminados
       </button>
     </span>
+    <!-- Reproducción conjunta: pausa, desde el inicio y la barra para ir a un segundo exacto (en todos a la vez). -->
+    <div v-if="videos.length" class="reproduccion">
+      <button class="primary-button" type="button" :disabled="horaComun == null" @click="pausado = !pausado">
+        {{ pausado ? "▶ Reproducir" : "⏸ Pausa" }}
+      </button>
+      <button class="icon-button" type="button" :disabled="horaComun == null" @click="desdeElInicio">⟲ Desde el inicio</button>
+      <input
+        type="range"
+        min="0"
+        :max="duracionTotal || 1"
+        step="0.1"
+        :value="horaComun ?? 0"
+        :disabled="horaComun == null"
+        aria-label="Ir a un segundo de los videos"
+        @input="irA(Number(($event.target as HTMLInputElement).value))"
+      />
+      <span class="pill reloj-comun">
+        <template v-if="horaComun == null">Empiezan juntos cuando todos estén listos…</template>
+        <template v-else>
+          {{ minutos(horaComun) }}<template v-if="duracionTotal"> / {{ minutos(duracionTotal) }}</template>
+          <template v-if="esperandoModelo && !pausado"> · esperando al modelo</template>
+        </template>
+      </span>
+    </div>
     <div v-if="subida" class="subida">
       <div class="barra"><span :style="{ width: `${subida.fraccion * 100}%` }"></span></div>
       <small>
@@ -284,6 +324,18 @@ onUnmounted(() => {
 }
 .pill.vivo {
   color: var(--good);
+}
+.reproduccion {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  flex-basis: 100%;
+}
+.reproduccion input[type="range"] {
+  flex: 1 1 200px;
+  min-width: 0;
+  accent-color: var(--blue-600);
 }
 .reloj-comun {
   font-variant-numeric: tabular-nums;
