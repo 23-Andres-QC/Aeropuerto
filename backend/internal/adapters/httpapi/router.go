@@ -14,6 +14,7 @@ type Services struct {
 	Sites    *services.SiteService
 	Sessions *services.SessionService
 	Phones   *services.PhoneService
+	Sales    *services.SalesService
 }
 
 // Options configure the parts of the API that are not use cases.
@@ -30,6 +31,7 @@ type Options struct {
 func NewRouter(s Services, o Options) http.Handler {
 	m := http.NewServeMux()
 	siteHandler{sites: s.Sites, sessions: s.Sessions, mediaDir: o.MediaDir}.routes(m)
+	salesHandler{s.Sales}.routes(m)
 	phoneHandler{s.Phones}.routes(m)
 	if o.Realtime != nil {
 		o.Realtime.Routes(m)

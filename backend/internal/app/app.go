@@ -19,10 +19,12 @@ func New(db *pgxpool.Pool, cfg config.Config) http.Handler {
 	var sessions *services.SessionService
 	// A camera or zone change alters the insights of every session of the site.
 	sites := services.NewSiteService(postgres.NewSiteRepository(db), func() { sessions.Invalidate() })
-	sessions = services.NewSessionService(sites, postgres.NewSessionRepository(db))
+	sessionRepo := postgres.NewSessionRepository(db)
+	sessions = services.NewSessionService(sites, sessionRepo)
 	return httpapi.NewRouter(httpapi.Services{
 		Sites:    sites,
 		Sessions: sessions,
+		Sales:    services.NewSalesService(sites, sessionRepo, postgres.NewSalesRepository(db)),
 		Phones:   services.NewPhoneService(memory.NewPhoneRepository()),
 	}, httpapi.Options{
 		Realtime: relay.NewHub(),
