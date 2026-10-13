@@ -11,16 +11,35 @@ import (
 // Session is one run of the model on a site (the Build of a dataset): who was
 // seen, by which cameras, and where on the plan.
 type Session struct {
-	ID             string          `json:"session_id"`
-	Name           string          `json:"name"`
-	Kind           string          `json:"kind"`
-	Status         string          `json:"status"`
-	RecordingStart time.Time       `json:"recording_start"`
-	EndedAt        *time.Time      `json:"ended_at"`
-	Summary        json.RawMessage `json:"summary"`
-	Identities     int             `json:"identities"`
-	Points         int             `json:"points"`
-	DurationS      float64         `json:"duration_s"`
+	ID             string    `json:"session_id"`
+	Name           string    `json:"name"`
+	Kind           string    `json:"kind"`
+	Status         string    `json:"status"`
+	RecordingStart time.Time `json:"recording_start"`
+	// StartDeclared is false when the start was never declared: it is the time the Build ran, an estimate of when the recording began.
+	StartDeclared bool            `json:"recording_start_declared"`
+	EndedAt       *time.Time      `json:"ended_at"`
+	Summary       json.RawMessage `json:"summary"`
+	Identities    int             `json:"identities"`
+	Points        int             `json:"points"`
+	DurationS     float64         `json:"duration_s"`
+}
+
+// StartShift reports what moving a session's recording start did.
+type StartShift struct {
+	ShiftS         float64 `json:"desplazamiento_s"`
+	MatchesRemoved int     `json:"emparejamientos_borrados"`
+}
+
+// ValidStart checks a recording start somebody typed to correct a session.
+func ValidStart(t time.Time) error {
+	if t.IsZero() || t.Year() < 2020 {
+		return Invalid("indica la fecha y hora en que empezó la grabación (con zona horaria, por ejemplo 2026-09-27T15:20:00-05:00)")
+	}
+	if t.After(time.Now().Add(10 * time.Minute)) {
+		return Invalid("la hora de inicio de la grabación está en el futuro")
+	}
+	return nil
 }
 
 // Finished sessions no longer change, so their replay/insights can be cached.

@@ -42,7 +42,27 @@ func (h siteHandler) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/v1/sites/{site}/sessions/{session}/points", h.points)
 	m.HandleFunc("GET /api/v1/sites/{site}/sessions/{session}/analytics", h.analytics)
 	m.HandleFunc("PUT /api/v1/sites/{site}/sessions/{session}/analytics", h.saveAnalytics)
+	m.HandleFunc("PUT /api/v1/sites/{site}/sessions/{session}/inicio", h.setStart)
 	m.HandleFunc("GET /api/v1/sites/{site}/media/{file...}", h.media)
+}
+
+// setStart corrects the recording start of a stored session (INICIO_GRABACION was not declared, or was wrong).
+func (h siteHandler) setStart(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		RecordingStart time.Time `json:"recording_start"`
+	}
+	if decode(w, r, 1024, &in) != nil {
+		fail(w, http.StatusBadRequest, "JSON inválido")
+		return
+	}
+	ctx, cancel := withTimeout(r, 2*time.Minute)
+	defer cancel()
+	res, err := h.sessions.SetRecordingStart(ctx, r.PathValue("site"), r.PathValue("session"), in.RecordingStart)
+	if err != nil {
+		writeError(w, r, err, dbError)
+		return
+	}
+	ok(w, res)
 }
 
 func (h siteHandler) list(w http.ResponseWriter, r *http.Request) {

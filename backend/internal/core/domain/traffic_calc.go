@@ -183,6 +183,9 @@ func covers(poly [][2]float64, x, y float64) bool {
 	return inside
 }
 
+// PolygonCovers reports whether the point is inside the polygon or on its edge.
+func PolygonCovers(poly [][2]float64, x, y float64) bool { return covers(poly, x, y) }
+
 // zoneAt is the zone of a position among zones already in zoneOrder (-1 when it is in none).
 func zoneAt(ordered []TrafficZone, x, y float64) int {
 	for _, z := range ordered {
@@ -277,6 +280,84 @@ type bucketAcc struct {
 	bins   []int
 }
 
+// TrafficAccumulator adds stays to the windows of every zone. The computation from real positions and the
+// generator of simulated traffic both go through it, so they count the same way and agree across windows.
+type TrafficAccumulator struct {
+	params  TrafficParams
+	types   map[int]string
+	buckets map[bucketKey]*bucketAcc
+}
+
+func NewTrafficAccumulator(params TrafficParams, zones []TrafficZone) *TrafficAccumulator {
+	if params.Version == 0 {
+		params = DefaultTrafficParams
+	}
+	a := &TrafficAccumulator{params: params, types: map[int]string{}, buckets: map[bucketKey]*bucketAcc{}}
+	for _, z := range zones {
+		a.types[z.ID] = z.Type
+	}
+	return a
+}
+
+// AddStay counts a stay of a person (any distinct number) in a zone that started at the unix second start and lasted
+// duration seconds. A stay in a zone the accumulator does not know is ignored.
+func (a *TrafficAccumulator) AddStay(person, zone int, start int64, duration float64) bool {
+	kind, ok := a.types[zone]
+	if !ok {
+		return false
+	}
+	th := a.params.For(kind)
+	var flags uint8
+	if duration >= th.StopS {
+		flags |= 1
+	}
+	if duration >= th.InterestedS {
+		flags |= 2
+	}
+	for _, m := range TrafficWindows {
+		k := bucketKey{zone: zone, minutes: m, start: floorDiv(start, int64(m)*60) * int64(m) * 60}
+		b := a.buckets[k]
+		if b == nil {
+			b = &bucketAcc{people: map[int]uint8{}, bins: make([]int, len(DwellEdgesS)+1)}
+			a.buckets[k] = b
+		}
+		b.people[person] |= flags
+		b.visits++
+		b.sum += duration
+		b.bins[DwellBin(duration)]++
+	}
+	return true
+}
+
+// Buckets are the windows counted so far, ordered by zone, window and start.
+func (a *TrafficAccumulator) Buckets() []TrafficBucket {
+	out := make([]TrafficBucket, 0, len(a.buckets))
+	for k, b := range a.buckets {
+		tb := TrafficBucket{ZoneID: k.zone, Minutes: k.minutes, Start: time.Unix(k.start, 0).UTC(), People: len(b.people), Visits: b.visits,
+			DwellSumS: b.sum, DwellBins: b.bins}
+		for _, flags := range b.people {
+			if flags&1 != 0 {
+				tb.Stops++
+			}
+			if flags&2 != 0 {
+				tb.Engaged++
+			}
+		}
+		out = append(out, tb)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		x, y := out[i], out[j]
+		if x.ZoneID != y.ZoneID {
+			return x.ZoneID < y.ZoneID
+		}
+		if x.Minutes != y.Minutes {
+			return x.Minutes < y.Minutes
+		}
+		return x.Start.Before(y.Start)
+	})
+	return out
+}
+
 type cellKey struct {
 	hour   int64
 	cx, cy int
@@ -287,26 +368,35 @@ type cellAcc struct {
 	people  int
 }
 
+// SortHeat orders heat cells by hour and position.
+func SortHeat(heat []HeatCell) {
+	sort.Slice(heat, func(i, j int) bool {
+		a, b := heat[i], heat[j]
+		if !a.Hour.Equal(b.Hour) {
+			return a.Hour.Before(b.Hour)
+		}
+		if a.CX != b.CX {
+			return a.CX < b.CX
+		}
+		return a.CY < b.CY
+	})
+}
+
 // ComputeTraffic computes the aggregates of one session: the stays of every person per zone and window,
 // and the heat cells per hour.
 func ComputeTraffic(in TrafficInput) TrafficResult {
 	if in.Algo.StepS <= 0 {
 		in.Algo = DefaultTrafficAlgo
 	}
-	if in.Params.Version == 0 {
-		in.Params = DefaultTrafficParams
-	}
 	ordered := zoneOrder(in.Zones)
-	byID := map[int]TrafficZone{}
 	interiors := map[int]bool{}
 	for _, z := range in.Zones {
-		byID[z.ID] = z
 		if z.Type == "INTERIOR" {
 			interiors[z.ID] = true
 		}
 	}
+	acc := NewTrafficAccumulator(in.Params, in.Zones)
 	start := in.Start.Unix()
-	buckets := map[bucketKey]*bucketAcc{}
 	cells := map[cellKey]*cellAcc{}
 	var res TrafficResult
 	for idx, person := range in.People {
@@ -332,71 +422,16 @@ func ComputeTraffic(in TrafficInput) TrafficResult {
 			}
 		}
 		for _, s := range stays(p, in.Algo.StepS, in.Algo.ToleranceS, interiors) {
-			zone, ok := byID[s.Zone]
-			if !ok {
-				continue
-			}
-			res.Stays++
-			d := s.Duration()
-			th := in.Params.For(zone.Type)
-			var flags uint8
-			if d >= th.StopS {
-				flags |= 1
-			}
-			if d >= th.InterestedS {
-				flags |= 2
-			}
-			at := start + int64(math.Floor(s.Start))
-			for _, m := range TrafficWindows {
-				k := bucketKey{zone: s.Zone, minutes: m, start: floorDiv(at, int64(m)*60) * int64(m) * 60}
-				b := buckets[k]
-				if b == nil {
-					b = &bucketAcc{people: map[int]uint8{}, bins: make([]int, len(DwellEdgesS)+1)}
-					buckets[k] = b
-				}
-				b.people[idx] |= flags
-				b.visits++
-				b.sum += d
-				b.bins[DwellBin(d)]++
+			if acc.AddStay(idx, s.Zone, start+int64(math.Floor(s.Start)), s.Duration()) {
+				res.Stays++
 			}
 		}
 	}
-	for k, b := range buckets {
-		tb := TrafficBucket{ZoneID: k.zone, Minutes: k.minutes, Start: time.Unix(k.start, 0).UTC(), People: len(b.people), Visits: b.visits,
-			DwellSumS: b.sum, DwellBins: b.bins}
-		for _, flags := range b.people {
-			if flags&1 != 0 {
-				tb.Stops++
-			}
-			if flags&2 != 0 {
-				tb.Engaged++
-			}
-		}
-		res.Buckets = append(res.Buckets, tb)
-	}
-	sort.Slice(res.Buckets, func(i, j int) bool {
-		a, b := res.Buckets[i], res.Buckets[j]
-		if a.ZoneID != b.ZoneID {
-			return a.ZoneID < b.ZoneID
-		}
-		if a.Minutes != b.Minutes {
-			return a.Minutes < b.Minutes
-		}
-		return a.Start.Before(b.Start)
-	})
+	res.Buckets = acc.Buckets()
 	for k, c := range cells {
 		res.Heat = append(res.Heat, HeatCell{Hour: time.Unix(k.hour, 0).UTC(), CX: k.cx, CY: k.cy, Seconds: c.seconds, People: c.people})
 	}
-	sort.Slice(res.Heat, func(i, j int) bool {
-		a, b := res.Heat[i], res.Heat[j]
-		if !a.Hour.Equal(b.Hour) {
-			return a.Hour.Before(b.Hour)
-		}
-		if a.CX != b.CX {
-			return a.CX < b.CX
-		}
-		return a.CY < b.CY
-	})
+	SortHeat(res.Heat)
 	return res
 }
 

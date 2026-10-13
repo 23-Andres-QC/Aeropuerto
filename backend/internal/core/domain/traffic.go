@@ -108,11 +108,6 @@ type TrafficResult struct {
 	People, Stays, Samples int
 }
 
-// Data origins of a traffic query.
-const (
-	TrafficBoth = ""
-)
-
 // TrafficFilter selects which aggregates a question is about. From and To bound
 // the days (Lima dates, To included); HourFrom and HourTo the hours of the day
 // ([HourFrom, HourTo) in Lima hours, 0 and 24 for the whole day).
@@ -124,19 +119,11 @@ type TrafficFilter struct {
 	ZoneIDs, LocalIDs []int
 }
 
-// LimaLocation is the time zone of every site's calendar.
-var LimaLocation = func() *time.Location {
-	if loc, err := time.LoadLocation("America/Lima"); err == nil {
-		return loc
-	}
-	return time.FixedZone("America/Lima", -5*3600)
-}()
-
 // Range is the instant range [Start, End) the filter's days cover, in UTC.
 func (f TrafficFilter) Range() (time.Time, time.Time) {
-	y1, m1, d1 := f.From.In(LimaLocation).Date()
-	y2, m2, d2 := f.To.In(LimaLocation).Date()
-	return time.Date(y1, m1, d1, 0, 0, 0, 0, LimaLocation).UTC(), time.Date(y2, m2, d2+1, 0, 0, 0, 0, LimaLocation).UTC()
+	y1, m1, d1 := f.From.In(SalesZone).Date()
+	y2, m2, d2 := f.To.In(SalesZone).Date()
+	return time.Date(y1, m1, d1, 0, 0, 0, 0, SalesZone).UTC(), time.Date(y2, m2, d2+1, 0, 0, 0, 0, SalesZone).UTC()
 }
 
 // AllDay reports whether the filter keeps every hour of the day.
@@ -147,8 +134,8 @@ func (f *TrafficFilter) Normalize() error {
 	if f.From.IsZero() || f.To.IsZero() || f.To.Before(f.From) {
 		return Invalid("el período necesita fecha de inicio y de fin, con el fin no antes del inicio")
 	}
-	if f.To.Sub(f.From) > 400*24*time.Hour {
-		return Invalid("el período admite hasta 400 días")
+	if f.To.Sub(f.From) > 3660*24*time.Hour {
+		return Invalid("el período admite hasta 10 años")
 	}
 	if f.HourTo == 0 {
 		f.HourTo = 24
@@ -324,4 +311,18 @@ func SortZoneRows(rows []TrafficZoneRow) {
 		}
 		return rows[i].ZoneID < rows[j].ZoneID
 	})
+}
+
+// DwellTotals add up the stays of the zones a question is about.
+type DwellTotals struct {
+	Counts                         []int
+	Visits, People, Stops, Engaged int
+	SumS                           float64
+}
+
+// FunnelCounts are the people of one store over a period: those who were in front of it (and those
+// who stopped there) and those who went inside (and those who stayed interested).
+type FunnelCounts struct {
+	LocalID                       int
+	Pass, Stop, Enter, Interested int
 }

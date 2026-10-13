@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseUUID(t *testing.T) {
@@ -57,7 +59,7 @@ func TestCameraInputNormalize(t *testing.T) {
 func validImport() Import {
 	x, y := 1.5, 2.5
 	var p Import
-	body := `{"session":{"session_id":"11111111-1111-1111-1111-111111111111","name":"prueba","recording_start":"2026-09-26T12:00:00Z"},
+	body := `{"session":{"session_id":"11111111-1111-1111-1111-111111111111","name":"prueba","recording_start":"2026-09-26T12:00:00Z","recording_start_declared":true},
 	"identities":[{"global_id":"22222222-2222-2222-2222-222222222222","public_number":1,"first_seen":"2026-09-26T12:00:00Z","last_seen":"2026-09-26T12:00:05Z","n_cameras":1,"gender":"Hombre","gender_confidence":0.8,"gender_votes":5}],
 	"tracklets":[{"tracklet_id":"33333333-3333-3333-3333-333333333333","global_id":"22222222-2222-2222-2222-222222222222","camera_id":"cam01","local_id":1,"t_start":"2026-09-26T12:00:00Z","t_end":"2026-09-26T12:00:05Z","n_reid_views":3}]}`
 	if err := json.Unmarshal([]byte(body), &p); err != nil {
@@ -86,6 +88,8 @@ func TestImportValidate(t *testing.T) {
 		"genero sin confianza": func(p *Import) { p.Identities[0].GenderConf = nil },
 		"genero raro":          func(p *Import) { p.Identities[0].Gender = "otro" },
 		"kind raro":            func(p *Import) { p.Session.Kind = "OTRO" },
+		"hora sin declarar":    func(p *Import) { p.Session.StartDeclared = false },
+		"hora en el futuro":    func(p *Import) { p.Session.RecordingStart = time.Now().Add(48 * time.Hour) },
 		"homografia corta":     func(p *Import) { p.Cameras = []ImportCamera{{ID: "cam01", Homography: []float64{1, 2}}} },
 	}
 	for name, breakIt := range cases {
@@ -94,6 +98,21 @@ func TestImportValidate(t *testing.T) {
 		if err := p.Validate(); !errors.Is(err, ErrInvalid) {
 			t.Fatalf("%s: se aceptó un payload inválido (%v)", name, err)
 		}
+	}
+}
+
+// A BUILD must say when the recording began; a LIVE session takes it from the clock. The message names INICIO_GRABACION.
+func TestImportStartDeclaration(t *testing.T) {
+	p := validImport()
+	p.Session.StartDeclared = false
+	err := p.Validate()
+	if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "INICIO_GRABACION") {
+		t.Fatalf("un Build sin hora declarada debe rechazarse nombrando INICIO_GRABACION: %v", err)
+	}
+	live := validImport()
+	live.Session.Kind, live.Session.StartDeclared = "LIVE", false
+	if err := live.Validate(); err != nil || !live.Session.StartDeclared {
+		t.Fatalf("una sesión en vivo no declara la hora y queda como declarada: %v %+v", err, live.Session)
 	}
 }
 

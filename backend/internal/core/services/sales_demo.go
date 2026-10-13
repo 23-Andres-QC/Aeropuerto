@@ -54,7 +54,9 @@ var (
 	weekdayWeight = map[time.Weekday]float64{time.Monday: 1, time.Tuesday: 1, time.Wednesday: 1, time.Thursday: 1, time.Friday: 1.1, time.Saturday: 0.7, time.Sunday: 0.4}
 )
 
-func profileFor(l domain.Locale) demoProfile {
+// localKind is what kind of place a local is, from its name and category: "vending" (a machine), "merch" (a stand or
+// tent), "food" or "retail". The simulated sales and the simulated traffic both read a local this way.
+func localKind(l domain.Locale) string {
 	text := strings.ToLower(l.Name + " " + l.Category)
 	has := func(words ...string) bool {
 		for _, w := range words {
@@ -64,13 +66,25 @@ func profileFor(l domain.Locale) demoProfile {
 		}
 		return false
 	}
-	p := demoProfile{products: retailProducts, visitors: 10, conversion: 0.3}
 	switch {
 	case has("expend", "vending", "máquina", "maquina"):
-		p = demoProfile{products: vendingProducts, visitors: 9, conversion: 0.42}
+		return "vending"
 	case has("carpa", "stand", "merch", "souvenir"):
-		p = demoProfile{products: merchProducts, visitors: 12, conversion: 0.24}
+		return "merch"
 	case has("caf", "restaur", "comida", "food", "bar "):
+		return "food"
+	}
+	return "retail"
+}
+
+func profileFor(l domain.Locale) demoProfile {
+	p := demoProfile{products: retailProducts, visitors: 10, conversion: 0.3}
+	switch localKind(l) {
+	case "vending":
+		p = demoProfile{products: vendingProducts, visitors: 9, conversion: 0.42}
+	case "merch":
+		p = demoProfile{products: merchProducts, visitors: 12, conversion: 0.24}
+	case "food":
 		p = demoProfile{products: foodProducts, visitors: 14, conversion: 0.38}
 	}
 	p.visitors += float64(l.ID % 5)
@@ -264,6 +278,9 @@ func (s *SalesService) SeedDemo(ctx context.Context, slug string, days int) (dom
 		res.Sessions++
 		res.Matched += m.Matched
 	}
+	if s.demoChanged != nil {
+		s.demoChanged(ctx, slug, false)
+	}
 	return res, nil
 }
 
@@ -273,5 +290,9 @@ func (s *SalesService) DeleteDemo(ctx context.Context, slug string) (int, error)
 	if err != nil {
 		return 0, err
 	}
-	return s.repo.DeleteSimulated(ctx, site)
+	n, err := s.repo.DeleteSimulated(ctx, site)
+	if err == nil && s.demoChanged != nil {
+		s.demoChanged(ctx, slug, true)
+	}
+	return n, err
 }

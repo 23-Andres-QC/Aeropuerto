@@ -96,7 +96,7 @@ func TestTrafficFilter(t *testing.T) {
 		{From: day("2026-09-01"), To: day("2026-09-02"), HourFrom: 24},
 		{From: day("2026-09-01"), To: day("2026-09-02"), Minutes: 10},
 		{From: day("2026-09-01"), To: day("2026-09-02"), Origin: "otro"},
-		{From: day("2024-01-01"), To: day("2026-09-02")},
+		{From: day("2010-01-01"), To: day("2026-09-02")},
 		{},
 	} {
 		if bad.Normalize() == nil {

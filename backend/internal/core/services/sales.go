@@ -18,11 +18,16 @@ type SalesService struct {
 	sessions ports.SessionRepository
 	repo     ports.SalesRepository
 	now      func() time.Time
+	// demoChanged runs after the simulated sales of a site were generated or removed (the simulated traffic follows them).
+	demoChanged func(ctx context.Context, slug string, removed bool)
 }
 
 func NewSalesService(sites *SiteService, sessions ports.SessionRepository, repo ports.SalesRepository) *SalesService {
 	return &SalesService{sites: sites, sessions: sessions, repo: repo, now: time.Now}
 }
+
+// OnDemoChange registers what runs after the simulated sales of a site are generated or removed.
+func (s *SalesService) OnDemoChange(f func(ctx context.Context, slug string, removed bool)) { s.demoChanged = f }
 
 // Currency is the one the platform sells in.
 const Currency = "PEN"
