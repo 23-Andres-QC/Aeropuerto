@@ -22,6 +22,9 @@ var estaticos embed.FS
 // limite del multipart que lee camara_telefono.py.
 const limite = "frameesan"
 
+// esperaFoto: cuánto espera /foto.jpg?despues= un cuadro nuevo antes de responder 204 (el modelo vuelve a pedir).
+const esperaFoto = 2 * time.Second
+
 // maxFrame acota un JPEG de la página (1280 px en calidad 0,7 pesa ~150 KB).
 const maxFrame = 1 << 20
 
@@ -242,19 +245,52 @@ func (s *Servidor) video(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// foto devuelve el último frame.
+// foto da el último cuadro. Con ?despues=N espera (hasta esperaFoto) uno posterior al N, y con ?ancho= lo reduce como
+// el MJPEG: así lo lee el modelo en otra máquina (scripts/modelo_local.py), pidiendo el siguiente recién cuando
+// terminó el anterior. Con el MJPEG, lo que el modelo no alcanzaba a leer se acumulaba en los búferes de la red y
+// procesaba cuadros de segundos atrás; así siempre procesa el más nuevo. X-Cuadro lleva su número, como en el MJPEG.
 func (s *Servidor) foto(w http.ResponseWriter, r *http.Request) {
 	d := s.dispositivo(w, r)
 	if d == nil {
 		return
 	}
-	frame, _, _ := d.Ultimo()
+	q := r.URL.Query()
+	ancho, _ := strconv.Atoi(q.Get("ancho"))
+	if ancho != 0 && (ancho < anchoMinimo || ancho > anchoMaximo) {
+		http.Error(w, "ancho fuera de rango", http.StatusBadRequest)
+		return
+	}
+	despues, _ := strconv.ParseUint(q.Get("despues"), 10, 64)
+	if q.Has("despues") {
+		d.ultimaFoto.Store(time.Now().UnixNano())
+	}
+	limite := time.NewTimer(esperaFoto)
+	defer limite.Stop()
+	frame, seq, cambio := d.Ultimo()
+	for q.Has("despues") && (frame == nil || seq <= despues) {
+		select {
+		case <-cambio:
+		case <-limite.C:
+			w.WriteHeader(http.StatusNoContent)
+			return
+		case <-d.fin:
+			http.Error(w, "La cámara salió", http.StatusGone)
+			return
+		case <-r.Context().Done():
+			return
+		}
+		frame, seq, cambio = d.Ultimo()
+	}
 	if frame == nil {
 		http.Error(w, "Sin imagen", http.StatusServiceUnavailable)
 		return
 	}
+	if ancho != 0 {
+		frame = reducido(frame, ancho)
+	}
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Cuadro", strconv.FormatUint(seq, 10))
 	_, _ = w.Write(frame)
 }
 

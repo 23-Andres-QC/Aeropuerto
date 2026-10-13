@@ -9,6 +9,7 @@ También procesa el video que se sube en la sección Videos de la web (videos_su
 aparte: ese video no se guarda ni entra a la memoria de identidades.
 """
 import argparse
+import http.client
 import json
 import math
 import os
@@ -55,9 +56,12 @@ MAX_JPEG_RELEVO = 480 * 1024
 # (scripts/modelo_local.py) se baja para no gastar en él la subida del enlace.
 FPS_RELEVO = float(os.environ.get("RELEVO_VIDEO_FPS") or 0)
 # Ancho de los cuadros que se piden a camara-web (?ancho=, vacío = los del teléfono tal cual). Con el modelo en otra
-# máquina que la web, por internet el cuadro entero no llega a tiempo: scripts/modelo_local.py pide 960 px, la
-# resolución del detector en GPU, así no se pierde detalle y pesan ~40 % menos.
+# máquina que la web, por internet el cuadro entero no llega a tiempo: scripts/modelo_local.py lo baja.
 ANCHO_MJPEG = int(os.environ.get("MJPEG_ANCHO") or 0)
+# LECTURA_TELEFONOS=foto: en vez del MJPEG, se pide el cuadro más nuevo y el siguiente recién al recibirlo
+# (/foto.jpg?despues=). Con el modelo en otra máquina, lo que no alcanzaba a leer del MJPEG se acumulaba en los
+# búferes de la red y procesaba cuadros de ~4 s atrás; así siempre procesa el último. scripts/modelo_local.py lo usa.
+LECTURA_FOTO = os.environ.get("LECTURA_TELEFONOS") == "foto"
 FPS_NOMINAL = 15.0
 TRANSICION_MAX_S = 60.0
 # Un teléfono ve a la gente de cerca: quien sale cortado por el borde del cuadro también da muestras de Re-ID (en las
@@ -122,8 +126,15 @@ def enlace_camara():
 
 
 def url_lectura(url):
-    """La URL del MJPEG de un teléfono como la lee el modelo: con ?ancho= si se pidió ANCHO_MJPEG."""
+    """La URL de un teléfono como la lee el modelo: su MJPEG (o /foto.jpg con LECTURA_FOTO), con ?ancho= si se pidió."""
+    if LECTURA_FOTO:
+        url = url.replace("/video?", "/foto.jpg?", 1)
     return f"{url}&ancho={ANCHO_MJPEG}" if ANCHO_MJPEG else url
+
+
+def nuevo_lector(url):
+    """El lector de un teléfono según LECTURA_TELEFONOS."""
+    return LectorFoto(url) if LECTURA_FOTO else LectorMjpeg(url)
 
 
 def sin_token(url):
@@ -198,6 +209,40 @@ class LectorMjpeg:
     def detener(self):
         """Termina la lectura (el hilo sale en cuanto vence su espera)."""
         self._parar.set()
+
+
+class LectorFoto(LectorMjpeg):
+    """Como LectorMjpeg, pero pide el cuadro más nuevo (/foto.jpg?despues=<último>) y el siguiente al recibirlo: nunca
+    hay cuadros esperando en la red, así el modelo procesa el último aunque el enlace o el modelo vayan lentos."""
+
+    def _leer(self):
+        partes = urlsplit(self.url)
+        ruta, visto = f"{partes.path}?{partes.query}", 0
+        while not self._parar.is_set():
+            conexion = http.client.HTTPConnection(partes.hostname, partes.port, timeout=5)
+            try:
+                while not self._parar.is_set():
+                    conexion.request("GET", f"{ruta}&despues={visto}")
+                    respuesta = conexion.getresponse()
+                    cuerpo = respuesta.read()
+                    if respuesta.status == 204:
+                        continue  # 2 s sin cuadros nuevos (la cámara dejó de enviar): no se repite el último
+                    if respuesta.status != 200:
+                        raise ConnectionError(f"HTTP {respuesta.status}")
+                    cuadro = int(respuesta.getheader("X-Cuadro") or 0)
+                    visto = cuadro
+                    frame = cv2.imdecode(np.frombuffer(cuerpo, np.uint8), cv2.IMREAD_COLOR)
+                    if frame is None:
+                        continue
+                    self.leidos += 1
+                    self.error = None
+                    with self._lock:
+                        self._ultimo = (self.leidos, frame, time.perf_counter(), cuadro or None)
+            except Exception as error:
+                self.error = f"No se pudo leer {sin_token(self.url)}: {getattr(error, 'reason', None) or error}"
+            finally:
+                conexion.close()
+            self._parar.wait(1)
 
 
 class Relevo:
@@ -606,7 +651,7 @@ def main():
                         lectores.pop(cid).detener()
                     for cid, telefono in lista.items():
                         if cid not in lectores:
-                            lectores[cid] = LectorMjpeg(url_lectura(telefono["url"]))
+                            lectores[cid] = nuevo_lector(url_lectura(telefono["url"]))
                     nombres = {cid: t["nombre"] for cid, t in lista.items()}
                     sesion.camaras = {cid: t.get("camara") for cid, t in lista.items()}
                     clave = sorted((cid, lector.url) for cid, lector in lectores.items())

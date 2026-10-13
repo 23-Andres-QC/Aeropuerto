@@ -57,7 +57,7 @@ PUERTOS = (8093, 8092)  # mismos números en las dos puntas: las URL que reparte
 # en camino sin leer; chica, alcanza para la velocidad del enlace (~1 MB/s), no demora a los demás canales de la misma
 # conexión (bajar un video subido) y el MJPEG salta cuadros en vez de atrasarse (camara-web da a cada lector su último
 # cuadro).
-VENTANAS = {8093: 256 * 2 ** 10, 8092: 96 * 2 ** 10}  # 8092: ~3 cuadros de 960 px
+VENTANAS = {8093: 256 * 2 ** 10, 8092: 256 * 2 ** 10}  # 8092: un cuadro por pedido, sin cola
 
 
 class Tunel:
@@ -171,9 +171,9 @@ def main():
     # Enlace que Teléfonos muestra para unir un teléfono: el público del servidor, no la IP de esta PC.
     # La web muestra el video de la sala de camara-web: el del relevo (solo de respaldo) va a 1 cuadro por segundo
     # para dejarle la subida de esta PC a las cajas.
-    # Los cuadros de los teléfonos llegan reducidos a 960 px (la resolución del detector en GPU): el original no alcanza
-    # a llegar a tiempo por internet.
-    entorno = {"RELEVO_VIDEO_FPS": "1", "MJPEG_ANCHO": "960", **os.environ,
+    # Cada teléfono se lee pidiendo su cuadro más nuevo (no el MJPEG, que por internet acumulaba segundos de cuadros
+    # viejos), reducido a 960 px: la resolución del detector en GPU.
+    entorno = {"RELEVO_VIDEO_FPS": "1", "MJPEG_ANCHO": "960", "LECTURA_TELEFONOS": "foto", **os.environ,
                "ENLACE_CAMARA": os.environ.get("ENLACE_CAMARA") or f"https://{host}/camara/"}
     modelo = subprocess.Popen([sys.executable, "-u", str(MODELO), "--api", f"http://127.0.0.1:{PUERTOS[0]}"],
                               cwd=MODELO.parent, env=entorno)

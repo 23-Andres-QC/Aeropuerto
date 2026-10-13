@@ -28,8 +28,9 @@ type Dispositivo struct {
 	cambio  chan struct{} // se cierra con cada frame nuevo
 	llegada time.Time
 
-	lectores atomic.Int32  // conexiones MJPEG abiertas (el modelo)
-	fin      chan struct{} // se cierra cuando la cámara sale de la lista
+	lectores   atomic.Int32  // conexiones MJPEG abiertas (el modelo)
+	ultimaFoto atomic.Int64  // UnixNano del último /foto.jpg?despues= (el modelo en otra máquina)
+	fin        chan struct{} // se cierra cuando la cámara sale de la lista
 
 	// Protegidos por Camaras.mu.
 	conexion *Conexion   // la pestaña que transmite; nil mientras se espera que vuelva
@@ -61,7 +62,15 @@ func (d *Dispositivo) Transmitiendo() bool {
 	return !d.llegada.IsZero() && time.Since(d.llegada) < 3*time.Second
 }
 
-func (d *Dispositivo) Lectores() int32 { return d.lectores.Load() }
+// Lectores cuenta al modelo que lee el MJPEG y al que pide cuadros a /foto.jpg?despues= (en los últimos 3 s): con
+// alguno la página envía a 15 fps.
+func (d *Dispositivo) Lectores() int32 {
+	n := d.lectores.Load()
+	if time.Since(time.Unix(0, d.ultimaFoto.Load())) < 3*time.Second {
+		n++
+	}
+	return n
+}
 
 // mensaje es lo que el servicio le dice a la página por el WebSocket.
 type mensaje struct {

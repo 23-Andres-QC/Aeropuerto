@@ -203,6 +203,29 @@ func TestUnirseRegistraYTransmiteMJPEG(t *testing.T) {
 	if !bytes.Equal(cuerpo, jpegDePrueba) {
 		t.Fatalf("foto = %v", cuerpo)
 	}
+	if n := foto.Header.Get("X-Cuadro"); n != "1" {
+		t.Fatalf("X-Cuadro de la foto = %q", n)
+	}
+
+	// ?despues= espera un cuadro posterior: el modelo en otra máquina pide el siguiente cuando terminó el anterior.
+	siguiente := make(chan *http.Response, 1)
+	go func() {
+		r, err := cliente.Get(e.srv.URL + "/foto.jpg?despues=1&token=" + token)
+		if err != nil {
+			r = nil
+		}
+		siguiente <- r
+	}()
+	time.Sleep(50 * time.Millisecond)
+	if err := ws.WriteMessage(websocket.BinaryMessage, jpegDePrueba); err != nil {
+		t.Fatal(err)
+	}
+	leerMensaje(t, ws)
+	r := <-siguiente
+	if r == nil || r.StatusCode != http.StatusOK || r.Header.Get("X-Cuadro") != "2" {
+		t.Fatalf("foto siguiente = %+v", r)
+	}
+	r.Body.Close()
 }
 
 func TestReconectarConservaElRegistroYSalirLoQuita(t *testing.T) {
