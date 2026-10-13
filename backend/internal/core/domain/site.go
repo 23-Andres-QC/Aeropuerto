@@ -20,7 +20,7 @@ var (
 	colorPattern  = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 	// ZoneTypes are the kinds of zone a site can have. INTERIOR (entering a
 	// local) and FRONTAGE (passing in front of it) belong to a local.
-	ZoneTypes  = map[string]bool{"INTERIOR": true, "FRONTAGE": true, "PASILLO": true, "ENTRADA": true, "COLA": true, "CHECKIN": true, "SEGURIDAD": true, "PUERTA": true, "OTRO": true}
+	ZoneTypes  = map[string]bool{"INTERIOR": true, "FRONTAGE": true, "PASILLO": true, "ENTRADA": true, "COLA": true, "CHECKIN": true, "SEGURIDAD": true, "PUERTA": true, "DESCANSO": true, "OTRO": true}
 	LocalZones = map[string]bool{"INTERIOR": true, "FRONTAGE": true}
 )
 
