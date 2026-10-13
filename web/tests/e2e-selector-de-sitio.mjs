@@ -66,6 +66,9 @@ try {
     opciones: [...document.querySelectorAll('.sitio-lista li')].map((li) => li.innerText.replace(/\\s+/g, ' ').trim()),
     abierto: !!document.querySelector('.sitio-lista'),
     titulo: (document.querySelector('main h1, main h2')?.textContent ?? '').trim(),
+    plano: (document.querySelector('main')?.innerText ?? '').match(/Plano · [\\d.]+ × [\\d.]+ m/)?.[0] ?? null,
+    capasDelPlano: document.querySelectorAll('main svg *').length,
+    panelZonas: [...document.querySelectorAll('main h2, main h3')].some((h) => h.textContent.trim() === 'Zonas'),
   }))()`);
   const paso = async (texto, verifica) => { await esperar(2500); const e = await estado(); verifica(e); console.log(`✓ ${texto}`); };
   const iniciarSesion = async () => {
@@ -100,6 +103,9 @@ try {
     assert.match(e.tarjeta, /LAP · Jorge Chávez/);
     assert.equal(e.abierto, false);
     assert.equal(e.titulo, "Zonas y cámaras");
+    assert.equal(e.plano, "Plano · 546.4 × 978.4 m", "se ve el plano del aeropuerto");
+    assert.ok(e.capasDelPlano > 100, `el plano está dibujado (${e.capasDelPlano} elementos)`);
+    assert.equal(e.panelZonas, true, "está el panel de Zonas");
   });
 
   await evalua(`document.querySelector('.sitio-boton').focus(); 0`);
@@ -111,6 +117,17 @@ try {
     assert.equal(e.url, "/sitios/esan/configuracion");
     assert.match(e.tarjeta, /ESAN/);
   });
+
+  // Abrir LAP directo (recarga completa con la cookie ya guardada): sitios, tarjeta y plano.
+  await cdp("Page.navigate", { url: `${WEB}/sitios/lap/configuracion` });
+  await paso("abrir LAP directo, con la sesión ya guardada: tarjeta, pestañas y plano", (e) => {
+    assert.match(e.tarjeta, /LAP · Jorge Chávez/);
+    assert.deepEqual(e.pestanas, ["ESAN", "LAP · Jorge Chávez*"]);
+    assert.equal(e.plano, "Plano · 546.4 × 978.4 m");
+    assert.ok(e.capasDelPlano > 100);
+  });
+  await cdp("Page.navigate", { url: `${WEB}/sitios/esan/configuracion` });
+  await esperar(2500);
 
   await clic(`document.querySelector('.sitio-boton')`);
   await esperar(300);
