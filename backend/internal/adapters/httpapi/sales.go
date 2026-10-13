@@ -19,6 +19,7 @@ type salesHandler struct {
 func (h salesHandler) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/v1/sites/{site}/ventas/resumen", h.summary)
 	m.HandleFunc("GET /api/v1/sites/{site}/ventas/pronostico", h.forecast)
+	m.HandleFunc("GET /api/v1/sites/{site}/ventas/patrones", h.patterns)
 	m.HandleFunc("GET /api/v1/sites/{site}/ventas/tickets", h.tickets)
 	m.HandleFunc("POST /api/v1/sites/{site}/ventas/tickets", h.createTickets)
 	m.HandleFunc("DELETE /api/v1/sites/{site}/ventas/tickets/{ticket}", h.deleteTicket)
@@ -86,6 +87,21 @@ func (h salesHandler) summary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok(w, s)
+}
+
+func (h salesHandler) patterns(w http.ResponseWriter, r *http.Request) {
+	q, valid := salesQuery(w, r, 28)
+	if !valid {
+		return
+	}
+	ctx, cancel := withTimeout(r, 15*time.Second)
+	defer cancel()
+	p, err := h.sales.Patterns(ctx, r.PathValue("site"), q)
+	if err != nil {
+		writeError(w, r, err, dbError)
+		return
+	}
+	ok(w, p)
 }
 
 func (h salesHandler) forecast(w http.ResponseWriter, r *http.Request) {

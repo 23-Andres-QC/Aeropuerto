@@ -82,3 +82,34 @@ type TicketsCreated struct {
 	Created    int `json:"created"`
 	Duplicates int `json:"duplicates"`
 }
+
+// PatternCell is what one weekday-and-hour slot of the week held over the period.
+type PatternCell struct {
+	Revenue  float64 `json:"revenue"`
+	Tickets  int     `json:"tickets"`
+	Visitors int     `json:"visitors"`
+}
+
+// WeekGrid is the week on the Lima clock: [weekday][hour], Monday being weekday 0.
+type WeekGrid [7][24]PatternCell
+
+// LocalPatterns is the week grid of one local.
+type LocalPatterns struct {
+	LocalID  int      `json:"local_id"`
+	Name     string   `json:"name"`
+	Category string   `json:"category"`
+	Cells    WeekGrid `json:"cells"`
+}
+
+// SalesPatterns shows when the week sells: the totals of every weekday-and-hour slot over
+// the period, in total and per local. WeekdayDays is how many days of each weekday had
+// any sale or visit, so that a cell divided by it is the average of that slot.
+type SalesPatterns struct {
+	From        time.Time       `json:"from"`
+	To          time.Time       `json:"to"`
+	Data        string          `json:"data"`
+	Currency    string          `json:"currency"`
+	WeekdayDays [7]int          `json:"weekday_days"`
+	Cells       WeekGrid        `json:"cells"`
+	Locals      []LocalPatterns `json:"locales"`
+}

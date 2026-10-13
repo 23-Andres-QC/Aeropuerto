@@ -6,6 +6,7 @@ import { useSitios } from "../../sitios/useSitios";
 import { apiVentas, type Consulta, type ResumenVentas } from "../api";
 import CifraAnimada from "../components/CifraAnimada.vue";
 import SeleccionPlano from "../components/SeleccionPlano.vue";
+import VentasCuando from "../components/VentasCuando.vue";
 import VentasDatos from "../components/VentasDatos.vue";
 import VentasEmparejamiento from "../components/VentasEmparejamiento.vue";
 import VentasPronostico from "../components/VentasPronostico.vue";
@@ -20,10 +21,11 @@ const { slug, actual } = useSitios();
 const route = useRoute();
 const router = useRouter();
 
-type Pestana = "resumen" | "pronostico" | "emparejamiento" | "tickets" | "datos";
+type Pestana = "resumen" | "pronostico" | "cuando" | "emparejamiento" | "tickets" | "datos";
 const PESTANAS: { id: Pestana; nombre: string }[] = [
   { id: "resumen", nombre: "Resumen" },
   { id: "pronostico", nombre: "Pronóstico" },
+  { id: "cuando", nombre: "Cuándo se vende" },
   { id: "emparejamiento", nombre: "Emparejamiento" },
   { id: "tickets", nombre: "Tickets" },
   { id: "datos", nombre: "Datos" },
@@ -185,6 +187,7 @@ const soloSimulado = computed(() => resumen.value && resumen.value.counts.simula
     <template v-else>
       <VentasResumen v-if="pestana === 'resumen' && resumen" :resumen="resumen" :cargando="cargando" />
       <VentasPronostico v-else-if="pestana === 'pronostico'" :key="version" :sitio="slug" :consulta="consulta" :locales="locales" />
+      <VentasCuando v-else-if="pestana === 'cuando'" :key="version" :sitio="slug" :consulta="consulta" :config="config" />
       <VentasEmparejamiento v-else-if="pestana === 'emparejamiento'" :sitio="slug" :version="version" @cambio="huboCambios" />
       <VentasTickets v-else-if="pestana === 'tickets'" :sitio="slug" :consulta="consulta" :locales="locales" :version="version" @cambio="huboCambios" />
       <VentasDatos v-else-if="pestana === 'datos'" :sitio="slug" :resumen="resumen" :locales="locales.length" @cambio="huboCambios" />
