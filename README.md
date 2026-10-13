@@ -148,7 +148,7 @@ Todas las rutas de sitio siguen `/api/v1/sites/<sitio>/…`:
 | `GET /{sitio}/sessions/{id}/replay` · `/insights` | reproducción y agregados SQL |
 | `GET /{sitio}/sessions/{id}/points` · `GET/PUT /analytics` | entrada (posiciones del modelo) y resultados de la Parte III (zona y posición ajustada de cada punto, eventos, análisis) |
 | `GET /{sitio}/media/{archivo}` | archivos exportados por el Build |
-| `GET/POST /api/v1/telefonos` · `DELETE /{id}` | teléfonos (solo en memoria) |
+| `GET/POST /api/v1/telefonos` · `DELETE /{id}` | teléfonos (solo en memoria). El POST admite `"simulado": true` para una **fuente de prueba**: En vivo la muestra, pero no guarda sus capturas en la base |
 | `GET/POST /vivo/api/v1/videos` · `DELETE /{id}` | videos subidos en Videos con su resumen al terminar (disco temporal y memoria de backend-vivo; hasta 10, procesados al mismo tiempo) |
 | `/api/v1/cameras/{id}/publish·watch·detections/…` | relé WebSocket de video y detecciones |
 | `GET /{sitio}/ventas/resumen` · `/ventas/pronostico` | embudo por local (visitantes → tickets → ingresos), productos y precios; pronóstico de ingresos, visitantes, conversión y ticket promedio (`dias`, `datos=real|simulado|todos`, `locales=1,2,3` o `local=1`, `paso=dia|hora`, `horizonte`) |
@@ -170,6 +170,7 @@ La web y la API piden iniciar sesión (PR de seguridad mínima; las cuentas por 
 - **Credenciales.** En la laptop (`APP_ENV=local`, lo normal) valen las de prueba `LAP` / `LAP` y una llave de prueba; la API lo avisa en su log. En el servidor (`APP_ENV=servidor`, de `servidor.env`) **no arranca** con las de prueba ni con credenciales débiles (`ADMIN_PASSWORD` de 12 o más caracteres, `SESSION_SECRET` de 32 o más, `API_KEY` de 24 o más): `scripts/levantar.sh` las crea al azar en `.env` la primera vez, muestra la contraseña una sola vez y conserva el `.env` que ya existía (solo agrega lo que falta). No se escriben en ningún log ni en la web.
 - **Lo que sigue público, a propósito.** La página `/camara/` y su WebSocket, para que un teléfono se una sin iniciar sesión: solo GET, sus cuatro archivos y el WebSocket, nada del MJPEG, la foto ni el estado. **Riesgo conocido:** cualquiera que alcance esa URL puede mandar video como si fuera una cámara; y el puerto 8444 de la cámara web existe para que los teléfonos de la misma Wi-Fi se unan a la laptop: sirve solo la página y su WebSocket (el panel de personas, el video y el estado no salen por ahí), y en el servidor ni siquiera se publica (`CAMARA_BIND_ADDR=127.0.0.1` en `servidor.env`; los teléfonos entran por `/camara/`). Un código de unión para los teléfonos llega con las cuentas.
 - **Aún no hay:** cuentas por usuario en la base ni rol «tienda», doble factor ni sesiones revocables tras un reinicio.
+- **Fuentes de prueba: nada falso en la base.** `node scripts/simular_telefonos.mjs` simula dos teléfonos con una persona caminando (para probar En vivo sin teléfonos; `--ids distinto` prueba la unión por posición) y los registra siempre con `simulado: true`. En vivo muestra lo que ven (con «PRUEBA · no se guarda» y «(prueba)» en sus mosaicos), pero ninguna captura que los incluya se guarda: ni al terminar, ni al reiniciar, ni sola cada 30 s. La marca se queda aunque el teléfono se desconecte a mitad de la captura. Las pruebas de Go con base de datos usan una base desechable (`aeropuerto_test`) y se niegan a correr en otra. Si registras a mano una cámara de prueba (por ejemplo el video de `Modelo/Test Modelo/simular_telefono.py`), pasa `"simulado": true`.
 
 ## Modelo de datos
 
@@ -180,7 +181,8 @@ PostgreSQL 17 + PostGIS, coordenadas del plano en metros (SRID 0), tiempos con z
 ```bash
 bash scripts/test-integration.sh                                 # backend: unitarias + integración con PostGIS
 cd web && npm ci && npm run build                                # web: tipos (vue-tsc) y build
-for f in web/tests/*.mjs; do node "$f"; done                     # web: patrones, lecturas, simulador, recorrido y paleta (Node 22.18 o más nuevo)
+for f in web/tests/*.mjs; do node "$f"; done                     # web: patrones, lecturas, simulador, recorrido, paleta y fuentes de prueba (Node 22.18 o más nuevo)
+node web/tests/e2e-fuentes-de-prueba.mjs                         # punta a punta (pide el stack y un navegador): los teléfonos simulados no guardan nada
 python -m unittest discover -s "Modelo/Insights Modelo/tests"    # Parte III con trayectorias sintéticas
 python -m unittest discover -s "Modelo/Test Modelo/tests"        # memoria de identidades con personas sintéticas
 ```

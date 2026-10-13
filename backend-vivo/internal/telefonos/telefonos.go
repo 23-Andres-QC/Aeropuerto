@@ -28,6 +28,9 @@ type Telefono struct {
 	// Camara es su número (1, 2, …) por orden de ingreso: el menor libre al unirse. La web lo pone en el plano como
 	// cam01, cam02… y el modelo prueba primero las referencias de esa cámara para ubicarlo.
 	Camara int `json:"camara"`
+	// Simulado marca una fuente de prueba (un teléfono simulado por un script, un video que hace de cámara): la web
+	// muestra lo que ve, pero sus capturas nunca se guardan en la base.
+	Simulado bool `json:"simulado"`
 }
 
 type Registro struct {
@@ -45,6 +48,15 @@ func (r *Registro) Lista() []Telefono {
 
 // Agregar registra una cámara por la URL de su MJPEG; el nombre por defecto es «Teléfono N».
 func (r *Registro) Agregar(nombre, direccion string) (Telefono, error) {
+	return r.agregar(nombre, direccion, false)
+}
+
+// AgregarSimulado registra una fuente de prueba: igual que Agregar, pero marcada para que la web no guarde lo que capture.
+func (r *Registro) AgregarSimulado(nombre, direccion string) (Telefono, error) {
+	return r.agregar(nombre, direccion, true)
+}
+
+func (r *Registro) agregar(nombre, direccion string, simulado bool) (Telefono, error) {
 	nombre, direccion = strings.TrimSpace(nombre), strings.TrimSpace(direccion)
 	u, err := url.Parse(direccion)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || len(direccion) > 500 {
@@ -76,7 +88,7 @@ func (r *Registro) Agregar(nombre, direccion string) (Telefono, error) {
 	for usadas[camara] {
 		camara++
 	}
-	t := Telefono{ID: "tel-" + hex.EncodeToString(b), Nombre: nombre, URL: direccion, Camara: camara}
+	t := Telefono{ID: "tel-" + hex.EncodeToString(b), Nombre: nombre, URL: direccion, Camara: camara, Simulado: simulado}
 	r.telefonos = append(r.telefonos, t)
 	return t, nil
 }

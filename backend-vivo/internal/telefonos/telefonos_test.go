@@ -57,3 +57,27 @@ func TestCamaraPorOrdenDeIngreso(t *testing.T) {
 		t.Fatalf("al volver: %d y %d; quiero 1 y 3", otra.Camara, tres.Camara)
 	}
 }
+
+// Una fuente de prueba queda marcada: es lo que la web usa para no guardar sus capturas en la base.
+func TestFuenteSimulada(t *testing.T) {
+	r := NuevoRegistro()
+	real, err := r.Agregar("Hall", "http://h/video?token=real")
+	if err != nil || real.Simulado {
+		t.Fatalf("un teléfono normal no es de prueba: %+v %v", real, err)
+	}
+	prueba, err := r.AgregarSimulado("Prueba", "http://h/video?token=prueba")
+	if err != nil || !prueba.Simulado {
+		t.Fatalf("la fuente de prueba debe quedar marcada: %+v %v", prueba, err)
+	}
+	lista := r.Lista()
+	if len(lista) != 2 || lista[0].Simulado || !lista[1].Simulado {
+		t.Fatalf("la lista conserva la marca: %+v", lista)
+	}
+	// Las mismas reglas que Agregar: URL válida y sin repetir.
+	if _, err = r.AgregarSimulado("otra", "http://h/video?token=prueba"); !errors.Is(err, ErrInvalido) {
+		t.Errorf("URL repetida = %v", err)
+	}
+	if _, err = r.AgregarSimulado("otra", "no-es-una-url"); !errors.Is(err, ErrInvalido) {
+		t.Errorf("URL inválida = %v", err)
+	}
+}

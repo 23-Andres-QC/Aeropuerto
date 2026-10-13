@@ -13,6 +13,7 @@ import type { PersonaPlano, RecorridoPlano } from "./components/PlanoSitio.vue";
 
 export { CELDA_CALOR };
 export type { ResumenVivo };
+import { MENSAJE_PRUEBA, hayFuentesDePrueba, puedeGuardarse } from "./fuentes";
 import { construirSesion, uuid, type CargaSesion, type PersonaGuardable, type TrazaViva } from "./sesionVivo";
 
 /** Valor de la opción «En vivo» en los desplegables de sesión. */
@@ -473,6 +474,7 @@ async function sondear() {
     telefonos.value = await apiVivo.telefonos();
     error.value = "";
     asignar(telefonos.value);
+    seGuardaLaCaptura();
     sincronizarSockets();
   } catch (e) {
     error.value = (e as Error).message;
@@ -614,6 +616,7 @@ export function reiniciarVivo() {
   rastros.clear();
   suavizadas.clear();
   camaraPreferida.clear();
+  capturaDePrueba.value = false;
   uniones.clear();
   idsUnidos.clear();
   unidasAhora.value = 0;
@@ -670,6 +673,21 @@ export const capturasVersion = ref(0);
 
 type Pendiente = { sitio: string; carga: CargaSesion };
 
+/**
+ * La captura en curso se alimentó de una fuente de prueba (un teléfono simulado): se ve en pantalla, pero no se guarda en la base.
+ * Una vez vista una, la captura queda marcada aunque ese teléfono se desconecte.
+ */
+export const capturaDePrueba = ref(false);
+/** ¿Se puede guardar la captura de ahora? Revisa los teléfonos que la alimentan en este momento y los que la marcaron antes. */
+function seGuardaLaCaptura(): boolean {
+  const alimentan = telefonos.value.filter((t) => asignacion.has(t.id));
+  if (!puedeGuardarse(alimentan) && !capturaDePrueba.value) {
+    capturaDePrueba.value = true;
+    mensajeGuardado.value = MENSAJE_PRUEBA;
+  }
+  return puedeGuardarse(alimentan, capturaDePrueba.value);
+}
+
 /** Lo que cambió la captura (recorridos y personas memorizadas): si no cambió, no hace falta volver a guardarla. */
 const totalTrazas = () => [...historia.values()].reduce((n, h) => n + h.trazas.length, 0) + 1_000_000 * memorizadas.size;
 
@@ -677,6 +695,11 @@ const totalTrazas = () => [...historia.values()].reduce((n, h) => n + h.trazas.l
 function prepararCaptura(): Pendiente | null {
   const quien = sitio.value;
   if (!quien) return null;
+  // Todo lo que se guarda (Terminar, Reiniciar, apagar el modo, el autoguardado) sale de aquí: una fuente de prueba no se guarda.
+  if (!seGuardaLaCaptura()) {
+    mensajeGuardado.value = MENSAJE_PRUEBA;
+    return null;
+  }
   // Las que tienen recorrido en el plano, y además las memorizadas que no se ubicaron (solo cuentan como personas).
   const personas: PersonaGuardable[] = [...historia.values()]
     .filter((h) => h.trazas.length)
@@ -695,6 +718,11 @@ function prepararCaptura(): Pendiente | null {
 
 /** Envía la captura como sesión LIVE del sitio: el backend reemplaza la anterior con el mismo identificador. */
 async function enviarCaptura(p: Pendiente, automatico: boolean): Promise<boolean> {
+  // Segunda llave, por si alguien prepara una captura por otro camino: nada de una fuente de prueba llega a la base.
+  if (!seGuardaLaCaptura()) {
+    mensajeGuardado.value = MENSAJE_PRUEBA;
+    return false;
+  }
   guardando.value = true;
   try {
     const r = await request<{ identities: number; points: number }>(`/api/v1/sites/${encodeURIComponent(p.sitio)}/sessions`, json("POST", p.carga));
@@ -721,6 +749,11 @@ export function iniciarGrabacion() {
 /** «Terminar»: se deja de registrar y recién ahora se guarda la captura (queda a la vista hasta la próxima). */
 export async function terminarGrabacion(): Promise<boolean> {
   if (!grabando.value) return false;
+  if (!seGuardaLaCaptura()) {
+    grabando.value = false;
+    mensajeGuardado.value = MENSAJE_PRUEBA;
+    return false;
+  }
   const p = prepararCaptura();
   grabando.value = false;
   if (!p) {

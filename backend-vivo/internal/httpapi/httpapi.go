@@ -80,12 +80,18 @@ func (a api) agregarTelefono(w http.ResponseWriter, r *http.Request) {
 	var entrada struct {
 		Nombre string `json:"nombre"`
 		URL    string `json:"url"`
+		// Simulado: una fuente de prueba; la web muestra lo que ve pero no guarda sus capturas.
+		Simulado bool `json:"simulado"`
 	}
 	if leer(w, r, 4096, &entrada) != nil {
 		fallar(w, http.StatusBadRequest, "JSON inválido")
 		return
 	}
-	t, err := a.Telefonos.Agregar(entrada.Nombre, entrada.URL)
+	agregar := a.Telefonos.Agregar
+	if entrada.Simulado {
+		agregar = a.Telefonos.AgregarSimulado
+	}
+	t, err := agregar(entrada.Nombre, entrada.URL)
 	if err != nil {
 		fallar(w, http.StatusBadRequest, err.Error())
 		return

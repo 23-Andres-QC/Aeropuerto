@@ -84,7 +84,12 @@ Fecha: 2026-10-12 (decisiones registradas el 2026-10-13). Auditoría de solo lec
 - **PR 0.** Combinar en `main` las ramas pendientes (Ventas y En vivo) y resolver el choque con la ubicación nueva de Andrés.
 - **PR 0.5 (seguridad mínima).** Proteger la API (API key o token temporal) y bloquear los endpoints de borrado sin autenticación.
 - **PR 1.** Capa de agregados; tipo de zona y local editables en Configuración (incluye «descanso»); heatmap con selector de franja y fecha; dwell con distribución y umbral editable; embudo unificado (pasan → se detienen → entran → compran). Si no hay zona FRONTAGE, mostrar un aviso en vez de 0.
-- **PR 2.** Autenticación y roles; privacidad (retención automática, aviso de privacidad, género solo agregado).
+- **PR 2.** Autenticación y roles; privacidad (retención automática, aviso de privacidad, género solo agregado). Incluye, anotado el 2026-10-13:
+  - guardar las **sesiones revocadas en la base** (hoy la lista vive en memoria y un reinicio de la API la olvida);
+  - **usuarios por rol** en la base (contraseñas con hash por usuario), en vez de la cuenta única de las variables de entorno;
+  - el **rol «tienda»**, con alcance por local;
+  - la **API key por tienda** (con hash) para la ingesta, en lugar de la llave única de los scripts;
+  - un **código de unión por QR** para `/camara/`, de modo que un teléfono necesite un código vigente para unirse como cámara (hoy esa puerta es pública).
 - **PR 3.** Portal Tienda, ingesta (con pantalla de mapeo de columnas) y matching agregado con desfase de reloj y panel de calidad.
 - **Después.** Colas con alertas, hora pico con dotación, rankings por m², periodos y sedes, reportes.
 
@@ -93,7 +98,7 @@ Fecha: 2026-10-12 (decisiones registradas el 2026-10-13). Auditoría de solo lec
 | PR | Estado | Detalle |
 |---|---|---|
 | PR 0 | **Hecho** (2026-10-13) | `main` = `b487b84`. Respaldos: etiquetas `respaldo/pre-merge-en-vivo` (main antes) y `respaldo/en-vivo-camaras-al-costado`. La calibración cruzada quedó archivada en `archivo/calibracion-cruzada`, sin combinar. |
-| PR 0.5 | En la rama `seguridad-minima` | Login en el servidor (cookie HttpOnly, SameSite=Strict), llave de API para scripts que nunca borra, `/api/` cerrada, nginx cierra `/vivo/` y la sala, `/camara/` mínima con límite propio, logs sin secretos, credenciales propias obligatorias en el servidor. Ver «Seguridad» en el README. |
+| PR 0.5 | En la rama `seguridad-minima` (con dos ajustes del 2026-10-13: el puerto 8444 de la cámara web ya no sirve `/personas` y en el servidor no se publica; los teléfonos simulados se registran como fuentes de prueba y En vivo no guarda sus capturas) | Login en el servidor (cookie HttpOnly, SameSite=Strict), llave de API para scripts que nunca borra, `/api/` cerrada, nginx cierra `/vivo/` y la sala, `/camara/` mínima con límite propio, logs sin secretos, credenciales propias obligatorias en el servidor. Ver «Seguridad» en el README. |
 | PR 1 | Pendiente | |
 | PR 2 | Pendiente | |
 | PR 3 | Pendiente | |

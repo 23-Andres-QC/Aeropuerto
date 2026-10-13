@@ -4,7 +4,7 @@ import { colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, GENEROS, type Config, type Replay, type Sesion } from "../api";
 import VistaTelefono from "../../telefonos/components/VistaTelefono.vue";
 import PlanoSitio, { type PersonaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
-import { CELDA_CALOR, SESION_VIVO, ajusteMapa, capturasVersion, fijarUnion, unidasAhora, unirPorPosicion, grabando, iniciarGrabacion, terminarGrabacion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura } from "../enVivo";
+import { CELDA_CALOR, SESION_VIVO, ajusteMapa, capturaDePrueba, capturasVersion, fijarUnion, unidasAhora, unirPorPosicion, grabando, iniciarGrabacion, terminarGrabacion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura } from "../enVivo";
 import { useRoute } from "vue-router";
 import { useSitios } from "../useSitios";
 
@@ -309,7 +309,8 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
       <div class="panel-heading">
         <h2>Plano · {{ (mapa.tam_px[0] / mapa.px_por_metro).toFixed(0) }} × {{ (mapa.tam_px[1] / mapa.px_por_metro).toFixed(0) }} m</h2>
         <span v-if="modoVivo" class="heading-meta">
-          <span v-if="grabando" class="pill grabando">● GRABANDO</span><span class="pill en-vivo">● EN VIVO</span><span class="pill">{{ enPlano.length }} en el plano</span>
+          <span v-if="capturaDePrueba" class="pill prueba" title="Hay un teléfono simulado: se ve, pero esta captura no se guarda en la base">PRUEBA · no se guarda</span>
+          <span v-if="grabando && !capturaDePrueba" class="pill grabando">● GRABANDO</span><span class="pill en-vivo">● EN VIVO</span><span class="pill">{{ enPlano.length }} en el plano</span>
         </span>
         <span v-else-if="replay" class="heading-meta"><span class="pill">{{ enPlano.length }} en el plano</span><span class="pill">{{ replay.personas.length }} personas</span></span>
         <span v-else-if="!cargando && !sesiones.length" class="pill">sin sesiones</span>
@@ -333,7 +334,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <button v-if="!grabando" type="button" class="reiniciar-calor guardar" title="Empieza a registrar esta escena: mapa de calor, recorridos y estadísticas" @click="iniciarGrabacion()">
           ● Iniciar captura
         </button>
-        <button v-else type="button" class="reiniciar-calor terminar" title="Deja de registrar y guarda la captura" :disabled="guardando" @click="terminarYRefrescar()">
+        <button v-else type="button" class="reiniciar-calor terminar" title="Deja de registrar y guarda la captura" :disabled="guardando || capturaDePrueba" @click="terminarYRefrescar()">
           {{ guardando ? "Guardando…" : "■ Terminar y guardar" }}
         </button>
         <span v-if="!grabando" class="muted">Pulsa «Iniciar captura» para registrar esta escena; «Terminar y guardar» la deja en Registros.</span>
@@ -355,7 +356,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
     <div v-if="modoVivo" class="lado-vivo">
       <div class="camaras-lado" aria-label="Teléfonos y cámaras del plano">
         <div v-for="r in vivo.ranuras.value" :key="r.camara" class="ranura-col">
-          <VistaTelefono v-if="r.telefono" :id="r.telefono.id" :nombre="`${r.camara} · ${r.telefono.nombre}`" :estado="r.estado" compacta sin-quitar />
+          <VistaTelefono v-if="r.telefono" :id="r.telefono.id" :nombre="`${r.camara} · ${r.telefono.nombre}${r.telefono.simulado ? ' (prueba)' : ''}`" :estado="r.estado" compacta sin-quitar />
           <article v-else class="panel ranura libre">
             <div class="panel-heading">
               <h2>{{ r.camara }}</h2>
@@ -553,6 +554,11 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   align-items: center;
   gap: 5px;
   font-size: 12px;
+}
+.pill.prueba {
+  color: #fff;
+  background: var(--warn);
+  border-color: transparent;
 }
 .pill.grabando {
   background: #dc2626;
