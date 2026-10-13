@@ -32,8 +32,29 @@ const PESTANAS: { id: Pestana; nombre: string }[] = [
 ];
 const pestana = ref<Pestana>(PESTANAS.some((p) => p.id === route.query.vista) ? (route.query.vista as Pestana) : "resumen");
 watch(pestana, (v) => router.replace({ query: { ...route.query, vista: v } }));
+// La paleta de comandos (Ctrl+K) manda a otra pestaña con la página ya abierta.
+watch(
+  () => route.query.vista,
+  (v) => {
+    if (typeof v === "string" && v !== pestana.value && PESTANAS.some((p) => p.id === v)) pestana.value = v as Pestana;
+  },
+);
 
 const consulta = reactive<Consulta>({ dias: 28, datos: "todos", locales: [] });
+/**
+ * Lo que pide la dirección o la paleta (?locales=2,3 · ?dias=7): se aplica una vez y se saca de la dirección, para que pedir lo mismo
+ * otra vez, después de cambiar la selección a mano, vuelva a surtir efecto. «locales=0» es todos.
+ */
+function aplicarPedido() {
+  const { locales: pedidos, dias: periodo, ...resto } = route.query;
+  if (pedidos === undefined && periodo === undefined) return;
+  if (typeof pedidos === "string") consulta.locales = pedidos.split(",").map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  const d = typeof periodo === "string" ? Number(periodo) : NaN;
+  if (Number.isInteger(d) && d >= 0 && d <= 3650) consulta.dias = d;
+  void router.replace({ query: resto });
+}
+aplicarPedido();
+watch(() => [route.query.locales, route.query.dias], aplicarPedido);
 const config = ref<Config | null>(null);
 const locales = computed<Local[]>(() => config.value?.locales ?? []);
 /** El selector sobre el plano, visible u oculto (se recuerda en el navegador). */

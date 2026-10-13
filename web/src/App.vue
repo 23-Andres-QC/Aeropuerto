@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { logout } from "./core/auth";
+import PaletaComandos from "./core/PaletaComandos.vue";
 import { fijarModoVivo, modoVivo, usarSitioVivo } from "./features/sitios/enVivo";
 import { recordarSitio, ultimoSitio, useSitios } from "./features/sitios/useSitios";
 
@@ -98,6 +99,7 @@ onMounted(recargar);
       <header class="workspace-header">
         <div><span class="breadcrumb">LAP /</span> {{ title }}</div>
         <div class="workspace-meta">
+          <PaletaComandos :oscuro="theme === 'dark'" :vivo="modoVivo" :alternar-tema="toggleTheme" :alternar-vivo="() => fijarModoVivo(!modoVivo)" :salir="salir" />
           <button
             class="modo-vivo"
             :class="{ activo: modoVivo }"
