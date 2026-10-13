@@ -87,3 +87,13 @@ Fecha: 2026-10-12 (decisiones registradas el 2026-10-13). Auditoría de solo lec
 - **PR 2.** Autenticación y roles; privacidad (retención automática, aviso de privacidad, género solo agregado).
 - **PR 3.** Portal Tienda, ingesta (con pantalla de mapeo de columnas) y matching agregado con desfase de reloj y panel de calidad.
 - **Después.** Colas con alertas, hora pico con dotación, rankings por m², periodos y sedes, reportes.
+
+## 7. Estado de los PR
+
+| PR | Estado | Detalle |
+|---|---|---|
+| PR 0 | **Hecho** (2026-10-13) | `main` = `b487b84`. Respaldos: etiquetas `respaldo/pre-merge-en-vivo` (main antes) y `respaldo/en-vivo-camaras-al-costado`. La calibración cruzada quedó archivada en `archivo/calibracion-cruzada`, sin combinar. |
+| PR 0.5 | En la rama `seguridad-minima` | Login en el servidor (cookie HttpOnly, SameSite=Strict), llave de API para scripts que nunca borra, `/api/` cerrada, nginx cierra `/vivo/` y la sala, `/camara/` mínima con límite propio, logs sin secretos, credenciales propias obligatorias en el servidor. Ver «Seguridad» en el README. |
+| PR 1 | Pendiente | |
+| PR 2 | Pendiente | |
+| PR 3 | Pendiente | |

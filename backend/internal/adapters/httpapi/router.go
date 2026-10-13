@@ -25,6 +25,8 @@ type Options struct {
 	MediaDir string
 	// Ready reports whether the database answers.
 	Ready func(context.Context) error
+	// Auth guards the whole API: with it, only the health probes and the login answer without one.
+	Auth *Auth
 }
 
 // NewRouter wires every endpoint of the platform.
@@ -36,6 +38,9 @@ func NewRouter(s Services, o Options) http.Handler {
 	if o.Realtime != nil {
 		o.Realtime.Routes(m)
 	}
+	if o.Auth != nil {
+		o.Auth.routes(m)
+	}
 	m.HandleFunc("GET /health/live", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "ok") })
 	m.HandleFunc("GET /health/ready", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := withTimeout(r, 2*time.Second)
@@ -46,5 +51,8 @@ func NewRouter(s Services, o Options) http.Handler {
 		}
 		ok(w, map[string]string{"status": "ready"})
 	})
+	if o.Auth != nil {
+		return sameOrigin(o.Auth.Require(m))
+	}
 	return sameOrigin(m)
 }

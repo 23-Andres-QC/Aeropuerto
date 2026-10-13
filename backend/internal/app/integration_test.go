@@ -42,21 +42,82 @@ func setup(t *testing.T) (*pgxpool.Pool, string, func(method, path string, body 
 		t.Fatal(err)
 	}
 	media := t.TempDir()
-	handler := New(db, config.Config{MediaDir: media})
+	handler := New(db, testConfig(media))
+	// The whole API needs a login: every test calls as the administration account.
+	login := httptest.NewRecorder()
+	handler.ServeHTTP(login, jsonRequest("POST", "/api/v1/auth/login", map[string]string{"usuario": testAdminUser, "clave": testAdminPassword}))
+	if login.Code != 200 || len(login.Result().Cookies()) != 1 {
+		t.Fatalf("login of the tests: %d %s", login.Code, login.Body)
+	}
+	session := login.Result().Cookies()[0]
 	do := func(method, path string, body any) *httptest.ResponseRecorder {
-		var r *http.Request
-		if body != nil {
-			b, _ := json.Marshal(body)
-			r = httptest.NewRequest(method, path, bytes.NewReader(b))
-			r.Header.Set("Content-Type", "application/json")
-		} else {
-			r = httptest.NewRequest(method, path, nil)
-		}
+		r := jsonRequest(method, path, body)
+		r.AddCookie(session)
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
 		return w
 	}
 	return db, media, do
+}
+
+const (
+	testAdminUser     = "admin-prueba"
+	testAdminPassword = "Clave-de-prueba-9183"
+	testAPIKey        = "key-de-prueba-0123456789abcdef"
+)
+
+func testConfig(media string) config.Config {
+	return config.Config{MediaDir: media, AdminUser: testAdminUser, AdminPassword: testAdminPassword, SessionSecret: strings.Repeat("s", 32), APIKey: testAPIKey, SessionHours: 1}
+}
+
+func jsonRequest(method, path string, body any) *http.Request {
+	if body == nil {
+		return httptest.NewRequest(method, path, nil)
+	}
+	b, _ := json.Marshal(body)
+	r := httptest.NewRequest(method, path, bytes.NewReader(b))
+	r.Header.Set("Content-Type", "application/json")
+	return r
+}
+
+// TestTheAPIRequiresALogin: without a session or the key nothing of the API answers (not even a read), a deletion
+// is refused to the key as well, and the probes stay open.
+func TestTheAPIRequiresALogin(t *testing.T) {
+	db, media, _ := setup(t)
+	handler := New(db, testConfig(media))
+	serve := func(method, path string, mod func(*http.Request)) int {
+		r := jsonRequest(method, path, nil)
+		if mod != nil {
+			mod(r)
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w.Code
+	}
+	for _, c := range []struct{ method, path string }{
+		{"GET", "/api/v1/sites"}, {"GET", "/api/v1/sites/esan/config"}, {"GET", "/api/v1/sites/esan/sessions"},
+		{"GET", "/api/v1/sites/esan/ventas/resumen"}, {"GET", "/api/v1/telefonos"},
+		{"POST", "/api/v1/sites"}, {"PUT", "/api/v1/sites/esan"}, {"POST", "/api/v1/sites/esan/ventas/simulados"},
+		{"DELETE", "/api/v1/sites/esan"}, {"DELETE", "/api/v1/sites/esan/sessions/00000000-0000-0000-0000-000000000000"},
+		{"DELETE", "/api/v1/sites/esan/ventas/simulados"}, {"DELETE", "/api/v1/telefonos/x"},
+		{"GET", "/api/v1/cameras/cam01/watch"},
+	} {
+		if got := serve(c.method, c.path, nil); got != http.StatusUnauthorized {
+			t.Errorf("%s %s without login: %d (want 401)", c.method, c.path, got)
+		}
+	}
+	key := func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+testAPIKey) }
+	if got := serve("GET", "/api/v1/sites", key); got != 200 {
+		t.Errorf("read with the key: %d", got)
+	}
+	if got := serve("DELETE", "/api/v1/sites/esan", key); got != http.StatusForbidden {
+		t.Errorf("deletion with the key: %d (want 403)", got)
+	}
+	for _, probe := range []string{"/health/live", "/health/ready"} {
+		if got := serve("GET", probe, nil); got != 200 {
+			t.Errorf("%s must stay open: %d", probe, got)
+		}
+	}
 }
 
 // session builds a minimal Build publication: one person seen by camera cam01.

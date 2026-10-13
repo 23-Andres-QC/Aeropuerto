@@ -4,6 +4,7 @@ package app
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -27,6 +28,10 @@ func New(db *pgxpool.Pool, cfg config.Config) http.Handler {
 		Sales:    services.NewSalesService(sites, sessionRepo, postgres.NewSalesRepository(db)),
 		Phones:   services.NewPhoneService(memory.NewPhoneRepository()),
 	}, httpapi.Options{
+		Auth: httpapi.NewAuth(httpapi.AuthConfig{
+			User: cfg.AdminUser, Password: cfg.AdminPassword, Secret: cfg.SessionSecret, APIKey: cfg.APIKey,
+			Session: time.Duration(cfg.SessionHours) * time.Hour,
+		}),
 		Realtime: relay.NewHub(),
 		MediaDir: cfg.MediaDir,
 		Ready:    db.Ping,

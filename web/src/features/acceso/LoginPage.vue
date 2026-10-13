@@ -18,12 +18,11 @@ async function login() {
   }
 
   submitting.value = true;
-  await new Promise((resolve) => setTimeout(resolve, 250));
-
-  if (iniciarSesion(username.value, password.value)) {
+  const r = await iniciarSesion(username.value, password.value);
+  if (r.ok) {
     await router.replace("/");
   } else {
-    error.value = "Usuario o contraseña incorrectos.";
+    error.value = r.mensaje;
     password.value = "";
   }
   submitting.value = false;
