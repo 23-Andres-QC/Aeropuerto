@@ -593,8 +593,9 @@ async function cargarPersonas() {
   let datos;
   try {
     const resp = await fetch('personas', { cache: 'no-store' });
-    // Detrás de la web del servidor, la memoria de personas pide la sesión de la web (los teléfonos no la tienen).
-    if (resp.status === 401) throw new Error('Las personas en memoria solo se ven con la sesión de la web iniciada en este navegador.');
+    // La memoria de personas pide la sesión de la web: detrás del nginx de la web responde 401 sin ella, y por el puerto
+    // de la red local (donde los teléfonos se unen) no se sirve.
+    if (resp.status === 401 || resp.status === 404) throw new Error('Las personas en memoria se ven en la web (Teléfonos), con la sesión iniciada.');
     datos = await resp.json();
     if (!resp.ok) throw new Error(datos.error || `Error ${resp.status}`);
   } catch (e) {

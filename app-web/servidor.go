@@ -46,7 +46,8 @@ func NuevoServidor(camaras *Camaras, sala *Sala) *Servidor {
 	return &Servidor{camaras: camaras, sala: sala, pagina: http.FileServerFS(sub)}
 }
 
-// Publico es lo que ven los dispositivos por la red: la página de cámara y su WebSocket.
+// Publico es lo que ven los dispositivos por la red: la página de cámara y su WebSocket, y nada más. Sin login
+// no sirve ni el panel de personas, ni el video de otras cámaras, ni la foto, ni el estado.
 func (s *Servidor) Publico() http.Handler {
 	m := http.NewServeMux()
 	s.rutasDispositivo(m)
@@ -54,12 +55,14 @@ func (s *Servidor) Publico() http.Handler {
 }
 
 // Interno agrega el MJPEG de cada cámara, que lee el modelo (camara_telefono.py)
-// en esta misma máquina, y la sala que muestra Teléfonos en la web (vía su nginx).
+// en esta misma máquina, la sala que muestra Teléfonos en la web y el panel de personas (la memoria de
+// identidades), las dos vía el nginx de la web, que los deja pasar solo con sesión iniciada.
 // Se publica solo en 127.0.0.1.
 func (s *Servidor) Interno() http.Handler {
 	m := http.NewServeMux()
 	s.rutasDispositivo(m)
 	m.HandleFunc("GET /ws/sala", s.verSala)
+	m.HandleFunc("GET /personas", s.verPersonas)
 	m.HandleFunc("GET /video", s.video)
 	m.HandleFunc("GET /foto.jpg", s.foto)
 	m.HandleFunc("GET /estado", s.estado)
@@ -70,7 +73,6 @@ func (s *Servidor) Interno() http.Handler {
 func (s *Servidor) rutasDispositivo(m *http.ServeMux) {
 	m.Handle("GET /", s.pagina)
 	m.HandleFunc("GET /ws", s.unirse)
-	m.HandleFunc("GET /personas", s.verPersonas)
 }
 
 // verPersonas devuelve la memoria de identidades (sin vectores) para el panel de la página.

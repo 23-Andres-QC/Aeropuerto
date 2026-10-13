@@ -542,8 +542,10 @@ func TestLaRedSoloVeLaPaginaDeCamara(t *testing.T) {
 	s.Personas = func(context.Context) ([]byte, error) { return []byte(`{"fichas":[]}`), nil }
 	publico := httptest.NewServer(s.Publico())
 	defer publico.Close()
-	for ruta, esperado := range map[string]int{"/": http.StatusOK, "/app.js": http.StatusOK, "/personas": http.StatusOK,
-		"/ws/sala": http.StatusNotFound, "/video?token=x": http.StatusNotFound, "/foto.jpg?token=x": http.StatusNotFound} {
+	// Lo que sirve el puerto que ve la red (el 8444): la página y su WebSocket, y nada de lo que pide sesión en la web.
+	for ruta, esperado := range map[string]int{"/": http.StatusOK, "/app.js": http.StatusOK,
+		"/personas": http.StatusNotFound, "/ws/sala": http.StatusNotFound, "/estado?token=x": http.StatusNotFound,
+		"/video?token=x": http.StatusNotFound, "/foto.jpg?token=x": http.StatusNotFound} {
 		resp, err := http.Get(publico.URL + ruta)
 		if err != nil {
 			t.Fatal(err)
@@ -552,6 +554,18 @@ func TestLaRedSoloVeLaPaginaDeCamara(t *testing.T) {
 		if resp.StatusCode != esperado {
 			t.Errorf("%s = %d, se esperaba %d", ruta, resp.StatusCode, esperado)
 		}
+	}
+	// El panel de personas sigue existiendo, pero del lado interno: se llega por el nginx de la web, que pide sesión.
+	interno := httptest.NewServer(s.Interno())
+	defer interno.Close()
+	resp, err := http.Get(interno.URL + "/personas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cuerpo, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(cuerpo), "fichas") {
+		t.Errorf("/personas interno = %d %s", resp.StatusCode, cuerpo)
 	}
 }
 
