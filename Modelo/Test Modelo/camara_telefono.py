@@ -52,6 +52,14 @@ CANAL_ESTADO = "telefonos"
 ANCHO_RELEVO = 640
 # Un frame del relevo no puede pasar de 512 KB (maxRelayFrame en backend-vivo): se baja la calidad si hace falta.
 MAX_JPEG_RELEVO = 480 * 1024
+# backend-vivo corta a quien publica si en 30 s no le llega un pong (un ping no cuenta): sin esto, cada 30 s se perdían
+# ~2,5 s de cajas de cada teléfono. Se le manda uno por iniciativa propia (lo permite el protocolo).
+PONG_RELEVO_S = 10.0
+# Con el modelo en otra máquina, la subida suele ser chica (~4 Mbit/s): un cuadro de video del relevo (~50 KB) la
+# ocupaba ~90 ms y las cajas que salían detrás esperaban eso. Con RELEVO_VIDEO_KBPS el video de los teléfonos sale en
+# trozos de TROZO_RELEVO espaciados a ese ritmo, y las cajas pasan entre trozo y trozo (scripts/modelo_local.py lo usa).
+KBPS_VIDEO_TELEFONOS = float(os.environ.get("RELEVO_VIDEO_KBPS") or 0)
+TROZO_RELEVO = 8 * 1024
 # Cuadros por segundo del video de cada teléfono por el relevo (vacío = todos los procesados). Teléfonos muestra el
 # video de la sala de camara-web y el del relevo solo si esa falta: con el modelo en otra máquina que la web
 # (scripts/modelo_local.py) se baja para no gastar en él la subida del enlace.
@@ -88,6 +96,7 @@ SEGUIDOR_TELEFONO = {"new_track_confidence": 0.25, "association_confidence": 0.2
 # iou 0,65: en una multitud la supresión de no máximos deja separadas a las personas que se tapan un poco.
 DETECTOR_TELEFONO = {"conf": 0.10, "iou": 0.65}
 IMGSZ_GPU_TELEFONO = 960
+HILOS_TORCH_GPU = 4
 DETECTOR_CPU_TELEFONO = "yolo26s.pt"
 DETECTOR_ONNX_TELEFONO = "yolo26s.onnx"  # el mismo yolo26s en ONNX Runtime: en CPU, casi el doble de rápido (detector_onnx.py)
 SITIO_TELEFONOS = os.environ.get("SITIO_TELEFONOS", "esan")  # plano donde están los teléfonos (Modelo/ubicacion/<sitio>)
@@ -318,29 +327,26 @@ class LectorFoto(LectorMjpeg):
             self._parar.wait(1)
 
 
-class Relevo:
-    """WebSockets con backend-vivo: video y detecciones de cada teléfono, más el estado global del servicio.
+class Publicador:
+    """Un hilo que manda por WebSocket a backend-vivo el último mensaje pendiente de cada canal: si la web va lenta se
+    salta mensajes en vez de atrasarse. Un mensaje puede ser la función que lo arma (se llama en este hilo)."""
 
-    Publica en un hilo propio para no demorar el lazo del modelo: por cada canal guarda solo el último
-    mensaje (si la web va lenta se salta cuadros en vez de atrasarse) y el JPEG del video se codifica allí.
-    """
-
-    def __init__(self, url_api):
-        self.base = url_api.replace("https://", "wss://").replace("http://", "ws://") + "/api/v1/cameras"
-        self.sockets, self.reintento = {}, {}
+    def __init__(self, base):
+        self.base = base
+        self.sockets, self.reintento, self.pongs = {}, {}, {}
         self._pendientes, self._cerrado = {}, False
         self._hay = threading.Condition()
         self._hilo = threading.Thread(target=self._publicar, daemon=True)
         self._hilo.start()
 
-    def _encolar(self, ruta, mensaje):
-        """Deja el mensaje (o la función que lo arma) como el último de su canal."""
+    def encolar(self, ruta, mensaje, kbps=0):
+        """Deja el mensaje como el último de su canal; con `kbps` sale en trozos espaciados (ver _trozos)."""
         with self._hay:
-            self._pendientes[ruta] = mensaje
+            self._pendientes[ruta] = (mensaje, kbps)
             self._hay.notify()
 
     def _publicar(self):
-        """Hilo publicador: manda lo pendiente de cada canal; al cerrar, vacía la cola y termina."""
+        """Manda lo pendiente de cada canal; al cerrar, vacía la cola y termina."""
         while True:
             with self._hay:
                 while not self._pendientes and not self._cerrado:
@@ -348,27 +354,68 @@ class Relevo:
                 if not self._pendientes:
                     return
                 lote, self._pendientes = self._pendientes, {}
-            for ruta, mensaje in lote.items():
+            for ruta, (mensaje, kbps) in lote.items():
                 mensaje = mensaje() if callable(mensaje) else mensaje
                 if mensaje is not None:
-                    self._enviar(ruta, mensaje)
+                    self._enviar(ruta, mensaje, kbps)
 
-    def _enviar(self, ruta, mensaje):
-        """Envía por un canal, reconectando si hace falta (sin frenar el lazo si la web no está)."""
+    @staticmethod
+    def _trozos(mensaje, kbps):
+        """El mensaje en trozos de TROZO_RELEVO bytes, a no más de `kbps`: entre trozo y trozo la subida queda libre."""
+        for i in range(0, len(mensaje), TROZO_RELEVO):
+            if i:
+                time.sleep(TROZO_RELEVO / (kbps * 1024))
+            yield mensaje[i:i + TROZO_RELEVO]
+
+    def _enviar(self, ruta, mensaje, kbps=0):
+        """Envía por un canal. Si su conexión se había cortado, reconecta y reenvía en el acto; si no se puede
+        conectar, el canal descansa 2 s (sin frenar el lazo si la web no está)."""
         if time.monotonic() < self.reintento.get(ruta, 0):
             return
-        try:
-            if ruta not in self.sockets:
-                self.sockets[ruta] = connect(f"{self.base}/{ruta}", max_size=2 ** 20, open_timeout=3)
-            self.sockets[ruta].send(mensaje)
-        except Exception:
-            socket = self.sockets.pop(ruta, None)
-            if socket is not None:
-                socket.close()
-            self.reintento[ruta] = time.monotonic() + 2
+        while True:
+            nueva = ruta not in self.sockets
+            try:
+                if nueva:
+                    self.sockets[ruta] = connect(f"{self.base}/{ruta}", max_size=2 ** 20, open_timeout=3)
+                    self.pongs[ruta] = time.monotonic()
+                conexion = self.sockets[ruta]
+                if time.monotonic() - self.pongs[ruta] > PONG_RELEVO_S:
+                    conexion.pong()
+                    self.pongs[ruta] = time.monotonic()
+                conexion.send(self._trozos(mensaje, kbps) if kbps and len(mensaje) > TROZO_RELEVO else mensaje)
+                return
+            except Exception:
+                conexion = self.sockets.pop(ruta, None)
+                if conexion is not None:
+                    conexion.close()
+                if nueva:
+                    self.reintento[ruta] = time.monotonic() + 2
+                    return
 
-    def video(self, cid, frame, ancho=ANCHO_RELEVO, calidad=70):
-        """Publica el frame (reducido a `ancho` px) para que la web lo muestre."""
+    def cerrar(self):
+        """Manda lo pendiente y cierra las conexiones."""
+        with self._hay:
+            self._cerrado = True
+            self._hay.notify()
+        self._hilo.join(timeout=5)
+        for conexion in self.sockets.values():
+            conexion.close()
+        self.sockets = {}
+
+
+class Relevo:
+    """WebSockets con backend-vivo: video y detecciones de cada teléfono, más el estado global del servicio.
+
+    Dos hilos publican para no demorar el lazo del modelo: uno las cajas y el estado (chicos y urgentes) y otro el video
+    (el JPEG se codifica allí). Así una caja nunca espera a que se codifique o se mande un cuadro de video.
+    """
+
+    def __init__(self, url_api):
+        base = url_api.replace("https://", "wss://").replace("http://", "ws://") + "/api/v1/cameras"
+        self._urgente, self._video = Publicador(base), Publicador(base)
+
+    def video(self, cid, frame, ancho=ANCHO_RELEVO, calidad=70, kbps=0):
+        """Publica el frame (reducido a `ancho` px) para que la web lo muestre; con `kbps`, dosificado."""
         def codificar():
             alto = round(frame.shape[0] * ancho / frame.shape[1])
             imagen = frame if frame.shape[1] == ancho else cv2.resize(frame, (ancho, alto), interpolation=cv2.INTER_AREA)
@@ -377,25 +424,20 @@ class Relevo:
                 if ok and len(jpeg) <= MAX_JPEG_RELEVO:
                     return jpeg.tobytes()
             return None
-        self._encolar(f"{cid}/publish", codificar)
+        self._video.encolar(f"{cid}/publish", codificar, kbps)
 
     def detecciones(self, cid, mensaje):
         """Publica las cajas, IDs y género de un teléfono."""
-        self._encolar(f"{cid}/detections/publish", json.dumps(mensaje))
+        self._urgente.encolar(f"{cid}/detections/publish", json.dumps(mensaje))
 
     def estado(self, mensaje, canal=CANAL_ESTADO):
         """Publica el estado global del servicio y de cada teléfono (o, con canal="videos", el del video subido)."""
-        self._encolar(f"{canal}/detections/publish", json.dumps({"ts": time.time(), **mensaje}))
+        self._urgente.encolar(f"{canal}/detections/publish", json.dumps({"ts": time.time(), **mensaje}))
 
     def cerrar(self):
         """Manda lo pendiente (el último estado) y cierra las conexiones."""
-        with self._hay:
-            self._cerrado = True
-            self._hay.notify()
-        self._hilo.join(timeout=5)
-        for socket in self.sockets.values():
-            socket.close()
-        self.sockets = {}
+        self._urgente.cerrar()
+        self._video.cerrar()
 
 
 def config_telefonos(telefonos, asociacion):
@@ -670,6 +712,10 @@ def main():
         config["detector"]["imgsz"] = IMGSZ_GPU_TELEFONO
         # Media precisión en la GPU: el detector tarda bastante menos por cuadro con las mismas cajas (como en Videos).
         config["detector"]["fp16"] = True
+        # Con GPU, a la CPU le queda poco (preparar recortes): con los 10 hilos de PyTorch por defecto, el carril lento
+        # (género, Re-ID) le quitaba los núcleos al rápido y cada cuadro tardaba ~12 ms más (~25 ms más en el p90).
+        # Mismos cálculos, solo menos hilos; el carril lento también va más rápido.
+        torch.set_num_threads(HILOS_TORCH_GPU)
     else:
         # Sin GPU el detector es yolo26s (mismo modelo, más chico): a 640 px tarda ~0,9 s por 2 cuadros contra ~1,5 s de
         # yolo26m a 480, y ve mejor a quien está lejos. MODELO_DETECTOR=yolo26m.pt vuelve al grande.
@@ -766,7 +812,7 @@ def main():
                 for cid, (_, frame, _, cuadro) in datos.items():
                     if not FPS_RELEVO or time.monotonic() - relevado.get(cid, -math.inf) >= 1 / FPS_RELEVO:
                         relevado[cid] = time.monotonic()
-                        relevo.video(cid, frame)
+                        relevo.video(cid, frame, kbps=KBPS_VIDEO_TELEFONOS)
                     relevo.detecciones(cid, {"ts": time.time(), "cuadro": cuadro, "frame_w": ANCHO_RELEVO,
                                              "frame_h": round(frame.shape[0] * ANCHO_RELEVO / frame.shape[1]),
                                              "people": personas_para_web(filas[cid], frame.shape[1]),

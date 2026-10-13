@@ -275,7 +275,10 @@ def main():
         # para dejarle la subida de esta PC a las cajas.
         # Cada teléfono se lee pidiendo su cuadro más nuevo (no el MJPEG, que por internet acumulaba segundos de
         # cuadros viejos), reducido a 960 px: la resolución del detector en GPU.
-        entorno = {"RELEVO_VIDEO_FPS": "1", "MJPEG_ANCHO": "960", "LECTURA_TELEFONOS": "foto", **os.environ,
+        # Ese video sale además dosificado (120 KB/s en trozos de 8 KB): un cuadro entero ocupaba la subida de la PC
+        # ~90 ms y las cajas esperaban detrás.
+        entorno = {"RELEVO_VIDEO_FPS": "1", "RELEVO_VIDEO_KBPS": "120", "MJPEG_ANCHO": "960", "LECTURA_TELEFONOS": "foto",
+                   **os.environ,
                    "ENLACE_CAMARA": os.environ.get("ENLACE_CAMARA") or f"https://{host}/camara/"}
         codigo = correr_modelo(entorno)
     except KeyboardInterrupt:
