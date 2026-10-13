@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { logout } from "./core/auth";
+import { logout, sesion } from "./core/auth";
 import PaletaComandos from "./core/PaletaComandos.vue";
+import SelectorSitio from "./features/sitios/components/SelectorSitio.vue";
 import { fijarModoVivo, modoVivo, usarSitioVivo } from "./features/sitios/enVivo";
-import { recordarSitio, ultimoSitio, useSitios } from "./features/sitios/useSitios";
+import { rutaAlElegir } from "./features/sitios/selector";
+import type { Sitio } from "./features/sitios/api";
+import { recordarSitio, ultimoSitio, useSitios, vaciarSitios } from "./features/sitios/useSitios";
 
 const route = useRoute();
 const router = useRouter();
@@ -55,7 +58,21 @@ watch(
   },
   { immediate: true },
 );
-onMounted(recargar);
+// La lista de sitios la pide la API, que exige sesión: se pide cuando la sesión existe (al abrir la página con la cookie de antes o
+// justo al iniciar sesión) y se vacía al cerrarla. Pedirla una sola vez al montar, antes del login, la dejaba vacía hasta recargar.
+watch(
+  sesion,
+  (s) => {
+    if (s) void recargar();
+    else vaciarSitios();
+  },
+  { immediate: true },
+);
+
+/** Cambiar de sitio desde la tarjeta: misma sección, o Configuración (su plano) si el sitio aún no tiene datos que mostrar. */
+function elegirSitio(s: Sitio) {
+  void router.push(rutaAlElegir(s, seccion.value));
+}
 </script>
 
 <template>
@@ -65,15 +82,12 @@ onMounted(recargar);
       <RouterLink class="brand" to="/"
         ><span class="brand-icon">✈</span><span>LAP<small>LIMA AIRPORT PARTNERS</small></span></RouterLink
       >
-      <div class="airport-switch">
+      <div v-if="telefonos || videos" class="airport-switch">
         <span class="airport-symbol">⌖</span>
         <div v-if="telefonos"><b>Teléfonos</b><small>Modelo final en vivo · IDs estables</small></div>
-        <div v-else-if="videos"><b>Videos</b><small>Modelo final sobre un archivo · nada se guarda</small></div>
-        <div v-else>
-          <b>{{ actual?.name ?? slug }}</b
-          ><small>{{ actual ? `${actual.description || "Sitio"} · ${actual.cameras} cámaras` : "Cargando sitio…" }}</small>
-        </div>
+        <div v-else><b>Videos</b><small>Modelo final sobre un archivo · nada se guarda</small></div>
       </div>
+      <SelectorSitio v-else :sitios="sitios" :slug="slug" :actual="actual" @elegir="elegirSitio" />
       <p class="nav-caption">ESPACIO DE TRABAJO</p>
       <nav aria-label="Navegación principal">
         <RouterLink
@@ -125,7 +139,7 @@ onMounted(recargar);
       </header>
       <main>
         <nav v-if="seccion && sitios.length" class="config-tabs sitio-tabs" aria-label="Sitio">
-          <RouterLink v-for="s in sitios" :key="s.slug" :to="`/sitios/${s.slug}/${seccion}`" :class="{ activo: s.slug === slug }">{{
+          <RouterLink v-for="s in sitios" :key="s.slug" :to="rutaAlElegir(s, seccion)" :class="{ activo: s.slug === slug }">{{
             s.name
           }}</RouterLink>
         </nav>

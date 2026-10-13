@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, type Local } from "../features/sitios/api";
+import { rutaAlElegir } from "../features/sitios/selector";
 import { ultimoSitio, useSitios } from "../features/sitios/useSitios";
 import { buscar, recordar, type Buscable } from "../shared/paleta";
 
@@ -86,7 +87,7 @@ const comandos = computed<Comando[]>(() => {
   for (const loc of locales.value.sitio === sitio.value ? locales.value.lista : []) {
     l.push({ id: `l-${loc.local_id}`, titulo: `Ventas de «${loc.name}»`, grupo: "Ventas por local", icono: "▣", detalle: loc.category, palabras: "tienda local", ir: ir(`${base.value}/ventas`, { vista: vistaVentas(), locales: String(loc.local_id) }) });
   }
-  for (const s of sitios.value) if (s.slug !== sitio.value) l.push({ id: `s-${s.slug}`, titulo: `Cambiar a ${s.name}`, grupo: "Sitios", icono: "⌖", palabras: "sitio aeropuerto lugar", ir: ir(`/sitios/${s.slug}/${(route.meta.seccion as string | undefined) ?? "en-vivo"}`) });
+  for (const s of sitios.value) if (s.slug !== sitio.value) l.push({ id: `s-${s.slug}`, titulo: `Cambiar a ${s.name}`, grupo: "Sitios", icono: "⌖", palabras: "sitio aeropuerto lugar", ir: ir(rutaAlElegir(s, (route.meta.seccion as string | undefined) ?? "")) });
   l.push({ id: "a-vivo", titulo: props.vivo ? "Salir del modo en vivo" : "Activar el modo en vivo", grupo: "Acciones", icono: "●", palabras: "tiempo real telefonos", ir: props.alternarVivo });
   l.push({ id: "a-tema", titulo: props.oscuro ? "Cambiar a modo claro" : "Cambiar a modo oscuro", grupo: "Acciones", icono: props.oscuro ? "☀" : "☾", palabras: "tema oscuridad luz noche", ir: props.alternarTema });
   l.push({ id: "a-salir", titulo: "Cerrar sesión", grupo: "Acciones", icono: "⎋", palabras: "salir logout", ir: props.salir });
