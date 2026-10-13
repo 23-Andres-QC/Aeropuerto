@@ -6,6 +6,7 @@ import { api, mapaDelSitio, tramos, GENEROS, type Analitica, type Config, type I
 import PlanoSitio, { type FlechaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
 import { CELDA_CALOR, SESION_VIVO, capturasVersion, entradasPorIntervalo, fijarModoVivo, historiasDe, mensajeGuardado, modoVivo, motorVivo as vivo } from "../enVivo";
 import ContrasteSesiones from "../components/ContrasteSesiones.vue";
+import TraficoSitio from "../components/TraficoSitio.vue";
 import { desdeReplay, entradasPorIntervalo as entradasEntre, resumir, type HistoriaBasica, type ResumenVivo } from "../analisisVivo";
 import { useSitios } from "../useSitios";
 
@@ -403,6 +404,10 @@ function exportarCSV() {
 }
 
 // --- Carga ------------------------------------------------------------------------
+function irATrafico() {
+  document.getElementById("trafico")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 async function cargar() {
   if (modoVivo.value) {
     cargando.value = false;
@@ -479,6 +484,7 @@ onMounted(async () => {
           <option v-for="z in zonas" :key="z.zone_id" :value="z.zone_id">{{ z.name }}</option>
         </select></label
       >
+      <button type="button" class="pill ir-trafico" title="Tráfico del sitio por período y franja horaria" @click="irATrafico">Tráfico por franja y fecha ↓</button>
       <span v-if="modoVivo" class="pill en-vivo">● EN VIVO</span>
       <span v-if="analisisGuardado" class="pill capturada" title="Guardada del modo en vivo; sus métricas se calculan desde su recorrido">● Captura en vivo guardada</span>
       <span v-if="!modoVivo && analitica" class="pill" :title="`Calculado ${new Date(analitica.computed_at).toLocaleString('es-PE')}`">Parte III</span>
@@ -707,9 +713,16 @@ onMounted(async () => {
     <summary>⇄ Contraste · grabado, guardado en vivo y ahora</summary>
     <ContrasteSesiones :sitio="slug" :sesiones="sesiones" :vivo-activo="modoVivo" />
   </details>
+
+  <TraficoSitio :sitio="slug" :config="config" />
 </template>
 
 <style scoped>
+.ir-trafico {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--blue-600);
+}
 .replay-filters {
   gap: 14px;
 }

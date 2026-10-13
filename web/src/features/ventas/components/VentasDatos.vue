@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref, watch } from "vue";
+import { trafico } from "../../sitios/traficoApi";
 import { apiVentas, type ResumenVentas } from "../api";
 import { entero } from "../formato";
 
@@ -8,6 +9,54 @@ const emit = defineEmits<{ cambio: [] }>();
 
 const dias = ref(56);
 const trabajando = ref(false);
+// Tráfico simulado: el mismo período de las ventas simuladas, visto como gente (pasan, se detienen, se quedan, dónde estuvo).
+const semanas = ref(6);
+const diasTrafico = ref(0);
+const trabajandoTrafico = ref(false);
+
+async function leerTrafico() {
+  try {
+    diasTrafico.value = (await trafico.resumen(props.sitio, { dias: 0, datos: "simulado" })).fuentes.simulados;
+  } catch {
+    diasTrafico.value = 0;
+  }
+}
+onMounted(leerTrafico);
+watch(() => props.sitio, leerTrafico);
+// Las ventas simuladas cambian (se generaron o se borraron): el tráfico simulado las sigue, así que se vuelve a leer.
+watch(() => props.resumen?.counts.simulated, leerTrafico);
+
+async function generarTrafico() {
+  const mismasVentas = (props.resumen?.counts.simulated ?? 0) > 0;
+  if (mismasVentas && !confirm(`Para que el tráfico y las ventas simuladas cuenten lo mismo, las ventas simuladas se reemplazan por unas nuevas de ${semanas.value} semanas. Los tickets reales no se tocan. ¿Continuar?`)) return;
+  trabajandoTrafico.value = true;
+  error.value = aviso.value = "";
+  try {
+    const r = await trafico.simular(props.sitio, semanas.value);
+    aviso.value = `Listo: tráfico simulado de ${r.dias} días (${entero(r.estancias)} estancias en ${entero(r.ventanas)} ventanas de tiempo y ${entero(r.celdas)} celdas de calor)${r.ventas_generadas ? ", junto con sus ventas simuladas" : ""}.`;
+    await leerTrafico();
+    emit("cambio");
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    trabajandoTrafico.value = false;
+  }
+}
+
+async function borrarTrafico() {
+  if (!confirm("¿Borrar el tráfico simulado de este sitio? Las ventas simuladas y los datos reales no se tocan.")) return;
+  trabajandoTrafico.value = true;
+  error.value = aviso.value = "";
+  try {
+    const r = await trafico.borrarSimulados(props.sitio);
+    aviso.value = `Se borraron ${entero(r.ventanas_borradas)} ventanas de tráfico simulado.`;
+    await leerTrafico();
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    trabajandoTrafico.value = false;
+  }
+}
 const error = ref("");
 const aviso = ref("");
 
@@ -100,6 +149,42 @@ async function borrar() {
         <button type="button" class="danger-button" :disabled="trabajando || !resumen?.counts.simulated" @click="borrar">Borrar los simulados</button>
       </div>
       <p v-if="!locales" class="nota aviso" style="margin-top: 12px">El sitio no tiene locales: créalos en Configuración y dibuja su zona INTERIOR.</p>
+    </div>
+  </section>
+
+  <section class="panel" style="margin-bottom: 14px">
+    <div class="panel-heading">
+      <h2>Generar tráfico simulado</h2>
+      <span class="heading-meta">
+        <span v-if="diasTrafico" class="pill origen-simulado">{{ diasTrafico }} días guardados</span>
+        <span v-else class="pill">sin tráfico simulado</span>
+      </span>
+    </div>
+    <div class="cuerpo">
+      <p class="texto">
+        Lo mismo que las ventas simuladas, pero visto como gente: cuántos pasan por el frente de cada tienda, cuántos se detienen, cuántos entran, cuánto se quedan y dónde estuvo la
+        gente hora por hora. Sirve para ver en <b>Insights → Tráfico por franja y fecha</b> el mapa de calor, la permanencia y el embudo con semanas de datos antes de tener grabaciones largas.
+      </p>
+      <p class="texto">
+        Es coherente con las ventas simuladas: los que entran a cada tienda son sus visitantes de esa hora. <b>Todo queda marcado como «Simulado»</b> y se separa de lo real con el filtro
+        «Datos». Necesita que las tiendas tengan dibujado su frente o su interior en Configuración.
+      </p>
+      <div class="acciones">
+        <label class="campo"
+          >Semanas
+          <select v-model.number="semanas">
+            <option :value="4">4 semanas</option>
+            <option :value="6">6 semanas</option>
+            <option :value="8">8 semanas</option>
+            <option :value="12">12 semanas</option>
+            <option :value="25">25 semanas</option>
+          </select>
+        </label>
+        <button type="button" class="primary-button" :disabled="trabajandoTrafico || trabajando || !locales" @click="generarTrafico">
+          {{ trabajandoTrafico ? "Trabajando…" : diasTrafico ? "Regenerar tráfico simulado" : "Generar tráfico simulado" }}
+        </button>
+        <button type="button" class="danger-button" :disabled="trabajandoTrafico || !diasTrafico" @click="borrarTrafico">Borrar el tráfico simulado</button>
+      </div>
     </div>
   </section>
 

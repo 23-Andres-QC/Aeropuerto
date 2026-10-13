@@ -100,6 +100,24 @@ La sección **Ventas** (`/sitios/<sitio>/ventas`) responde tres preguntas: cuán
 - **Movimiento.** Los gráficos se dibujan de izquierda a derecha (con un punto que guía el trazo; el botón ↻ lo repite), los números de las tarjetas suben hasta su valor, las barras crecen y las filas de las tablas entran una tras otra. Se apaga solo con «reducir movimiento» del sistema. Código en `web/src/features/ventas/` (`animar.ts`, `components/CifraAnimada.vue`, `components/GraficoSerie.vue`).
 - **Los visitantes** salen de los ENTER del modelo (cada persona cuenta una vez por local y hora) y, en la demo, de `visit_counts`. Si hay más tickets que visitantes, la web avisa: las cámaras no ven entrar a todos.
 
+## Tráfico por período (PR 1)
+
+**Insights → Tráfico por franja y fecha** (y `/api/v1/sites/<sitio>/trafico/…`) responde, para un período, una franja horaria y unos datos (reales, simulados o todos): dónde estuvo la gente, cuánto se quedó y cuántos entran y compran. Se calcula **en el backend (Go)** a partir de las posiciones guardadas de cada sesión (migración `009_trafico.sql`).
+
+- **Cómo se cuenta (igual que la Parte III).** Las posiciones de cada persona se consolidan en una por instante de 0,2 s (ponderadas por la confianza del detector, sin saltos imposibles), cada posición toma la zona en que cae (INTERIOR primero, luego la menor) y los tramos seguidos en una zona forman una **estancia** (una salida de menos de 1 s es ruido del borde). Cada estancia se cuenta en la ventana donde empieza. `domain/traffic_calc.go` replica `Modelo/Insights Modelo/historico`; una prueba con 8 personas sintéticas procesadas por la Parte III real (`tests/generar_paridad.py` → `testdata/paridad_parte3.json`) exige los mismos tramos, eventos y totales.
+- **Agregados por ventana.** `traffic_buckets`: por zona y ventana de **5, 15 y 60 minutos**: personas distintas, visitas (estancias), cuántas personas **se detienen** (estancia ≥ 5 s) y cuántas quedan **interesadas** (≥ 30 s), y un histograma de permanencia (14 tramos). `heat_cells`: segundos-persona por celda de 1 m y hora. `traffic_runs` guarda cuándo se calculó cada sesión. Lo real pertenece a una sesión; lo simulado no tiene sesión y lleva `origin = SIMULADO`.
+- **Se recalcula solo.** Una sesión nueva, la Parte III al publicar, una zona o tienda editada o un umbral cambiado dejan lo calculado desactualizado; una pasada en segundo plano lo recalcula (cambiar los umbrales recalcula antes de responder). `POST …/trafico/recalcular` fuerza una pasada (`?todo=1` recalcula todas las sesiones). La web dice «calculando…» mientras tanto.
+- **Zonas y tiendas (Configuración).** El editor de la zona elegida tiene **tipo** (ahora con **Descanso**, una sala de espera) y **tienda**: interior y frente exigen tienda. Un panel **Tiendas** crea, renombra, categoriza y elimina tiendas (eliminar una se lleva sus zonas de interior y frente). Un panel **Umbrales de tráfico** edita «se detiene» e «interesado» por sitio (la forma guardada deja lugar a umbrales por tipo de zona, pero hoy un solo juego vale para todos).
+- **Mapa de calor por franja y fecha.** Período rápido (7, 28, 90 días o todo) o fechas, franja (mañana, tarde, noche u otra, en hora de Lima) y datos. El color es segundos de presencia por hora en cada celda y la escala es la del día completo del mismo período, así las franjas se comparan a simple vista.
+- **Permanencia.** Histograma con mediana, el 90 % y el porcentaje que supera cada umbral, para el interior de las tiendas, una tienda (interior o frente) o una zona; los umbrales se cambian ahí mismo. La mediana y el 90 % salen del histograma (error de hasta el ancho del tramo); la media y los porcentajes son exactos.
+- **Embudo por tienda.** Pasan por el frente → se detienen → entran → compran (los tickets de la caja del mismo período; todavía no se enlazan con cada persona). Si la tienda no tiene zona de frente, la web pide dibujarla **en vez de mostrar un 0**; si algún paso trae más gente que el de arriba, lo avisa.
+- **Tráfico simulado de varias semanas** (Ventas → Datos, o el botón del aviso «sin datos»). Parte de los visitantes por tienda y hora de las ventas simuladas (los que entran son esos), calcula cuántos pasan según la tasa de captación de cada tienda y dibuja cada estancia con una permanencia propia del tipo de lugar; todo marcado **SIMULADO**, separable con el filtro «Datos», con las mismas ventanas y umbrales que lo real. Generarlo crea (o reemplaza) las ventas simuladas de las mismas semanas; borrar las ventas simuladas borra también su tráfico.
+- **Hora de inicio de la grabación (`INICIO_GRABACION`).** El Build **exige** declararla para publicar (si falta, avisa antes de procesar y bloquea la publicación, y el backend rechaza un BUILD sin `recording_start_declared`; una hora en el futuro también). Una sesión que nunca la declaró (como la de ESAN, de antes de esta regla) se marca **hora estimada** en Registros e Insights y se corrige desde Registros → *Corregir hora* (`PUT …/sessions/{id}/inicio`: mueve todos los tiempos de la sesión y borra sus emparejamientos con ventas, que hay que volver a correr).
+- **Comparar con la Parte III.** `node scripts/comparar_trafico_parte3.mjs esan` contrasta, zona por zona, personas, permanencia, visitas y exposición del backend con lo que guardó la Parte III y sale con error si algo difiere.
+- **Retención.** Decidida: vectores de apariencia 24 h, puntos crudos 90 días, agregados sin límite. La limpieza automática llega con el PR 2; estos agregados ya están pensados para sobrevivir a los puntos crudos.
+
+Cada migración nueva tiene su reversa en `backend/migrations/down/` (fuera de lo que se aplica al arrancar); una prueba aplica la reversa y vuelve a aplicar la migración.
+
 ## Estructura
 
 ```
@@ -149,6 +167,10 @@ Todas las rutas de sitio siguen `/api/v1/sites/<sitio>/…`:
 | `GET/POST /{sitio}/sessions` · `DELETE /{sitio}/sessions/{id}` | sesiones del modelo (el Build publica con POST) |
 | `GET /{sitio}/sessions/{id}/replay` · `/insights` | reproducción y agregados SQL |
 | `GET /{sitio}/sessions/{id}/points` · `GET/PUT /analytics` | entrada (posiciones del modelo) y resultados de la Parte III (zona y posición ajustada de cada punto, eventos, análisis) |
+| `PUT /{sitio}/sessions/{id}/inicio` | corrige cuándo empezó a grabarse una sesión (`{"recording_start": "…-05:00"}`): mueve todos sus tiempos |
+| `GET /{sitio}/trafico/resumen` · `/serie?zona=` · `/calor` · `/permanencia` · `/embudo` | tráfico por zona, por ventana (`ventana=5|15|60`), calor por celda de 1 m, distribución de permanencia (`local`, `parte=interior|frente`, `zonas`) y embudo por tienda. Filtros: `dias` o `desde`/`hasta` (fechas de Lima), `franja=7-12` (horas de Lima) y `datos=real|simulado|todos` |
+| `GET/PUT /{sitio}/trafico/umbrales` · `POST …/trafico/recalcular` | umbrales «se detiene» e «interesado» (guardarlos recalcula); recalcular lo desactualizado (`?todo=1`: todo) |
+| `POST/DELETE /{sitio}/trafico/simulados` | genera (`?semanas=N`, 2 a 25; sin ello usa las ventas simuladas que haya o 6 semanas) o borra el tráfico simulado |
 | `GET /{sitio}/media/{archivo}` | archivos exportados por el Build |
 | `GET/POST /api/v1/telefonos` · `DELETE /{id}` | teléfonos (solo en memoria). El POST admite `"simulado": true` para una **fuente de prueba**: En vivo la muestra, pero no guarda sus capturas en la base |
 | `GET/POST /vivo/api/v1/videos` · `DELETE /{id}` | videos subidos en Videos con su resumen al terminar (disco temporal y memoria de backend-vivo; hasta 10, procesados al mismo tiempo) |
@@ -176,16 +198,18 @@ La web y la API piden iniciar sesión (PR de seguridad mínima; las cuentas por 
 
 ## Modelo de datos
 
-PostgreSQL 17 + PostGIS, coordenadas del plano en metros (SRID 0), tiempos con zona horaria. `sites` (plano calibrado del Build y dibujo del plano, en JSON) → `cameras`, `locales`, `zones` (polígono, área calculada, INTERIOR/FRONTAGE ligadas a un local) → `sessions` → `identities` → `tracklets` → `trajectory_points` (posición sobre el piso transitable y la original del modelo en `raw_x`/`raw_y`, geom calculada, `zone_id` de la Parte III), `spatial_events` (duración calculada) y `session_analytics` (KDE, rutas, origen-destino, métricas y parámetros). Ninguna tabla guarda imágenes, recortes ni embeddings.
+PostgreSQL 17 + PostGIS, coordenadas del plano en metros (SRID 0), tiempos con zona horaria. `sites` (plano calibrado del Build y dibujo del plano, en JSON) → `cameras`, `locales`, `zones` (polígono, área calculada, INTERIOR/FRONTAGE ligadas a un local) → `sessions` → `identities` → `tracklets` → `trajectory_points` (posición sobre el piso transitable y la original del modelo en `raw_x`/`raw_y`, geom calculada, `zone_id` de la Parte III), `spatial_events` (duración calculada) y `session_analytics` (KDE, rutas, origen-destino, métricas y parámetros). El tráfico vive en `traffic_buckets` (por zona y ventana de 5/15/60 min), `heat_cells` (celdas de 1 m por hora), `traffic_params` (umbrales por sitio) y `traffic_runs` (cuándo se calculó cada sesión); `sessions.recording_start_declared` dice si alguien declaró cuándo empezó la grabación. Ninguna tabla guarda imágenes, recortes ni embeddings.
 
 ## Pruebas
 
 ```bash
 bash scripts/test-integration.sh                                 # backend: unitarias + integración con PostGIS
 cd web && npm ci && npm run build                                # web: tipos (vue-tsc) y build
-for f in web/tests/*.mjs; do node "$f"; done                     # web: patrones, lecturas, simulador, recorrido, paleta, fuentes de prueba y selector de sitio (Node 22.18 o más nuevo)
+for f in web/tests/*.mjs; do case "$f" in *e2e-*|*lib-*) continue;; esac; node "$f"; done  # web: patrones, lecturas, simulador, recorrido, paleta, fuentes de prueba, selector de sitio y tráfico (Node 22.18 o más nuevo)
 node web/tests/e2e-fuentes-de-prueba.mjs                         # punta a punta (pide el stack y un navegador): los teléfonos simulados no guardan nada
 node web/tests/e2e-selector-de-sitio.mjs                         # punta a punta (pide el stack y un navegador): login, selector ESAN/LAP, teclado, pestañas y Ctrl+K
+node web/tests/e2e-trafico.mjs                                   # punta a punta (pide el stack y un navegador): Configuración (tipo de zona, tiendas, umbrales), Insights (calor por franja, permanencia, embudo), tráfico simulado, hora estimada
+node scripts/comparar_trafico_parte3.mjs esan                    # el tráfico del backend contra lo que guardó la Parte III, zona por zona
 python -m unittest discover -s "Modelo/Insights Modelo/tests"    # Parte III con trayectorias sintéticas
 python -m unittest discover -s "Modelo/Test Modelo/tests"        # memoria de identidades con personas sintéticas
 ```

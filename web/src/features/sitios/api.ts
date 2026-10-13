@@ -116,6 +116,8 @@ export type Sesion = {
   kind: "BUILD" | "LIVE";
   status: string;
   recording_start: string;
+  /** false: nadie declaró cuándo empezó a grabarse (INICIO_GRABACION); recording_start es la hora en que se procesó. */
+  recording_start_declared: boolean;
   ended_at: string | null;
   summary: Record<string, unknown> | null;
   identities: number;
