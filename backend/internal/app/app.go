@@ -3,8 +3,9 @@
 package app
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -21,7 +22,8 @@ type Option func(*options)
 
 type options struct{ manualTraffic bool }
 
-// WithManualTraffic stops the traffic aggregates from being recomputed in the background: the tests ask for it explicitly.
+// WithManualTraffic stops the background work (the traffic aggregates recomputing by themselves and the daily
+// retention pass): the tests ask for it explicitly.
 func WithManualTraffic() Option { return func(o *options) { o.manualTraffic = true } }
 
 func New(db *pgxpool.Pool, cfg config.Config, opts ...Option) http.Handler {
@@ -47,17 +49,26 @@ func New(db *pgxpool.Pool, cfg config.Config, opts ...Option) http.Handler {
 	sales.OnDemoChange(traffic.SalesDemoChanged)
 	// What was stored before this version (or while it was off) gets its traffic computed in the background.
 	traffic.Schedule()
+	accounts := services.NewAccountService(postgres.NewAccountRepository(db))
+	// The first admin comes from ADMIN_USER / ADMIN_PASSWORD; without it nobody could log in to make the others.
+	if err := accounts.EnsureSeed(context.Background(), cfg.AdminUser, cfg.AdminPassword); err != nil {
+		slog.Error("no se pudo preparar la cuenta semilla", "error", err)
+	}
+	privacy := services.NewPrivacyService(postgres.NewPrivacyRepository(db), accounts)
+	if !o.manualTraffic {
+		go privacy.Run(context.Background())
+	}
 	return httpapi.NewRouter(httpapi.Services{
 		Sites:    sites,
 		Sessions: sessions,
 		Sales:    sales,
 		Traffic:  traffic,
 		Phones:   services.NewPhoneService(memory.NewPhoneRepository()),
+		Accounts: accounts,
+		Privacy:  privacy,
+		Demo:     services.NewDemoService(sites, sessions, sales, traffic),
 	}, httpapi.Options{
-		Auth: httpapi.NewAuth(httpapi.AuthConfig{
-			User: cfg.AdminUser, Password: cfg.AdminPassword, Secret: cfg.SessionSecret, APIKey: cfg.APIKey,
-			Session: time.Duration(cfg.SessionHours) * time.Hour,
-		}),
+		Auth:     httpapi.NewAuth(httpapi.AuthConfig{Accounts: accounts, APIKey: cfg.APIKey}),
 		Realtime: relay.NewHub(),
 		MediaDir: cfg.MediaDir,
 		Ready:    db.Ping,

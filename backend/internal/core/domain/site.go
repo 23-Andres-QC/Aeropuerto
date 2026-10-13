@@ -39,6 +39,8 @@ type Site struct {
 	// PlanUpdatedAt is the last change of locales or zones: analyses computed
 	// before it are out of date.
 	PlanUpdatedAt time.Time `json:"plan_updated_at"`
+	// Demo marks the demonstration site: everything in it is SIMULADO and only an admin can delete it whole.
+	Demo bool `json:"demo"`
 }
 
 type SiteInput struct {

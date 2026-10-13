@@ -159,14 +159,22 @@ func (r *SessionRepository) Import(ctx context.Context, site domain.Site, p *dom
 	sid, _ := domain.ParseUUID(s.ID)
 
 	identityRows := make([][]any, 0, len(p.Identities))
+	genderCounts := map[string]int{}
 	for _, i := range p.Identities {
 		g, _ := domain.ParseUUID(i.GlobalID)
-		identityRows = append(identityRows, []any{g, sid, int32(i.Number), i.FirstSeen, i.LastSeen, int16(i.NCameras), i.Gender, optionalFloat32(i.GenderConf), int32(i.Votes)})
+		identityRows = append(identityRows, []any{g, sid, int32(i.Number), i.FirstSeen, i.LastSeen, int16(i.NCameras)})
+		genderCounts[i.Gender]++
 	}
 	if _, err = tx.CopyFrom(ctx, pgx.Identifier{"identities"},
-		[]string{"global_id", "session_id", "public_number", "first_seen", "last_seen", "n_cameras", "gender_estimate", "gender_confidence", "gender_votes"},
+		[]string{"global_id", "session_id", "public_number", "first_seen", "last_seen", "n_cameras"},
 		pgx.CopyFromRows(identityRows)); err != nil {
 		return domain.ImportResult{}, rejected(err)
+	}
+	// The gender of each person is not kept: only how many people of each gender the session had.
+	for g, n := range genderCounts {
+		if _, err = tx.Exec(ctx, `INSERT INTO session_gender_counts (session_id, gender, n) VALUES ($1::text::uuid, $2, $3)`, s.ID, g, n); err != nil {
+			return domain.ImportResult{}, rejected(err)
+		}
 	}
 
 	trackletRows := make([][]any, 0, len(p.Tracklets))
@@ -213,14 +221,14 @@ func (r *SessionRepository) Import(ctx context.Context, site domain.Site, p *dom
 func (r *SessionRepository) ReplayTracks(ctx context.Context, sessionID string, step float64) ([]*domain.Track, int, error) {
 	people := map[int]*domain.Track{}
 	tracks := []*domain.Track{}
-	err := collect(ctx, r.db, `SELECT i.public_number, i.gender_estimate, i.gender_confidence::float8,
+	err := collect(ctx, r.db, `SELECT i.public_number,
 		EXTRACT(EPOCH FROM i.first_seen - s.recording_start)::float8, EXTRACT(EPOCH FROM i.last_seen - s.recording_start)::float8,
 		COALESCE((SELECT array_agg(DISTINCT c.code ORDER BY c.code) FROM tracklets t JOIN cameras c ON c.id = t.camera_id
 		          WHERE t.global_id = i.global_id), '{}')
 		FROM identities i JOIN sessions s ON s.session_id = i.session_id
 		WHERE i.session_id = $1::text::uuid ORDER BY i.public_number`, []any{sessionID}, func(row pgx.Rows) error {
 		t := &domain.Track{K: []int{}, X: []float64{}, Y: []float64{}}
-		if err := row.Scan(&t.Number, &t.Gender, &t.Confidence, &t.FirstS, &t.LastS, &t.Cameras); err != nil {
+		if err := row.Scan(&t.Number, &t.FirstS, &t.LastS, &t.Cameras); err != nil {
 			return err
 		}
 		t.FirstS, t.LastS = domain.Round2(t.FirstS), domain.Round2(t.LastS)
@@ -261,10 +269,23 @@ func (r *SessionRepository) Insights(ctx context.Context, site domain.Site, sess
 	d := domain.InsightsData{People: []domain.InsightPerson{}, Heat: [][3]float64{}, Zones: []domain.ZoneStat{}}
 	id := []any{sessionID}
 
-	err := collect(ctx, r.db, `SELECT gender_estimate, EXTRACT(EPOCH FROM last_seen - first_seen)::float8
+	d.Gender = map[string]int{}
+	err := collect(ctx, r.db, `SELECT gender, n FROM session_gender_counts WHERE session_id = $1::text::uuid`, id, func(row pgx.Rows) error {
+		var g string
+		var n int
+		if err := row.Scan(&g, &n); err != nil {
+			return err
+		}
+		d.Gender[g] = n
+		return nil
+	})
+	if err != nil {
+		return d, err
+	}
+	err = collect(ctx, r.db, `SELECT EXTRACT(EPOCH FROM last_seen - first_seen)::float8
 		FROM identities WHERE session_id = $1::text::uuid`, id, func(row pgx.Rows) error {
 		var p domain.InsightPerson
-		if err := row.Scan(&p.Gender, &p.DwellS); err != nil {
+		if err := row.Scan(&p.DwellS); err != nil {
 			return err
 		}
 		p.DwellS = domain.Round2(p.DwellS)

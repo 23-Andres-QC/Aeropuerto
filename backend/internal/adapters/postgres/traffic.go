@@ -177,7 +177,7 @@ func (r *TrafficRepository) StaleSessions(ctx context.Context, site domain.Site,
 	var sessions []domain.Session
 	err := collect(ctx, r.db, `SELECT s.session_id::text, COALESCE(s.name, ''), s.kind, s.status, s.recording_start, s.ended_at
 		FROM sessions s LEFT JOIN traffic_runs r ON r.session_id = s.session_id
-		WHERE s.site_id = $1 AND s.status = 'DONE' AND ($3 OR r.run_id IS NULL OR r.computed_at < $2)
+		WHERE s.site_id = $1 AND s.status = 'DONE' AND s.points_purged_at IS NULL AND ($3 OR r.run_id IS NULL OR r.computed_at < $2)
 		ORDER BY s.recording_start`, []any{site.ID, since, all}, func(row pgx.Rows) error {
 		var s domain.Session
 		if err := row.Scan(&s.ID, &s.Name, &s.Kind, &s.Status, &s.RecordingStart, &s.EndedAt); err != nil {

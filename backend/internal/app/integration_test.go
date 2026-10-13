@@ -68,7 +68,7 @@ const (
 )
 
 func testConfig(media string) config.Config {
-	return config.Config{MediaDir: media, AdminUser: testAdminUser, AdminPassword: testAdminPassword, SessionSecret: strings.Repeat("s", 32), APIKey: testAPIKey, SessionHours: 1}
+	return config.Config{MediaDir: media, AdminUser: testAdminUser, AdminPassword: testAdminPassword, APIKey: testAPIKey}
 }
 
 func jsonRequest(method, path string, body any) *http.Request {
@@ -180,7 +180,7 @@ func TestSiteLifecycle(t *testing.T) {
 	var insights domain.Insights
 	w = do("GET", "/api/v1/sites/prueba-a/sessions/"+a+"/insights", nil)
 	json.Unmarshal(w.Body.Bytes(), &insights)
-	if w.Code != 200 || insights.Summary.People != 1 || insights.Summary.Gender["MUJER"] != 1 || len(insights.Zones) != 1 || insights.Zones[0].Visitors != 1 {
+	if w.Code != 200 || insights.Summary.People != 1 || len(insights.Summary.Gender) != 0 || insights.Summary.GenderHidden != 1 || len(insights.Zones) != 1 || insights.Zones[0].Visitors != 1 {
 		t.Fatalf("insights: %d %s", w.Code, w.Body)
 	}
 

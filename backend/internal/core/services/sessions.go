@@ -132,15 +132,14 @@ func (s *SessionService) Insights(ctx context.Context, slug, id string) (domain.
 	if err != nil {
 		return domain.Insights{}, err
 	}
-	gender := map[string]int{"HOMBRE": 0, "MUJER": 0, "SIN_DETERMINAR": 0}
 	dwell := make([]float64, 0, len(d.People))
 	for _, p := range d.People {
-		gender[p.Gender]++
 		dwell = append(dwell, p.DwellS)
 	}
+	gender, hidden := domain.PrivateGender(d.Gender, domain.MinGenderGroup)
 	insights := domain.Insights{
 		Session: session,
-		Summary: domain.InsightsSummary{People: len(d.People), Gender: gender, Dwell: dwellStats(dwell)},
+		Summary: domain.InsightsSummary{People: len(d.People), Gender: gender, GenderHidden: hidden, Dwell: dwellStats(dwell)},
 		Heat:    domain.Heat{CellM: 1, Cells: d.Heat},
 		Zones:   d.Zones,
 	}

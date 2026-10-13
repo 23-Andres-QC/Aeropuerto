@@ -60,15 +60,13 @@ func ParseUUID(s string) ([16]byte, error) {
 
 // Track is one person in a replay: a map position every step (k) seconds.
 type Track struct {
-	Number     int       `json:"numero"`
-	Gender     string    `json:"genero"`
-	Confidence *float64  `json:"confianza"`
-	Cameras    []string  `json:"camaras"`
-	FirstS     float64   `json:"inicio_s"`
-	LastS      float64   `json:"fin_s"`
-	K          []int     `json:"k"`
-	X          []float64 `json:"x"`
-	Y          []float64 `json:"y"`
+	Number  int       `json:"numero"`
+	Cameras []string  `json:"camaras"`
+	FirstS  float64   `json:"inicio_s"`
+	LastS   float64   `json:"fin_s"`
+	K       []int     `json:"k"`
+	X       []float64 `json:"x"`
+	Y       []float64 `json:"y"`
 }
 
 type Replay struct {
@@ -78,9 +76,9 @@ type Replay struct {
 	People    []*Track `json:"personas"`
 }
 
-// InsightPerson is what the summary needs of each person: gender and dwell.
+// InsightPerson is what the summary needs of each person: how long they were seen. The gender of a person is never
+// stored (see InsightsData.Gender): only the counts of the session are.
 type InsightPerson struct {
-	Gender string
 	DwellS float64
 }
 
@@ -98,6 +96,8 @@ type ZoneStat struct {
 // turns it into Insights.
 type InsightsData struct {
 	People []InsightPerson
+	// Gender counts the session's people by estimated gender (HOMBRE, MUJER, SIN_DETERMINAR).
+	Gender map[string]int
 	Heat   [][3]float64
 	Zones  []ZoneStat
 }
@@ -109,9 +109,12 @@ type DwellStats struct {
 }
 
 type InsightsSummary struct {
-	People int            `json:"personas"`
-	Gender map[string]int `json:"genero"`
-	Dwell  DwellStats     `json:"permanencia"`
+	People int `json:"personas"`
+	// Gender holds only the categories big enough to show (see PrivateGender); GenderHidden is how many people
+	// belong to the ones left out, so the total still adds up.
+	Gender       map[string]int `json:"genero"`
+	GenderHidden int            `json:"genero_ocultos"`
+	Dwell        DwellStats     `json:"permanencia"`
 }
 
 type Heat struct {

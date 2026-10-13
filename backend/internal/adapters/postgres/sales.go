@@ -203,23 +203,23 @@ func (r *SalesRepository) Tickets(ctx context.Context, site domain.Site, f domai
 	index := map[string]*domain.Ticket{}
 	var ids []string
 	err := collect(ctx, r.db, `SELECT t.ticket_id::text, t.local_id, l.name, t.sold_at, t.total::float8, t.origin, COALESCE(t.external_ref, ''),
-			m.session_id::text, i.public_number, i.gender_estimate, m.stay_start, m.stay_end, m.offset_s, m.confidence
+			m.session_id::text, i.public_number, m.stay_start, m.stay_end, m.offset_s, m.confidence
 		FROM sales_tickets t
 		JOIN locales l ON l.id = t.local_id
 		LEFT JOIN sales_matches m ON m.ticket_id = t.ticket_id
 		LEFT JOIN identities i ON i.global_id = m.global_id
 		WHERE `+salesWhere+` ORDER BY t.sold_at DESC, t.ticket_id LIMIT $6 OFFSET $7`, append(args, f.Limit, f.Offset), func(row pgx.Rows) error {
 		var t domain.Ticket
-		var session, gender *string
+		var session *string
 		var person *int32
 		var start, end *time.Time
 		var offset, confidence *float32
-		if err := row.Scan(&t.ID, &t.LocalID, &t.Local, &t.SoldAt, &t.Total, &t.Origin, &t.ExternalRef, &session, &person, &gender, &start, &end, &offset, &confidence); err != nil {
+		if err := row.Scan(&t.ID, &t.LocalID, &t.Local, &t.SoldAt, &t.Total, &t.Origin, &t.ExternalRef, &session, &person, &start, &end, &offset, &confidence); err != nil {
 			return err
 		}
 		t.Items = []domain.TicketItem{}
-		if session != nil && person != nil && gender != nil && start != nil && end != nil && offset != nil && confidence != nil {
-			t.Match = &domain.TicketMatch{SessionID: *session, Person: int(*person), Gender: *gender, StayStart: *start, StayEnd: *end,
+		if session != nil && person != nil && start != nil && end != nil && offset != nil && confidence != nil {
+			t.Match = &domain.TicketMatch{SessionID: *session, Person: int(*person), StayStart: *start, StayEnd: *end,
 				OffsetS: domain.Round2(float64(*offset)), Confidence: domain.Round2(float64(*confidence))}
 		}
 		page.Tickets = append(page.Tickets, t)
@@ -357,11 +357,11 @@ func (r *SalesRepository) StayEvents(ctx context.Context, session domain.Session
 		return nil, nil, err
 	}
 	people := map[string]domain.PersonSpan{}
-	err = collect(ctx, r.db, `SELECT global_id::text, public_number, gender_estimate, first_seen, last_seen FROM identities WHERE session_id = $1::text::uuid`,
+	err = collect(ctx, r.db, `SELECT global_id::text, public_number, first_seen, last_seen FROM identities WHERE session_id = $1::text::uuid`,
 		[]any{session.ID}, func(row pgx.Rows) error {
 			var id string
 			var p domain.PersonSpan
-			if err := row.Scan(&id, &p.Number, &p.Gender, &p.FirstSeen, &p.LastSeen); err != nil {
+			if err := row.Scan(&id, &p.Number, &p.FirstSeen, &p.LastSeen); err != nil {
 				return err
 			}
 			people[id] = p

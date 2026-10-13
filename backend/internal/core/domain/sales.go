@@ -64,7 +64,6 @@ type TicketItem struct {
 type TicketMatch struct {
 	SessionID  string    `json:"session_id"`
 	Person     int       `json:"person"`
-	Gender     string    `json:"gender"`
 	StayStart  time.Time `json:"stay_start"`
 	StayEnd    time.Time `json:"stay_end"`
 	OffsetS    float64   `json:"offset_s"`

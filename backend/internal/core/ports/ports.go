@@ -19,6 +19,8 @@ type SiteRepository interface {
 	UpdateSite(ctx context.Context, site domain.Site, in domain.SiteInput) (domain.Site, error)
 	// DeleteSite removes a site with no sessions (with its cameras and zones).
 	DeleteSite(ctx context.Context, site domain.Site) error
+	// SetDemo marks or unmarks the demonstration site.
+	SetDemo(ctx context.Context, site domain.Site, demo bool) error
 
 	Map(ctx context.Context, site domain.Site) (json.RawMessage, error)
 	Plan(ctx context.Context, site domain.Site) (json.RawMessage, error)
