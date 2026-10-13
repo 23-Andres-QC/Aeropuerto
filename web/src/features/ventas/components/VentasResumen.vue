@@ -1,11 +1,86 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import type { ResumenVentas } from "../api";
+import { computed, ref, watch } from "vue";
+import { apiVentas, type Consulta, type DiaVentas, type ResumenVentas } from "../api";
 import { dinero, dineroCorto, entero, porcentaje } from "../formato";
+import { compararPeriodos, leerVentas, variacion, type Formatos, type Lectura } from "../lecturas";
 import CifraAnimada from "./CifraAnimada.vue";
 import GraficoSerie from "./GraficoSerie.vue";
+import LecturasVentas from "./LecturasVentas.vue";
 
-const props = defineProps<{ resumen: ResumenVentas; cargando: boolean }>();
+const props = defineProps<{ resumen: ResumenVentas; cargando: boolean; sitio: string; consulta: Consulta }>();
+const emit = defineEmits<{ ir: [destino: NonNullable<Lectura["ir"]>] }>();
+
+// Para comparar con el período anterior se lee el doble de días y se parte por la mitad (la API cuenta hacia atrás desde hoy).
+const anterior = ref<{ dias: number; days: DiaVentas[] }>({ dias: 0, days: [] });
+let pedido = 0;
+async function cargarAnterior() {
+  const mio = ++pedido;
+  const n = props.consulta.dias;
+  if (n <= 0 || n > 1500) {
+    anterior.value = { dias: n, days: [] };
+    return;
+  }
+  try {
+    const r = await apiVentas.resumen(props.sitio, { ...props.consulta, dias: n * 2 });
+    if (mio === pedido) anterior.value = { dias: n, days: r.days };
+  } catch {
+    if (mio === pedido) anterior.value = { dias: n, days: [] };
+  }
+}
+watch(() => props.resumen, cargarAnterior, { immediate: true });
+
+/** Hoy en Lima, «aaaa-mm-dd». */
+const hoy = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Lima" }).format(new Date());
+const formatos: Formatos = {
+  dinero: dineroCorto,
+  fino: dinero,
+  entero,
+  pct: (v) => porcentaje(v, 0),
+  dia: (iso) => `El ${new Date(`${iso}T12:00:00-05:00`).toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Lima" }).replace(",", "")}`,
+};
+/** El período anterior solo se usa si los datos son de los mismos días que se están mirando (llegan por separado). */
+const diasConAnterior = computed(() => (anterior.value.dias === props.consulta.dias ? anterior.value.days : []));
+const lecturas = computed(() =>
+  leerVentas(
+    {
+      dias: props.resumen.days,
+      diasConAnterior: diasConAnterior.value,
+      locales: props.resumen.locales,
+      productos: props.resumen.products,
+      total: props.resumen.total,
+      tickets: props.resumen.total.tickets,
+      emparejados: props.resumen.total.matched,
+      periodo: props.consulta.dias,
+      hoy: hoy(),
+    },
+    formatos,
+  ),
+);
+
+type Cambio = { texto: string; clase: "sube" | "baja" | "igual" };
+const cambioPct = (v: number | null): Cambio | null =>
+  v == null ? null : Math.abs(v) < 0.01 ? { texto: "= igual", clase: "igual" } : { texto: `${v > 0 ? "▲" : "▼"} ${Math.abs(Math.round(v * 100))} %`, clase: v > 0 ? "sube" : "baja" };
+const cambioPuntos = (a: number | null, b: number | null): Cambio | null => {
+  if (a == null || b == null) return null;
+  const p = Math.round((a - b) * 100);
+  return p === 0 ? { texto: "= igual", clase: "igual" } : { texto: `${p > 0 ? "▲" : "▼"} ${Math.abs(p)} pts`, clase: p > 0 ? "sube" : "baja" };
+};
+/** Cuánto cambió cada indicador frente a los mismos días de antes; null si no hay un período anterior con datos. */
+const cambios = computed(() => {
+  const c = compararPeriodos(diasConAnterior.value, props.consulta.dias, hoy());
+  if (!c.hay) return null;
+  const [a, b] = [c.actual, c.anterior];
+  const razon = (x: number, y: number) => (y > 0 ? x / y : null);
+  return {
+    revenue: cambioPct(variacion(a.revenue, b.revenue)),
+    tickets: cambioPct(variacion(a.tickets, b.tickets)),
+    ticket: cambioPct(variacion(razon(a.revenue, a.tickets) ?? 0, razon(b.revenue, b.tickets) ?? 0)),
+    visitors: cambioPct(variacion(a.visitors, b.visitors)),
+    conversion: cambioPuntos(razon(a.tickets, a.visitors), razon(b.tickets, b.visitors)),
+    porVisitante: cambioPct(variacion(razon(a.revenue, a.visitors) ?? 0, razon(b.revenue, b.visitors) ?? 0)),
+  };
+});
+const vsAntes = computed(() => `vs ${props.consulta.dias} días antes`);
 
 const total = computed(() => props.resumen.total);
 const maxLocal = computed(() => Math.max(1, ...props.resumen.locales.map((l) => l.revenue)));
@@ -25,26 +100,31 @@ const masTicketsQueVisitantes = computed(() => (total.value.conversion ?? 0) > 1
       <p><span class="metric-icon">S/</span>INGRESOS</p>
       <strong><CifraAnimada :valor="total.revenue" :formato="dineroCorto" /></strong>
       <small><CifraAnimada :valor="total.tickets" :formato="entero" /> {{ total.tickets === 1 ? "ticket" : "tickets" }}</small>
+      <em v-if="cambios?.revenue" class="delta" :class="cambios.revenue.clase">{{ cambios.revenue.texto }} <span>{{ vsAntes }}</span></em>
     </article>
     <article class="panel metric" :class="{ vacio: total.avg_ticket == null }">
       <p><span class="metric-icon">≈</span>TICKET PROMEDIO</p>
       <strong><CifraAnimada :valor="total.avg_ticket" :formato="dinero" /></strong>
       <small>lo que gasta cada compra</small>
+      <em v-if="cambios?.ticket" class="delta" :class="cambios.ticket.clase">{{ cambios.ticket.texto }} <span>{{ vsAntes }}</span></em>
     </article>
     <article class="panel metric" :class="{ vacio: !total.visitors }">
       <p><span class="metric-icon">⌖</span>VISITANTES</p>
       <strong><CifraAnimada :valor="total.visitors" :formato="entero" /></strong>
       <small>personas que entraron a un local</small>
+      <em v-if="cambios?.visitors" class="delta" :class="cambios.visitors.clase">{{ cambios.visitors.texto }} <span>{{ vsAntes }}</span></em>
     </article>
     <article class="panel metric" :class="{ vacio: total.conversion == null }">
       <p><span class="metric-icon">%</span>CONVERSIÓN</p>
       <strong><CifraAnimada :valor="total.conversion" :formato="porcentaje1" /></strong>
       <small>tickets por visitante</small>
+      <em v-if="cambios?.conversion" class="delta" :class="cambios.conversion.clase">{{ cambios.conversion.texto }} <span>{{ vsAntes }}</span></em>
     </article>
     <article class="panel metric" :class="{ vacio: total.revenue_per_visitor == null }">
       <p><span class="metric-icon">↗</span>INGRESO POR VISITANTE</p>
       <strong><CifraAnimada :valor="total.revenue_per_visitor" :formato="dinero" /></strong>
       <small>lo que deja cada persona que entra</small>
+      <em v-if="cambios?.porVisitante" class="delta" :class="cambios.porVisitante.clase">{{ cambios.porVisitante.texto }} <span>{{ vsAntes }}</span></em>
     </article>
     <article class="panel metric" :class="{ vacio: !total.matched }">
       <p><span class="metric-icon">⇄</span>EMPAREJADOS</p>
@@ -52,6 +132,8 @@ const masTicketsQueVisitantes = computed(() => (total.value.conversion ?? 0) > 1
       <small>tickets ligados a una persona del video</small>
     </article>
   </section>
+
+  <LecturasVentas :lecturas="lecturas" @ir="emit('ir', $event)" />
 
   <section class="panel" style="margin-bottom: 14px">
     <div class="panel-heading">
