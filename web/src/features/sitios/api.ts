@@ -254,6 +254,7 @@ export const TIPOS_ZONA: Record<string, string> = {
   CHECKIN: "Atención / check-in",
   SEGURIDAD: "Control / seguridad",
   PUERTA: "Puerta",
+  DESCANSO: "Descanso (sala de espera)",
   OTRO: "Otro",
 };
 
