@@ -294,8 +294,8 @@ const fechaHora = (iso: string | null | undefined) => (iso ? new Date(iso).toLoc
           <template v-if="permanencia && permanencia.estancias > 0">
             <dl class="cifras">
               <div><dt>Estancias</dt><dd>{{ num(permanencia.estancias) }}</dd></div>
-              <div><dt>Mediana</dt><dd>{{ seg(permanencia.mediana_s) }}</dd></div>
-              <div><dt>El 90 % se queda menos de</dt><dd>{{ seg(permanencia.p90_s) }}</dd></div>
+              <div><dt>Mediana <small title="Sale del histograma: puede diferir hasta el ancho de un tramo del valor exacto.">(aproximada)</small></dt><dd>{{ seg(permanencia.mediana_s) }}</dd></div>
+              <div><dt>El 90 % se queda menos de <small title="Sale del histograma: puede diferir hasta el ancho de un tramo del valor exacto.">(aproximado)</small></dt><dd>{{ seg(permanencia.p90_s) }}</dd></div>
               <div><dt>Media</dt><dd>{{ seg(permanencia.media_s) }}</dd></div>
               <div><dt>Se detienen (≥ {{ permanencia.umbrales.se_detiene_s }} s)</dt><dd>{{ permanencia.se_detienen_pct.toLocaleString("es-PE") }} %</dd></div>
               <div><dt>Interesados (≥ {{ permanencia.umbrales.interesado_s }} s)</dt><dd>{{ permanencia.interesados_pct.toLocaleString("es-PE") }} %</dd></div>

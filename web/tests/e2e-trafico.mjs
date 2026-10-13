@@ -175,7 +175,7 @@ try {
   paso("Insights muestra el tráfico del sitio: datos reales y calor dibujado");
   const cifras = await t.texto("#trafico .cifras");
   assert.match(cifras, /Estancias 1/);
-  assert.match(cifras, /Mediana 37\.5 s|Mediana 37,5 s/);
+  assert.match(cifras, /Mediana \(aproximada\) 37[.,]5 s/);
   assert.match(cifras, /Se detienen \(≥ 5 s\) 100 %/);
   assert.match(cifras, /Interesados \(≥ 30 s\) 100 %/);
   assert.equal(await t.evalua(`document.querySelectorAll('#trafico .histograma li').length`), 14);
