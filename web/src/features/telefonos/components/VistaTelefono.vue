@@ -15,7 +15,7 @@ type Persona = {
 };
 type Mensaje = { ts: number; frame_w: number; frame_h: number; people: Persona[] };
 
-const props = defineProps<{ id: string; nombre: string; estado?: EstadoTelefono }>();
+const props = defineProps<{ id: string; nombre: string; estado?: EstadoTelefono; sinQuitar?: boolean; compacta?: boolean }>();
 const emit = defineEmits<{ quitar: [] }>();
 
 const imagen = ref("");
@@ -94,12 +94,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="panel vista">
+  <section class="panel vista" :class="{ compacta }">
     <div class="panel-heading">
       <h2>{{ nombre }}</h2>
       <span class="heading-meta">
         <span class="pill" :class="enVivo ? 'good' : 'warn'">{{ enVivo ? `${ultimo?.people.length ?? 0} en cuadro` : "sin video" }}</span>
-        <button class="danger-button icon-button" type="button" :aria-label="`Quitar ${nombre}`" @click="emit('quitar')">✕</button>
+        <button v-if="!sinQuitar" class="danger-button icon-button" type="button" :aria-label="`Quitar ${nombre}`" @click="emit('quitar')">✕</button>
       </span>
     </div>
     <div class="lienzo">
@@ -107,13 +107,14 @@ onUnmounted(() => {
       <canvas v-show="imagen && enVivo" ref="lienzo"></canvas>
       <p v-if="!imagen || !enVivo" class="espera">{{ aviso }}</p>
     </div>
-    <div v-if="enVivo && estado" class="stats">
+    <p v-if="compacta && enVivo && estado" class="mini">{{ estado.fps }} FPS · {{ estado.latencia_ms ?? "—" }} ms · {{ estado.personas_ahora }} en cuadro</p>
+    <div v-else-if="enVivo && estado" class="stats">
       <div><b>{{ estado.fps }}</b><small>FPS</small></div>
       <div><b>{{ estado.latencia_ms ?? "—" }} ms</b><small>latencia</small></div>
       <div><b>{{ estado.personas_ahora }}</b><small>personas ahora</small></div>
       <div><b>{{ estado.saltados }}</b><small>frames saltados</small></div>
     </div>
-    <p class="fuente muted">{{ estado?.fuente ?? "" }}</p>
+    <p v-if="!compacta" class="fuente muted">{{ estado?.fuente ?? "" }}</p>
   </section>
 </template>
 
@@ -146,6 +147,23 @@ onUnmounted(() => {
   color: #a9c0dc;
   font-size: 12px;
   text-align: center;
+}
+.vista.compacta .lienzo {
+  margin: 6px;
+  min-height: 130px;
+}
+.vista.compacta .espera {
+  min-height: 130px;
+  font-size: 11px;
+}
+.vista.compacta .panel-heading h2 {
+  font-size: 12.5px;
+}
+.mini {
+  margin: 0 8px 8px;
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
 }
 .stats {
   display: grid;

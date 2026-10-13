@@ -73,6 +73,9 @@ func (r *SiteRepository) UpdateLocale(ctx context.Context, site domain.Site, id 
 
 func (r *SiteRepository) DeleteLocale(ctx context.Context, site domain.Site, id int) error {
 	tag, err := r.db.Exec(ctx, "DELETE FROM locales WHERE site_id = $1 AND id = $2", site.ID, id)
+	if pgCode(err) == "23503" {
+		return domain.Conflict("El local tiene ventas guardadas: elimínalas antes de borrarlo")
+	}
 	if err == nil && tag.RowsAffected() == 0 {
 		return domain.NotFound("Local no encontrado en el sitio")
 	}

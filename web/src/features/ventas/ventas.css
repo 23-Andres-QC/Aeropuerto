@@ -1,0 +1,271 @@
+/* Estilos compartidos de la sección Ventas (todo cuelga de .ventas para no tocar el resto de la web). */
+.ventas .filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius);
+  background: var(--glass);
+  box-shadow: var(--shadow-s);
+}
+.ventas .filtros label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 640;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.ventas .filtros select {
+  width: auto;
+  min-height: 32px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  font-size: 12.5px;
+}
+.ventas .filtros .espacio {
+  flex: 1;
+}
+.ventas .pestanas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.ventas .pestanas button {
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 620;
+}
+.ventas .pestanas button.activo {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(180deg, #4a95ff 0%, var(--blue-600) 100%);
+}
+.ventas .nota {
+  margin: 0 0 12px;
+  padding: 9px 13px;
+  border: 1px solid var(--glass-line);
+  border-left: 3px solid var(--blue-500);
+  border-radius: var(--radius-s);
+  background: var(--glass);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.ventas .nota b {
+  color: var(--ink);
+}
+.ventas .nota.aviso {
+  border-left-color: var(--warn);
+}
+.ventas .cuerpo {
+  padding: 4px 16px 16px;
+}
+.ventas .tabla-envoltorio {
+  overflow-x: auto;
+  padding: 4px 14px 14px;
+}
+.ventas table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.ventas th {
+  padding: 9px 10px;
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--glass-line);
+  white-space: nowrap;
+}
+.ventas td {
+  padding: 10px;
+  border-bottom: 1px solid var(--glass-line);
+  vertical-align: middle;
+}
+.ventas tbody tr:last-child td {
+  border-bottom: 0;
+}
+.ventas .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ventas td small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+.ventas .barra {
+  position: relative;
+  min-width: 90px;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(120, 150, 190, 0.18);
+  overflow: hidden;
+}
+.ventas .barra i {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(90deg, var(--blue-500), var(--cyan-400));
+}
+.ventas .celda-barra {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-end;
+}
+.ventas .origen-real,
+.ventas .origen-simulado {
+  font-size: 10.5px;
+}
+.ventas .origen-simulado {
+  color: var(--warn);
+  background: rgba(200, 121, 29, 0.12);
+  border-color: rgba(200, 121, 29, 0.35);
+}
+.ventas .origen-real {
+  color: var(--good);
+  background: rgba(14, 155, 116, 0.12);
+  border-color: rgba(14, 155, 116, 0.35);
+}
+.ventas .vacio {
+  margin: 0;
+  padding: 22px 16px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.ventas .acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+.ventas .grafica-titulo {
+  padding: 12px 16px 0;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+.ventas .persona {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 640;
+  white-space: nowrap;
+}
+.ventas .persona i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--glass-strong);
+}
+.ventas .lineas {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+}
+.ventas .lineas li {
+  white-space: nowrap;
+}
+.ventas .lineas small {
+  display: inline;
+  margin-left: 4px;
+}
+.ventas .borrar {
+  padding: 4px 9px;
+  font-size: 11.5px;
+  color: var(--danger);
+  border-color: rgba(207, 64, 64, 0.3);
+}
+@media (max-width: 900px) {
+  .ventas .filtros .espacio {
+    display: none;
+  }
+}
+.ventas .dudosa {
+  color: var(--warn);
+  font-weight: 600;
+}
+.ventas .nowrap {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ventas .boton-plano {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+.ventas .boton-plano.activo {
+  color: var(--blue-700);
+  background: var(--pill-bg);
+}
+
+/* ---- Movimiento: las tarjetas y paneles entran con un leve ascenso, los números suben (CifraAnimada), las barras crecen
+   desde la izquierda y las filas de las tablas aparecen una tras otra. Todo se apaga con «reducir movimiento». */
+@keyframes ventas-sube {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes ventas-barra {
+  from {
+    transform: scaleX(0);
+  }
+}
+.ventas > .panel,
+.ventas > .nota {
+  animation: ventas-sube 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.ventas .metrics > .metric {
+  animation: ventas-sube 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+.ventas .metrics > :nth-child(2) {
+  --i: 1;
+}
+.ventas .metrics > :nth-child(3) {
+  --i: 2;
+}
+.ventas .metrics > :nth-child(4) {
+  --i: 3;
+}
+.ventas .metrics > :nth-child(5) {
+  --i: 4;
+}
+.ventas .metrics > :nth-child(6) {
+  --i: 5;
+}
+.ventas table.anima-filas tbody tr {
+  animation: ventas-sube 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(120ms + min(var(--i, 0), 14) * 45ms);
+}
+.ventas .barra i {
+  transform-origin: left center;
+  transition: width 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: ventas-barra 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(250ms + min(var(--i, 0), 14) * 45ms);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ventas *,
+  .ventas *::before,
+  .ventas *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

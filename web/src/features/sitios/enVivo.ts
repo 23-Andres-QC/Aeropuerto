@@ -9,6 +9,18 @@ import { colorPersona } from "../../shared/format";
 import { api as apiVivo, RELEVO_VIVO, type Detecciones, type EstadoServicio, type EstadoTelefono, type Telefono } from "../telefonos/api";
 import { api, mapaDelSitio, type Camara, type Config, type Mapa, type Punto } from "./api";
 import { CELDA_CALOR, dentro, entradasPorIntervalo as entradasEntre, resumir, type ResumenVivo } from "./analisisVivo";
+import {
+  SIN_AJUSTE,
+  armarPares,
+  calibrarCruzada,
+  ubicarPorAlcance,
+  type Ancla,
+  type AjusteCamara,
+  type BaseCamara,
+  type Muestra,
+  type Observacion as ObservacionCruda,
+  type Resultado as ResultadoCalibracion,
+} from "./calibracionCruzada";
 import type { PersonaPlano, RecorridoPlano } from "./components/PlanoSitio.vue";
 
 export { CELDA_CALOR };
@@ -52,7 +64,8 @@ export function fijarModoVivo(valor: boolean) {
 }
 
 type Observacion = { clave: string; id: number | null; x: number; y: number; alto: number; genero: string | null; conf: number | null; cam: string };
-type Cuadro = { llegada: number; observaciones: Observacion[] };
+/** Lo último que mandó un teléfono: las personas ya ubicadas en el plano y, aparte, sus cajas tal como llegaron (para calibrar). */
+type Cuadro = { llegada: number; observaciones: Observacion[]; crudas: ObservacionCruda[] };
 
 export type PersonaViva = { clave: string; id: number | null; genero: string | null; conf: number | null; camaras: string[] };
 
@@ -83,6 +96,8 @@ export type RanuraVivo = {
   personas: number;
   /** El plano no tiene calibración para esta cámara: no se puede proyectar. */
   sinCalibracion: boolean;
+  /** Se calibró contra las demás cámaras (calibración cruzada). */
+  calibrada: boolean;
 };
 
 const grados = (dx: number, dy: number) => ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360;
@@ -121,39 +136,29 @@ export function proyector(camara: Camara | undefined, mapa: Mapa): ((u: number, 
   };
 }
 
-/** Altura de una persona (m) y distancia máxima a la que se ubica; más allá es un error, no una persona. */
-const ALTURA_PERSONA_M = 1.7;
-const ALCANCE_MAX_M = 30;
-/** Focal de un teléfono en fracción del ancho del cuadro (≈ 65° de campo de visión horizontal). */
-const FOCAL_RELATIVA = 0.78;
-
 /**
  * De la caja de una persona en el cuadro a metros del plano, para un teléfono que se mueve y no está donde estuvo
  * la cámara del Build: no depende de cómo apunte (inclinación) sino de la posición y el rumbo del teléfono en el plano
- * (los de su cámara en Configuración). La distancia sale del tamaño de la persona (d = f · 1.70 m / alto en píxeles) y
- * el lado, de dónde queda en el cuadro: el punto está a esa distancia en la dirección del rumbo girada por el ángulo
- * que le corresponde a su posición horizontal. Con la caja casi tan alta como el cuadro (muy cerca) la distancia
- * pierde sentido y no se ubica.
+ * (los de su cámara en Configuración) corregidos por `ajuste` (lo que dejó la calibración cruzada, sin él, ninguno). La
+ * distancia sale del tamaño de la persona (d = f · 1.70 m / alto en píxeles) y el lado, de dónde queda en el cuadro
+ * (calibracionCruzada.ts). Con la caja casi tan alta como el cuadro (muy cerca) la distancia pierde sentido y no se ubica.
  */
-export function proyectorAlcance(camara: Camara | undefined, mapa: Mapa): ((caja: [number, number, number, number], anchoFrame: number, altoFrame: number) => Punto | null) | null {
+export function proyectorAlcance(
+  camara: Camara | undefined,
+  mapa: Mapa,
+  ajuste: AjusteCamara = SIN_AJUSTE,
+): ((caja: [number, number, number, number], anchoFrame: number, altoFrame: number) => Punto | null) | null {
   if (!camara?.position) return null;
-  const [px, py] = camara.position;
-  const rumbo = ((camara.angle_deg ?? 0) * Math.PI) / 180;
+  const base: BaseCamara = { x: camara.position[0], y: camara.position[1], rumbo_deg: camara.angle_deg ?? 0 };
   const [x0, y1] = mapa.origen_m;
   const [anchoM, altoM] = [mapa.tam_px[0] / mapa.px_por_metro, mapa.tam_px[1] / mapa.px_por_metro];
   const margen = 3;
-  return ([bx1, by1, bx2, by2], anchoFrame, altoFrame) => {
-    const alto = by2 - by1;
-    if (!(alto > 8) || alto > altoFrame * 0.97) return null;
-    const f = FOCAL_RELATIVA * anchoFrame;
-    const distancia = (f * ALTURA_PERSONA_M) / alto;
-    if (!Number.isFinite(distancia) || distancia > ALCANCE_MAX_M) return null;
-    // A la derecha del centro del cuadro es girar en sentido horario (el plano tiene y hacia arriba).
-    const lado = Math.atan(((bx1 + bx2) / 2 - anchoFrame / 2) / f);
-    const x = px + distancia * Math.cos(rumbo - lado);
-    const y = py + distancia * Math.sin(rumbo - lado);
+  return (caja, anchoFrame, altoFrame) => {
+    const p = ubicarPorAlcance(base, ajuste, caja, anchoFrame, altoFrame);
+    if (!p) return null;
+    const [x, y] = p;
     if (x < x0 - margen || x > x0 + anchoM + margen || y > y1 + margen || y < y1 - altoM - margen) return null;
-    return [x, y];
+    return p;
   };
 }
 
@@ -200,7 +205,7 @@ let corriendo = false;
 const camaraDe = (id: string) => CAMARAS_VIVO[asignacion.get(id) ?? -1];
 const proyectores = computed(() => {
   const m = mapa.value;
-  return new Map(CAMARAS_VIVO.map((cid) => [cid, m ? proyectorAlcance(camaras.value?.find((c) => c.camera_id === cid), m) : null] as const));
+  return new Map(CAMARAS_VIVO.map((cid) => [cid, m ? proyectorAlcance(camaras.value?.find((c) => c.camera_id === cid), m, ajustesCamaras.value[cid] ?? SIN_AJUSTE) : null] as const));
 });
 
 function asignar(lista: Telefono[]) {
@@ -251,6 +256,170 @@ export function moverMapa(dx: number, dy: number) {
 export function reponerAjusteMapa() {
   ajusteMapa.value = { ...AJUSTE_INICIAL };
   guardarAjuste();
+}
+
+// --- Calibración cruzada de las cámaras ----------------------------------------------
+// Qué corrige cada teléfono respecto de la pose que tiene su cámara en Configuración (calibracionCruzada.ts). Se recuerda por sitio
+// en el navegador y manda sobre la homografía de un teléfono suelto: dos teléfonos no pueden compartir una misma.
+const claveCalibracion = (s: string) => `calibracion-camaras-${s}`;
+function leerAjustes(s: string): Record<string, AjusteCamara> {
+  try {
+    const crudo = JSON.parse(localStorage.getItem(claveCalibracion(s)) ?? "null") as Record<string, AjusteCamara> | null;
+    const ok: Record<string, AjusteCamara> = {};
+    for (const [cam, a] of Object.entries(crudo ?? {})) {
+      if (CAMARAS_VIVO.includes(cam) && [a?.dx, a?.dy, a?.dth_deg, a?.lnk].every((v) => Number.isFinite(v))) ok[cam] = { dx: a.dx, dy: a.dy, dth_deg: a.dth_deg, lnk: a.lnk };
+    }
+    return ok;
+  } catch {
+    return {};
+  }
+}
+function guardarAjustes() {
+  try {
+    localStorage.setItem(claveCalibracion(sitio.value), JSON.stringify(ajustesCamaras.value));
+  } catch {
+    /* la calibración no se recuerda tras recargar */
+  }
+}
+/** Corrección aplicada a cada cámara (vacía: ninguna). */
+export const ajustesCamaras = ref<Record<string, AjusteCamara>>({});
+/** Une a quien dos cámaras ven en el mismo lugar aunque el modelo les haya dado IDs distintos. */
+export const fusionPorPosicion = ref(true);
+/** Dos personas de cámaras distintas a menos de esto son la misma. */
+const RADIO_FUSION_M = 1.2;
+/** Una vez unidas, siguen unidas hasta que se separen más de RADIO · esto (para que no parpadee). */
+const HISTERESIS_FUSION = 1.8;
+const VIGENCIA_ENLACE_MS = 3000;
+const enlaces = new Map<string, { principal: string; visto: number }>();
+/** Qué tanto coinciden las cámaras ahora: la distancia entre lo que cada una ubica de la misma persona. */
+export const diagnosticoVivo = shallowRef<{ desacuerdo_m: number | null; personasEnDos: number; fusionadas: number }>({ desacuerdo_m: null, personasEnDos: 0, fusionadas: 0 });
+let desacuerdoSuave: number | null = null;
+
+// Registro para calibrar: mientras está activo se guardan las cajas crudas de cada instante; los puntos de referencia son
+// lugares conocidos del plano donde alguien se paró unos segundos.
+const SEGUNDOS_PUNTO = 3;
+const MAX_MUESTRAS_CALIBRACION = 3000;
+export type PuntoReferencia = { punto: Punto; n: number };
+export const registroCalibracion = shallowRef<{ activo: boolean; muestras: number; pares: number; puntos: PuntoReferencia[]; midiendo: { punto: Punto; restante_s: number } | null }>({
+  activo: false,
+  muestras: 0,
+  pares: 0,
+  puntos: [],
+  midiendo: null,
+});
+/** Eligiendo en el plano dónde se está parado (el plano recibe el clic) y el lugar elegido. */
+export const eligiendoPunto = ref(false);
+export const puntoElegido = ref<Punto | null>(null);
+let muestrasCalibracion: Muestra[] = [];
+let paresCalibracion = 0;
+let puntosCalibracion: Ancla[] = [];
+let midiendoPunto: { punto: Punto; hasta: number; obs: ObservacionCruda[] } | null = null;
+
+function publicarRegistro(activo = registroCalibracion.value.activo) {
+  registroCalibracion.value = {
+    activo,
+    muestras: muestrasCalibracion.length,
+    pares: paresCalibracion,
+    puntos: puntosCalibracion.map((a) => ({ punto: a.punto, n: a.obs.length })),
+    midiendo: midiendoPunto ? { punto: midiendoPunto.punto, restante_s: Math.max(0, Math.ceil((midiendoPunto.hasta - Date.now()) / 1000)) } : null,
+  };
+}
+
+/** Las cajas que los teléfonos mandaron hace poco, de todas las cámaras. */
+function crudasVigentes(t: number): ObservacionCruda[] {
+  const lista: ObservacionCruda[] = [];
+  for (const cuadro of cuadros.values()) if (t - cuadro.llegada <= VIGENCIA_MS) lista.push(...cuadro.crudas);
+  return lista;
+}
+
+function registrarCalibracion(t: number) {
+  const reg = registroCalibracion.value;
+  if (!reg.activo && !midiendoPunto) return;
+  const obs = crudasVigentes(t);
+  if (reg.activo && obs.length) {
+    const muestra: Muestra = { t, obs };
+    muestrasCalibracion.push(muestra);
+    paresCalibracion += armarPares([muestra]).length;
+    if (muestrasCalibracion.length > MAX_MUESTRAS_CALIBRACION) paresCalibracion -= armarPares([muestrasCalibracion.shift()!]).length;
+  }
+  if (midiendoPunto) {
+    // Un punto de referencia solo vale con una persona por cámara: si hay más, ese instante no cuenta.
+    const porCam = new Map<string, ObservacionCruda[]>();
+    for (const o of obs) porCam.set(o.cam, [...(porCam.get(o.cam) ?? []), o]);
+    for (const lista of porCam.values()) if (lista.length === 1) midiendoPunto.obs.push(lista[0]);
+    if (t >= midiendoPunto.hasta) {
+      if (midiendoPunto.obs.length) puntosCalibracion.push({ punto: midiendoPunto.punto, obs: midiendoPunto.obs });
+      midiendoPunto = null;
+      publicarRegistro();
+    }
+  }
+}
+
+/** Empieza a guardar lo que ven las cámaras para calibrarlas. */
+export function iniciarRegistroCalibracion() {
+  muestrasCalibracion = [];
+  paresCalibracion = 0;
+  puntosCalibracion = [];
+  midiendoPunto = null;
+  publicarRegistro(true);
+}
+export function pararRegistroCalibracion() {
+  midiendoPunto = null;
+  publicarRegistro(false);
+}
+export function descartarRegistroCalibracion() {
+  muestrasCalibracion = [];
+  paresCalibracion = 0;
+  puntosCalibracion = [];
+  midiendoPunto = null;
+  eligiendoPunto.value = false;
+  puntoElegido.value = null;
+  publicarRegistro(false);
+}
+/** Alguien está parado en `punto` del plano: se guardan unos segundos de lo que ven las cámaras como referencia de metros reales. */
+export function marcarPuntoReferencia(punto: Punto) {
+  midiendoPunto = { punto, hasta: Date.now() + SEGUNDOS_PUNTO * 1000, obs: [] };
+  eligiendoPunto.value = false;
+  puntoElegido.value = null;
+  publicarRegistro();
+}
+export function quitarPuntoReferencia(i: number) {
+  puntosCalibracion = puntosCalibracion.filter((_, k) => k !== i);
+  publicarRegistro();
+}
+
+/** Dónde está puesta cada cámara del plano (Configuración). */
+function basesCamaras(): Record<string, BaseCamara> {
+  const bases: Record<string, BaseCamara> = {};
+  for (const cid of CAMARAS_VIVO) {
+    const c = camaras.value?.find((x) => x.camera_id === cid);
+    if (c?.position) bases[cid] = { x: c.position[0], y: c.position[1], rumbo_deg: c.angle_deg ?? 0 };
+  }
+  return bases;
+}
+
+/** Calcula la corrección con lo registrado (sin aplicarla). `referencia`: cámara que no se mueve; null, ninguna. */
+export function calcularCalibracion(referencia: string | null): ResultadoCalibracion {
+  return calibrarCruzada({
+    bases: basesCamaras(),
+    pares: armarPares(muestrasCalibracion),
+    anclas: puntosCalibracion,
+    piso: config.value?.plano?.piso_m ?? null,
+    referencia,
+    previos: ajustesCamaras.value,
+  });
+}
+export function aplicarCalibracion(r: ResultadoCalibracion) {
+  ajustesCamaras.value = { ...r.ajustes };
+  guardarAjustes();
+  enlaces.clear();
+  suavizadas.clear();
+}
+export function quitarCalibracion() {
+  ajustesCamaras.value = {};
+  guardarAjustes();
+  enlaces.clear();
+  suavizadas.clear();
 }
 
 function dentroDe(p: Punto, poligono: Punto[]): boolean {
@@ -306,6 +475,20 @@ function calibracionDe(nombre: string, anchoFrame: number, altoFrame: number): C
   return calibraciones.value.find((c) => nombre.includes(c.nombre_contiene) && Math.abs(c.frame[0] / c.frame[1] - anchoFrame / altoFrame) < 0.03);
 }
 
+/**
+ * La homografía de un teléfono suelto vale para el teléfono que se calibró en su lugar. Si otro teléfono conectado también
+ * encaja con ella no se sabe cuál es, así que no se usa para ninguno (se ubican por alcance, y se calibran entre sí); y si la
+ * cámara ya tiene una calibración cruzada, esa manda.
+ */
+function homografiaPara(id: string, anchoFrame: number, altoFrame: number): CalibracionTelefono | undefined {
+  const cid = camaraDe(id);
+  if (cid && ajustesCamaras.value[cid]) return undefined;
+  const c = calibracionDe(telefonos.value.find((t) => t.id === id)?.nombre ?? "", anchoFrame, altoFrame);
+  if (!c) return undefined;
+  const otros = telefonos.value.filter((t) => t.id !== id && asignacion.has(t.id) && calibracionDe(t.nombre, anchoFrame, altoFrame) === c);
+  return otros.length ? undefined : c;
+}
+
 function proyectarCalibrado(c: CalibracionTelefono, x: number, y: number, anchoFrame: number, altoFrame: number): Punto | null {
   const [u, v] = [(x * c.frame[0]) / anchoFrame, (y * c.frame[1]) / altoFrame];
   const h = c.H;
@@ -324,13 +507,15 @@ function alDetecciones(id: string, ev: MessageEvent) {
   }
   const cid = camaraDe(id);
   const proyecta = cid ? proyectores.value.get(cid) : null;
-  const calibrada = calibracionDe(telefonos.value.find((t) => t.id === id)?.nombre ?? "", m.frame_w, m.frame_h);
+  const calibrada = homografiaPara(id, m.frame_w, m.frame_h);
   if (!cid || (!proyecta && !calibrada) || !m.frame_w || !m.frame_h) return;
   const observaciones: Observacion[] = [];
+  const crudas: ObservacionCruda[] = [];
   for (const p of m.people ?? []) {
     const [x1, y1, x2, y2] = p.box;
     // Con los pies cortados por el borde del cuadro la proyección no vale (igual que en el Build).
     if (y2 >= m.frame_h - 3) continue;
+    crudas.push({ cam: cid, id: p.global_id, caja: [x1, y1, x2, y2], w: m.frame_w, h: m.frame_h });
     const bruto = calibrada ? proyectarCalibrado(calibrada, (x1 + x2) / 2, y2, m.frame_w, m.frame_h) : proyecta?.([x1, y1, x2, y2], m.frame_w, m.frame_h);
     if (!bruto) continue;
     const punto = alPiso([bruto[0] + ajusteMapa.value.dx, bruto[1] + ajusteMapa.value.dy], config.value?.plano?.piso_m);
@@ -345,7 +530,7 @@ function alDetecciones(id: string, ev: MessageEvent) {
       cam: cid,
     });
   }
-  cuadros.set(id, { llegada: Date.now(), observaciones });
+  cuadros.set(id, { llegada: Date.now(), observaciones, crudas });
 }
 
 function sincronizarSockets() {
@@ -383,26 +568,141 @@ async function cargarConfig() {
   }
 }
 
+type Acum = {
+  x: number;
+  y: number;
+  peso: number;
+  id: number | null;
+  genero: string | null;
+  conf: number | null;
+  mejor: number;
+  camaras: Set<string>;
+  altoMax: number;
+  camMejor: string;
+  /** Lo que ubicó cada cámara de esta persona (promedio ponderado), para medir cuánto coinciden. */
+  porCam: Map<string, { x: number; y: number; peso: number }>;
+};
+
+/** De dos claves que son la misma persona, la que queda: la de menor ID global; sin ID, la de nombre menor (siempre la misma). */
+function principalDe(ka: string, a: Acum, kb: string, b: Acum): [string, string] {
+  if (a.id != null && (b.id == null || a.id < b.id)) return [ka, kb];
+  if (b.id != null && (a.id == null || b.id < a.id)) return [kb, ka];
+  return ka < kb ? [ka, kb] : [kb, ka];
+}
+
+function unirAcum(p: Acum, s: Acum) {
+  p.x += s.x;
+  p.y += s.y;
+  p.peso += s.peso;
+  if (s.genero && s.mejor > p.mejor) [p.genero, p.conf, p.mejor] = [s.genero, s.conf, s.mejor];
+  s.camaras.forEach((c) => p.camaras.add(c));
+  if (s.altoMax > p.altoMax) [p.altoMax, p.camMejor] = [s.altoMax, s.camMejor];
+  for (const [c, v] of s.porCam) {
+    const q = p.porCam.get(c);
+    if (q) [q.x, q.y, q.peso] = [q.x + v.x, q.y + v.y, q.peso + v.peso];
+    else p.porCam.set(c, { ...v });
+  }
+  if (p.id == null || (s.id != null && s.id < p.id)) p.id = s.id;
+}
+
+/**
+ * Cámaras distintas que ubican a alguien en el mismo lugar ven a la misma persona, aunque el modelo les haya dado IDs distintos
+ * (o ninguno): se unen en una. Dos personas de una misma cámara nunca se unen entre sí. Una vez unidas siguen unidas aunque se
+ * separen un poco (para que no parpadeen), hasta que una deja de verse.
+ */
+function fusionarCamaras(acum: Map<string, Acum>, t: number) {
+  const centro = (a: Acum): Punto => [a.x / a.peso, a.y / a.peso];
+  const separacion = (a: Acum, b: Acum) => {
+    const [pa, pb] = [centro(a), centro(b)];
+    return Math.hypot(pa[0] - pb[0], pa[1] - pb[1]);
+  };
+  const disjuntas = (a: Acum, b: Acum) => ![...a.camaras].some((c) => b.camaras.has(c));
+  const unir = (ka: string, kb: string) => {
+    const [kp, ks] = principalDe(ka, acum.get(ka)!, kb, acum.get(kb)!);
+    unirAcum(acum.get(kp)!, acum.get(ks)!);
+    acum.delete(ks);
+    enlaces.set(ks, { principal: kp, visto: t });
+  };
+  for (const [sec, e] of [...enlaces]) {
+    if (t - e.visto > VIGENCIA_ENLACE_MS) {
+      enlaces.delete(sec);
+      continue;
+    }
+    const [s, p] = [acum.get(sec), acum.get(e.principal)];
+    if (!s || !p) continue;
+    if (disjuntas(s, p) && separacion(s, p) <= RADIO_FUSION_M * HISTERESIS_FUSION) unir(sec, e.principal);
+    else enlaces.delete(sec);
+  }
+  const claves = [...acum.keys()];
+  const candidatos: { d: number; a: string; b: string }[] = [];
+  for (let i = 0; i < claves.length; i++) {
+    for (let j = i + 1; j < claves.length; j++) {
+      const [a, b] = [acum.get(claves[i])!, acum.get(claves[j])!];
+      if (!disjuntas(a, b)) continue;
+      const d = separacion(a, b);
+      if (d <= RADIO_FUSION_M) candidatos.push({ d, a: claves[i], b: claves[j] });
+    }
+  }
+  candidatos.sort((x, y) => x.d - y.d);
+  for (const c of candidatos) {
+    if (acum.has(c.a) && acum.has(c.b) && disjuntas(acum.get(c.a)!, acum.get(c.b)!)) unir(c.a, c.b);
+  }
+}
+
+let ultimoDesacuerdo = 0;
+/** Mide cuánto difieren las cámaras entre sí sobre las personas que ven dos a la vez (promedio suavizado). */
+function medirDesacuerdo(acum: Map<string, Acum>, t: number) {
+  let suma = 0;
+  let n = 0;
+  for (const a of acum.values()) {
+    if (a.porCam.size < 2) continue;
+    const c = [...a.porCam.values()].map((v): Punto => [v.x / v.peso, v.y / v.peso]);
+    let mayor = 0;
+    for (let i = 0; i < c.length; i++) for (let j = i + 1; j < c.length; j++) mayor = Math.max(mayor, Math.hypot(c[i][0] - c[j][0], c[i][1] - c[j][1]));
+    suma += mayor;
+    n++;
+  }
+  if (n) {
+    desacuerdoSuave = desacuerdoSuave == null ? suma / n : desacuerdoSuave * 0.8 + (suma / n) * 0.2;
+    ultimoDesacuerdo = t;
+  } else if (desacuerdoSuave != null && t - ultimoDesacuerdo > 3000) desacuerdoSuave = null;
+  const nuevo = {
+    desacuerdo_m: desacuerdoSuave == null ? null : Math.round(desacuerdoSuave * 100) / 100,
+    personasEnDos: n,
+    fusionadas: [...enlaces.values()].filter((e) => e.visto === t).length,
+  };
+  const previo = diagnosticoVivo.value;
+  if (nuevo.desacuerdo_m !== previo.desacuerdo_m || nuevo.personasEnDos !== previo.personasEnDos || nuevo.fusionadas !== previo.fusionadas) diagnosticoVivo.value = nuevo;
+}
+
 /** Une lo que ven los teléfonos: una persona vista por dos cámaras se promedia (pesa más la que la ve más grande). */
 function componer() {
   const t = Date.now();
   ahora.value = t;
-  type Acum = { x: number; y: number; peso: number; id: number | null; genero: string | null; conf: number | null; mejor: number; camaras: Set<string>; altoMax: number; camMejor: string };
   const acumulado = new Map<string, Acum>();
   for (const [tel, cuadro] of cuadros) {
     if (t - cuadro.llegada > VIGENCIA_MS) continue;
     const cid = camaraDe(tel);
     for (const o of cuadro.observaciones) {
-      const a = acumulado.get(o.clave) ?? { x: 0, y: 0, peso: 0, id: o.id, genero: null, conf: null, mejor: 0, camaras: new Set<string>(), altoMax: 0, camMejor: "" };
+      const a = acumulado.get(o.clave) ?? { x: 0, y: 0, peso: 0, id: o.id, genero: null, conf: null, mejor: 0, camaras: new Set<string>(), altoMax: 0, camMejor: "", porCam: new Map() };
       a.x += o.x * o.alto;
       a.y += o.y * o.alto;
       a.peso += o.alto;
+      if (cid) {
+        const c = a.porCam.get(cid) ?? { x: 0, y: 0, peso: 0 };
+        [c.x, c.y, c.peso] = [c.x + o.x * o.alto, c.y + o.y * o.alto, c.peso + o.alto];
+        a.porCam.set(cid, c);
+      }
       if (o.genero && o.alto >= a.mejor) [a.genero, a.conf, a.mejor] = [o.genero, o.conf, o.alto];
       if (cid) a.camaras.add(cid);
       if (cid && o.alto >= a.altoMax) [a.altoMax, a.camMejor] = [o.alto, cid];
       acumulado.set(o.clave, a);
     }
   }
+  if (fusionPorPosicion.value) fusionarCamaras(acumulado, t);
+  else enlaces.clear();
+  medirDesacuerdo(acumulado, t);
+  registrarCalibracion(t);
   const personas: PersonaPlano[] = [];
   const lista: PersonaViva[] = [];
   const porZona = new Map<number, number>();
@@ -477,6 +777,7 @@ function componer() {
   lista.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9));
   vivas.value = { personas, recorridos, lista };
   // El plano y Insights repintan todo lo acumulado: una vez por segundo basta.
+  if (registroCalibracion.value.activo || registroCalibracion.value.midiendo) publicarRegistro();
   if (++ticks % 4 === 0) {
     calor.value = [...celdas.values()].map((c) => [c.cx, c.cy, c.s]);
     historias.value = [...historia.values()].map((h) => ({ ...h, camaras: new Set(h.camaras), zonas: new Map(h.zonas), puntos: [...h.puntos], secuencia: [...h.secuencia] }));
@@ -495,6 +796,8 @@ export function reiniciarVivo() {
   inicio.value = Date.now();
   sesionId = uuid();
   trazasGuardadas = 0;
+  enlaces.clear();
+  desacuerdoSuave = null;
 }
 
 /** Métricas de Insights sobre lo acumulado en vivo (el mismo cálculo que usa una captura guardada). */
@@ -523,6 +826,7 @@ const ranuras = computed<RanuraVivo[]>(() => {
       activa: vigente,
       personas: vigente && cuadro ? cuadro.observaciones.length : 0,
       sinCalibracion: !proyectores.value.get(camara),
+      calibrada: !!ajustesCamaras.value[camara],
     };
   });
 });
@@ -656,6 +960,8 @@ function detener() {
   sincronizarSockets();
   cuadros.clear();
   reiniciarVivo();
+  descartarRegistroCalibracion();
+  diagnosticoVivo.value = { desacuerdo_m: null, personasEnDos: 0, fusionadas: 0 };
   vivas.value = { personas: [], recorridos: [], lista: [] };
 }
 
@@ -667,6 +973,7 @@ export function usarSitioVivo(slug: string) {
   grabando.value = false;
   sitio.value = slug;
   config.value = undefined;
+  ajustesCamaras.value = leerAjustes(slug);
   calibracionDelSitio = "";
   if (corriendo) void cargarCalibracion();
   if (corriendo) {
@@ -701,4 +1008,4 @@ socketPersistente(`${RELEVO_VIVO}/telefonos/detections/watch`, false, (ev) => {
   }
 });
 
-export const motorVivo = { mapa, config, zonas, ranuras, sobrantes, vivas, calor, historias, resumen, servicioActivo, error, inicio, ahora };
+export const motorVivo = { mapa, config, zonas, ranuras, sobrantes, vivas, calor, historias, resumen, servicioActivo, error, inicio, ahora, diagnostico: diagnosticoVivo };
