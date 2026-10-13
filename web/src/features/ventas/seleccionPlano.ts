@@ -37,6 +37,20 @@ export function centroDe(poligono: Punto[]): Punto {
   return [cx / (3 * area), cy / (3 * area)];
 }
 
+/** Celdas de `lado` metros (su esquina inferior izquierda) cuyo centro cae dentro del polígono: para pintar una zona con el mapa de calor. */
+export function celdasDeZona(poligono: Punto[], lado: number): Punto[] {
+  if (poligono.length < 3 || lado <= 0) return [];
+  const xs = poligono.map((p) => p[0]);
+  const ys = poligono.map((p) => p[1]);
+  const celdas: Punto[] = [];
+  for (let x = Math.floor(Math.min(...xs) / lado) * lado; x < Math.max(...xs); x += lado) {
+    for (let y = Math.floor(Math.min(...ys) / lado) * lado; y < Math.max(...ys); y += lado) {
+      if (dentroDe([x + lado / 2, y + lado / 2], poligono)) celdas.push([x, y]);
+    }
+  }
+  return celdas;
+}
+
 /** La zona que dibuja a un local: su INTERIOR, o su FRONTAGE si no tiene. */
 export function zonaDeLocal(zonas: Zona[], localId: number): Zona | undefined {
   return zonas.find((z) => z.local_id === localId && z.zone_type === "INTERIOR") ?? zonas.find((z) => z.local_id === localId);

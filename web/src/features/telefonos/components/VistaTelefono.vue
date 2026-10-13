@@ -15,7 +15,7 @@ type Persona = {
 };
 type Mensaje = { ts: number; frame_w: number; frame_h: number; people: Persona[] };
 
-const props = defineProps<{ id: string; nombre: string; estado?: EstadoTelefono }>();
+const props = defineProps<{ id: string; nombre: string; estado?: EstadoTelefono; sinQuitar?: boolean; compacta?: boolean }>();
 const emit = defineEmits<{ quitar: [] }>();
 
 const imagen = ref("");
@@ -94,12 +94,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="panel vista">
+  <section class="panel vista" :class="{ compacta }">
     <div class="panel-heading">
       <h2>{{ nombre }}</h2>
       <span class="heading-meta">
         <span class="pill" :class="enVivo ? 'good' : 'warn'">{{ enVivo ? `${ultimo?.people.length ?? 0} en cuadro` : "sin video" }}</span>
-        <button class="danger-button icon-button" type="button" :aria-label="`Quitar ${nombre}`" @click="emit('quitar')">✕</button>
+        <button v-if="!sinQuitar" class="danger-button icon-button" type="button" :aria-label="`Quitar ${nombre}`" @click="emit('quitar')">✕</button>
       </span>
     </div>
     <div class="lienzo">
@@ -139,6 +139,17 @@ onUnmounted(() => {
   color: #a9c0dc;
   font-size: 12px;
   text-align: center;
+}
+.vista.compacta .lienzo {
+  margin: 6px;
+  min-height: 130px;
+}
+.vista.compacta .espera {
+  min-height: 130px;
+  font-size: 11px;
+}
+.vista.compacta .panel-heading h2 {
+  font-size: 12.5px;
 }
 .stats {
   display: grid;

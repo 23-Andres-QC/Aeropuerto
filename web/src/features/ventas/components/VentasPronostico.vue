@@ -5,6 +5,8 @@ import { apiVentas, type Consulta, type Pronostico } from "../api";
 import { diaCorto, dinero, dineroCorto, entero, fechaHora, porcentaje } from "../formato";
 import CifraAnimada from "./CifraAnimada.vue";
 import GraficoSerie from "./GraficoSerie.vue";
+import SimuladorYSi from "./SimuladorYSi.vue";
+import type { Base } from "../simulador";
 
 const props = defineProps<{ sitio: string; consulta: Consulta; locales: Local[] }>();
 
@@ -68,6 +70,12 @@ const resumen = computed(() => {
 });
 
 const calidad = computed(() => datos.value?.quality.revenue);
+/** Lo esperado, listo para jugar con «¿Y si…?»: hace falta saber cuánta gente entra y cuánto compra. */
+const base = computed<Base | null>(() => {
+  const r = resumen.value;
+  if (!r || !hayVisitas.value || r.conversion == null || r.ticket == null || r.visitantes <= 0 || r.ingresos.value <= 0) return null;
+  return { ingresos: r.ingresos.value, bajo: r.ingresos.low, alto: r.ingresos.high, visitantes: r.visitantes, conversion: r.conversion, ticket: r.ticket };
+});
 const metodo = computed(() => {
   const q = calidad.value;
   if (!q) return "";
@@ -154,6 +162,8 @@ const errorTipico = (w: number | null | undefined) => (w == null ? "—" : porce
       <GraficoSerie nombre="Ingresos" :historial="historialIngresos" :pronostico="pronIngresos" :formato="dineroCorto" :paso="paso" :cargando="cargando" />
       <p v-if="metodo" class="chart-caption">{{ metodo }}. La banda es el rango donde caería el 80 % de las veces.</p>
     </section>
+
+    <SimuladorYSi v-if="base" :base="base" :horizonte="horizonte" :unidad="unidad" />
 
     <section v-if="hayVisitas" class="panel" style="margin-bottom: 14px">
       <div class="panel-heading">

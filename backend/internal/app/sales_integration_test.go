@@ -189,6 +189,26 @@ func TestSalesLifecycle(t *testing.T) {
 	if w = do("GET", site+"/ventas/pronostico?paso=semana", nil); w.Code != 400 {
 		t.Fatalf("unknown step accepted: %d", w.Code)
 	}
+	// The week grid holds the same sales as the summary, split by weekday and hour.
+	var pat domain.SalesPatterns
+	w = do("GET", site+"/ventas/patrones?datos=simulado&dias=0", nil)
+	json.Unmarshal(w.Body.Bytes(), &pat)
+	var sim domain.SalesSummary
+	json.Unmarshal(do("GET", site+"/ventas/resumen?datos=simulado&dias=0", nil).Body.Bytes(), &sim)
+	tickets, visitors, days := 0, 0, 0
+	for wd := range pat.Cells {
+		days += pat.WeekdayDays[wd]
+		for hr := range pat.Cells[wd] {
+			tickets += pat.Cells[wd][hr].Tickets
+			visitors += pat.Cells[wd][hr].Visitors
+		}
+	}
+	if w.Code != 200 || len(pat.Locals) != 2 || tickets != sim.Total.Tickets || visitors != sim.Total.Visitors || tickets < 100 || days < 30 {
+		t.Fatalf("patterns: %d tickets %d (summary %d) visitors %d (summary %d) days %d: %.200s", w.Code, tickets, sim.Total.Tickets, visitors, sim.Total.Visitors, days, w.Body)
+	}
+	if w = do("GET", site+"/ventas/patrones?locales=abc", nil); w.Code != 400 {
+		t.Fatalf("patterns with a bad locales list: %d", w.Code)
+	}
 	var page domain.TicketPage
 	w = do("GET", site+"/ventas/tickets?datos=real&limite=2", nil)
 	json.Unmarshal(w.Body.Bytes(), &page)

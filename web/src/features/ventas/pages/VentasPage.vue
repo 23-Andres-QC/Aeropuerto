@@ -6,6 +6,7 @@ import { useSitios } from "../../sitios/useSitios";
 import { apiVentas, type Consulta, type ResumenVentas } from "../api";
 import CifraAnimada from "../components/CifraAnimada.vue";
 import SeleccionPlano from "../components/SeleccionPlano.vue";
+import VentasCuando from "../components/VentasCuando.vue";
 import VentasDatos from "../components/VentasDatos.vue";
 import VentasEmparejamiento from "../components/VentasEmparejamiento.vue";
 import VentasPronostico from "../components/VentasPronostico.vue";
@@ -20,18 +21,40 @@ const { slug, actual } = useSitios();
 const route = useRoute();
 const router = useRouter();
 
-type Pestana = "resumen" | "pronostico" | "emparejamiento" | "tickets" | "datos";
+type Pestana = "resumen" | "pronostico" | "cuando" | "emparejamiento" | "tickets" | "datos";
 const PESTANAS: { id: Pestana; nombre: string }[] = [
   { id: "resumen", nombre: "Resumen" },
   { id: "pronostico", nombre: "Pronóstico" },
+  { id: "cuando", nombre: "Cuándo se vende" },
   { id: "emparejamiento", nombre: "Emparejamiento" },
   { id: "tickets", nombre: "Tickets" },
   { id: "datos", nombre: "Datos" },
 ];
 const pestana = ref<Pestana>(PESTANAS.some((p) => p.id === route.query.vista) ? (route.query.vista as Pestana) : "resumen");
 watch(pestana, (v) => router.replace({ query: { ...route.query, vista: v } }));
+// La paleta de comandos (Ctrl+K) manda a otra pestaña con la página ya abierta.
+watch(
+  () => route.query.vista,
+  (v) => {
+    if (typeof v === "string" && v !== pestana.value && PESTANAS.some((p) => p.id === v)) pestana.value = v as Pestana;
+  },
+);
 
 const consulta = reactive<Consulta>({ dias: 28, datos: "todos", locales: [] });
+/**
+ * Lo que pide la dirección o la paleta (?locales=2,3 · ?dias=7): se aplica una vez y se saca de la dirección, para que pedir lo mismo
+ * otra vez, después de cambiar la selección a mano, vuelva a surtir efecto. «locales=0» es todos.
+ */
+function aplicarPedido() {
+  const { locales: pedidos, dias: periodo, ...resto } = route.query;
+  if (pedidos === undefined && periodo === undefined) return;
+  if (typeof pedidos === "string") consulta.locales = pedidos.split(",").map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  const d = typeof periodo === "string" ? Number(periodo) : NaN;
+  if (Number.isInteger(d) && d >= 0 && d <= 3650) consulta.dias = d;
+  void router.replace({ query: resto });
+}
+aplicarPedido();
+watch(() => [route.query.locales, route.query.dias], aplicarPedido);
 const config = ref<Config | null>(null);
 const locales = computed<Local[]>(() => config.value?.locales ?? []);
 /** El selector sobre el plano, visible u oculto (se recuerda en el navegador). */
@@ -183,9 +206,10 @@ const soloSimulado = computed(() => resumen.value && resumen.value.counts.simula
     </section>
 
     <template v-else>
-      <VentasResumen v-if="pestana === 'resumen' && resumen" :resumen="resumen" :cargando="cargando" />
+      <VentasResumen v-if="pestana === 'resumen' && resumen" :resumen="resumen" :cargando="cargando" :sitio="slug" :consulta="consulta" @ir="pestana = $event" />
       <VentasPronostico v-else-if="pestana === 'pronostico'" :key="version" :sitio="slug" :consulta="consulta" :locales="locales" />
-      <VentasEmparejamiento v-else-if="pestana === 'emparejamiento'" :sitio="slug" :version="version" @cambio="huboCambios" />
+      <VentasCuando v-else-if="pestana === 'cuando'" :key="version" :sitio="slug" :consulta="consulta" :config="config" />
+      <VentasEmparejamiento v-else-if="pestana === 'emparejamiento'" :sitio="slug" :version="version" :config="config" @cambio="huboCambios" />
       <VentasTickets v-else-if="pestana === 'tickets'" :sitio="slug" :consulta="consulta" :locales="locales" :version="version" @cambio="huboCambios" />
       <VentasDatos v-else-if="pestana === 'datos'" :sitio="slug" :resumen="resumen" :locales="locales.length" @cambio="huboCambios" />
     </template>

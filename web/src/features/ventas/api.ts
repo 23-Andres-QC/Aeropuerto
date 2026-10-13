@@ -1,4 +1,5 @@
 import { json, request } from "../../core/http";
+import type { Patrones } from "./patrones";
 
 /** Lo que se lee: ventas reales (de la caja del local), simuladas (demo) o ambas. */
 export type Datos = "todos" | "real" | "simulado";
@@ -125,6 +126,9 @@ export const apiVentas = {
     request<ResumenVentas>(`${base(sitio)}/ventas/resumen${params({ dias: c.dias, datos: c.datos, locales: c.locales.join(",") })}`),
   pronostico: (sitio: string, c: Pick<Consulta, "datos" | "locales">, paso: "dia" | "hora", horizonte: number) =>
     request<Pronostico>(`${base(sitio)}/ventas/pronostico${params({ paso, horizonte, datos: c.datos, locales: c.locales.join(",") })}`),
+  /** Cuándo se vende: la semana en días × horas (hora de Lima), por local y en total. */
+  patrones: (sitio: string, c: Consulta) =>
+    request<Patrones>(`${base(sitio)}/ventas/patrones${params({ dias: c.dias, datos: c.datos, locales: c.locales.join(",") })}`),
   tickets: (sitio: string, c: Consulta, limite: number, desde: number) =>
     request<{ total: number; tickets: Ticket[] }>(
       `${base(sitio)}/ventas/tickets${params({ dias: c.dias, datos: c.datos, locales: c.locales.join(","), limite, desde })}`,

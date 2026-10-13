@@ -19,6 +19,8 @@ const props = withDefaults(
     calor?: [number, number, number][];
     /** Lado de cada celda de calor, en metros. */
     celdaCalor?: number;
+    /** Valor al que corresponde el color más intenso; sin él, el de la celda más alta (la escala cambia con los datos). */
+    calorMax?: number;
     flechas?: FlechaPlano[];
     borrador?: Punto[];
     dibujando?: boolean;
@@ -44,6 +46,7 @@ const props = withDefaults(
     recorridos: () => [],
     calor: () => [],
     celdaCalor: 1,
+    calorMax: undefined,
     flechas: () => [],
     borrador: () => [],
     dibujando: false,
@@ -526,7 +529,7 @@ const lineas = computed(() => {
   return { verticales, horizontales };
 });
 
-const maxCalor = computed(() => props.calor.reduce((m, c) => Math.max(m, c[2]), 0) || 1);
+const maxCalor = computed(() => props.calorMax || props.calor.reduce((m, c) => Math.max(m, c[2]), 0) || 1);
 const celdas = computed(() =>
   props.calor.map(([cx, cy, n]) => {
     const f = n / maxCalor.value;
@@ -534,7 +537,7 @@ const celdas = computed(() =>
       x: px(cx),
       y: py(cy + props.celdaCalor),
       lado: k.value * props.celdaCalor + 0.5,
-      color: `rgba(255, ${Math.round(200 - 170 * f)}, 40, ${(0.12 + 0.76 * f).toFixed(2)})`,
+      color: `rgba(255, ${Math.round(200 - 170 * Math.min(1, f))}, 40, ${(0.12 + 0.76 * Math.min(1, f)).toFixed(2)})`,
       n,
     };
   }),

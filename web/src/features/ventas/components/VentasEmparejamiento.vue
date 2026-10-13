@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { colorPersona } from "../../../shared/format";
-import { GENEROS, api, type Sesion } from "../../sitios/api";
-import { apiVentas, type VentasSesion } from "../api";
+import { GENEROS, api, type Config, type Replay, type Sesion } from "../../sitios/api";
+import { movimientoReducido } from "../animar";
+import { apiVentas, type Ticket, type VentasSesion } from "../api";
 import { desfase, dinero, fechaHoraLarga, horaLarga, porcentaje } from "../formato";
+import RecorridoCompra from "./RecorridoCompra.vue";
 
-const props = defineProps<{ sitio: string; version: number }>();
+const props = defineProps<{ sitio: string; version: number; config?: Config | null }>();
 const emit = defineEmits<{ cambio: [] }>();
 
 const route = useRoute();
@@ -51,6 +53,7 @@ async function cargar() {
 }
 
 async function emparejar() {
+  elegido.value = null;
   emparejando.value = true;
   error.value = "";
   try {
@@ -74,6 +77,30 @@ watch(() => props.version, cargar);
 const r = computed(() => datos.value?.summary);
 const compraron = computed(() => datos.value?.matched ?? []);
 const sinPersona = computed(() => datos.value?.unmatched ?? []);
+// Ver por dónde caminó la persona de una pareja: el recorrido de la sesión se baja una vez y se reutiliza.
+const elegido = ref<Ticket | null>(null);
+const replay = ref<Replay | null>(null);
+const cargandoReplay = ref(false);
+const panelRecorrido = ref<HTMLElement>();
+async function verRecorrido(t: Ticket) {
+  elegido.value = t;
+  await nextTick();
+  panelRecorrido.value?.scrollIntoView({ behavior: movimientoReducido() ? "auto" : "smooth", block: "nearest" });
+  if (replay.value?.session.session_id === sesion.value) return;
+  cargandoReplay.value = true;
+  try {
+    replay.value = await api.replay(props.sitio, sesion.value);
+  } catch (e) {
+    replay.value = null;
+    error.value = (e as Error).message;
+  } finally {
+    cargandoReplay.value = false;
+  }
+}
+watch(sesion, () => {
+  elegido.value = null;
+  replay.value = null;
+});
 const lineas = (t: { items: { product: string; quantity: number; unit_price: number }[] }) => t.items;
 </script>
 
@@ -139,6 +166,10 @@ const lineas = (t: { items: { product: string; quantity: number; unit_price: num
       </article>
     </section>
 
+    <div ref="panelRecorrido">
+      <RecorridoCompra v-if="elegido" :config="config ?? null" :replay="replay" :cargando="cargandoReplay" :ticket="elegido" :inicio-sesion="datos.session.recording_start" @cerrar="elegido = null" />
+    </div>
+
     <section class="panel" style="margin-bottom: 14px">
       <div class="panel-heading">
         <h2>Quién compró qué</h2>
@@ -158,10 +189,11 @@ const lineas = (t: { items: { product: string; quantity: number; unit_price: num
               <th>Qué compró</th>
               <th class="num">Total</th>
               <th class="num">Confianza</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="t in compraron" :key="t.ticket_id">
+            <tr v-for="t in compraron" :key="t.ticket_id" :class="{ elegida: elegido?.ticket_id === t.ticket_id }">
               <td>
                 <span class="persona"><i :style="{ background: colorPersona(t.match!.person) }"></i>#{{ t.match!.person }}</span>
                 <small>{{ GENEROS[t.match!.gender] ?? t.match!.gender }}</small>
@@ -189,6 +221,9 @@ const lineas = (t: { items: { product: string; quantity: number; unit_price: num
                   <div class="barra"><i :style="{ width: t.match!.confidence * 100 + '%' }"></i></div>
                   <small v-if="t.match!.confidence < 0.4" class="dudosa">poco segura</small>
                 </div>
+              </td>
+              <td class="num">
+                <button type="button" class="ver-recorrido" :aria-label="`Ver el recorrido de la persona #${t.match!.person} hasta su compra`" @click="verRecorrido(t)">▶ Recorrido</button>
               </td>
             </tr>
           </tbody>
