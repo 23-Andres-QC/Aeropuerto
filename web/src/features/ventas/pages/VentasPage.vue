@@ -188,7 +188,7 @@ const soloSimulado = computed(() => resumen.value && resumen.value.counts.simula
       <VentasResumen v-if="pestana === 'resumen' && resumen" :resumen="resumen" :cargando="cargando" :sitio="slug" :consulta="consulta" @ir="pestana = $event" />
       <VentasPronostico v-else-if="pestana === 'pronostico'" :key="version" :sitio="slug" :consulta="consulta" :locales="locales" />
       <VentasCuando v-else-if="pestana === 'cuando'" :key="version" :sitio="slug" :consulta="consulta" :config="config" />
-      <VentasEmparejamiento v-else-if="pestana === 'emparejamiento'" :sitio="slug" :version="version" @cambio="huboCambios" />
+      <VentasEmparejamiento v-else-if="pestana === 'emparejamiento'" :sitio="slug" :version="version" :config="config" @cambio="huboCambios" />
       <VentasTickets v-else-if="pestana === 'tickets'" :sitio="slug" :consulta="consulta" :locales="locales" :version="version" @cambio="huboCambios" />
       <VentasDatos v-else-if="pestana === 'datos'" :sitio="slug" :resumen="resumen" :locales="locales.length" @cambio="huboCambios" />
     </template>
