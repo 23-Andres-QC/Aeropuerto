@@ -21,6 +21,13 @@ const DET_VIGENTE_MS = 2500;
 // Las cajas llegan unos cientos de ms después de su cuadro: sobre el video en vivo cada una sigue moviéndose con la
 // velocidad que traía entre sus dos últimos cuadros procesados, hasta este tiempo después del último (ver cajasAl).
 const PREDICCION_MAX_MS = 1500;
+// Mientras el modelo procesa, la pantalla muestra los cuadros enviados atrasados lo que tardan en volver sus cajas
+// (percentil 90, más un margen, hasta RETRASO_MAX_MS): cada uno va con las suyas o interpoladas entre los dos
+// procesados que lo rodean, así las cajas van sincronizadas y desaparecen cuando la persona se va. Sin modelo, en vivo.
+const RETRASO_MAX_MS = 2000;
+const MARGEN_RETRASO_MS = 60;
+const HORIZONTE_SINCRONIZADO_MS = 150;
+const BUFER_MAX = 45; // cuadros guardados para mostrarlos atrasados (2 s a 15 fps, con holgura)
 
 const $ = (id) => document.getElementById(id);
 
@@ -53,9 +60,13 @@ const app = {
   horas: new Map(),
   instantaneas: [],
   cajasMostradas: null,
+  retrasos: [], // ms entre tomar un cuadro y recibir sus cajas (los últimos)
+  bufer: [], // cuadros enviados { t: hora de captura, imagen }, para mostrarlos atrasados
+  mostrado: null, // el cuadro del búfer que está en pantalla
 };
 
 const video = $('video');
+const diferido = $('diferido');
 const capa = $('cajas');
 const lienzo = document.createElement('canvas');
 const ctx = lienzo.getContext('2d');
@@ -279,6 +290,13 @@ function bucleEnvio() {
   }
   const captura = performance.now(); // el cuadro es de este instante; comprimirlo tarda unas decenas de ms más
   ctx.drawImage(video, 0, 0, w, h);
+  // Copia del cuadro tal como se envía, para mostrarlo con sus cajas cuando vuelvan (createImageBitmap la toma ya).
+  createImageBitmap(lienzo).then((imagen) => {
+    app.bufer.push({ t: captura, imagen });
+    for (const viejo of app.bufer.splice(0, app.bufer.length - BUFER_MAX)) {
+      if (viejo !== app.mostrado) viejo.imagen.close();
+    }
+  }).catch(() => {});
   lienzo.toBlob((blob) => {
     app.codificando = false;
     if (!blob || ws.readyState !== WebSocket.OPEN) return;
@@ -333,6 +351,8 @@ function alDetecciones(det) {
     return;
   }
   app.det = null;
+  app.retrasos.push(ahora - hora);
+  if (app.retrasos.length > 30) app.retrasos.shift();
   app.instantaneas.push({ ...det, t: hora });
   app.instantaneas.sort((a, b) => a.t - b.t);
   while (app.instantaneas.length > 2 && app.instantaneas[0].t < ahora - 5000) app.instantaneas.shift();
@@ -410,11 +430,45 @@ function velocidadDe(instantaneas, localId) {
 
 const conCuadros = () => app.instantaneas.length > 0 && performance.now() - app.horaDet < DET_VIGENTE_MS;
 
-// Por cuadro de pantalla, con cajas numeradas: las cajas llevadas hasta este instante sobre el video en vivo.
+// Cuánto atrasar la pantalla para que cada cuadro vaya con sus cajas; 0 (en vivo) si el modelo no está procesando.
+function retrasoActual() {
+  if (!conCuadros() || !app.retrasos.length) return 0;
+  const orden = [...app.retrasos].sort((a, b) => a - b);
+  return Math.min(RETRASO_MAX_MS, orden[Math.floor(orden.length * 0.9)] + MARGEN_RETRASO_MS);
+}
+
+// Por cuadro de pantalla, con cajas numeradas: con el modelo procesando, el cuadro enviado al que ya le toca (con su
+// atraso) y sus cajas; si no, las cajas llevadas hasta este instante sobre el video en vivo.
 function animar() {
   requestAnimationFrame(animar);
-  if (!app.activa || !app.instantaneas.length) return;
-  app.cajasMostradas = conCuadros() ? cajasAl(app.instantaneas, performance.now(), PREDICCION_MAX_MS) : null;
+  if (!app.activa) return;
+  const ahora = performance.now();
+  const retraso = app.instantaneas.length ? retrasoActual() : 0;
+  if (!retraso) {
+    if (!diferido.hidden) diferido.hidden = true;
+    if (!app.instantaneas.length) return;
+    app.cajasMostradas = conCuadros() ? cajasAl(app.instantaneas, ahora, PREDICCION_MAX_MS) : null;
+    dibujarCajas();
+    return;
+  }
+  const limite = ahora - retraso;
+  let k = -1;
+  while (k + 1 < app.bufer.length && app.bufer[k + 1].t <= limite) k++;
+  if (k < 0) return; // todavía no le toca a ningún cuadro guardado
+  const cuadro = app.bufer[k];
+  for (const viejo of app.bufer.splice(0, k)) {
+    if (viejo !== app.mostrado) viejo.imagen.close();
+  }
+  if (cuadro === app.mostrado) return;
+  if (app.mostrado && !app.bufer.includes(app.mostrado)) app.mostrado.imagen.close();
+  app.mostrado = cuadro;
+  if (diferido.width !== cuadro.imagen.width || diferido.height !== cuadro.imagen.height) {
+    diferido.width = cuadro.imagen.width;
+    diferido.height = cuadro.imagen.height;
+  }
+  diferido.getContext('2d').drawImage(cuadro.imagen, 0, 0);
+  diferido.hidden = false;
+  app.cajasMostradas = cajasAl(app.instantaneas, cuadro.t, HORIZONTE_SINCRONIZADO_MS);
   dibujarCajas();
 }
 
