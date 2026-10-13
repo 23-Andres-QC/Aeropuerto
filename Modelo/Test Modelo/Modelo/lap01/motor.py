@@ -274,6 +274,8 @@ class ResultadoMulticamara:
     tracklet_uuid: dict
     global_uuid: dict
     prototipos: dict
+    # Si quien corrió el Build declaró INICIO_GRABACION; la publicación en la base lo exige.
+    inicio_declarado: bool = False
 
     def observaciones(self):
         """Salida de la Parte I + II por detección (incluye bbox para auditoría y videos)."""
@@ -490,6 +492,7 @@ def procesar_videos(motor, asociador, videos, *, max_frames=None, tiempo_real=Tr
         raise ValueError("max_frames debe ser None o un entero positivo.")
     if not math.isfinite(preview_fps) or preview_fps <= 0 or cpu_threads < 1 or preview_width < 1:
         raise ValueError("preview_fps, preview_width y cpu_threads deben ser positivos.")
+    declarado = inicio_grabacion is not None
     metadata, starts, offsets, targets, inicio_grabacion = _plan_de_lectura(
         videos, asociador, max_frames, start_frames, inicio_grabacion)
     fps = {cid: row["fps"] for cid, row in metadata.items()}
@@ -581,11 +584,11 @@ def procesar_videos(motor, asociador, videos, *, max_frames=None, tiempo_real=Tr
     return armar_resultado(motor, asociador, filas, metadata=metadata, inicios=starts, offsets=offsets, counts=counts,
                            fps=fps, status=status, session_uuid=session_uuid, session_id=session_id,
                            inicio_grabacion=inicio_grabacion, first_timestamp=first_timestamp,
-                           last_timestamp=last_timestamp, elapsed=elapsed, busy_s=busy_s)
+                           last_timestamp=last_timestamp, elapsed=elapsed, busy_s=busy_s, inicio_declarado=declarado)
 
 
 def armar_resultado(motor, asociador, filas, *, metadata, inicios, offsets, counts, fps, status, session_uuid, session_id,
-                    inicio_grabacion, first_timestamp, last_timestamp, elapsed, busy_s):
+                    inicio_grabacion, first_timestamp, last_timestamp, elapsed, busy_s, inicio_declarado=False):
     """Reconcilia las filas de una sesión y arma el ResultadoMulticamara (lo usan procesar_videos y el test en vivo)."""
     numeracion = asociador.numeracion_final()
     for fila in filas:
@@ -621,4 +624,4 @@ def armar_resultado(motor, asociador, filas, *, metadata, inicios, offsets, coun
         enlaces=list(asociador.enlaces),
         tracklet_uuid={uid: t.tracklet_uuid for uid, t in asociador.tracklets.items()},
         global_uuid={publico: asociador.global_uuid(publico) for publico in numeracion.values()},
-        prototipos=asociador.prototipos())
+        prototipos=asociador.prototipos(), inicio_declarado=inicio_declarado)
