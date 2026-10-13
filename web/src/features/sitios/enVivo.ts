@@ -202,6 +202,89 @@ const camaraPreferida = new Map<string, string>();
 const CAMBIO_DE_CAMARA = 1.3;
 /** Cada cuánto se guarda sola la captura que se está grabando. */
 const AUTOGUARDADO_MS = 30_000;
+
+// --- Unión por posición ---------------------------------------------------------------
+// Red de seguridad para cuando el Re-ID del modelo le da IDs distintos a la misma persona en cámaras distintas: dos IDs que
+// dos cámaras distintas ubican muy cerca se muestran como un solo punto. Nunca se unen dos IDs que ve una misma cámara
+// (una cámara no le da dos IDs a una persona en el mismo cuadro), y la unión se mantiene un poco más allá del radio
+// con que nació para que no parpadee.
+const RADIO_UNION = 1.2;
+const RADIO_UNION_MANTENER = 1.8;
+const VIDA_UNION_MS = 3000;
+const CLAVE_UNION = "union-por-posicion";
+function leerUnion(): boolean {
+  try {
+    return localStorage.getItem(CLAVE_UNION) !== "0";
+  } catch {
+    return true;
+  }
+}
+/** Se une por posición a quien dos cámaras distintas ubican casi en el mismo lugar (se recuerda en el navegador). */
+export const unirPorPosicion = ref(leerUnion());
+export function fijarUnion(valor: boolean) {
+  unirPorPosicion.value = valor;
+  try {
+    localStorage.setItem(CLAVE_UNION, valor ? "1" : "0");
+  } catch {
+    /* sin localStorage no se recuerda */
+  }
+}
+/** Cuántas personas se están mostrando como una sola ahora mismo. */
+export const unidasAhora = ref(0);
+/** Pares unidos y el último instante en que siguieron cerca. */
+const uniones = new Map<string, number>();
+/** ID que se unió a otro (el de la derecha): su captura no debe contarse como otra persona. */
+const idsUnidos = new Map<number, number>();
+
+type Fusionable = { x: number; y: number; peso: number; id: number | null; genero: string | null; conf: number | null; mejor: number; camaras: Set<string>; altoMax: number; camMejor: string };
+function unirCercanas(acumulado: Map<string, Fusionable>, t: number): void {
+  if (!unirPorPosicion.value || acumulado.size < 2) {
+    uniones.clear();
+    unidasAhora.value = 0;
+    return;
+  }
+  const par = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+  const claves = [...acumulado.keys()].sort((a, b) => (acumulado.get(a)!.id ?? 0) - (acumulado.get(b)!.id ?? 0));
+  const usadas = new Set<string>();
+  let unidas = 0;
+  for (let i = 0; i < claves.length; i++) {
+    const ka = claves[i];
+    if (usadas.has(ka)) continue;
+    const a = acumulado.get(ka)!;
+    let mejor: string | null = null;
+    let distanciaMejor = Infinity;
+    for (let j = i + 1; j < claves.length; j++) {
+      const kb = claves[j];
+      if (usadas.has(kb)) continue;
+      const b = acumulado.get(kb)!;
+      if ([...a.camaras].some((c) => b.camaras.has(c))) continue;
+      const d = Math.hypot(a.x / a.peso - b.x / b.peso, a.y / a.peso - b.y / b.peso);
+      const viva = t - (uniones.get(par(ka, kb)) ?? -Infinity) < VIDA_UNION_MS;
+      if (d <= (viva ? RADIO_UNION_MANTENER : RADIO_UNION) && d < distanciaMejor) [mejor, distanciaMejor] = [kb, d];
+    }
+    if (!mejor) continue;
+    const b = acumulado.get(mejor)!;
+    uniones.set(par(ka, mejor), t);
+    usadas.add(ka);
+    usadas.add(mejor);
+    // Un solo punto: el promedio de lo que ubican las dos cámaras, con más peso a la que la ve más grande.
+    const [wa, wb] = [a.altoMax, b.altoMax];
+    a.x = (a.x / a.peso) * wa + (b.x / b.peso) * wb;
+    a.y = (a.y / a.peso) * wa + (b.y / b.peso) * wb;
+    a.peso = wa + wb;
+    if (b.mejor >= a.mejor) [a.genero, a.conf, a.mejor] = [b.genero, b.conf, b.mejor];
+    b.camaras.forEach((c) => a.camaras.add(c));
+    if (b.altoMax > a.altoMax) a.camMejor = b.camMejor;
+    a.altoMax = Math.max(wa, wb);
+    if (b.id != null && a.id != null) idsUnidos.set(b.id, a.id);
+    acumulado.delete(mejor);
+    rastros.delete(mejor);
+    suavizadas.delete(mejor);
+    unidas++;
+  }
+  for (const [k, visto] of [...uniones]) if (t - visto > VIDA_UNION_MS) uniones.delete(k);
+  unidasAhora.value = unidas;
+}
 const celdas = new Map<string, { cx: number; cy: number; s: number }>();
 const historia = new Map<number, HistoriaViva>();
 const densidadMax = new Map<number, number>();
@@ -441,6 +524,7 @@ function componer() {
     acumulado.set(clave, a);
   }
   for (const clave of [...camaraPreferida.keys()]) if (!vistas.has(clave)) camaraPreferida.delete(clave);
+  unirCercanas(acumulado, t);
   const personas: PersonaPlano[] = [];
   const lista: PersonaViva[] = [];
   const porZona = new Map<number, number>();
@@ -530,6 +614,9 @@ export function reiniciarVivo() {
   rastros.clear();
   suavizadas.clear();
   camaraPreferida.clear();
+  uniones.clear();
+  idsUnidos.clear();
+  unidasAhora.value = 0;
   calor.value = [];
   historias.value = [];
   inicio.value = Date.now();
@@ -596,6 +683,8 @@ function prepararCaptura(): Pendiente | null {
     .map((h) => ({ id: h.id, genero: h.genero, conf: h.conf, primera: h.primera, ultima: h.ultima, trazas: h.trazas }));
   const conRecorrido = new Set(personas.map((p) => p.id));
   for (const [id, r] of memorizadas) {
+    // Un ID que se unió a otro por posición es la misma persona: no se guarda como otra.
+    if (idsUnidos.has(id) && conRecorrido.has(idsUnidos.get(id)!)) continue;
     if (!conRecorrido.has(id)) personas.push({ id, genero: r.genero, conf: r.conf, primera: r.primera, ultima: r.ultima, trazas: [], camaras: r.camaras.size });
   }
   if (!personas.length) return null;
