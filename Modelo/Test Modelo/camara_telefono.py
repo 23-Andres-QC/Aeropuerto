@@ -17,6 +17,7 @@ import socket
 import sys
 import threading
 import time
+import traceback
 import urllib.request
 import warnings
 from collections import Counter, deque
@@ -99,12 +100,55 @@ ESTATICO_TELEFONO_S = 3.0
 GENERO_FIJO = 0.8
 GENERO_TELEFONO = {"min_height": 56, "min_detection_confidence": 0.35}
 PUERTO_CAMARA = int(os.environ.get("CAMARA_PORT", "8444"))  # el de la página de cámara (compose: camara-web)  # como en camaras.json: alguien puede pasar de un teléfono a otro en hasta 60 s
+# Un cuadro que falla (un error raro del modelo) se salta; tantos seguidos indican algo roto (ej. la GPU) y el proceso
+# termina con error: scripts/modelo_local.py lo vuelve a levantar.
+FALLOS_SEGUIDOS_MAX = 10
 
 
 def leer_json(url, timeout=5):
     """GET de un JSON de la web."""
     with urllib.request.urlopen(url, timeout=timeout) as respuesta:
         return json.loads(respuesta.read().decode("utf-8"))
+
+
+class Sondeo:
+    """Pide a backend-vivo la lista de teléfonos y la de videos cada 2 s en un hilo propio y guarda la última.
+
+    Con el modelo en otra máquina (scripts/modelo_local.py) cada pedido cruza el túnel y tarda ~0,3 s: en el lazo
+    principal eso frenaba las cajas de todos los teléfonos más de medio segundo cada 2 s.
+    """
+
+    def __init__(self, url_api, cada=2.0):
+        self.url_api, self.cada = url_api, cada
+        self._ultimo, self._lock, self._parar = None, threading.Lock(), threading.Event()
+        threading.Thread(target=self._sondear, daemon=True).start()
+
+    def _sondear(self):
+        while True:
+            inicio = time.monotonic()
+            try:
+                telefonos = {t["id"]: t for t in leer_json(f"{self.url_api}/api/v1/telefonos")}
+            except Exception as error:  # el hilo no debe morir: sin él el modelo no vería entrar ni salir teléfonos
+                print(f"backend-vivo no responde en {self.url_api} ({error}); reintento en {self.cada:g} s", flush=True)
+                telefonos = None
+            if telefonos is not None:
+                try:
+                    videos = leer_json(f"{self.url_api}/api/v1/videos")
+                except Exception:
+                    videos = None  # backend-vivo sin la sección Videos: solo teléfonos
+                with self._lock:
+                    self._ultimo = (telefonos, videos)
+            if self._parar.wait(max(0.0, self.cada - (time.monotonic() - inicio))):
+                return
+
+    def tomar(self):
+        """(teléfonos, videos o None) si llegaron listas desde la última vez; si no, None."""
+        with self._lock:
+            ultimo, self._ultimo = self._ultimo, None
+        return ultimo
+
+    def detener(self):
+        self._parar.set()
 
 
 def enlace_camara():
@@ -212,31 +256,60 @@ class LectorMjpeg:
 
 
 class LectorFoto(LectorMjpeg):
-    """Como LectorMjpeg, pero pide el cuadro más nuevo (/foto.jpg?despues=<último>) y el siguiente al recibirlo: nunca
-    hay cuadros esperando en la red, así el modelo procesa el último aunque el enlace o el modelo vayan lentos."""
+    """Como LectorMjpeg, pero pide los cuadros de a uno (/foto.jpg?despues=N da el primero posterior al N, o el más
+    nuevo si ya hay varios): nunca hay cuadros acumulados en la red, así el modelo procesa el último aunque el enlace o
+    el modelo vayan lentos.
+
+    Van PEDIDOS a la vez, cada uno por su conexión y esperando un cuadro distinto (el próximo, el siguiente): el
+    servidor manda cada cuadro apenas llega del teléfono. Con un solo pedido, el cuadro que llegaba mientras volvía la
+    respuesta anterior esperaba en el servidor hasta el pedido siguiente (una ida y vuelta por internet, ~70 ms).
+    """
+
+    PEDIDOS = 2
 
     def _leer(self):
+        self._visto, self._pedido = 0, -1  # último cuadro recibido / último N pedido
+        for _ in range(self.PEDIDOS - 1):
+            threading.Thread(target=self._pedir, daemon=True).start()
+        self._pedir()
+
+    def _proximo(self):
+        """N del próximo pedido: el siguiente al último pedido, o el último recibido si ya se pasó de ahí."""
+        with self._lock:
+            self._pedido = max(self._visto, self._pedido + 1)
+            return self._pedido
+
+    def _pedir(self):
+        """Un pedido a la vez por su conexión; reconecta si se corta."""
         partes = urlsplit(self.url)
-        ruta, visto = f"{partes.path}?{partes.query}", 0
+        ruta = f"{partes.path}?{partes.query}"
         while not self._parar.is_set():
             conexion = http.client.HTTPConnection(partes.hostname, partes.port, timeout=5)
             try:
+                despues = self._proximo()
                 while not self._parar.is_set():
-                    conexion.request("GET", f"{ruta}&despues={visto}")
+                    conexion.request("GET", f"{ruta}&despues={despues}")
                     respuesta = conexion.getresponse()
                     cuerpo = respuesta.read()
                     if respuesta.status == 204:
-                        continue  # 2 s sin cuadros nuevos (la cámara dejó de enviar): no se repite el último
+                        continue  # 2 s sin cuadros nuevos (la cámara dejó de enviar): se sigue esperando el mismo
                     if respuesta.status != 200:
                         raise ConnectionError(f"HTTP {respuesta.status}")
                     cuadro = int(respuesta.getheader("X-Cuadro") or 0)
-                    visto = cuadro
+                    with self._lock:
+                        nuevo = not cuadro or cuadro > self._visto
+                        self._visto = max(self._visto, cuadro)
+                    despues = self._proximo()
+                    if not nuevo:
+                        continue  # el otro pedido ya trajo este cuadro o uno más nuevo
                     frame = cv2.imdecode(np.frombuffer(cuerpo, np.uint8), cv2.IMREAD_COLOR)
                     if frame is None:
                         continue
-                    self.leidos += 1
-                    self.error = None
                     with self._lock:
+                        if cuadro and self._ultimo is not None and (self._ultimo[3] or 0) > cuadro:
+                            continue  # mientras se decodificaba, el otro pedido dejó uno más nuevo
+                        self.leidos += 1
+                        self.error = None
                         self._ultimo = (self.leidos, frame, time.perf_counter(), cuadro or None)
             except Exception as error:
                 self.error = f"No se pudo leer {sin_token(self.url)}: {getattr(error, 'reason', None) or error}"
@@ -345,8 +418,8 @@ class SesionEnVivo:
 
     def __init__(self, motor, reid, asociacion, memoria, ubicador=None):
         self.motor, self.reid, self.asociacion, self.memoria = motor, reid, asociacion, memoria
-        # Ubicación en el plano de cada cuadro (ubicacion.py): se calcula en otro hilo mientras el detector trabaja.
-        self.ubicador, self._ubicando = ubicador, ThreadPoolExecutor(max_workers=1)
+        # Ubicación en el plano (ubicacion.py): se calcula en otro hilo y las cajas no la esperan (ver _recoger_ubicacion).
+        self.ubicador, self._ubicando, self._ubicacion = ubicador, ThreadPoolExecutor(max_workers=1), None
         self.camaras, self.planos = {}, {}  # teléfono -> su número de cámara (orden de ingreso) / su última ubicación
         self.asociador, self.telefonos, self.clave = None, [], []
         self.t0, self.t = time.perf_counter(), -1.0
@@ -414,7 +487,9 @@ class SesionEnVivo:
             frames[cid] = frame
         self._ritmo_genero()
         fuente = dict(self.procesados)
-        ubicando = self._ubicando.submit(self._ubicar, frames, time.monotonic()) if self.ubicador is not None else None
+        self._recoger_ubicacion()
+        if self.ubicador is not None and self._ubicacion is None:
+            self._ubicacion = self._ubicando.submit(self._ubicar, frames, time.monotonic())
         detectadas = self.motor.detectar(frames)
         if not isinstance(self.motor.detector, DetectorCuerpo):  # con pose las cajas ya son de cuerpo sin brazos
             detectadas = {cid: ajustar_cajas(*dato) for cid, dato in detectadas.items()}
@@ -430,11 +505,7 @@ class SesionEnVivo:
             for cid in frames:
                 self._trabajos[cid] = trabajo
             self._hay_trabajo.notify()
-        if ubicando is not None:
-            try:
-                self.planos.update(ubicando.result())
-            except Exception as error:  # sin ubicación esta vez: las cajas salen igual
-                print(f"Ubicación: {type(error).__name__}: {error}", flush=True)
+        self._recoger_ubicacion()
         ahora = time.perf_counter()
         for cid, (_, _, llegada, _) in datos.items():
             self.latencias[cid].append(ahora - llegada)
@@ -447,6 +518,18 @@ class SesionEnVivo:
 
     def _ubicar(self, frames, ahora):
         return {cid: self.ubicador.ubicar(cid, self.camaras.get(cid), frame, ahora) for cid, frame in frames.items()}
+
+    def _recoger_ubicacion(self):
+        """Guarda la ubicación en el plano que terminó de calcularse, si hay una. Las cajas no la esperan: con ORB
+        tarda hasta ~80 ms por cuadro (más que detectar), así que cada cuadro sale con la última ubicación lista, de
+        un cuadro o dos antes (el teléfono en la mano se mueve poco en ese tiempo), y se calcula la del siguiente."""
+        if self._ubicacion is None or not self._ubicacion.done():
+            return
+        try:
+            self.planos.update({cid: plano for cid, plano in self._ubicacion.result().items() if cid in self.telefonos})
+        except Exception as error:  # sin ubicación esta vez: las cajas salen igual
+            print(f"Ubicación: {type(error).__name__}: {error}", flush=True)
+        self._ubicacion = None
 
     def _conocido(self, cid, fila):
         """ID global y género que el carril lento ya le dio a esta persona (si no, sin ID y sin género todavía)."""
@@ -635,33 +718,27 @@ def main():
     videos = VideosSubidos(url_api, motor, reid_videos, asociacion_build, relevo, personas_para_web)
     lectores, nombres, calentado = {}, {}, False
     relevado = {}  # último video de cada teléfono por el relevo (con FPS_RELEVO)
-    revisado, publicado = 0.0, 0.0
+    publicado, fallos = 0.0, 0
     enlace, enlace_visto = None, -math.inf
+    sondeo = Sondeo(url_api)
     try:
         while True:
-            if time.monotonic() - revisado > 2:
-                revisado = time.monotonic()
-                try:
-                    lista = {t["id"]: t for t in leer_json(f"{url_api}/api/v1/telefonos")}
-                except OSError as error:
-                    print(f"backend-vivo no responde en {url_api} ({error}); reintento en 2 s", flush=True)
-                    lista = None
-                if lista is not None:
-                    for cid in [c for c in lectores if c not in lista or url_lectura(lista[c]["url"]) != lectores[c].url]:
-                        lectores.pop(cid).detener()
-                    for cid, telefono in lista.items():
-                        if cid not in lectores:
-                            lectores[cid] = nuevo_lector(url_lectura(telefono["url"]))
-                    nombres = {cid: t["nombre"] for cid, t in lista.items()}
-                    sesion.camaras = {cid: t.get("camara") for cid, t in lista.items()}
-                    clave = sorted((cid, lector.url) for cid, lector in lectores.items())
-                    if sesion.clave != clave:
-                        sesion.cambiar_telefonos(sorted(lectores), clave)
-                        print(f"Procesando {len(lectores)} teléfono(s): {', '.join(nombres.values()) or 'ninguno'}", flush=True)
-                    try:
-                        videos.revisar(leer_json(f"{url_api}/api/v1/videos"))
-                    except OSError:
-                        pass  # backend-vivo sin la sección Videos: solo teléfonos
+            sondeado = sondeo.tomar()
+            if sondeado is not None:
+                lista, lista_videos = sondeado
+                for cid in [c for c in lectores if c not in lista or url_lectura(lista[c]["url"]) != lectores[c].url]:
+                    lectores.pop(cid).detener()
+                for cid, telefono in lista.items():
+                    if cid not in lectores:
+                        lectores[cid] = nuevo_lector(url_lectura(telefono["url"]))
+                nombres = {cid: t["nombre"] for cid, t in lista.items()}
+                sesion.camaras = {cid: t.get("camara") for cid, t in lista.items()}
+                clave = sorted((cid, lector.url) for cid, lector in lectores.items())
+                if sesion.clave != clave:
+                    sesion.cambiar_telefonos(sorted(lectores), clave)
+                    print(f"Procesando {len(lectores)} teléfono(s): {', '.join(nombres.values()) or 'ninguno'}", flush=True)
+                if lista_videos is not None:
+                    videos.revisar(lista_videos)
 
             hubo_video = videos.paso()
             # Cada teléfono por su cuenta: en cada vuelta se procesa el que tiene esperando el cuadro más viejo y sus
@@ -672,10 +749,20 @@ def main():
                 if dato is not None and (not datos or dato[2] < next(iter(datos.values()))[2]):
                     datos = {cid: dato}
             if datos:
-                if not calentado:
-                    motor.calentar({cid: d[1] for cid, d in datos.items()})
-                    calentado = True
-                filas = sesion.procesar(datos)
+                try:
+                    if not calentado:
+                        motor.calentar({cid: d[1] for cid, d in datos.items()})
+                        calentado = True
+                    filas = sesion.procesar(datos)
+                    fallos = 0
+                except Exception:
+                    # Ese cuadro queda sin cajas y se sigue con el próximo.
+                    fallos += 1
+                    print(f"Falló el cuadro de {', '.join(datos)} ({fallos} seguidos):", flush=True)
+                    traceback.print_exc()
+                    if fallos >= FALLOS_SEGUIDOS_MAX:
+                        raise
+                    continue
                 for cid, (_, frame, _, cuadro) in datos.items():
                     if not FPS_RELEVO or time.monotonic() - relevado.get(cid, -math.inf) >= 1 / FPS_RELEVO:
                         relevado[cid] = time.monotonic()
@@ -705,6 +792,7 @@ def main():
     except KeyboardInterrupt:
         print("Detenido. La memoria de identidades queda guardada en backend-vivo.", flush=True)
     finally:
+        sondeo.detener()
         for lector in lectores.values():
             lector.detener()
         sesion.cerrar()
