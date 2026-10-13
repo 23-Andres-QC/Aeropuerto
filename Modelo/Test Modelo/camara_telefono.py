@@ -50,6 +50,14 @@ CANAL_ESTADO = "telefonos"
 ANCHO_RELEVO = 640
 # Un frame del relevo no puede pasar de 512 KB (maxRelayFrame en backend-vivo): se baja la calidad si hace falta.
 MAX_JPEG_RELEVO = 480 * 1024
+# Cuadros por segundo del video de cada teléfono por el relevo (vacío = todos los procesados). Teléfonos muestra el
+# video de la sala de camara-web y el del relevo solo si esa falta: con el modelo en otra máquina que la web
+# (scripts/modelo_local.py) se baja para no gastar en él la subida del enlace.
+FPS_RELEVO = float(os.environ.get("RELEVO_VIDEO_FPS") or 0)
+# Ancho de los cuadros que se piden a camara-web (?ancho=, vacío = los del teléfono tal cual). Con el modelo en otra
+# máquina que la web, por internet el cuadro entero no llega a tiempo: scripts/modelo_local.py pide 960 px, la
+# resolución del detector en GPU, así no se pierde detalle y pesan ~40 % menos.
+ANCHO_MJPEG = int(os.environ.get("MJPEG_ANCHO") or 0)
 FPS_NOMINAL = 15.0
 TRANSICION_MAX_S = 60.0
 # Un teléfono ve a la gente de cerca: quien sale cortado por el borde del cuadro también da muestras de Re-ID (en las
@@ -111,6 +119,11 @@ def enlace_camara():
     except OSError:
         return None
     return None if ip.startswith(("127.", "0.")) else f"https://{ip}:{PUERTO_CAMARA}"
+
+
+def url_lectura(url):
+    """La URL del MJPEG de un teléfono como la lee el modelo: con ?ancho= si se pidió ANCHO_MJPEG."""
+    return f"{url}&ancho={ANCHO_MJPEG}" if ANCHO_MJPEG else url
 
 
 def sin_token(url):
@@ -527,6 +540,8 @@ def main():
     con_onnx = False
     if torch.cuda.is_available():
         config["detector"]["imgsz"] = IMGSZ_GPU_TELEFONO
+        # Media precisión en la GPU: el detector tarda bastante menos por cuadro con las mismas cajas (como en Videos).
+        config["detector"]["fp16"] = True
     else:
         # Sin GPU el detector es yolo26s (mismo modelo, más chico): a 640 px tarda ~0,9 s por 2 cuadros contra ~1,5 s de
         # yolo26m a 480, y ve mejor a quien está lejos. MODELO_DETECTOR=yolo26m.pt vuelve al grande.
@@ -574,6 +589,7 @@ def main():
                                    batch_size=encoder.get("batch_size", 8), device="cpu")
     videos = VideosSubidos(url_api, motor, reid_videos, asociacion_build, relevo, personas_para_web)
     lectores, nombres, calentado = {}, {}, False
+    relevado = {}  # último video de cada teléfono por el relevo (con FPS_RELEVO)
     revisado, publicado = 0.0, 0.0
     enlace, enlace_visto = None, -math.inf
     try:
@@ -586,11 +602,11 @@ def main():
                     print(f"backend-vivo no responde en {url_api} ({error}); reintento en 2 s", flush=True)
                     lista = None
                 if lista is not None:
-                    for cid in [c for c in lectores if c not in lista or lista[c]["url"] != lectores[c].url]:
+                    for cid in [c for c in lectores if c not in lista or url_lectura(lista[c]["url"]) != lectores[c].url]:
                         lectores.pop(cid).detener()
                     for cid, telefono in lista.items():
                         if cid not in lectores:
-                            lectores[cid] = LectorMjpeg(telefono["url"])
+                            lectores[cid] = LectorMjpeg(url_lectura(telefono["url"]))
                     nombres = {cid: t["nombre"] for cid, t in lista.items()}
                     sesion.camaras = {cid: t.get("camara") for cid, t in lista.items()}
                     clave = sorted((cid, lector.url) for cid, lector in lectores.items())
@@ -616,7 +632,9 @@ def main():
                     calentado = True
                 filas = sesion.procesar(datos)
                 for cid, (_, frame, _, cuadro) in datos.items():
-                    relevo.video(cid, frame)
+                    if not FPS_RELEVO or time.monotonic() - relevado.get(cid, -math.inf) >= 1 / FPS_RELEVO:
+                        relevado[cid] = time.monotonic()
+                        relevo.video(cid, frame)
                     relevo.detecciones(cid, {"ts": time.time(), "cuadro": cuadro, "frame_w": ANCHO_RELEVO,
                                              "frame_h": round(frame.shape[0] * ANCHO_RELEVO / frame.shape[1]),
                                              "people": personas_para_web(filas[cid], frame.shape[1]),

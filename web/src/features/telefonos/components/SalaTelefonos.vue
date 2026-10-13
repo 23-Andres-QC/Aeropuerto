@@ -10,11 +10,13 @@ import type { Detecciones, EstadoServicio } from "../api";
 // lista con su pantalla desde que se unen, y encima las cajas, el ID y el género
 // que publica el modelo cuando está corriendo.
 //
-// Una cámara web se ve en directo, a su ritmo (~15 fps), y el modelo devuelve las
-// cajas de cada cuadro que procesa unos cientos de ms después, con su número
-// («cuadro»). Para que la caja no se quede detrás de la persona, en cada cuadro
-// que se muestra cada caja sigue moviéndose con la velocidad que traía entre sus
-// dos últimos cuadros procesados (cajasAl): el video es el real, sin retraso.
+// Una cámara web se ve a su ritmo (~15 fps) y el modelo devuelve las cajas de
+// cada cuadro que procesa unos cientos de ms después, con su número («cuadro»).
+// Mientras el modelo procesa, el video va atrasado lo que tardan en volver las
+// cajas (medido en vivo, hasta RETRASO_MAX_MS): cada cuadro se muestra con las
+// suyas, o interpoladas entre los dos procesados que lo rodean, así las cajas
+// van sincronizadas y desaparecen en el cuadro en que la persona se fue. Sin
+// modelo el video va en directo.
 type CamaraSala = { id: string; nombre: string; web: boolean; camara?: number };
 type MensajeSala = { tipo: string; id?: string; camaras?: CamaraSala[]; datos?: unknown };
 type Cuadro = { seq: number; llegada: number; imagen: ImageBitmap };
@@ -32,6 +34,8 @@ type Pantalla = {
   instantaneas: Instantanea[];
   mostrado: number;
   recibidos: number[];
+  /** ms entre que llega un cuadro y llegan sus cajas (los últimos): de ahí sale el atraso del video. */
+  retrasos: number[];
   /** Las cajas del cuadro que se muestra (interpoladas), para volver a dibujarlas al cambiar el tamaño. */
   cajas?: CuadroDetecciones;
 };
@@ -46,6 +50,13 @@ const CUADRO_VIGENTE_MS = 3000;
 const PREDICCION_MAX_MS = 1500;
 // Cuadros sin decodificar: si el navegador no da abasto, se saltan los más viejos.
 const COLA_MAX = 6;
+// Video atrasado para ir con sus cajas: el percentil 90 de lo que tardan en volver, más un margen; con el modelo más
+// lejos que RETRASO_MAX_MS el video no se atrasa más y la caja sigue a la persona por HORIZONTE_SINCRONIZADO_MS.
+const RETRASO_MAX_MS = 2000;
+const MARGEN_RETRASO_MS = 60;
+const HORIZONTE_SINCRONIZADO_MS = 150;
+// Cuadros decodificados que esperan su turno (2 s a 15 fps, con holgura).
+const BUFER_MAX = 45;
 
 const camaras = ref<CamaraSala[]>([]);
 // Ancho/alto de cada cámara: el mosaico toma su forma y la imagen se ve
@@ -80,7 +91,7 @@ function pantalla(id: string): Pantalla {
   if (!p) {
     p = {
       hora: 0, horaDet: 0, decodificando: false, cola: [], cuadros: [], llegadas: new Map(), instantaneas: [],
-      mostrado: -1, recibidos: [],
+      mostrado: -1, recibidos: [], retrasos: [],
     };
     pantallas.set(id, p);
   }
@@ -166,6 +177,7 @@ async function decodificarCola(id: string, p: Pantalla) {
     try {
       const imagen = await createImageBitmap(new Blob([c.jpeg], { type: "image/jpeg" }));
       p.cuadros.push({ seq: c.seq, llegada: c.llegada, imagen });
+      for (const viejo of p.cuadros.splice(0, p.cuadros.length - BUFER_MAX)) viejo.imagen.close();
     } catch {
       // Cuadro dañado: se salta.
     }
@@ -190,6 +202,8 @@ function alDetecciones(id: string, det: Detecciones & { cuadro?: number | null }
   }
   p.horaDet = ahoraMs;
   p.det = undefined;
+  p.retrasos.push(ahoraMs - llegada);
+  if (p.retrasos.length > 30) p.retrasos.shift();
   p.instantaneas.push({ ...det, t: llegada });
   p.instantaneas.sort((a, b) => a.t - b.t);
   while (p.instantaneas.length && p.instantaneas[0].t < ahoraMs - 5000) p.instantaneas.shift();
@@ -202,10 +216,14 @@ function animar() {
   const ahoraMs = performance.now();
   for (const [id, p] of pantallas) {
     if (!p.cuadros.length) continue;
-    // Los anteriores al último ya no se usan.
-    for (const viejo of p.cuadros.splice(0, p.cuadros.length - 1)) viejo.imagen.close();
+    // El último cuadro al que ya le toca (con el atraso del modelo); los anteriores ya no se usan.
+    const retraso = retrasoDe(p, ahoraMs);
+    const limite = ahoraMs - retraso;
+    let k = p.cuadros.length - 1;
+    while (k > 0 && p.cuadros[k].llegada > limite) k--;
+    for (const viejo of p.cuadros.splice(0, k)) viejo.imagen.close();
     const cuadro = p.cuadros[0];
-    if (cuadro.seq === p.mostrado) continue;
+    if (cuadro.seq === p.mostrado || cuadro.llegada > limite) continue;
     p.mostrado = cuadro.seq;
     const lienzo = lienzos.get(id);
     if (lienzo) {
@@ -217,9 +235,18 @@ function animar() {
       lienzo.getContext("2d")?.drawImage(cuadro.imagen, 0, 0);
     }
     const vigentes = p.instantaneas.length && ahoraMs - p.horaDet < DET_VIGENTE_MS;
-    p.cajas = vigentes ? cajasAl(p.instantaneas, cuadro.llegada, PREDICCION_MAX_MS) : undefined;
+    p.cajas = vigentes
+      ? cajasAl(p.instantaneas, cuadro.llegada, retraso ? HORIZONTE_SINCRONIZADO_MS : PREDICCION_MAX_MS)
+      : undefined;
     dibujarCajas(id);
   }
+}
+
+/** Cuánto atrasar el video para que cada cuadro vaya con sus cajas; 0 (en directo) si el modelo no está procesando. */
+function retrasoDe(p: Pantalla, ahoraMs: number): number {
+  if (!p.instantaneas.length || !p.retrasos.length || ahoraMs - p.horaDet > DET_VIGENTE_MS) return 0;
+  const orden = [...p.retrasos].sort((a, b) => a - b);
+  return Math.min(RETRASO_MAX_MS, orden[Math.floor(orden.length * 0.9)] + MARGEN_RETRASO_MS);
 }
 
 async function decodificar(id: string, p: Pantalla) {

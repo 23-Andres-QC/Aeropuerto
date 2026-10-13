@@ -110,13 +110,18 @@ select {
   background: #000;
 }
 
-.camara video {
+/* El video y, con el modelo procesando, los mismos cuadros atrasados para ir con sus cajas (ver animar). */
+.camara video, .camara .diferido {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
   background: #000;
+}
+
+.camara .diferido[hidden] {
+  display: none;
 }
 
 /* Cajas del modelo: cubren exactamente la imagen del video (ver dibujarCajas). */

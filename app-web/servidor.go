@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -187,6 +188,12 @@ func (s *Servidor) video(w http.ResponseWriter, r *http.Request) {
 	if d == nil {
 		return
 	}
+	// ?ancho=N: cuadros de a lo más N px, para el modelo en otra máquina (por internet el original no llega a tiempo).
+	ancho, _ := strconv.Atoi(r.URL.Query().Get("ancho"))
+	if ancho != 0 && (ancho < anchoMinimo || ancho > anchoMaximo) {
+		http.Error(w, "ancho fuera de rango", http.StatusBadRequest)
+		return
+	}
 	d.lectores.Add(1)
 	defer d.lectores.Add(-1)
 	h := w.Header()
@@ -205,6 +212,9 @@ func (s *Servidor) video(w http.ResponseWriter, r *http.Request) {
 		frame, seq, cambio := d.Ultimo()
 		if frame != nil && seq != visto {
 			visto = seq
+			if ancho != 0 {
+				frame = reducido(frame, ancho)
+			}
 			_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			// X-Cuadro: el número del cuadro; el modelo lo devuelve con sus cajas («cuadro») para que la sala
 			// las dibuje sobre ese mismo cuadro.
