@@ -22,6 +22,14 @@ services:
     environment:
       DATABASE_URL: postgres://aeropuerto:${DB_PASSWORD:-demo_local_only}@db:5432/aeropuerto?sslmode=disable
       MEDIA_DIR: /media
+      # Acceso (README, «Seguridad»). En la laptop, vacío: valen las credenciales de prueba (LAP / LAP). En el
+      # servidor (APP_ENV=servidor, de servidor.env) la API no arranca sin credenciales propias: scripts/levantar.sh
+      # las crea al azar en .env la primera vez.
+      APP_ENV: ${APP_ENV:-local}
+      ADMIN_USER: ${ADMIN_USER:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      API_KEY: ${API_KEY:-}
     volumes:
       # Archivos que exportó el Build de cada sitio (videos procesados, mapa,
       # CSV), servidos en /api/v1/sites/<sitio>/media/. No van dentro de la

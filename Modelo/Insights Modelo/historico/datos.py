@@ -1,10 +1,32 @@
 """Lectura y publicación a través de la API de la web (el mismo camino que usa el Build)."""
 import json
+import os
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+
+LLAVE_LOCAL = "lap-local-api-key"
+
+
+def llave_api():
+    """La llave con la que los scripts le hablan a la web, que pide acceso para todo (lee y escribe; no borra): LAP_API_KEY,
+    o API_KEY del .env de la raíz del proyecto, o la de prueba de la laptop."""
+    if os.environ.get("LAP_API_KEY"):
+        return os.environ["LAP_API_KEY"]
+    for carpeta in Path(__file__).resolve().parents:
+        if (carpeta / "compose.yaml").exists():
+            try:
+                for linea in (carpeta / ".env").read_text(encoding="utf-8").splitlines():
+                    if linea.startswith("API_KEY=") and linea[8:].strip():
+                        return linea[8:].strip().strip("'\"")
+            except OSError:
+                pass
+            break
+    return LLAVE_LOCAL
 
 
 class Web:
@@ -16,13 +38,14 @@ class Web:
 
     def _pedir(self, ruta, metodo="GET", cuerpo=None):
         datos = json.dumps(cuerpo, ensure_ascii=False).encode("utf-8") if cuerpo is not None else None
-        peticion = urllib.request.Request(self.base + ruta, data=datos, method=metodo, headers={"Content-Type": "application/json"})
+        peticion = urllib.request.Request(self.base + ruta, data=datos, method=metodo, headers={"Content-Type": "application/json", "Authorization": f"Bearer {llave_api()}"})
         try:
             with urllib.request.urlopen(peticion, timeout=self.timeout) as r:
                 return json.loads(r.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             detalle = e.read().decode("utf-8", "replace")
-            raise RuntimeError(f"{metodo} {self.base + ruta} → {e.code}: {detalle}") from None
+            ayuda = " Falta la llave de la web: define LAP_API_KEY (la API_KEY del .env del servidor; en la laptop vale la de prueba)." if e.code in (401, 403) else ""
+            raise RuntimeError(f"{metodo} {self.base + ruta} → {e.code}: {detalle}{ayuda}") from None
 
     def config(self):
         """Plano, cámaras, locales y zonas tal como están en la base (lo que se edita en la web)."""

@@ -40,9 +40,9 @@ const title = computed(() => {
   return `${actual.value?.name ?? slug.value} · ${nombre}`;
 });
 
-function salir() {
-  logout();
-  router.replace("/login");
+async function salir() {
+  await logout();
+  await router.replace("/login");
 }
 
 // El motor del modo en vivo proyecta sobre el último sitio visitado: en Teléfonos y Videos (sin sitio en la ruta) se queda el de antes.

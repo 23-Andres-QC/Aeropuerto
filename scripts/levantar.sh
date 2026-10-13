@@ -39,6 +39,30 @@ servidor)
       "$(aleatoria)" "$(aleatoria)" > .env)
     echo "Creado .env con contraseñas nuevas para las bases."
   fi
+  # Acceso a la web y a la API (README, «Seguridad»): usuario, contraseña, firma de las sesiones y llave de los
+  # scripts. Se crean una sola vez, al azar, y la API no arranca en el servidor sin ellas. Solo se agregan las
+  # que faltan, así un .env que ya existe (con las contraseñas de las bases) se conserva.
+  [ -z "$(tail -c1 .env)" ] || echo >> .env
+  nuevas=""
+  agregar() {
+    if ! grep -qE "^$1=." .env; then
+      printf '%s=%s\n' "$1" "$2" >> .env
+      nuevas="$nuevas $1"
+    fi
+  }
+  agregar ADMIN_USER admin
+  agregar ADMIN_PASSWORD "$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"
+  agregar SESSION_SECRET "$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+  agregar API_KEY "$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+  if [ -n "$nuevas" ]; then
+    echo "Acceso creado en .env (no versionado):$nuevas"
+    case " $nuevas " in
+    *" ADMIN_PASSWORD "*)
+      echo "  Usuario: $(grep '^ADMIN_USER=' .env | cut -d= -f2-)   Contraseña: $(grep '^ADMIN_PASSWORD=' .env | cut -d= -f2-)"
+      echo "  Guárdala: es la de la web (no se vuelve a mostrar; está en .env). La llave de los scripts es API_KEY (LAP_API_KEY)."
+      ;;
+    esac
+  fi
   # La IP detectada le gana a la de .env (una IP efímera cambia al apagar la
   # VM); para fijar otra dirección, pasar PUBLIC_HOST al llamar al script.
   if ip=$(curl -fsS -m 3 -H 'Metadata-Flavor: Google' \

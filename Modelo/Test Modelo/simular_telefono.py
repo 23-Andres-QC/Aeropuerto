@@ -1,4 +1,8 @@
-"""Simula la app Cámara ESAN: sirve un video como MJPEG con el mismo protocolo (/video?token=...) para probar sin teléfono."""
+"""Simula la app Cámara ESAN: sirve un video como MJPEG con el mismo protocolo (/video?token=...) para probar sin teléfono.
+
+Al registrar esta cámara en backend-vivo (POST /api/v1/telefonos) pasa "simulado": true: es una fuente de prueba, así En vivo la
+muestra pero no guarda en la base lo que capture (ver «Seguridad» y «Pruebas» en el README).
+"""
 import argparse
 import threading
 import time

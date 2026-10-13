@@ -2,9 +2,11 @@
 import hashlib
 import json
 import math
+import os
 import urllib.error
 import urllib.request
 from datetime import timedelta
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -106,13 +108,34 @@ def sesion_para_bd(resultado, *, nombre, kind="BUILD", status="DONE", mapa=None,
     }
 
 
+LLAVE_LOCAL = "lap-local-api-key"
+
+
+def llave_api():
+    """La llave con la que los scripts le hablan a la web, que pide acceso para todo (lee y escribe; no borra): LAP_API_KEY,
+    o API_KEY del .env de la raíz del proyecto, o la de prueba de la laptop."""
+    if os.environ.get("LAP_API_KEY"):
+        return os.environ["LAP_API_KEY"]
+    for carpeta in Path(__file__).resolve().parents:
+        if (carpeta / "compose.yaml").exists():
+            try:
+                for linea in (carpeta / ".env").read_text(encoding="utf-8").splitlines():
+                    if linea.startswith("API_KEY=") and linea[8:].strip():
+                        return linea[8:].strip().strip("'\"")
+            except OSError:
+                pass
+            break
+    return LLAVE_LOCAL
+
+
 def publicar_sesion(carga, url_web="http://127.0.0.1:8080", sitio="esan", timeout=120):
     """Envía la sesión al sitio indicado de la web; devuelve la respuesta del backend (identidades, puntos y ms)."""
     cuerpo = json.dumps(carga, ensure_ascii=False, default=str).encode("utf-8")
     peticion = urllib.request.Request(f"{url_web.rstrip('/')}/api/v1/sites/{sitio}/sessions", data=cuerpo, method="POST",
-                                      headers={"Content-Type": "application/json"})
+                                      headers={"Content-Type": "application/json", "Authorization": f"Bearer {llave_api()}"})
     try:
         with urllib.request.urlopen(peticion, timeout=timeout) as respuesta:
             return json.loads(respuesta.read().decode("utf-8"))
     except urllib.error.HTTPError as error:
-        raise RuntimeError(f"La web rechazó la sesión ({error.code}): {error.read().decode('utf-8', 'replace')}") from None
+        ayuda = " Falta la llave de la web: define LAP_API_KEY (la API_KEY del .env del servidor; en la laptop vale la de prueba)." if error.code in (401, 403) else ""
+        raise RuntimeError(f"La web rechazó la sesión ({error.code}): {error.read().decode('utf-8', 'replace')}{ayuda}") from None

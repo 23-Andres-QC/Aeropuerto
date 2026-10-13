@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
-import { isAuthenticated } from "./auth";
+import { asegurarSesion, isAuthenticated } from "./auth";
 import { ultimoSitio } from "../features/sitios/useSitios";
 
 // Cada sección funciona igual para cualquier sitio: /sitios/<sitio>/<sección>.
@@ -39,7 +39,9 @@ router.onError((error, to) => {
   location.assign(to.fullPath);
 });
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
+  // La sesión la valida el servidor: se le pregunta una vez al abrir la página.
+  await asegurarSesion();
   const autenticado = isAuthenticated();
   if (to.meta.public && autenticado) return inicio();
   if (!to.meta.public && !autenticado) return "/login";

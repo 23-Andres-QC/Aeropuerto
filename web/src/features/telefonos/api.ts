@@ -6,8 +6,11 @@ const VIVO = "/vivo/api/v1";
 /** Relevo de video y detecciones de las cámaras en vivo (WebSocket). */
 export const RELEVO_VIVO = `${VIVO}/cameras`;
 
-/** `camara`: su número por orden de ingreso (1, 2, …), que lo pone en cam01, cam02… del plano. */
-export type Telefono = { id: string; nombre: string; url: string; camara?: number };
+/**
+ * `camara`: su número por orden de ingreso (1, 2, …), que lo pone en cam01, cam02… del plano. `simulado`: una fuente de prueba
+ * (se ve, pero lo que captura no se guarda en la base).
+ */
+export type Telefono = { id: string; nombre: string; url: string; camara?: number; simulado?: boolean };
 
 export type EstadoTelefono = {
   nombre: string;

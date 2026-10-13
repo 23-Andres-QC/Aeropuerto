@@ -30,6 +30,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if cfg.UsesDemoCredentials() {
+		slog.Warn("acceso con las credenciales de prueba (entorno local): no las uses en un servidor", "entorno", cfg.Env)
+	}
 	db, err := postgres.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return errors.New("configuración de base de datos inválida")

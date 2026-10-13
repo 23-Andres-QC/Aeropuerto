@@ -32,12 +32,13 @@ El mismo comando sirve en la laptop y en el servidor: el script reconoce si corr
 | Cámara web | https://IP-de-la-laptop:8444 | https://IP-pública/camara/ |
 | Modelo en vivo | fuera de Docker, con la GPU | en la laptop, con su GPU, por un túnel SSH (`python scripts/modelo_local.py`); el servidor solo tiene la web |
 | Contraseñas de las bases | las de demostración | aleatorias en `.env` (las crea el script la primera vez) |
+| Acceso a la web y a la API | usuario `LAP`, contraseña `LAP` (de prueba) | usuario, contraseña, firma de sesiones y llave de scripts aleatorios en `.env` (el script los crea y muestra la contraseña una vez); la API no arranca sin ellos |
 
 En el servidor la IP pública se lee de la propia VM en cada arranque, así que si cambia al encenderla basta volver a correr el script. `.env` (no versionado) tiene prioridad sobre `servidor.env` para ajustes de una sola máquina; ver `.env.example`. En la laptop también funciona `docker compose up -d --build` directamente.
 
 **Modelo en la laptop, web en el servidor.** `python scripts/modelo_local.py` (con el compose local detenido) abre un túnel SSH a backend-vivo (8093) y al MJPEG de camara-web (8092) del servidor, que ahí solo escuchan en 127.0.0.1, y corre `camara_telefono.py` con la GPU contra ellos: Teléfonos y Videos funcionan igual que con el modelo en el servidor. Los teléfonos se unen en `https://IP-pública/camara/`; su video baja por el túnel y las cajas, IDs, género y memoria de identidades vuelven al servidor. Entra siempre con la contraseña del servidor, que lee de `SERVIDOR_CLAVE` en el `.env` de la laptop (no versionado; sin ella la pide una vez); `MODELO_SERVIDOR=usuario@IP` apunta a otro servidor. Se reconecta solo. Requiere `pip install paramiko`. Con un enlace lento (~1 MB/s) el modelo recibe menos cuadros por teléfono, pero salta cuadros en vez de atrasarse. Para volver al modelo en CPU dentro del servidor: `COMPOSE_PROFILES=modelo` en su `.env`.
 
-Web en http://localhost:8080 (usuario y contraseña de la demo: `LAP` / `LAP`). Cada sección es la misma para todos los sitios: `/sitios/<sitio>/en-vivo`, `/sitios/<sitio>/insights` y `/sitios/<sitio>/configuracion`, con pestañas para cambiar de sitio. `/telefonos` procesa cámaras de teléfono en vivo y `/videos` prueba el modelo con un video de tu computadora, sin guardar nada.
+Web en http://localhost:8080 (usuario y contraseña de prueba de la laptop: `LAP` / `LAP`; en el servidor, los que creó `levantar.sh`; ver «Seguridad»). Cada sección es la misma para todos los sitios: `/sitios/<sitio>/en-vivo`, `/sitios/<sitio>/insights` y `/sitios/<sitio>/configuracion`, con pestañas para cambiar de sitio. `/telefonos` procesa cámaras de teléfono en vivo y `/videos` prueba el modelo con un video de tu computadora, sin guardar nada.
 
 Los datos se conservan en el volumen `aeropuerto-demo_pgdata`. La base se crea vacía con dos sitios (ESAN y LAP) y **sin datos de ejemplo**: todo lo que muestra lo publica el modelo o se configura en la web.
 
@@ -136,6 +137,7 @@ Todas las rutas de sitio siguen `/api/v1/sites/<sitio>/…`:
 
 | Método y ruta | Uso |
 |---|---|
+| `POST /api/v1/auth/login` · `POST /auth/logout` · `GET /auth/me` | inicio y cierre de sesión (cookie HttpOnly) y quién está conectado; ver «Seguridad». **Todas las demás rutas piden sesión o llave de API** |
 | `GET /api/v1/sites` · `POST` · `PUT/DELETE /{sitio}` | sitios (se borra solo un sitio sin sesiones) |
 | `GET /{sitio}/config` | sitio, plano calibrado, dibujo del plano, cámaras, locales y zonas |
 | `PUT /{sitio}/plano` | dibujo del plano: fondo `/planos/*.svg`, contorno del piso y obstáculos en metros |
@@ -146,7 +148,7 @@ Todas las rutas de sitio siguen `/api/v1/sites/<sitio>/…`:
 | `GET /{sitio}/sessions/{id}/replay` · `/insights` | reproducción y agregados SQL |
 | `GET /{sitio}/sessions/{id}/points` · `GET/PUT /analytics` | entrada (posiciones del modelo) y resultados de la Parte III (zona y posición ajustada de cada punto, eventos, análisis) |
 | `GET /{sitio}/media/{archivo}` | archivos exportados por el Build |
-| `GET/POST /api/v1/telefonos` · `DELETE /{id}` | teléfonos (solo en memoria) |
+| `GET/POST /api/v1/telefonos` · `DELETE /{id}` | teléfonos (solo en memoria). El POST admite `"simulado": true` para una **fuente de prueba**: En vivo la muestra, pero no guarda sus capturas en la base |
 | `GET/POST /vivo/api/v1/videos` · `DELETE /{id}` | videos subidos en Videos con su resumen al terminar (disco temporal y memoria de backend-vivo; hasta 10, procesados al mismo tiempo) |
 | `/api/v1/cameras/{id}/publish·watch·detections/…` | relé WebSocket de video y detecciones |
 | `GET /{sitio}/ventas/resumen` · `/ventas/pronostico` | embudo por local (visitantes → tickets → ingresos), productos y precios; pronóstico de ingresos, visitantes, conversión y ticket promedio (`dias`, `datos=real|simulado|todos`, `locales=1,2,3` o `local=1`, `paso=dia|hora`, `horizonte`) |
@@ -155,6 +157,20 @@ Todas las rutas de sitio siguen `/api/v1/sites/<sitio>/…`:
 | `POST/DELETE /{sitio}/ventas/simulados` | genera o borra las ventas simuladas de demostración |
 | `GET /{sitio}/sessions/{id}/ventas` · `POST …/ventas/emparejar` | quién compró qué en una sesión grabada; corre el emparejamiento ticket ↔ persona |
 | `GET /health/live` · `/health/ready` | salud del servicio y de PostgreSQL |
+
+## Seguridad
+
+La web y la API piden iniciar sesión (PR de seguridad mínima; las cuentas por usuario y el rol «tienda» llegan después). Qué hay y cómo se usa:
+
+- **Login en el servidor.** `POST /api/v1/auth/login` con `{"usuario","clave"}` deja la cookie `lap_sesion`: firmada (HMAC-SHA256), **HttpOnly** (ningún script de la página la lee), **SameSite=Strict** (otro sitio no puede mandarla) y **Secure** cuando la web se sirve por HTTPS; dura `SESSION_HOURS` (12 por defecto). `POST /auth/logout` la borra y **revoca** esa sesión en el servidor, así una copia de la cookie deja de servir (la lista de revocadas vive en memoria: un reinicio de la API la olvida). `GET /auth/me` dice quién eres. Además, las peticiones que cambian algo y vienen de otro origen se rechazan.
+- **Qué responde sin sesión.** Solo `/health/live`, `/health/ready` y el login. Todo lo demás de `/api/` responde **401**, incluidas las lecturas. nginx también cierra `/vivo/` (backend-vivo: teléfonos, videos y memoria de personas), la sala de cámaras (`/camara-web/ws/sala`, que muestra el video de todos los teléfonos) y `/camara/personas`, preguntándole al backend (`auth_request`).
+- **Roles.** `admin_lap` (la cuenta de la web) puede todo. Los scripts usan la **llave de API** (`Authorization: Bearer <API_KEY>`, rol `maquina`): leen y escriben pero **nunca borran** (un `DELETE` con la llave da 403). Todo borrado se registra en el log con quién, desde qué IP y cómo terminó.
+- **Scripts de Python** (Build, Parte III, `generar_plano.py`): mandan la llave que encuentran en `LAP_API_KEY`, o en `API_KEY` del `.env` de la raíz, o la de prueba de la laptop. Con otra, la web responde 401 y el script avisa qué falta.
+- **Límites.** nginx limita por IP: el login a 5 intentos por minuto, la API a 30 por segundo y la puerta pública de las cámaras (`/camara/`) con su propia cuota (20 por segundo y 30 conexiones). Además el backend bloquea 15 minutos a una IP tras 5 logins fallidos seguidos (también con la clave correcta).
+- **Credenciales.** En la laptop (`APP_ENV=local`, lo normal) valen las de prueba `LAP` / `LAP` y una llave de prueba; la API lo avisa en su log. En el servidor (`APP_ENV=servidor`, de `servidor.env`) **no arranca** con las de prueba ni con credenciales débiles (`ADMIN_PASSWORD` de 12 o más caracteres, `SESSION_SECRET` de 32 o más, `API_KEY` de 24 o más): `scripts/levantar.sh` las crea al azar en `.env` la primera vez, muestra la contraseña una sola vez y conserva el `.env` que ya existía (solo agrega lo que falta). No se escriben en ningún log ni en la web.
+- **Lo que sigue público, a propósito.** La página `/camara/` y su WebSocket, para que un teléfono se una sin iniciar sesión: solo GET, sus cuatro archivos y el WebSocket, nada del MJPEG, la foto ni el estado. **Riesgo conocido:** cualquiera que alcance esa URL puede mandar video como si fuera una cámara; y el puerto 8444 de la cámara web existe para que los teléfonos de la misma Wi-Fi se unan a la laptop: sirve solo la página y su WebSocket (el panel de personas, el video y el estado no salen por ahí), y en el servidor ni siquiera se publica (`CAMARA_BIND_ADDR=127.0.0.1` en `servidor.env`; los teléfonos entran por `/camara/`). Un código de unión para los teléfonos llega con las cuentas.
+- **Aún no hay:** cuentas por usuario en la base ni rol «tienda», doble factor ni sesiones revocables tras un reinicio.
+- **Fuentes de prueba: nada falso en la base.** `node scripts/simular_telefonos.mjs` simula dos teléfonos con una persona caminando (para probar En vivo sin teléfonos; `--ids distinto` prueba la unión por posición) y los registra siempre con `simulado: true`. En vivo muestra lo que ven (con «PRUEBA · no se guarda» y «(prueba)» en sus mosaicos), pero ninguna captura que los incluya se guarda: ni al terminar, ni al reiniciar, ni sola cada 30 s. La marca se queda aunque el teléfono se desconecte a mitad de la captura. Las pruebas de Go con base de datos usan una base desechable (`aeropuerto_test`) y se niegan a correr en otra. Si registras a mano una cámara de prueba (por ejemplo el video de `Modelo/Test Modelo/simular_telefono.py`), pasa `"simulado": true`.
 
 ## Modelo de datos
 
@@ -165,7 +181,8 @@ PostgreSQL 17 + PostGIS, coordenadas del plano en metros (SRID 0), tiempos con z
 ```bash
 bash scripts/test-integration.sh                                 # backend: unitarias + integración con PostGIS
 cd web && npm ci && npm run build                                # web: tipos (vue-tsc) y build
-for f in web/tests/*.mjs; do node "$f"; done                     # web: patrones, lecturas, simulador, recorrido y paleta (Node 22.18 o más nuevo)
+for f in web/tests/*.mjs; do node "$f"; done                     # web: patrones, lecturas, simulador, recorrido, paleta y fuentes de prueba (Node 22.18 o más nuevo)
+node web/tests/e2e-fuentes-de-prueba.mjs                         # punta a punta (pide el stack y un navegador): los teléfonos simulados no guardan nada
 python -m unittest discover -s "Modelo/Insights Modelo/tests"    # Parte III con trayectorias sintéticas
 python -m unittest discover -s "Modelo/Test Modelo/tests"        # memoria de identidades con personas sintéticas
 ```
@@ -198,7 +215,7 @@ El modelo en vivo (`modelo-vivo`) necesita los pesos de CLIP que van por Git LFS
 
 y levanta con `docker compose up -d --build`. nginx añade `nosniff`, `SAMEORIGIN`, `Referrer-Policy` y un límite de peticiones por IP sobre `/api/`; PostgreSQL y el backend no publican puertos al host.
 
-- **Acceso:** el login es de demostración (se valida en el navegador). Antes de un uso real hace falta autenticación en el backend: cualquiera que alcance la IP puede modificar la configuración.
+- **Acceso:** la web y la API piden iniciar sesión y el servidor no arranca con credenciales de prueba (ver «Seguridad»); `scripts/levantar.sh servidor` crea `ADMIN_USER`, `ADMIN_PASSWORD`, `SESSION_SECRET` y `API_KEY` al azar en `.env`. Si armas el `.env` a mano, agrégalos y pon `APP_ENV=servidor` (ya está en `servidor.env`). Para un uso real conviene servir por HTTPS: la cookie solo marca `Secure` cuando la página llega así.
 - **Cámaras del navegador y teléfonos:** los navegadores solo dan acceso a la cámara en `localhost` o HTTPS (la web también escucha en `WEB_TLS_PORT` con un certificado autofirmado). La cámara web (`app-web`) se sirve además por el nginx de la web en `https://<IP>/camara/`, así en el servidor basta con abrir 80 y 443 en el firewall.
 
 Diseño original de la arquitectura: [FLUJO_IMPLEMENTACION.md](FLUJO_IMPLEMENTACION.md).

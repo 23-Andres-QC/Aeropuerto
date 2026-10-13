@@ -10,8 +10,12 @@ export class ApiError extends Error {
   }
 }
 
+/** Quien lo necesite se engancha aquí (main.ts): el servidor dijo 401, la sesión terminó. */
+export const ganchos: { alNoAutorizado?: () => void } = {};
+
 export async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
+  if (r.status === 401) ganchos.alNoAutorizado?.();
   if (!r.ok) {
     const body = (await r.json().catch(() => ({}))) as { error?: string };
     throw new ApiError(body.error ?? `Error ${r.status}`, r.status);

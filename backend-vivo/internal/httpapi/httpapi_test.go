@@ -319,3 +319,25 @@ func TestVideosPorHTTP(t *testing.T) {
 		t.Fatalf("lista llena = %d %v", resp.StatusCode, cuerpo)
 	}
 }
+
+// El indicador "simulado" viaja por la API: sin él, el teléfono es normal; con él, la lista lo devuelve marcado.
+func TestTelefonoSimuladoPorHTTP(t *testing.T) {
+	s, _ := servidor(t)
+	resp, cuerpo := pedir(t, http.MethodPost, s.URL+"/api/v1/telefonos", map[string]any{"nombre": "Normal", "url": "http://127.0.0.1:8092/video?token=a"})
+	if resp.StatusCode != http.StatusCreated || cuerpo["simulado"] != false {
+		t.Fatalf("sin indicador = %d %v", resp.StatusCode, cuerpo)
+	}
+	resp, cuerpo = pedir(t, http.MethodPost, s.URL+"/api/v1/telefonos", map[string]any{"nombre": "Prueba", "url": "http://127.0.0.1:9/video?token=b", "simulado": true})
+	if resp.StatusCode != http.StatusCreated || cuerpo["simulado"] != true {
+		t.Fatalf("con simulado = %d %v", resp.StatusCode, cuerpo)
+	}
+	r, err := http.Get(s.URL + "/api/v1/telefonos")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Body.Close()
+	var lista []map[string]any
+	if err = json.NewDecoder(r.Body).Decode(&lista); err != nil || len(lista) != 2 || lista[0]["simulado"] != false || lista[1]["simulado"] != true {
+		t.Fatalf("lista = %v %v", lista, err)
+	}
+}
