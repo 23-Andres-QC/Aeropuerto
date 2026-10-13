@@ -361,6 +361,7 @@ button:disabled {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  z-index: 21;
   padding: 22px 16px;
   color: #cfe2f7;
   background: linear-gradient(
@@ -1095,7 +1096,8 @@ footer {
   .airport-switch div,
   .nav-caption,
   .sidebar-bottom div,
-  .nav-label {
+  .nav-label,
+  .sitio-flecha {
     display: none;
   }
   .sidebar nav a,

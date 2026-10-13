@@ -17,6 +17,12 @@ export async function recargarSitios(): Promise<void> {
   }
 }
 
+/** Al cerrar la sesión: la lista de sitios no se queda a la vista de quien entre después. */
+export function vaciarSitios(): void {
+  sitios.value = [];
+  error.value = "";
+}
+
 /** Último sitio visitado (o ESAN), para la página de inicio. */
 export function ultimoSitio(): string {
   try {
