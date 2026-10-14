@@ -2,7 +2,7 @@
 //
 // Entra por la pantalla de login (en un navegador sin pantalla) y comprueba que
 //   1. justo después de iniciar sesión ya están los sitios (antes quedaba «Cargando sitio…» y sin pestañas hasta recargar),
-//   2. la tarjeta abre una lista con ESAN, su zona grabada 2 (el comedor del Edificio D) y LAP, con ratón y con teclado (↓ abre, ↑ elige, Enter confirma, Esc y clic fuera cierran),
+//   2. la tarjeta abre una lista con ESAN y LAP, con ratón y con teclado (↓ abre, ↑ elige, Enter confirma, Esc y clic fuera cierran),
 //   3. al elegir LAP, que aún no tiene cámaras ni capturas, se abre su plano y su configuración; ESAN conserva la sección en la que se estaba,
 //   4. las pestañas de sitio y «Cambiar a LAP» de Ctrl+K llevan al mismo lugar,
 //   5. tras Salir y volver a entrar, la lista se pide de nuevo.
@@ -68,7 +68,8 @@ try {
     titulo: (document.querySelector('main h1, main h2')?.textContent ?? '').trim(),
     plano: (document.querySelector('main')?.innerText ?? '').match(/Plano · [\\d.]+ × [\\d.]+ m/)?.[0] ?? null,
     capasDelPlano: document.querySelectorAll('main svg *').length,
-    vecinos: document.querySelectorAll('g.entrada-vecino[role=link]').length,
+    zonasGrabadas: [...document.querySelectorAll('button.ir-capa')].map((b) => b.textContent.trim()),
+    marcasEnCampus: document.querySelectorAll('g.entrada-vecino[role=button]').length,
     panelZonas: [...document.querySelectorAll('main h2, main h3')].some((h) => h.textContent.trim() === 'Zonas'),
   }))()`);
   const paso = async (texto, verifica) => { await esperar(2500); const e = await estado(); verifica(e); console.log(`✓ ${texto}`); };
@@ -88,15 +89,14 @@ try {
   await paso("justo tras iniciar sesión ya están los sitios (tarjeta y pestañas)", (e) => {
     assert.doesNotMatch(e.tarjeta, /Cargando/, `la tarjeta sigue cargando: ${e.tarjeta}`);
     assert.match(e.tarjeta, /ESAN/);
-    assert.deepEqual(e.pestanas, ["ESAN*", "ESAN · Zona grabada 2", "LAP · Jorge Chávez"]);
+    assert.deepEqual(e.pestanas, ["ESAN*", "LAP · Jorge Chávez"]);
   });
 
   await clic(`document.querySelector('.sitio-boton')`);
-  await paso("la tarjeta abre la lista con ESAN, su zona grabada 2 y LAP", (e) => {
+  await paso("la tarjeta abre la lista con ESAN y LAP", (e) => {
     assert.equal(e.abierto, true);
-    assert.equal(e.opciones.length, 3);
-    assert.match(e.opciones[1], /ESAN · Zona grabada 2/);
-    assert.match(e.opciones[2], /LAP · Jorge Chávez/);
+    assert.equal(e.opciones.length, 2);
+    assert.match(e.opciones[1], /LAP · Jorge Chávez/);
   });
 
   await clic(`[...document.querySelectorAll('.sitio-lista li')].find((li) => /LAP/.test(li.innerText))`);
@@ -114,7 +114,6 @@ try {
   await tecla("ArrowDown", 40);
   await paso("con teclado, ↓ abre la lista", (e) => assert.equal(e.abierto, true));
   await tecla("ArrowUp", 38);
-  await tecla("ArrowUp", 38);
   await tecla("Enter", 13);
   await paso("con teclado, ↑ y Enter eligen ESAN", (e) => {
     assert.equal(e.url, "/sitios/esan/configuracion");
@@ -125,7 +124,7 @@ try {
   await cdp("Page.navigate", { url: `${WEB}/sitios/lap/configuracion` });
   await paso("abrir LAP directo, con la sesión ya guardada: tarjeta, pestañas y plano", (e) => {
     assert.match(e.tarjeta, /LAP · Jorge Chávez/);
-    assert.deepEqual(e.pestanas, ["ESAN", "ESAN · Zona grabada 2", "LAP · Jorge Chávez*"]);
+    assert.deepEqual(e.pestanas, ["ESAN", "LAP · Jorge Chávez*"]);
     assert.equal(e.plano, "Plano · 546.4 × 978.4 m");
     assert.ok(e.capasDelPlano > 100);
   });
@@ -148,21 +147,27 @@ try {
   await clic(`[...document.querySelectorAll('.sitio-tabs a')].find((a) => /ESAN/.test(a.textContent))`);
   await paso("la pestaña ESAN vuelve a ESAN", (e) => assert.equal(e.url, "/sitios/esan/configuracion"));
 
-  // Las dos zonas grabadas de ESAN se ven juntas en el mapa del campus, y un clic en la otra lleva a ella.
+  // ESAN tiene dos zonas grabadas (el patio y el comedor del Edificio D) en UN solo mapa: el campus las muestra juntas y se puede ir a cada una.
   await cdp("Page.navigate", { url: `${WEB}/sitios/esan/configuracion` });
   await esperar(3000);
   await clic(`(() => { const b = document.querySelector('button.alternar-campus'); return /Ver campus/.test(b.textContent) ? b : document.body; })()`);
-  await esperar(1500);
-  await paso("desde ESAN, el campus muestra la zona grabada 2 como vecina", (e) => assert.equal(e.vecinos, 1));
-  await evalua(`document.querySelector('g.entrada-vecino[role=link]').dispatchEvent(new MouseEvent('click', { bubbles: true })); 0`); // un <g> de SVG no tiene click()
-  await paso("un clic en la zona vecina lleva a la zona grabada 2, en la misma sección", (e) => assert.equal(e.url, "/sitios/esan-zona-2/configuracion"));
+  await paso("el campus de ESAN marca las dos zonas grabadas y ofrece ir a la segunda", (e) => {
+    assert.deepEqual(e.zonasGrabadas, ["Ir a Zona grabada 2 · comedor"]);
+    assert.equal(e.marcasEnCampus, 1, "la segunda zona se marca sobre el campus");
+    assert.equal(e.pestanas.length, 2, "no hay un sitio aparte para la zona 2");
+  });
+  await evalua(`document.querySelector('g.entrada-vecino[role=button]').dispatchEvent(new MouseEvent('click', { bubbles: true })); 0`); // un <g> de SVG no tiene click()
+  await paso("un clic en la zona 2 acerca a ella sin cambiar de sitio", (e) => {
+    assert.equal(e.url, "/sitios/esan/configuracion");
+    assert.equal(e.marcasEnCampus, 0, "de cerca ya no es campus");
+  });
 
   await clic(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Salir')`);
   await paso("Salir lleva al login", (e) => assert.equal(e.url, "/login"));
   await iniciarSesion();
   await paso("al volver a entrar la lista de sitios se pide de nuevo", (e) => {
     assert.doesNotMatch(e.tarjeta, /Cargando/);
-    assert.equal(e.pestanas.length, 3);
+    assert.equal(e.pestanas.length, 2);
   });
 
   await cdp("Page.navigate", { url: `${WEB}/sitios/esan/en-vivo` });

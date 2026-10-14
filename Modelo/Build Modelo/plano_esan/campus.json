@@ -16,29 +16,5 @@
     -0.52
   ],
   "px_por_metro": 1.69,
-  "angulo_deg": 36.3,
-  "vecinos": [
-    {
-      "slug": "esan-zona-2",
-      "nombre": "Zona grabada 2 · comedor",
-      "poligono_px": [
-        [
-          283.2,
-          495.1
-        ],
-        [
-          334.7,
-          467.7
-        ],
-        [
-          352.8,
-          501.9
-        ],
-        [
-          301.3,
-          529.3
-        ]
-      ]
-    }
-  ]
+  "angulo_deg": 36.3
 }
