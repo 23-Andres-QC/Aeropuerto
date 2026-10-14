@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 import numpy as np
 
 import lap01
-from lap01.camaras_reid import cargar_camaras
+from lap01.camaras_reid import _solapan, cargar_camaras
 
 DIMENSION = 512
 MAX_VISTAS = 16          # prototipos de tramo guardados por persona (enlace promedio)
@@ -333,6 +333,19 @@ class MemoriaIdentidades:
             persona._banco, persona.vistas_sucias = None, True
         self._marcar(pid)
 
+    def quitar(self, pid, delta, muestras, tramos):
+        """Resta a una persona las vistas que le había sumado una identidad que resultó no ser ella."""
+        persona = self.personas[pid]
+        with self._hay:
+            persona.suma = persona.suma - np.asarray(delta, np.float32)
+            persona.muestras = max(0, persona.muestras - int(muestras))
+            for tramo in tramos:
+                persona.vistas.pop(tramo, None)
+            persona._banco, persona.vistas_sucias = None, True
+            if pid in self._fila:
+                self._matriz[self._fila[pid]] = _normal(persona.suma)
+        self._marcar(pid)
+
     def visto(self, pid, ahora):
         persona = self.personas[pid]
         if ahora - persona.ultima_vez >= 1:
@@ -388,6 +401,7 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
         self.confirmadas.clear()
         self._aportes = {}     # uid del tramo -> (muestras, suma) ya sumadas a su persona
         self._creadas = {}     # IDs creados en esta sesión -> instante (se siguen revisando un rato)
+        self._desde = {}       # identidad -> instante en que recibió su persona (ante un duplicado la conserva la primera)
         self._revisado = {}
         self.reconocidas = set()
         self._epoca = self.memoria.epoca
@@ -423,6 +437,7 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
         if self.memoria.aplicar_olvido() or self.memoria.epoca != self._epoca:
             self.reiniciar_numeracion()
         ahora = time.time()
+        self._quitar_duplicados(gids)
         ocupadas = None
         for gid in sorted(gids):
             if gid not in self.globales:
@@ -471,16 +486,17 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
         return None if mejor is None else mejor[1]
 
     def _identificar(self, gid, ocupadas, ahora):
+        ocupadas = ocupadas | self._coinciden(gid)
         seguida = self._continuacion(gid, ocupadas)
         if seguida is not None:
-            self.confirmadas[gid] = seguida
+            self.confirmadas[gid], self._desde[gid] = seguida, self.last_timestamp
             return seguida
         if self._n_vistas(gid) < self.min_query_samples:
             return None
         suma, prototipos, camaras = self._grupo(gid)
         pid, duda = self.memoria.reconocer(suma, prototipos, camaras, ocupadas=ocupadas)
         if pid is not None:
-            self.confirmadas[gid] = pid
+            self.confirmadas[gid], self._desde[gid] = pid, self.last_timestamp
             if ahora - self.memoria.personas[pid].ultima_vez > REGRESO_S:
                 self.reconocidas.add(pid)
                 self.memoria.reaparecio(pid)
@@ -488,7 +504,7 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
         espera = ESPERA_DUDA_S if duda else DURACION_NUEVA_S
         if self._n_vistas(gid) >= self.min_samples and self._duracion_visible(gid) >= espera:
             pid = self.memoria.nueva(ahora)
-            self.confirmadas[gid] = pid
+            self.confirmadas[gid], self._desde[gid] = pid, self.last_timestamp
             self._creadas[pid] = self.last_timestamp
             return pid
         return None
@@ -518,22 +534,83 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
             return  # heredó su ID por continuidad y aún no tiene vistas Re-ID con qué compararse
         self._revisado[gid] = self.last_timestamp
         suma, prototipos, camaras = self._grupo(gid)
-        antigua, _ = self.memoria.reconocer(suma, prototipos, camaras, ocupadas=self._ocupadas(excepto=gid), ignorar={pid})
+        antigua, _ = self.memoria.reconocer(suma, prototipos, camaras,
+                                            ocupadas=self._ocupadas(excepto=gid) | self._coinciden(gid), ignorar={pid})
         if antigua is None or antigua > pid:
             return
         regreso = ahora - self.memoria.personas[antigua].ultima_vez > REGRESO_S
-        self._unir_personas(antigua, pid)
+        if not self._unir_personas(antigua, pid):
+            return
         if regreso:
             self.reconocidas.add(antigua)
             self.memoria.reaparecio(antigua)
 
     def _unir_personas(self, queda, sale):
+        """`sale` era la misma persona que `queda`: se juntan en la memoria. No si alguna identidad de una estuvo a la
+        vista a la vez que una de la otra en la misma cámara: son dos personas (devuelve False)."""
+        if self._personas_coinciden(queda, sale):
+            return False
         self.memoria.fusionar(queda, sale)
         for gid, pid in list(self.confirmadas.items()):
             if pid == sale:
                 self.confirmadas[gid] = queda
         self._creadas.pop(sale, None)
         self.reconocidas.discard(sale)
+        return True
+
+    def _tramos_coinciden(self, g1, g2):
+        """Alguna vez estuvieron a la vista a la vez en la misma cámara: no pueden ser la misma persona."""
+        return any(a.camera_id == b.camera_id and _solapan(a, b) for a in self._miembros(g1) for b in self._miembros(g2))
+
+    def _personas_coinciden(self, p1, p2):
+        identidades = [[g for g, p in self.confirmadas.items() if p == pid and g in self.globales] for pid in (p1, p2)]
+        return any(self._tramos_coinciden(a, b) for a in identidades[0] for b in identidades[1])
+
+    def _coinciden(self, gid):
+        """Personas de otras identidades que estuvieron a la vista a la vez que `gid` en la misma cámara: no pueden ser
+        ella. `_ocupadas` mira solo los últimos OCUPADA_S: quien se perdía de vista un momento dejaba libre su ID, otra
+        persona parecida lo recibía y al volver había dos cajas con el mismo número (medido en un pasillo lleno de un
+        centro comercial: más de la mitad de los cuadros con un ID repetido)."""
+        propios = self._miembros(gid)
+        if not propios:
+            return set()
+        desde = min(t.inicio_s for t in propios)
+        personas = set()
+        for otro, pid in self.confirmadas.items():
+            if otro == gid or pid in personas or otro not in self.globales or self._fin(otro) < desde:
+                continue
+            if self._tramos_coinciden(gid, otro):
+                personas.add(pid)
+        return personas
+
+    def _quitar_duplicados(self, gids):
+        """Dos identidades a la vista a la vez en la misma cámara con la misma persona (una la recibió mientras la otra
+        estaba fuera de cuadro, y la otra volvió): la conserva la que la tenía antes; la otra la suelta, se le restan a
+        la persona las vistas que le había sumado (no era ella) y se vuelve a reconocer sin esa persona."""
+        for gid in sorted(gids):
+            pid = self.confirmadas.get(gid)
+            if pid is None or gid not in self.globales:
+                continue
+            rivales = [o for o, p in self.confirmadas.items()
+                       if p == pid and o != gid and o in self.globales and self._tramos_coinciden(gid, o)]
+            if not rivales:
+                continue
+            for perdedora in sorted([gid] + rivales, key=lambda g: (self._desde.get(g, math.inf), g))[1:]:
+                self._soltar(perdedora, pid)
+
+    def _soltar(self, gid, pid):
+        """La identidad deja de ser esa persona y se le restan sus aportes."""
+        del self.confirmadas[gid]
+        self._desde.pop(gid, None)
+        delta, muestras, tramos = np.zeros(DIMENSION, np.float32), 0, []
+        for t in self._miembros(gid):
+            n, suma = self._aportes.pop(t.uid, (0, None))
+            if suma is not None:
+                delta += suma
+                muestras += n
+            tramos.append(f"{self.session_uuid}/{t.uid}")
+        if pid in self.memoria.personas:
+            self.memoria.quitar(pid, delta, muestras, tramos)
 
     def _fusionar(self, g1, g2, score, promedio):
         """Al unir dos identidades de la sesión, sus personas también se unen en la memoria (queda la más antigua)."""

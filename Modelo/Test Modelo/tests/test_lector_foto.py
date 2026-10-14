@@ -1,4 +1,4 @@
-"""LectorFoto contra un camara-web falso con ida y vuelta de 60 ms: con dos pedidos a la vez llegan casi todos los
+"""LectorFoto contra un camara-web falso con ida y vuelta de 90 ms: con dos pedidos a la vez llegan casi todos los
 cuadros, en orden y antes que con uno solo."""
 import statistics
 import sys
@@ -16,7 +16,7 @@ TEST = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TEST))
 from camara_telefono import LectorFoto  # noqa: E402
 
-IDA_S = 0.03     # cada sentido: 60 ms de ida y vuelta, como el túnel por internet
+IDA_S = 0.045    # cada sentido: 90 ms de ida y vuelta, algo más que el túnel por internet
 CUADRO_S = 0.04  # el teléfono manda 25 cuadros por segundo
 JPEG = cv2.imencode(".jpg", np.zeros((24, 32, 3), np.uint8))[1].tobytes()
 
@@ -100,8 +100,8 @@ class LectorFotoTest(unittest.TestCase):
     def test_dos_pedidos_llegan_antes_que_uno(self):
         uno, edades_uno, emitidos = self.leer(1)
         dos, edades_dos, _ = self.leer(2)
-        # Con uno, cada respuesta + el pedido siguiente tardan 60 ms: se salta cuadros y espera en el servidor.
-        self.assertLess(len(uno), 0.8 * emitidos)
+        # Con uno, cada respuesta + el pedido siguiente tardan 90 ms (más que los 40 entre cuadros): se salta cuadros.
+        self.assertLess(len(uno), 0.7 * emitidos)
         self.assertGreater(len(dos), len(uno))
         self.assertLess(statistics.median(edades_dos), statistics.median(edades_uno))
 
