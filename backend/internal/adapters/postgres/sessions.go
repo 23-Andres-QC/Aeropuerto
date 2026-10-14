@@ -23,7 +23,7 @@ func NewSessionRepository(db *pgxpool.Pool) *SessionRepository { return &Session
 
 func (r *SessionRepository) Sessions(ctx context.Context, site domain.Site) ([]domain.Session, error) {
 	sessions := []domain.Session{}
-	err := collect(ctx, r.db, `SELECT s.session_id::text, COALESCE(s.name, ''), s.kind, s.status, s.recording_start, s.ended_at,
+	err := collect(ctx, r.db, `SELECT s.session_id::text, COALESCE(s.name, ''), s.kind, s.status, s.recording_start, s.recording_start_declared, s.ended_at,
 		s.summary::text, (SELECT count(*) FROM identities i WHERE i.session_id = s.session_id), COALESCE(p.n, 0), COALESCE(p.dur, 0)
 		FROM sessions s
 		LEFT JOIN LATERAL (SELECT count(*) AS n, EXTRACT(EPOCH FROM max(tp."timestamp") - s.recording_start)::float8 AS dur
@@ -32,7 +32,7 @@ func (r *SessionRepository) Sessions(ctx context.Context, site domain.Site) ([]d
 		WHERE s.site_id = $1 ORDER BY s.recording_start DESC LIMIT 50`, []any{site.ID}, func(row pgx.Rows) error {
 		var s domain.Session
 		var summary *string
-		if err := row.Scan(&s.ID, &s.Name, &s.Kind, &s.Status, &s.RecordingStart, &s.EndedAt, &summary, &s.Identities, &s.Points, &s.DurationS); err != nil {
+		if err := row.Scan(&s.ID, &s.Name, &s.Kind, &s.Status, &s.RecordingStart, &s.StartDeclared, &s.EndedAt, &summary, &s.Identities, &s.Points, &s.DurationS); err != nil {
 			return err
 		}
 		if summary != nil {
@@ -48,9 +48,9 @@ func (r *SessionRepository) Sessions(ctx context.Context, site domain.Site) ([]d
 func (r *SessionRepository) Session(ctx context.Context, site domain.Site, id string) (domain.Session, error) {
 	var s domain.Session
 	var summary *string
-	err := r.db.QueryRow(ctx, `SELECT session_id::text, COALESCE(name, ''), kind, status, recording_start, ended_at, summary::text
+	err := r.db.QueryRow(ctx, `SELECT session_id::text, COALESCE(name, ''), kind, status, recording_start, recording_start_declared, ended_at, summary::text
 		FROM sessions WHERE session_id = $1::text::uuid AND site_id = $2`, id, site.ID).
-		Scan(&s.ID, &s.Name, &s.Kind, &s.Status, &s.RecordingStart, &s.EndedAt, &summary)
+		Scan(&s.ID, &s.Name, &s.Kind, &s.Status, &s.RecordingStart, &s.StartDeclared, &s.EndedAt, &summary)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return s, domain.NotFound("Sesión no encontrada")
 	}
@@ -147,9 +147,9 @@ func (r *SessionRepository) Import(ctx context.Context, site domain.Site, p *dom
 	if len(s.Summary) > 0 && string(s.Summary) != "null" {
 		summary = string(s.Summary)
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO sessions (session_id, site_id, kind, name, status, recording_start, ended_at, config_version, config_sha256, summary)
-		VALUES ($1::text::uuid, $2, $3, NULLIF($4, ''), $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), $10::text::jsonb)`,
-		s.ID, site.ID, s.Kind, strings.TrimSpace(s.Name), s.Status, s.RecordingStart, s.EndedAt, s.ConfigVersion, s.ConfigSHA256, summary)
+	_, err = tx.Exec(ctx, `INSERT INTO sessions (session_id, site_id, kind, name, status, recording_start, recording_start_declared, ended_at, config_version, config_sha256, summary)
+		VALUES ($1::text::uuid, $2, $3, NULLIF($4, ''), $5, $6, $7, $8, NULLIF($9, ''), NULLIF($10, ''), $11::text::jsonb)`,
+		s.ID, site.ID, s.Kind, strings.TrimSpace(s.Name), s.Status, s.RecordingStart, s.StartDeclared, s.EndedAt, s.ConfigVersion, s.ConfigSHA256, summary)
 	if pgCode(err) == "23505" {
 		return domain.ImportResult{}, domain.Conflict("Esa sesión ya existe en otro sitio")
 	}
@@ -159,14 +159,22 @@ func (r *SessionRepository) Import(ctx context.Context, site domain.Site, p *dom
 	sid, _ := domain.ParseUUID(s.ID)
 
 	identityRows := make([][]any, 0, len(p.Identities))
+	genderCounts := map[string]int{}
 	for _, i := range p.Identities {
 		g, _ := domain.ParseUUID(i.GlobalID)
-		identityRows = append(identityRows, []any{g, sid, int32(i.Number), i.FirstSeen, i.LastSeen, int16(i.NCameras), i.Gender, optionalFloat32(i.GenderConf), int32(i.Votes)})
+		identityRows = append(identityRows, []any{g, sid, int32(i.Number), i.FirstSeen, i.LastSeen, int16(i.NCameras)})
+		genderCounts[i.Gender]++
 	}
 	if _, err = tx.CopyFrom(ctx, pgx.Identifier{"identities"},
-		[]string{"global_id", "session_id", "public_number", "first_seen", "last_seen", "n_cameras", "gender_estimate", "gender_confidence", "gender_votes"},
+		[]string{"global_id", "session_id", "public_number", "first_seen", "last_seen", "n_cameras"},
 		pgx.CopyFromRows(identityRows)); err != nil {
 		return domain.ImportResult{}, rejected(err)
+	}
+	// The gender of each person is not kept: only how many people of each gender the session had.
+	for g, n := range genderCounts {
+		if _, err = tx.Exec(ctx, `INSERT INTO session_gender_counts (session_id, gender, n) VALUES ($1::text::uuid, $2, $3)`, s.ID, g, n); err != nil {
+			return domain.ImportResult{}, rejected(err)
+		}
 	}
 
 	trackletRows := make([][]any, 0, len(p.Tracklets))
@@ -213,14 +221,14 @@ func (r *SessionRepository) Import(ctx context.Context, site domain.Site, p *dom
 func (r *SessionRepository) ReplayTracks(ctx context.Context, sessionID string, step float64) ([]*domain.Track, int, error) {
 	people := map[int]*domain.Track{}
 	tracks := []*domain.Track{}
-	err := collect(ctx, r.db, `SELECT i.public_number, i.gender_estimate, i.gender_confidence::float8,
+	err := collect(ctx, r.db, `SELECT i.public_number,
 		EXTRACT(EPOCH FROM i.first_seen - s.recording_start)::float8, EXTRACT(EPOCH FROM i.last_seen - s.recording_start)::float8,
 		COALESCE((SELECT array_agg(DISTINCT c.code ORDER BY c.code) FROM tracklets t JOIN cameras c ON c.id = t.camera_id
 		          WHERE t.global_id = i.global_id), '{}')
 		FROM identities i JOIN sessions s ON s.session_id = i.session_id
 		WHERE i.session_id = $1::text::uuid ORDER BY i.public_number`, []any{sessionID}, func(row pgx.Rows) error {
 		t := &domain.Track{K: []int{}, X: []float64{}, Y: []float64{}}
-		if err := row.Scan(&t.Number, &t.Gender, &t.Confidence, &t.FirstS, &t.LastS, &t.Cameras); err != nil {
+		if err := row.Scan(&t.Number, &t.FirstS, &t.LastS, &t.Cameras); err != nil {
 			return err
 		}
 		t.FirstS, t.LastS = domain.Round2(t.FirstS), domain.Round2(t.LastS)
@@ -261,10 +269,23 @@ func (r *SessionRepository) Insights(ctx context.Context, site domain.Site, sess
 	d := domain.InsightsData{People: []domain.InsightPerson{}, Heat: [][3]float64{}, Zones: []domain.ZoneStat{}}
 	id := []any{sessionID}
 
-	err := collect(ctx, r.db, `SELECT gender_estimate, EXTRACT(EPOCH FROM last_seen - first_seen)::float8
+	d.Gender = map[string]int{}
+	err := collect(ctx, r.db, `SELECT gender, n FROM session_gender_counts WHERE session_id = $1::text::uuid`, id, func(row pgx.Rows) error {
+		var g string
+		var n int
+		if err := row.Scan(&g, &n); err != nil {
+			return err
+		}
+		d.Gender[g] = n
+		return nil
+	})
+	if err != nil {
+		return d, err
+	}
+	err = collect(ctx, r.db, `SELECT EXTRACT(EPOCH FROM last_seen - first_seen)::float8
 		FROM identities WHERE session_id = $1::text::uuid`, id, func(row pgx.Rows) error {
 		var p domain.InsightPerson
-		if err := row.Scan(&p.Gender, &p.DwellS); err != nil {
+		if err := row.Scan(&p.DwellS); err != nil {
 			return err
 		}
 		p.DwellS = domain.Round2(p.DwellS)
@@ -311,4 +332,52 @@ func (r *SessionRepository) Insights(ctx context.Context, site domain.Site, sess
 		return nil
 	})
 	return d, err
+}
+
+// ShiftSession moves a stored session in time so it starts at start: every time of the session (people, tracklets,
+// points, events) moves by the same amount and the start is marked as declared. The matches with tickets and the
+// traffic computed from the old times are removed (matching and traffic are computed again).
+func (r *SessionRepository) ShiftSession(ctx context.Context, site domain.Site, session domain.Session, start time.Time) (domain.StartShift, error) {
+	shift := start.Sub(session.RecordingStart).Seconds()
+	res := domain.StartShift{ShiftS: domain.Round2(shift)}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return res, domain.Unavailable("Base de datos no disponible", err)
+	}
+	defer tx.Rollback(ctx)
+	id := session.ID
+	tag, err := tx.Exec(ctx, "DELETE FROM sales_matches WHERE session_id = $1::text::uuid", id)
+	if err != nil {
+		return res, err
+	}
+	res.MatchesRemoved = int(tag.RowsAffected())
+	for _, sql := range []string{
+		"DELETE FROM sales_match_runs WHERE session_id = $1::text::uuid",
+		"DELETE FROM traffic_buckets WHERE session_id = $1::text::uuid",
+		"DELETE FROM heat_cells WHERE session_id = $1::text::uuid",
+		"DELETE FROM traffic_runs WHERE session_id = $1::text::uuid",
+	} {
+		if _, err = tx.Exec(ctx, sql, id); err != nil {
+			return res, err
+		}
+	}
+	for _, sql := range []string{
+		`UPDATE trajectory_points tp SET "timestamp" = tp."timestamp" + $2::float8 * interval '1 second'
+			FROM identities i WHERE i.global_id = tp.global_id AND i.session_id = $1::text::uuid`,
+		`UPDATE tracklets t SET t_start = t.t_start + $2::float8 * interval '1 second', t_end = t.t_end + $2::float8 * interval '1 second'
+			FROM identities i WHERE i.global_id = t.global_id AND i.session_id = $1::text::uuid`,
+		`UPDATE identities SET first_seen = first_seen + $2::float8 * interval '1 second', last_seen = last_seen + $2::float8 * interval '1 second'
+			WHERE session_id = $1::text::uuid`,
+		`UPDATE spatial_events SET start_time = start_time + $2::float8 * interval '1 second', end_time = end_time + $2::float8 * interval '1 second'
+			WHERE session_id = $1::text::uuid`,
+	} {
+		if _, err = tx.Exec(ctx, sql, id, shift); err != nil {
+			return res, rejected(err)
+		}
+	}
+	if _, err = tx.Exec(ctx, `UPDATE sessions SET recording_start = $3, ended_at = ended_at + $2::float8 * interval '1 second', recording_start_declared = TRUE
+		WHERE session_id = $1::text::uuid AND site_id = $4`, id, shift, start, site.ID); err != nil {
+		return res, rejected(err)
+	}
+	return res, tx.Commit(ctx)
 }

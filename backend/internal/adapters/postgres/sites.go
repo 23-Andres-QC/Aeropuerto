@@ -21,11 +21,11 @@ func NewSiteRepository(db *pgxpool.Pool) *SiteRepository { return &SiteRepositor
 const siteColumns = `s.site_id, s.slug, s.name, s.description, s.map IS NOT NULL,
 	(SELECT count(*) FROM cameras c WHERE c.site_id = s.site_id),
 	(SELECT count(*) FROM zones z WHERE z.site_id = s.site_id AND z.active),
-	(SELECT count(*) FROM sessions se WHERE se.site_id = s.site_id), s.plan_updated_at`
+	(SELECT count(*) FROM sessions se WHERE se.site_id = s.site_id), s.plan_updated_at, s.is_demo, s.min_group_size`
 
 func scanSite(row pgx.Row) (domain.Site, error) {
 	var s domain.Site
-	err := row.Scan(&s.ID, &s.Slug, &s.Name, &s.Description, &s.HasMap, &s.Cameras, &s.Zones, &s.Sessions, &s.PlanUpdatedAt)
+	err := row.Scan(&s.ID, &s.Slug, &s.Name, &s.Description, &s.HasMap, &s.Cameras, &s.Zones, &s.Sessions, &s.PlanUpdatedAt, &s.Demo, &s.MinGroupSize)
 	return s, err
 }
 
@@ -138,6 +138,18 @@ func (r *SiteRepository) DeleteSite(ctx context.Context, site domain.Site) error
 	if pgCode(err) == "23503" {
 		return domain.Conflict("El sitio tiene datos del modelo guardados")
 	}
+	return err
+}
+
+// SetMinGroupSize stores the minimum group size of a site.
+func (r *SiteRepository) SetMinGroupSize(ctx context.Context, site domain.Site, n int) error {
+	_, err := r.db.Exec(ctx, `UPDATE sites SET min_group_size = $2 WHERE site_id = $1`, site.ID, n)
+	return err
+}
+
+// SetDemo marks a site as the demonstration one (everything in it is simulated).
+func (r *SiteRepository) SetDemo(ctx context.Context, site domain.Site, demo bool) error {
+	_, err := r.db.Exec(ctx, `UPDATE sites SET is_demo = $2 WHERE site_id = $1`, site.ID, demo)
 	return err
 }
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { colorPersona, segundos } from "../../../shared/format";
-import { api, mapaDelSitio, tramos, GENEROS, type Config, type Replay, type Sesion } from "../api";
+import { api, mapaDelSitio, tramos, type Config, type Replay, type Sesion } from "../api";
 import VistaTelefono from "../../telefonos/components/VistaTelefono.vue";
 import PlanoSitio, { type PersonaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
 import { CELDA_CALOR, SESION_VIVO, ajusteMapa, capturaDePrueba, capturasVersion, fijarUnion, unidasAhora, unirPorPosicion, grabando, iniciarGrabacion, terminarGrabacion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura } from "../enVivo";
@@ -392,7 +392,6 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <li v-for="p in presentes" :key="p.numero">
           <span class="punto" :style="{ background: colorPersona(p.numero) }"></span>
           <b>G{{ p.numero }}</b>
-          <span>{{ GENEROS[p.genero] ?? p.genero }}<template v-if="p.confianza"> · {{ Math.round(p.confianza * 100) }}%</template></span>
           <small class="muted">{{ p.camaras.join(", ") }} · {{ segundos(p.fin_s - p.inicio_s) }}</small>
         </li>
         <li v-if="!presentes.length" class="muted vacio">{{ replay ? "Nadie en el plano en este instante." : "Sin sesión para reproducir." }}</li>

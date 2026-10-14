@@ -12,7 +12,6 @@ export type Linea = { product: string; category: string; quantity: number; unit_
 export type Emparejamiento = {
   session_id: string;
   person: number;
-  gender: string;
   stay_start: string;
   stay_end: string;
   /** Segundos entre la hora del ticket y la salida de la persona (negativo: pagó antes de salir). */

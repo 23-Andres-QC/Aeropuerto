@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	"aeropuerto/internal/core/domain"
 	"aeropuerto/internal/core/ports"
@@ -15,10 +16,21 @@ type SessionService struct {
 	sites *SiteService
 	repo  ports.SessionRepository
 	cache *cache
+	// changed runs after a session's positions change (imported, or adjusted by Part III).
+	changed func(ctx context.Context, sessionID string)
 }
 
 func NewSessionService(sites *SiteService, repo ports.SessionRepository) *SessionService {
 	return &SessionService{sites: sites, repo: repo, cache: newCache(64)}
+}
+
+// OnChange registers what runs after a session's positions change: the traffic aggregates are recomputed from it.
+func (s *SessionService) OnChange(f func(ctx context.Context, sessionID string)) { s.changed = f }
+
+func (s *SessionService) notify(ctx context.Context, sessionID string) {
+	if s.changed != nil {
+		s.changed(ctx, sessionID)
+	}
 }
 
 // Invalidate drops cached results; a zone or camera change alters insights.
@@ -45,6 +57,7 @@ func (s *SessionService) Import(ctx context.Context, slug string, p *domain.Impo
 	r, err := s.repo.Import(ctx, site, p)
 	if err == nil {
 		s.cache.clear()
+		s.notify(ctx, r.SessionID)
 	}
 	return r, err
 }
@@ -106,12 +119,14 @@ func (s *SessionService) Replay(ctx context.Context, slug, id string, step float
 
 // Insights aggregates a session: people, gender, dwell, occupancy over time,
 // cameras, flows between cameras, a 1 m heat map and the site's zones.
-func (s *SessionService) Insights(ctx context.Context, slug, id string) (domain.Insights, error) {
+// role picks the minimum group size of the gender counts: a store always gets 5.
+func (s *SessionService) Insights(ctx context.Context, slug, id, role string) (domain.Insights, error) {
 	site, session, err := s.session(ctx, slug, id)
 	if err != nil {
 		return domain.Insights{}, err
 	}
-	key := "insights:" + session.ID
+	minGroup := domain.EffectiveMinGroup(role, site.MinGroupSize)
+	key := fmt.Sprintf("insights:%s:%d", session.ID, minGroup)
 	if v, ok := s.cache.get(key); ok && session.Finished() {
 		return v.(domain.Insights), nil
 	}
@@ -119,15 +134,14 @@ func (s *SessionService) Insights(ctx context.Context, slug, id string) (domain.
 	if err != nil {
 		return domain.Insights{}, err
 	}
-	gender := map[string]int{"HOMBRE": 0, "MUJER": 0, "SIN_DETERMINAR": 0}
 	dwell := make([]float64, 0, len(d.People))
 	for _, p := range d.People {
-		gender[p.Gender]++
 		dwell = append(dwell, p.DwellS)
 	}
+	gender, hidden := domain.PrivateGender(d.Gender, minGroup)
 	insights := domain.Insights{
 		Session: session,
-		Summary: domain.InsightsSummary{People: len(d.People), Gender: gender, Dwell: dwellStats(dwell)},
+		Summary: domain.InsightsSummary{People: len(d.People), Gender: gender, GenderHidden: hidden, GenderMin: minGroup, Dwell: dwellStats(dwell)},
 		Heat:    domain.Heat{CellM: 1, Cells: d.Heat},
 		Zones:   d.Zones,
 	}
@@ -147,6 +161,23 @@ func dwellStats(values []float64) domain.DwellStats {
 		total += v
 	}
 	return domain.DwellStats{MeanS: domain.Round2(total / float64(len(values))), MedianS: values[len(values)/2], MaxS: values[len(values)-1]}
+}
+
+// SetRecordingStart corrects when a stored session began recording: every time of the session moves with it.
+func (s *SessionService) SetRecordingStart(ctx context.Context, slug, id string, start time.Time) (domain.StartShift, error) {
+	site, session, err := s.session(ctx, slug, id)
+	if err != nil {
+		return domain.StartShift{}, err
+	}
+	if err = domain.ValidStart(start); err != nil {
+		return domain.StartShift{}, err
+	}
+	shift, err := s.repo.ShiftSession(ctx, site, session, start.UTC())
+	if err == nil {
+		s.cache.clear()
+		s.notify(ctx, session.ID)
+	}
+	return shift, err
 }
 
 // Points exports a session's trajectory, the input of Part III.
@@ -171,6 +202,7 @@ func (s *SessionService) SaveAnalytics(ctx context.Context, slug, id string, in 
 	saved, err := s.repo.SaveAnalytics(ctx, site, session, in)
 	if err == nil {
 		s.cache.clear()
+		s.notify(ctx, session.ID)
 	}
 	return saved, err
 }

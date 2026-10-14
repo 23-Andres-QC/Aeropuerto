@@ -23,15 +23,18 @@ type Import struct {
 }
 
 type ImportSession struct {
-	ID             string          `json:"session_id"`
-	Name           string          `json:"name"`
-	Kind           string          `json:"kind"`
-	Status         string          `json:"status"`
-	RecordingStart time.Time       `json:"recording_start"`
-	EndedAt        *time.Time      `json:"ended_at"`
-	ConfigVersion  string          `json:"config_version"`
-	ConfigSHA256   string          `json:"config_sha256"`
-	Summary        json.RawMessage `json:"summary"`
+	ID             string    `json:"session_id"`
+	Name           string    `json:"name"`
+	Kind           string    `json:"kind"`
+	Status         string    `json:"status"`
+	RecordingStart time.Time `json:"recording_start"`
+	// StartDeclared: whoever published the Build declared when the recording began (INICIO_GRABACION) instead of
+	// leaving the time the Build ran. A BUILD must; a LIVE session takes it from the clock.
+	StartDeclared bool            `json:"recording_start_declared"`
+	EndedAt       *time.Time      `json:"ended_at"`
+	ConfigVersion string          `json:"config_version"`
+	ConfigSHA256  string          `json:"config_sha256"`
+	Summary       json.RawMessage `json:"summary"`
 }
 
 type ImportCamera struct {
@@ -82,6 +85,9 @@ type ImportPoints struct {
 	Confidence []float64  `json:"confidence"`
 }
 
+// MissingStartMessage is what a Build gets when it does not say when the recording began.
+const MissingStartMessage = "El Build no declaró cuándo empezó la grabación (INICIO_GRABACION). Sin esa hora, los análisis por franja horaria y por fecha quedan corridos. Define INICIO_GRABACION con la fecha y hora de Lima en que empezó a grabarse el video y vuelve a publicar."
+
 // ImportResult reports what was stored and how long it took.
 type ImportResult struct {
 	SessionID  string `json:"session_id"`
@@ -112,6 +118,15 @@ func (p *Import) Validate() error {
 	}
 	if s.Status != "RUNNING" && s.Status != "DONE" && s.Status != "FAILED" {
 		return Invalid("status debe ser RUNNING, DONE o FAILED")
+	}
+	if s.Kind == "LIVE" {
+		s.StartDeclared = true
+	}
+	if s.Kind == "BUILD" && !s.StartDeclared {
+		return Invalid(MissingStartMessage)
+	}
+	if s.RecordingStart.After(time.Now().Add(10 * time.Minute)) {
+		return Invalid("la hora de inicio de la grabación está en el futuro: revisa INICIO_GRABACION (fecha, hora y zona horaria de Lima)")
 	}
 	if s.RecordingStart.IsZero() || len(s.Name) > 120 || (s.ConfigSHA256 != "" && len(s.ConfigSHA256) != 64) || len(s.ConfigVersion) > 20 {
 		return Invalid("datos de sesión inválidos (recording_start, name o config)")

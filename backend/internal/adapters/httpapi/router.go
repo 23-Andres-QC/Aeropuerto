@@ -15,6 +15,11 @@ type Services struct {
 	Sessions *services.SessionService
 	Phones   *services.PhoneService
 	Sales    *services.SalesService
+	Traffic  *services.TrafficService
+	// Accounts, Privacy and Demo are the administration of accounts, retention and the demo site (nil: not served).
+	Accounts *services.AccountService
+	Privacy  *services.PrivacyService
+	Demo     *services.DemoService
 }
 
 // Options configure the parts of the API that are not use cases.
@@ -34,7 +39,11 @@ func NewRouter(s Services, o Options) http.Handler {
 	m := http.NewServeMux()
 	siteHandler{sites: s.Sites, sessions: s.Sessions, mediaDir: o.MediaDir}.routes(m)
 	salesHandler{s.Sales}.routes(m)
+	trafficHandler{s.Traffic}.routes(m)
 	phoneHandler{s.Phones}.routes(m)
+	if s.Accounts != nil {
+		accountHandler{accounts: s.Accounts, sites: s.Sites, privacy: s.Privacy, demo: s.Demo}.routes(m)
+	}
 	if o.Realtime != nil {
 		o.Realtime.Routes(m)
 	}

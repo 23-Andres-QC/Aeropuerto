@@ -1,0 +1,213 @@
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { cuentaRegresiva, enlaceConCodigo } from "../../../core/roles";
+import { union, type CodigoUnion } from "../api";
+import CodigoQR from "./CodigoQR.vue";
+
+// Unir teléfonos como cámaras: el administrador crea un código (15 minutos, hasta 10 teléfonos), lo muestra como QR y lo escanean.
+// Revocar el código impide que se unan más; revocar un teléfono (en su tarjeta, abajo) lo desconecta y no vuelve.
+const props = defineProps<{ enlace: string | null; telefonos: { id: string; nombre: string; simulado?: boolean }[] }>();
+const emit = defineEmits<{ revocado: [] }>();
+
+const codigos = ref<CodigoUnion[]>([]);
+const error = ref("");
+const creando = ref(false);
+const ahora = ref(Date.now());
+const copiado = ref(false);
+let sondeo: ReturnType<typeof setInterval> | undefined;
+let reloj: ReturnType<typeof setInterval> | undefined;
+
+const vigente = computed(() => codigos.value.find((c) => c.activo && new Date(c.vence).getTime() > ahora.value) ?? null);
+const anteriores = computed(() => codigos.value.filter((c) => c.id !== vigente.value?.id));
+const url = computed(() => (vigente.value && props.enlace ? enlaceConCodigo(props.enlace, vigente.value.codigo) : ""));
+
+async function cargar() {
+  try {
+    codigos.value = await union.codigos();
+    error.value = "";
+  } catch (e) {
+    error.value = (e as Error).message;
+  }
+}
+
+async function crear() {
+  creando.value = true;
+  error.value = "";
+  try {
+    await union.crearCodigo();
+    await cargar();
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    creando.value = false;
+  }
+}
+
+async function revocar(c: CodigoUnion) {
+  error.value = "";
+  try {
+    await union.revocarCodigo(c.id);
+    await cargar();
+  } catch (e) {
+    error.value = (e as Error).message;
+  }
+}
+
+async function revocarTelefono(t: { id: string; nombre: string }) {
+  if (!window.confirm(`¿Desconectar «${t.nombre}»? No podrá volver a unirse con el mismo código.`)) return;
+  error.value = "";
+  try {
+    await union.revocarTelefono(t.id);
+    emit("revocado");
+  } catch (e) {
+    error.value = (e as Error).message;
+  }
+}
+
+async function copiar() {
+  if (!vigente.value) return;
+  try {
+    await navigator.clipboard.writeText(vigente.value.codigo);
+    copiado.value = true;
+    setTimeout(() => (copiado.value = false), 2000);
+  } catch {
+    /* sin permiso de portapapeles: el código sigue a la vista para dictarlo */
+  }
+}
+
+const estado = (c: CodigoUnion) => (c.revocado ? "revocado" : c.usos >= c.max ? "agotado" : new Date(c.vence).getTime() <= ahora.value ? "vencido" : "vigente");
+
+onMounted(() => {
+  void cargar();
+  sondeo = setInterval(cargar, 5000);
+  reloj = setInterval(() => (ahora.value = Date.now()), 1000);
+});
+onUnmounted(() => {
+  clearInterval(sondeo);
+  clearInterval(reloj);
+});
+</script>
+
+<template>
+  <section class="panel unir" aria-label="Unir teléfonos como cámaras">
+    <div class="panel-heading">
+      <h2>Unir teléfonos</h2>
+      <span class="muted">solo con un código de unión · dura 15 min · hasta 10 teléfonos</span>
+    </div>
+    <p v-if="error" class="error" role="alert">{{ error }}</p>
+
+    <div v-if="vigente" class="vigente">
+      <div class="qr-caja">
+        <CodigoQR v-if="url" :texto="url" etiqueta="Código QR para unir un teléfono como cámara" />
+        <p v-else class="muted">Abre esta página con la IP o el dominio del servidor para que el QR lleve a la cámara.</p>
+      </div>
+      <div class="datos">
+        <p class="muted">Escanea el QR con el teléfono, o escribe este código en la página de cámara:</p>
+        <p class="codigo" data-prueba="codigo-vigente">{{ vigente.codigo }}</p>
+        <p class="cuenta">
+          Vence en <b data-prueba="cuenta-regresiva">{{ cuentaRegresiva(vigente.vence, ahora) }}</b> · se usó en
+          <b data-prueba="usos">{{ vigente.usos }}</b> de {{ vigente.max }} teléfonos
+        </p>
+        <p v-if="enlace" class="muted enlace-texto">{{ enlace }}</p>
+        <div class="acciones">
+          <button class="button" type="button" @click="copiar">{{ copiado ? "✓ Copiado" : "Copiar código" }}</button>
+          <button class="danger-button" type="button" data-prueba="revocar-codigo" @click="revocar(vigente)">Revocar código</button>
+        </div>
+      </div>
+    </div>
+    <div v-else class="sin-codigo">
+      <p class="muted">No hay un código vigente. Sin código nadie puede unirse como cámara.</p>
+    </div>
+    <button class="primary-button" type="button" data-prueba="crear-codigo" :disabled="creando" @click="crear">
+      {{ vigente ? "Crear otro código" : "Crear código de unión" }}
+    </button>
+
+    <div v-if="telefonos.some((t) => !t.simulado)" class="unidos">
+      <h3>Teléfonos unidos</h3>
+      <ul>
+        <li v-for="t in telefonos.filter((x) => !x.simulado)" :key="t.id">
+          <span>{{ t.nombre }}</span>
+          <button class="danger-button" type="button" :data-prueba="`revocar-${t.id}`" @click="revocarTelefono(t)">Revocar teléfono</button>
+        </li>
+      </ul>
+    </div>
+
+    <details v-if="anteriores.length" class="anteriores">
+      <summary>Códigos anteriores ({{ anteriores.length }})</summary>
+      <ul>
+        <li v-for="c in anteriores" :key="c.id">
+          <b>{{ c.codigo }}</b> · {{ estado(c) }} · {{ c.usos }}/{{ c.max }} teléfonos
+        </li>
+      </ul>
+    </details>
+  </section>
+</template>
+
+<style scoped>
+.unir {
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.vigente {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.qr-caja {
+  flex: 0 0 240px;
+  max-width: 100%;
+}
+.datos {
+  flex: 1 1 260px;
+}
+.codigo {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  font-variant-numeric: tabular-nums;
+  margin: 4px 0;
+}
+.cuenta {
+  margin: 4px 0 8px;
+}
+.enlace-texto {
+  word-break: break-all;
+  font-size: 12px;
+}
+.acciones {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sin-codigo {
+  margin-bottom: 10px;
+}
+.anteriores {
+  margin-top: 12px;
+}
+.unidos {
+  margin-top: 14px;
+}
+.unidos h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+.unidos ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.unidos li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 0;
+}
+.anteriores ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+</style>

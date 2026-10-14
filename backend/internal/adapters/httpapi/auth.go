@@ -2,60 +2,55 @@ package httpapi
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"aeropuerto/internal/core/domain"
+	"aeropuerto/internal/core/services"
 )
 
-// Roles of the access control. An account with admin_lap can do everything; a
-// script that calls with the API key (role maquina) can read and write but never
-// delete. Accounts in the database and the store role arrive with the next step.
+// Roles of the access control (see domain). An admin_lap account does everything; a tienda account sees the figures
+// of its own local and nothing else; the key of the scripts (role maquina) reads and writes but never deletes and
+// never manages accounts; the key of a store (tienda_ingesta) is for its ingestion, which arrives later.
 const (
-	RoleAdmin   = "admin_lap"
-	RoleMachine = "maquina"
+	RoleAdmin     = domain.RoleAdmin
+	RoleStore     = domain.RoleStore
+	RoleMachine   = domain.RoleMachine
+	RoleStoreFeed = domain.RoleStoreFeed
 )
 
-// CookieName is the session cookie: signed, HttpOnly and SameSite=Strict, so a
-// script of the page cannot read it and another site cannot send it.
+// CookieName is the session cookie: an unguessable secret, HttpOnly and SameSite=Strict, so a script of the page
+// cannot read it and another site cannot send it. The server keeps only its SHA-256.
 const CookieName = "lap_sesion"
+
+// Principal is who made the request.
+type Principal = domain.Principal
 
 // AuthConfig is what Auth needs from the settings.
 type AuthConfig struct {
-	User, Password string
-	// Secret signs the session cookie; too short or empty, a random one is made.
-	Secret string
+	// Accounts holds the accounts, their logins and the store keys.
+	Accounts *services.AccountService
 	// APIKey is the key of the scripts; empty disables it.
 	APIKey string
-	// Session is how long a login lasts (12 h if zero).
-	Session time.Duration
 }
 
-// Auth authenticates every request of the API. It keeps no secret in clear: the
-// user, password and key are compared through their SHA-256 digests in constant
-// time, and nothing sensitive is ever logged.
+// Auth authenticates every request of the API. It keeps no secret in clear: the key of the scripts is compared through
+// its SHA-256 in constant time, passwords are argon2id hashes in the database, and nothing sensitive is ever logged.
 type Auth struct {
-	user, pass, key [sha256.Size]byte
-	canLogin        bool
-	hasKey          bool
-	secret          []byte
-	ttl             time.Duration
-	now             func() time.Time
-	limiter         *loginLimiter
-
-	// revoked holds the tokens of the logins that were closed, until they would have expired anyway: a copied
-	// cookie stops working when its owner logs out (the list lives in memory: a restart forgets it).
-	revokedMu sync.Mutex
-	revoked   map[string]time.Time
+	accounts *services.AccountService
+	key      [sha256.Size]byte
+	hasKey   bool
+	limiter  *loginLimiter
 }
 
 func digest(s string) [sha256.Size]byte { return sha256.Sum256([]byte(s)) }
@@ -63,36 +58,11 @@ func digest(s string) [sha256.Size]byte { return sha256.Sum256([]byte(s)) }
 func equal(a, b [sha256.Size]byte) bool { return subtle.ConstantTimeCompare(a[:], b[:]) == 1 }
 
 func NewAuth(c AuthConfig) *Auth {
-	a := &Auth{
-		user:     digest(strings.ToLower(strings.TrimSpace(c.User))),
-		pass:     digest(c.Password),
-		canLogin: strings.TrimSpace(c.User) != "" && c.Password != "",
-		hasKey:   c.APIKey != "",
-		secret:   []byte(c.Secret),
-		ttl:      c.Session,
-		now:      time.Now,
-		limiter:  newLoginLimiter(5, 15*time.Minute, 15*time.Minute),
-		revoked:  map[string]time.Time{},
-	}
+	a := &Auth{accounts: c.Accounts, hasKey: c.APIKey != "", limiter: newLoginLimiter(5, 15*time.Minute, 15*time.Minute)}
 	if c.APIKey != "" {
 		a.key = digest(c.APIKey)
 	}
-	if len(a.secret) < 16 {
-		a.secret = make([]byte, 32)
-		_, _ = rand.Read(a.secret)
-	}
-	if a.ttl <= 0 {
-		a.ttl = 12 * time.Hour
-	}
 	return a
-}
-
-// Principal is who made the request.
-type Principal struct {
-	User string
-	Role string
-	// Expires is when the login ends (zero for the API key).
-	Expires time.Time
 }
 
 type principalKey struct{}
@@ -103,97 +73,38 @@ func PrincipalOf(r *http.Request) (Principal, bool) {
 	return p, ok
 }
 
-type claims struct {
-	User string `json:"u"`
-	Role string `json:"r"`
-	Exp  int64  `json:"exp"`
-	// ID makes every login's token its own (two logins of the account in the same second must not share one):
-	// closing a session revokes only that one.
-	ID string `json:"j,omitempty"`
-}
-
-func newTokenID() string {
-	b := make([]byte, 12)
-	_, _ = rand.Read(b)
-	return b64.EncodeToString(b)
-}
-
-var b64 = base64.RawURLEncoding
-
-func (a *Auth) sign(c claims) string {
-	payload, _ := json.Marshal(c)
-	p := b64.EncodeToString(payload)
-	mac := hmac.New(sha256.New, a.secret)
-	mac.Write([]byte(p))
-	return p + "." + b64.EncodeToString(mac.Sum(nil))
-}
-
-func (a *Auth) verify(token string) (claims, bool) {
-	var c claims
-	if len(token) > 1024 {
-		return c, false
-	}
-	p, sig, found := strings.Cut(token, ".")
-	if !found {
-		return c, false
-	}
-	want, err := b64.DecodeString(sig)
-	if err != nil {
-		return c, false
-	}
-	mac := hmac.New(sha256.New, a.secret)
-	mac.Write([]byte(p))
-	if !hmac.Equal(mac.Sum(nil), want) {
-		return c, false
-	}
-	raw, err := b64.DecodeString(p)
-	if err != nil || json.Unmarshal(raw, &c) != nil {
-		return c, false
-	}
-	if c.Exp <= a.now().Unix() || c.Role != RoleAdmin || c.User == "" {
-		return c, false
-	}
-	return c, true
-}
-
-// authenticate reads the API key (Authorization: Bearer) or the session cookie.
-// A wrong key is never rescued by a cookie: whoever sends a key is a script.
-func (a *Auth) authenticate(r *http.Request) (Principal, bool) {
+// authenticate reads the API key (Authorization: Bearer) or the session cookie. A wrong key is never rescued by a
+// cookie: whoever sends a key is a script. The error is set only when the answer could not be given (the database).
+func (a *Auth) authenticate(r *http.Request) (Principal, bool, error) {
 	if h := r.Header.Get("Authorization"); h != "" {
 		scheme, key, found := strings.Cut(h, " ")
-		if !found || !strings.EqualFold(scheme, "Bearer") || !a.hasKey || !equal(digest(strings.TrimSpace(key)), a.key) {
-			return Principal{}, false
+		key = strings.TrimSpace(key)
+		if !found || !strings.EqualFold(scheme, "Bearer") || key == "" {
+			return Principal{}, false, nil
 		}
-		return Principal{User: "script", Role: RoleMachine}, true
+		if a.hasKey && equal(digest(key), a.key) {
+			return Principal{User: "script", Role: RoleMachine}, true, nil
+		}
+		if a.accounts != nil && strings.HasPrefix(key, "lapk_") {
+			p, err := a.accounts.AuthenticateKey(r.Context(), key)
+			return p, err == nil, nonAuth(err)
+		}
+		return Principal{}, false, nil
 	}
 	cookie, err := r.Cookie(CookieName)
-	if err != nil {
-		return Principal{}, false
+	if err != nil || a.accounts == nil {
+		return Principal{}, false, nil
 	}
-	c, ok := a.verify(cookie.Value)
-	if !ok || a.isRevoked(cookie.Value) {
-		return Principal{}, false
-	}
-	return Principal{User: c.User, Role: c.Role, Expires: time.Unix(c.Exp, 0)}, true
+	p, err := a.accounts.Authenticate(r.Context(), cookie.Value)
+	return p, err == nil, nonAuth(err)
 }
 
-func (a *Auth) revoke(token string, exp time.Time) {
-	a.revokedMu.Lock()
-	defer a.revokedMu.Unlock()
-	now := a.now()
-	for t, until := range a.revoked {
-		if !until.After(now) {
-			delete(a.revoked, t)
-		}
+// nonAuth drops the "not logged in" errors: they are an answer, not a failure.
+func nonAuth(err error) error {
+	if errors.Is(err, services.ErrUnauthenticated) {
+		return nil
 	}
-	a.revoked[token] = exp
-}
-
-func (a *Auth) isRevoked(token string) bool {
-	a.revokedMu.Lock()
-	defer a.revokedMu.Unlock()
-	_, ok := a.revoked[token]
-	return ok
+	return err
 }
 
 // isPublic lists what answers without a login: the health probes and the login itself.
@@ -207,19 +118,92 @@ func isPublic(r *http.Request) bool {
 	return false
 }
 
-// Require rejects, with 401, everything that is not public and carries no valid
-// login or key, and, with 403, every deletion that does not come from an admin_lap
-// account. Each deletion is logged with who, where from and how it ended.
+var (
+	// A store account may read these two questions about its own local, and nothing else of the platform.
+	storeAllowed = regexp.MustCompile(`^/api/v1/sites/([a-z0-9-]+)/trafico/(permanencia|embudo)$`)
+	// What only an admin_lap login may touch: accounts, keys, the audit log, the demo site and the retention.
+	adminOnly = regexp.MustCompile(`^/api/v1/(usuarios|auditoria|demo|privacidad)(/|$)|/llaves(/|$)|/grupo-minimo$`)
+)
+
+// scope applies what each role may reach. It returns false after answering when the request is out of reach. A store
+// account gets 404 for what is not its own (it should not even learn that it exists), with the local forced to its own.
+func scope(w http.ResponseWriter, r *http.Request, p Principal) bool {
+	path := r.URL.Path
+	// nginx asks this for every role: check itself says which ones may pass.
+	if r.Method == http.MethodGet && path == "/api/v1/auth/check" {
+		return true
+	}
+	switch p.Role {
+	case RoleAdmin:
+		return true
+	case RoleMachine:
+		if adminOnly.MatchString(path) {
+			fail(w, http.StatusForbidden, "Esta cuenta no puede hacer eso.")
+			return false
+		}
+		return true
+	case RoleStore:
+		if r.Method == http.MethodGet && (path == "/api/v1/auth/me") || r.Method == http.MethodPost && path == "/api/v1/auth/password" {
+			return true
+		}
+		m := storeAllowed.FindStringSubmatch(path)
+		if r.Method != http.MethodGet || m == nil || p.LocalID == nil || m[1] != p.Site {
+			http.NotFound(w, r)
+			return false
+		}
+		q := r.URL.Query()
+		q.Set("local", strconv.Itoa(*p.LocalID))
+		for _, k := range []string{"locales", "zona", "zonas"} {
+			q.Del(k)
+		}
+		r.URL.RawQuery = q.Encode()
+		return true
+	case RoleStoreFeed:
+		if r.Method == http.MethodGet && path == "/api/v1/auth/me" {
+			return true
+		}
+	}
+	http.NotFound(w, r)
+	return false
+}
+
+// failCode answers with an error and a code the web reads.
+func failCode(w http.ResponseWriter, status int, msg, code string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg, "codigo": code})
+}
+
+// mustChangeAllowed is what an account with a temporary password may do before choosing its own.
+func mustChangeAllowed(r *http.Request) bool {
+	return (r.Method == http.MethodGet && r.URL.Path == "/api/v1/auth/me") || (r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/password")
+}
+
+// Require rejects, with 401, everything that is not public and carries no valid login or key, applies what each role
+// may reach and, with 403, every deletion that does not come from an admin_lap account. Each deletion is logged with who,
+// where from and how it ended.
 func (a *Auth) Require(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isPublic(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		p, ok := a.authenticate(r)
+		p, ok, err := a.authenticate(r)
+		if err != nil {
+			slog.Error("no se pudo comprobar la sesión", "error", err)
+			fail(w, http.StatusServiceUnavailable, "No se pudo comprobar la sesión. Intenta de nuevo.")
+			return
+		}
 		if !ok {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="lap"`)
 			fail(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
+			return
+		}
+		if p.MustChange && !mustChangeAllowed(r) {
+			failCode(w, http.StatusForbidden, "Cambia tu contraseña temporal para continuar.", "cambiar_clave")
+			return
+		}
+		if !scope(w, r, p) {
 			return
 		}
 		r = r.WithContext(context.WithValue(r.Context(), principalKey{}, p))
@@ -256,20 +240,33 @@ func (a *Auth) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/v1/auth/logout", a.logout)
 	m.HandleFunc("GET /api/v1/auth/me", a.me)
 	m.HandleFunc("GET /api/v1/auth/check", a.check)
+	m.HandleFunc("POST /api/v1/auth/password", a.changePassword)
 }
 
 type profile struct {
-	User    string     `json:"usuario"`
-	Role    string     `json:"rol"`
-	Expires *time.Time `json:"vence,omitempty"`
+	User       string     `json:"usuario"`
+	Name       string     `json:"nombre,omitempty"`
+	Role       string     `json:"rol"`
+	LocalID    *int       `json:"local_id,omitempty"`
+	Local      string     `json:"local,omitempty"`
+	Site       string     `json:"sitio,omitempty"`
+	MustChange bool       `json:"debe_cambiar_clave,omitempty"`
+	Expires    *time.Time `json:"vence,omitempty"`
 }
 
 func profileOf(p Principal) profile {
-	out := profile{User: p.User, Role: p.Role}
+	out := profile{User: p.User, Name: p.DisplayName, Role: p.Role, LocalID: p.LocalID, Local: p.Local, Site: p.Site, MustChange: p.MustChange}
 	if !p.Expires.IsZero() {
 		out.Expires = &p.Expires
 	}
 	return out
+}
+
+func (a *Auth) setCookie(w http.ResponseWriter, r *http.Request, token string, exp time.Time) {
+	http.SetCookie(w, &http.Cookie{
+		Name: CookieName, Value: token, Path: "/", Expires: exp, MaxAge: int(time.Until(exp).Seconds()),
+		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: isHTTPS(r),
+	})
 }
 
 func (a *Auth) login(w http.ResponseWriter, r *http.Request) {
@@ -281,41 +278,53 @@ func (a *Auth) login(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "Pedido inválido.")
 		return
 	}
+	if a.accounts == nil {
+		fail(w, http.StatusUnauthorized, "Usuario o contraseña incorrectos.")
+		return
+	}
 	ip := clientIP(r)
-	if wait, blocked := a.limiter.blocked(ip, a.now()); blocked {
+	now := time.Now()
+	if wait, blocked := a.limiter.blocked(ip, now); blocked {
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
 		slog.Warn("login bloqueado por intentos fallidos", "ip", ip)
 		fail(w, http.StatusTooManyRequests, "Demasiados intentos. Espera unos minutos y vuelve a probar.")
 		return
 	}
-	// Both comparisons always run, so the answer does not say which one failed.
-	userOK := equal(digest(strings.ToLower(strings.TrimSpace(in.User))), a.user)
-	passOK := equal(digest(in.Password), a.pass)
-	if !a.canLogin || !userOK || !passOK {
-		n := a.limiter.fail(ip, a.now())
+	token, p, err := a.accounts.Login(r.Context(), in.User, in.Password)
+	var locked *services.LockedError
+	switch {
+	case errors.As(err, &locked):
+		w.Header().Set("Retry-After", strconv.Itoa(int(time.Until(locked.Until).Seconds())+1))
+		slog.Warn("login rechazado: cuenta bloqueada", "usuario", forLog(in.User), "ip", ip)
+		fail(w, http.StatusTooManyRequests, "Esta cuenta está bloqueada unos minutos por intentos fallidos.")
+		return
+	case errors.Is(err, services.ErrBadLogin):
+		n := a.limiter.fail(ip, now)
 		slog.Warn("login fallido", "usuario", forLog(in.User), "ip", ip, "intentos", n)
 		time.Sleep(300 * time.Millisecond)
 		fail(w, http.StatusUnauthorized, "Usuario o contraseña incorrectos.")
 		return
+	case err != nil:
+		slog.Error("login: error interno", "error", err)
+		fail(w, http.StatusServiceUnavailable, "No se pudo iniciar sesión. Intenta de nuevo.")
+		return
 	}
 	a.limiter.reset(ip)
-	exp := a.now().Add(a.ttl)
-	token := a.sign(claims{User: strings.TrimSpace(in.User), Role: RoleAdmin, Exp: exp.Unix(), ID: newTokenID()})
-	http.SetCookie(w, &http.Cookie{
-		Name: CookieName, Value: token, Path: "/", Expires: exp, MaxAge: int(a.ttl.Seconds()),
-		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: isHTTPS(r),
-	})
-	slog.Info("sesión iniciada", "usuario", forLog(in.User), "ip", ip)
-	ok(w, profileOf(Principal{User: strings.TrimSpace(in.User), Role: RoleAdmin, Expires: exp}))
+	a.setCookie(w, r, token, p.Expires)
+	a.accounts.Audit(r.Context(), p, ip, "login", p.User, "")
+	slog.Info("sesión iniciada", "usuario", forLog(in.User), "rol", p.Role, "ip", ip)
+	ok(w, profileOf(p))
 }
 
-// logout always clears the cookie (even an expired one), so it needs no login, and revokes the login
-// it carried so that a copy of that cookie stops working too.
+// logout always clears the cookie (even an expired one), so it needs no login, and revokes the login it carried in
+// the database, so a copy of that cookie stops working too.
 func (a *Auth) logout(w http.ResponseWriter, r *http.Request) {
-	if cookie, err := r.Cookie(CookieName); err == nil {
-		if c, ok := a.verify(cookie.Value); ok {
-			a.revoke(cookie.Value, time.Unix(c.Exp, 0))
-			slog.Info("sesión cerrada", "usuario", forLog(c.User), "ip", clientIP(r))
+	if cookie, err := r.Cookie(CookieName); err == nil && a.accounts != nil {
+		if p, err := a.accounts.Authenticate(r.Context(), cookie.Value); err == nil {
+			slog.Info("sesión cerrada", "usuario", forLog(p.User), "ip", clientIP(r))
+		}
+		if err := a.accounts.Logout(r.Context(), cookie.Value); err != nil {
+			slog.Error("no se pudo revocar la sesión", "error", err)
 		}
 	}
 	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, Expires: time.Unix(0, 0), HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: isHTTPS(r)})
@@ -328,10 +337,46 @@ func (a *Auth) me(w http.ResponseWriter, r *http.Request) {
 	ok(w, profileOf(p))
 }
 
-// check is what nginx asks (auth_request) before it lets a request into the parts it
-// serves apart from this API: 204 with a valid login or key, 401 without one.
-func (a *Auth) check(w http.ResponseWriter, r *http.Request) {
+// changePassword lets an account choose its password (the way out of a temporary one). Its other logins end.
+func (a *Auth) changePassword(w http.ResponseWriter, r *http.Request) {
+	p, _ := PrincipalOf(r)
+	if p.UserID == "" || a.accounts == nil {
+		fail(w, http.StatusForbidden, "Esta cuenta no tiene contraseña propia.")
+		return
+	}
+	var in struct {
+		Current string `json:"actual"`
+		New     string `json:"nueva"`
+	}
+	if err := decode(w, r, 2048, &in); err != nil {
+		fail(w, http.StatusBadRequest, "Pedido inválido.")
+		return
+	}
+	cookie, _ := r.Cookie(CookieName)
+	token := ""
+	if cookie != nil {
+		token = cookie.Value
+	}
+	if err := a.accounts.ChangePassword(r.Context(), p, token, in.Current, in.New); err != nil {
+		writeError(w, r, err, "No se pudo cambiar la contraseña")
+		return
+	}
+	a.accounts.Audit(r.Context(), p, clientIP(r), "cambio_clave", p.User, "")
+	slog.Info("contraseña cambiada", "usuario", forLog(p.User), "ip", clientIP(r))
 	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// check is what nginx asks (auth_request) before it lets a request into the parts it serves apart from this API (the
+// live backend, the camera room and the people panel): 204 for an admin_lap login or the key of the scripts, 401 without
+// a login and 403 for any other role — a store never reaches the live view, where each person is seen one by one.
+func (a *Auth) check(w http.ResponseWriter, r *http.Request) {
+	p, _ := PrincipalOf(r)
+	w.Header().Set("Cache-Control", "no-store")
+	if p.Role != RoleAdmin && p.Role != RoleMachine {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

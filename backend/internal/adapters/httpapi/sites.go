@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"aeropuerto/internal/core/domain"
@@ -42,7 +43,27 @@ func (h siteHandler) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/v1/sites/{site}/sessions/{session}/points", h.points)
 	m.HandleFunc("GET /api/v1/sites/{site}/sessions/{session}/analytics", h.analytics)
 	m.HandleFunc("PUT /api/v1/sites/{site}/sessions/{session}/analytics", h.saveAnalytics)
+	m.HandleFunc("PUT /api/v1/sites/{site}/sessions/{session}/inicio", h.setStart)
 	m.HandleFunc("GET /api/v1/sites/{site}/media/{file...}", h.media)
+}
+
+// setStart corrects the recording start of a stored session (INICIO_GRABACION was not declared, or was wrong).
+func (h siteHandler) setStart(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		RecordingStart time.Time `json:"recording_start"`
+	}
+	if decode(w, r, 1024, &in) != nil {
+		fail(w, http.StatusBadRequest, "JSON inválido")
+		return
+	}
+	ctx, cancel := withTimeout(r, 2*time.Minute)
+	defer cancel()
+	res, err := h.sessions.SetRecordingStart(ctx, r.PathValue("site"), r.PathValue("session"), in.RecordingStart)
+	if err != nil {
+		writeError(w, r, err, dbError)
+		return
+	}
+	ok(w, res)
 }
 
 func (h siteHandler) list(w http.ResponseWriter, r *http.Request) {
@@ -330,7 +351,8 @@ func (h siteHandler) replay(w http.ResponseWriter, r *http.Request) {
 func (h siteHandler) insights(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r, 20*time.Second)
 	defer cancel()
-	insights, err := h.sessions.Insights(ctx, r.PathValue("site"), r.PathValue("session"))
+	p, _ := PrincipalOf(r)
+	insights, err := h.sessions.Insights(ctx, r.PathValue("site"), r.PathValue("session"), p.Role)
 	if err != nil {
 		writeError(w, r, err, dbError)
 		return
@@ -380,7 +402,9 @@ func (h siteHandler) saveAnalytics(w http.ResponseWriter, r *http.Request) {
 // map images, CSVs) from <MEDIA_DIR>/<site>/.
 func (h siteHandler) media(w http.ResponseWriter, r *http.Request) {
 	site := r.PathValue("site")
-	if !domain.ValidSlug(site) {
+	// The Build also writes a file with the gender of each person (identidades_genero.csv): it is not served, since
+	// the platform does not show or keep the gender of one person.
+	if !domain.ValidSlug(site) || strings.Contains(strings.ToLower(r.PathValue("file")), "genero") {
 		http.NotFound(w, r)
 		return
 	}

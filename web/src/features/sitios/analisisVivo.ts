@@ -169,7 +169,8 @@ export function desdeReplay(replay: Replay, inicio: number, zonas: Zona[]): Anal
     });
     historias.push({
       id: p.numero,
-      genero: p.genero === "HOMBRE" ? "Hombre" : p.genero === "MUJER" ? "Mujer" : null,
+      // El género de una persona no se guarda: de una captura guardada solo hay conteos (Insights los trae del servidor).
+      genero: null,
       primera: inicio + p.inicio_s * 1000,
       ultima: inicio + p.fin_s * 1000,
       zonas: tiempos,

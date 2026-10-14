@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { colorPersona } from "../../../shared/format";
-import { GENEROS, mapaDelSitio, type Config, type Replay } from "../../sitios/api";
+import { mapaDelSitio, type Config, type Replay } from "../../sitios/api";
 import PlanoSitio, { type PersonaPlano, type RecorridoPlano } from "../../sitios/components/PlanoSitio.vue";
 import { movimientoReducido } from "../animar";
 import type { Ticket } from "../api";
@@ -112,7 +112,7 @@ const seg = (s: number) => `${Math.round(s)} s`;
     <div class="panel-heading">
       <h2>Su recorrido hasta la compra</h2>
       <span class="heading-meta">
-        <span class="pill"><i class="punto" :style="{ background: color }"></i>#{{ match.person }} · {{ GENEROS[match.gender] ?? match.gender }}</span>
+        <span class="pill"><i class="punto" :style="{ background: color }"></i>#{{ match.person }}</span>
         <button type="button" class="cerrar" @click="emit('cerrar')">Cerrar ✕</button>
       </span>
     </div>

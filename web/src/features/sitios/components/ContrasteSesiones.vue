@@ -3,14 +3,16 @@ import { computed, ref, watch } from "vue";
 import { segundos } from "../../../shared/format";
 import { api, type Sesion } from "../api";
 import { motorVivo as vivo } from "../enVivo";
+import { suprimirGenero } from "../../../core/roles";
 
 const props = defineProps<{ sitio: string; sesiones: Sesion[]; vivoActivo: boolean }>();
 
 type Columna = {
   personas: number;
-  hombres: number;
-  mujeres: number;
-  sinDeterminar: number;
+  // null: la categoría tiene menos de 5 personas y no se muestra (ni se puede deducir restando).
+  hombres: number | null;
+  mujeres: number | null;
+  sinDeterminar: number | null;
   permanenciaMedia: number | null;
   permanenciaMediana: number | null;
   duracion: number | null;
@@ -41,14 +43,16 @@ async function cargar(id: string) {
   try {
     const [ins, p3] = await Promise.all([api.insights(props.sitio, id), api.analitica(props.sitio, id).catch(() => null)]);
     const g = ins.resumen.genero;
+    const ocultas = ins.resumen.genero_ocultos ?? 0;
+    const cuenta = (k: string) => g[k] ?? (ocultas > 0 ? null : 0);
     const zonas = p3?.results.zonas ?? [];
     datos.value = {
       ...datos.value,
       [id]: {
         personas: ins.resumen.personas,
-        hombres: g.HOMBRE ?? 0,
-        mujeres: g.MUJER ?? 0,
-        sinDeterminar: g.SIN_DETERMINAR ?? 0,
+        hombres: cuenta("HOMBRE"),
+        mujeres: cuenta("MUJER"),
+        sinDeterminar: cuenta("SIN_DETERMINAR"),
         permanenciaMedia: ins.resumen.permanencia.media_s,
         permanenciaMediana: ins.resumen.permanencia.mediana_s,
         duracion: props.sesiones.find((s) => s.session_id === id)?.duration_s ?? null,
@@ -65,11 +69,13 @@ watch([idGrabada, idGuardada, () => props.sesiones], () => [idGrabada.value, idG
 const ahora = computed<Columna | null>(() => {
   if (!props.vivoActivo) return null;
   const r = vivo.resumen.value;
+  const priv = suprimirGenero(r.genero);
+  const cuenta = (k: string) => priv.visibles[k] ?? (priv.ocultas > 0 ? null : 0);
   return {
     personas: r.personas,
-    hombres: r.genero.HOMBRE,
-    mujeres: r.genero.MUJER,
-    sinDeterminar: r.genero.SIN_DETERMINAR,
+    hombres: cuenta("HOMBRE"),
+    mujeres: cuenta("MUJER"),
+    sinDeterminar: cuenta("SIN_DETERMINAR"),
     permanenciaMedia: r.permanenciaMedia,
     permanenciaMediana: r.permanenciaMediana,
     duracion: (vivo.ahora.value - vivo.inicio.value) / 1000,

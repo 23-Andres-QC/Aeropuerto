@@ -90,7 +90,7 @@ async function login() {
           </button>
         </form>
 
-        <div class="login-security"><span>⌁</span> Sesión protegida · Acceso interno LAP</div>
+        <div class="login-security"><span>⌁</span> Sesión protegida · Acceso interno LAP · <RouterLink to="/privacidad">Aviso de privacidad</RouterLink></div>
       </div>
     </section>
   </main>

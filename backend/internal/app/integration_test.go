@@ -42,7 +42,8 @@ func setup(t *testing.T) (*pgxpool.Pool, string, func(method, path string, body 
 		t.Fatal(err)
 	}
 	media := t.TempDir()
-	handler := New(db, testConfig(media))
+	// The traffic is recomputed only when a test asks: nothing keeps running after it ends.
+	handler := New(db, testConfig(media), WithManualTraffic())
 	// The whole API needs a login: every test calls as the administration account.
 	login := httptest.NewRecorder()
 	handler.ServeHTTP(login, jsonRequest("POST", "/api/v1/auth/login", map[string]string{"usuario": testAdminUser, "clave": testAdminPassword}))
@@ -67,7 +68,7 @@ const (
 )
 
 func testConfig(media string) config.Config {
-	return config.Config{MediaDir: media, AdminUser: testAdminUser, AdminPassword: testAdminPassword, SessionSecret: strings.Repeat("s", 32), APIKey: testAPIKey, SessionHours: 1}
+	return config.Config{MediaDir: media, AdminUser: testAdminUser, AdminPassword: testAdminPassword, APIKey: testAPIKey}
 }
 
 func jsonRequest(method, path string, body any) *http.Request {
@@ -84,7 +85,7 @@ func jsonRequest(method, path string, body any) *http.Request {
 // is refused to the key as well, and the probes stay open.
 func TestTheAPIRequiresALogin(t *testing.T) {
 	db, media, _ := setup(t)
-	handler := New(db, testConfig(media))
+	handler := New(db, testConfig(media), WithManualTraffic())
 	serve := func(method, path string, mod func(*http.Request)) int {
 		r := jsonRequest(method, path, nil)
 		if mod != nil {
@@ -124,7 +125,7 @@ func TestTheAPIRequiresALogin(t *testing.T) {
 func session(id string) map[string]any {
 	x, y := 1.5, 2.5
 	return map[string]any{
-		"session": map[string]any{"session_id": id, "name": "prueba", "recording_start": "2026-09-26T12:00:00Z", "ended_at": "2026-09-26T12:00:05Z"},
+		"session": map[string]any{"session_id": id, "name": "prueba", "recording_start": "2026-09-26T12:00:00Z", "recording_start_declared": true, "ended_at": "2026-09-26T12:00:05Z"},
 		"map":     map[string]any{"mapa": map[string]any{"px_por_metro": 40}},
 		"cameras": []map[string]any{{"camera_id": "cam01", "name": "cam01", "fps": 15, "width_px": 1280, "height_px": 720, "timestamp_offset_s": 0, "position": []float64{0, 0}, "angle_deg": 10}},
 		"identities": []map[string]any{{"global_id": "22222222-2222-2222-2222-" + id[24:], "public_number": 1, "first_seen": "2026-09-26T12:00:00Z",
@@ -179,7 +180,7 @@ func TestSiteLifecycle(t *testing.T) {
 	var insights domain.Insights
 	w = do("GET", "/api/v1/sites/prueba-a/sessions/"+a+"/insights", nil)
 	json.Unmarshal(w.Body.Bytes(), &insights)
-	if w.Code != 200 || insights.Summary.People != 1 || insights.Summary.Gender["MUJER"] != 1 || len(insights.Zones) != 1 || insights.Zones[0].Visitors != 1 {
+	if w.Code != 200 || insights.Summary.People != 1 || len(insights.Summary.Gender) != 0 || insights.Summary.GenderHidden != 1 || len(insights.Zones) != 1 || insights.Zones[0].Visitors != 1 {
 		t.Fatalf("insights: %d %s", w.Code, w.Body)
 	}
 

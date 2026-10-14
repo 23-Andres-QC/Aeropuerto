@@ -66,7 +66,7 @@ func (m *memoriaFalsa) Fichas(_ context.Context, limite int) ([]memoria.Ficha, e
 	fichas := []memoria.Ficha{}
 	for _, p := range m.personas {
 		if len(fichas) < limite {
-			fichas = append(fichas, memoria.Ficha{ID: p.ID, Genero: p.Genero, Muestras: p.Muestras,
+			fichas = append(fichas, memoria.Ficha{ID: p.ID, Muestras: p.Muestras,
 				Apariciones: p.Apariciones, Camaras: p.Camaras, PrimeraVez: p.PrimeraVez, UltimaVez: p.UltimaVez})
 		}
 	}
@@ -77,7 +77,7 @@ func servidor(t *testing.T) (*httptest.Server, *memoriaFalsa) {
 	t.Helper()
 	m := &memoriaFalsa{personas: map[int64]memoria.Persona{}, siguiente: 1, epoca: 1}
 	s := httptest.NewServer(Nuevo(Opciones{Telefonos: telefonos.NuevoRegistro(), Memoria: m,
-		Lista: func(context.Context) error { return nil }, RetencionHoras: 168}))
+		Lista: func(context.Context) error { return nil }, RetencionHoras: 24}))
 	t.Cleanup(s.Close)
 	return s, m
 }
@@ -122,7 +122,7 @@ func TestMemoriaPorHTTP(t *testing.T) {
 	if resp, cuerpo := pedir(t, http.MethodPut, s.URL+"/api/v1/personas/5?epoca=1", persona); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("PUT = %d %v", resp.StatusCode, cuerpo)
 	}
-	if p := m.personas[5]; p.ID != 5 || len(p.Suma) != memoria.Dimension || len(p.Vistas) != 1 || *p.Genero != "Hombre" {
+	if p := m.personas[5]; p.ID != 5 || len(p.Suma) != memoria.Dimension || len(p.Vistas) != 1 {
 		t.Fatalf("guardada = %+v", p)
 	}
 
@@ -167,7 +167,7 @@ func TestMemoriaPorHTTP(t *testing.T) {
 		t.Fatalf("borrado de una época vieja = %d", resp.StatusCode)
 	}
 	if resp, cuerpo = pedir(t, http.MethodGet, s.URL+"/api/v1/personas/resumen", nil); resp.StatusCode != http.StatusOK ||
-		cuerpo["personas"].(float64) != 0 || cuerpo["retencion_horas"].(float64) != 168 {
+		cuerpo["personas"].(float64) != 0 || cuerpo["retencion_horas"].(float64) != 24 {
 		t.Fatalf("resumen = %d %v", resp.StatusCode, cuerpo)
 	}
 
@@ -195,7 +195,10 @@ func TestFichasSinVectores(t *testing.T) {
 	if err = json.NewDecoder(resp.Body).Decode(&fichas); err != nil || resp.StatusCode != http.StatusOK || len(fichas) != 1 {
 		t.Fatalf("fichas = %d %v %v", resp.StatusCode, fichas, err)
 	}
-	if _, hay := fichas[0]["suma"]; hay || fichas[0]["genero"] != "Hombre" || fichas[0]["apariciones"].(float64) != 2 {
+	if _, hay := fichas[0]["genero"]; hay {
+		t.Fatalf("la ficha no debe traer género: %v", fichas[0])
+	}
+	if _, hay := fichas[0]["suma"]; hay || fichas[0]["apariciones"].(float64) != 2 {
 		t.Fatalf("ficha = %v", fichas[0])
 	}
 }

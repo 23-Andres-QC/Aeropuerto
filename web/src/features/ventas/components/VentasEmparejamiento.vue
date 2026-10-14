@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { colorPersona } from "../../../shared/format";
-import { GENEROS, api, type Config, type Replay, type Sesion } from "../../sitios/api";
+import { api, type Config, type Replay, type Sesion } from "../../sitios/api";
 import { movimientoReducido } from "../animar";
 import { apiVentas, type Ticket, type VentasSesion } from "../api";
 import { desfase, dinero, fechaHoraLarga, horaLarga, porcentaje } from "../formato";
@@ -196,7 +196,6 @@ const lineas = (t: { items: { product: string; quantity: number; unit_price: num
             <tr v-for="t in compraron" :key="t.ticket_id" :class="{ elegida: elegido?.ticket_id === t.ticket_id }">
               <td>
                 <span class="persona"><i :style="{ background: colorPersona(t.match!.person) }"></i>#{{ t.match!.person }}</span>
-                <small>{{ GENEROS[t.match!.gender] ?? t.match!.gender }}</small>
               </td>
               <td>{{ t.local }}</td>
               <td class="nowrap">{{ horaLarga(t.match!.stay_start) }} – {{ horaLarga(t.match!.stay_end) }}</td>

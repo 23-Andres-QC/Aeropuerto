@@ -15,10 +15,10 @@ import (
 // Points exports a session's trajectory and identities for Part III.
 func (r *SessionRepository) Points(ctx context.Context, session domain.Session) (domain.SessionPoints, error) {
 	out := domain.SessionPoints{Session: session, Identities: []domain.PointsIdentity{}}
-	err := collect(ctx, r.db, `SELECT global_id::text, public_number, gender_estimate FROM identities
+	err := collect(ctx, r.db, `SELECT global_id::text, public_number FROM identities
 		WHERE session_id = $1::text::uuid ORDER BY public_number`, []any{session.ID}, func(row pgx.Rows) error {
 		var i domain.PointsIdentity
-		err := row.Scan(&i.GlobalID, &i.Number, &i.Gender)
+		err := row.Scan(&i.GlobalID, &i.Number)
 		out.Identities = append(out.Identities, i)
 		return err
 	})

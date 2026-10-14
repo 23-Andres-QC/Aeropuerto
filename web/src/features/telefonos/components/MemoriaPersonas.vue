@@ -23,7 +23,6 @@ function camaras(ids: string[]): string {
   return ids.map((id) => props.telefonos.find((t) => t.id === id)?.nombre ?? id).join(", ");
 }
 
-const confianza = (c: number | null) => (c == null ? "—" : `${Math.round(c * 100)} %`);
 </script>
 
 <template>
@@ -41,8 +40,6 @@ const confianza = (c: number | null) => (c == null ? "—" : `${Math.round(c * 1
       <thead>
         <tr>
           <th>Persona</th>
-          <th>Género</th>
-          <th>Confianza</th>
           <th>Muestras</th>
           <th>Veces vista</th>
           <th>Cámaras</th>
@@ -55,8 +52,6 @@ const confianza = (c: number | null) => (c == null ? "—" : `${Math.round(c * 1
           <td data-etiqueta="Persona">
             <b class="id" :style="{ '--color': colorPersona(f.id) }">G{{ f.id }}</b>
           </td>
-          <td data-etiqueta="Género">{{ f.genero ?? "Sin determinar" }}</td>
-          <td data-etiqueta="Confianza">{{ confianza(f.confianza_genero) }}</td>
           <td data-etiqueta="Muestras">{{ f.muestras }}</td>
           <td data-etiqueta="Veces vista">{{ f.apariciones }}</td>
           <td data-etiqueta="Cámaras">{{ camaras(f.camaras) }}</td>

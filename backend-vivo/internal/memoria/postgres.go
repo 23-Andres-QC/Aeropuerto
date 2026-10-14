@@ -71,7 +71,7 @@ func (r *Postgres) Personas(ctx context.Context) ([]Persona, Numeracion, error) 
 	if err = tx.QueryRow(ctx, "SELECT siguiente, epoca FROM numeracion").Scan(&n.Siguiente, &n.Epoca); err != nil {
 		return nil, n, err
 	}
-	filas, err := tx.Query(ctx, `SELECT id, suma::text, muestras, genero, confianza_genero, camaras, apariciones,
+	filas, err := tx.Query(ctx, `SELECT id, suma::text, muestras, camaras, apariciones,
 	                                    primera_vez, ultima_vez
 	                             FROM personas ORDER BY id`)
 	if err != nil {
@@ -82,7 +82,7 @@ func (r *Postgres) Personas(ctx context.Context) ([]Persona, Numeracion, error) 
 	for filas.Next() {
 		var p Persona
 		var suma string
-		if err = filas.Scan(&p.ID, &suma, &p.Muestras, &p.Genero, &p.ConfianzaGenero, &p.Camaras, &p.Apariciones,
+		if err = filas.Scan(&p.ID, &suma, &p.Muestras, &p.Camaras, &p.Apariciones,
 			&p.PrimeraVez, &p.UltimaVez); err != nil {
 			filas.Close()
 			return nil, n, err
@@ -146,13 +146,12 @@ func (r *Postgres) Guardar(ctx context.Context, p Persona, epoca int64) error {
 	if err = comprobarEpoca(ctx, tx, epoca); err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO personas (id, suma, muestras, genero, confianza_genero, camaras, apariciones, primera_vez, ultima_vez)
-	                       VALUES ($1, $2::text::vector, $3, $4, $5, $6, $7, $8, $9)
+	_, err = tx.Exec(ctx, `INSERT INTO personas (id, suma, muestras, camaras, apariciones, primera_vez, ultima_vez)
+	                       VALUES ($1, $2::text::vector, $3, $4, $5, $6, $7)
 	                       ON CONFLICT (id) DO UPDATE SET suma = EXCLUDED.suma, muestras = EXCLUDED.muestras,
-	                           genero = EXCLUDED.genero, confianza_genero = EXCLUDED.confianza_genero,
 	                           camaras = EXCLUDED.camaras, apariciones = EXCLUDED.apariciones,
 	                           primera_vez = EXCLUDED.primera_vez, ultima_vez = EXCLUDED.ultima_vez`,
-		p.ID, p.Suma.Texto(), p.Muestras, p.Genero, p.ConfianzaGenero, camaras, p.Apariciones, p.PrimeraVez, p.UltimaVez)
+		p.ID, p.Suma.Texto(), p.Muestras, camaras, p.Apariciones, p.PrimeraVez, p.UltimaVez)
 	if err != nil {
 		return err
 	}
@@ -225,7 +224,7 @@ func (r *Postgres) Resumen(ctx context.Context) (Resumen, error) {
 }
 
 func (r *Postgres) Fichas(ctx context.Context, limite int) ([]Ficha, error) {
-	filas, err := r.db.Query(ctx, `SELECT id, genero, confianza_genero, muestras, apariciones, camaras, primera_vez, ultima_vez
+	filas, err := r.db.Query(ctx, `SELECT id, muestras, apariciones, camaras, primera_vez, ultima_vez
 	                               FROM personas ORDER BY ultima_vez DESC, id DESC LIMIT $1`, limite)
 	if err != nil {
 		return nil, err
@@ -234,7 +233,7 @@ func (r *Postgres) Fichas(ctx context.Context, limite int) ([]Ficha, error) {
 	fichas := []Ficha{}
 	for filas.Next() {
 		var f Ficha
-		if err = filas.Scan(&f.ID, &f.Genero, &f.ConfianzaGenero, &f.Muestras, &f.Apariciones, &f.Camaras,
+		if err = filas.Scan(&f.ID, &f.Muestras, &f.Apariciones, &f.Camaras,
 			&f.PrimeraVez, &f.UltimaVez); err != nil {
 			return nil, err
 		}

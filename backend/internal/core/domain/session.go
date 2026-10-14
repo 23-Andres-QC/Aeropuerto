@@ -11,16 +11,35 @@ import (
 // Session is one run of the model on a site (the Build of a dataset): who was
 // seen, by which cameras, and where on the plan.
 type Session struct {
-	ID             string          `json:"session_id"`
-	Name           string          `json:"name"`
-	Kind           string          `json:"kind"`
-	Status         string          `json:"status"`
-	RecordingStart time.Time       `json:"recording_start"`
-	EndedAt        *time.Time      `json:"ended_at"`
-	Summary        json.RawMessage `json:"summary"`
-	Identities     int             `json:"identities"`
-	Points         int             `json:"points"`
-	DurationS      float64         `json:"duration_s"`
+	ID             string    `json:"session_id"`
+	Name           string    `json:"name"`
+	Kind           string    `json:"kind"`
+	Status         string    `json:"status"`
+	RecordingStart time.Time `json:"recording_start"`
+	// StartDeclared is false when the start was never declared: it is the time the Build ran, an estimate of when the recording began.
+	StartDeclared bool            `json:"recording_start_declared"`
+	EndedAt       *time.Time      `json:"ended_at"`
+	Summary       json.RawMessage `json:"summary"`
+	Identities    int             `json:"identities"`
+	Points        int             `json:"points"`
+	DurationS     float64         `json:"duration_s"`
+}
+
+// StartShift reports what moving a session's recording start did.
+type StartShift struct {
+	ShiftS         float64 `json:"desplazamiento_s"`
+	MatchesRemoved int     `json:"emparejamientos_borrados"`
+}
+
+// ValidStart checks a recording start somebody typed to correct a session.
+func ValidStart(t time.Time) error {
+	if t.IsZero() || t.Year() < 2020 {
+		return Invalid("indica la fecha y hora en que empezó la grabación (con zona horaria, por ejemplo 2026-09-27T15:20:00-05:00)")
+	}
+	if t.After(time.Now().Add(10 * time.Minute)) {
+		return Invalid("la hora de inicio de la grabación está en el futuro")
+	}
+	return nil
 }
 
 // Finished sessions no longer change, so their replay/insights can be cached.
@@ -41,15 +60,13 @@ func ParseUUID(s string) ([16]byte, error) {
 
 // Track is one person in a replay: a map position every step (k) seconds.
 type Track struct {
-	Number     int       `json:"numero"`
-	Gender     string    `json:"genero"`
-	Confidence *float64  `json:"confianza"`
-	Cameras    []string  `json:"camaras"`
-	FirstS     float64   `json:"inicio_s"`
-	LastS      float64   `json:"fin_s"`
-	K          []int     `json:"k"`
-	X          []float64 `json:"x"`
-	Y          []float64 `json:"y"`
+	Number  int       `json:"numero"`
+	Cameras []string  `json:"camaras"`
+	FirstS  float64   `json:"inicio_s"`
+	LastS   float64   `json:"fin_s"`
+	K       []int     `json:"k"`
+	X       []float64 `json:"x"`
+	Y       []float64 `json:"y"`
 }
 
 type Replay struct {
@@ -59,9 +76,9 @@ type Replay struct {
 	People    []*Track `json:"personas"`
 }
 
-// InsightPerson is what the summary needs of each person: gender and dwell.
+// InsightPerson is what the summary needs of each person: how long they were seen. The gender of a person is never
+// stored (see InsightsData.Gender): only the counts of the session are.
 type InsightPerson struct {
-	Gender string
 	DwellS float64
 }
 
@@ -79,6 +96,8 @@ type ZoneStat struct {
 // turns it into Insights.
 type InsightsData struct {
 	People []InsightPerson
+	// Gender counts the session's people by estimated gender (HOMBRE, MUJER, SIN_DETERMINAR).
+	Gender map[string]int
 	Heat   [][3]float64
 	Zones  []ZoneStat
 }
@@ -90,9 +109,14 @@ type DwellStats struct {
 }
 
 type InsightsSummary struct {
-	People int            `json:"personas"`
-	Gender map[string]int `json:"genero"`
-	Dwell  DwellStats     `json:"permanencia"`
+	People int `json:"personas"`
+	// Gender holds only the categories big enough to show (see PrivateGender); GenderHidden is how many people
+	// belong to the ones left out, so the total still adds up.
+	Gender       map[string]int `json:"genero"`
+	GenderHidden int            `json:"genero_ocultos"`
+	// GenderMin is the minimum group size that was applied (below 5 the breakdown is for tests only).
+	GenderMin int `json:"genero_minimo"`
+	Dwell        DwellStats     `json:"permanencia"`
 }
 
 type Heat struct {

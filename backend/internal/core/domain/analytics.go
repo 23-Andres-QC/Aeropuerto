@@ -27,7 +27,6 @@ type SessionPoints struct {
 type PointsIdentity struct {
 	GlobalID string `json:"global_id"`
 	Number   int    `json:"numero"`
-	Gender   string `json:"genero"`
 }
 
 type SessionPointsCols struct {

@@ -81,6 +81,8 @@ type entorno struct {
 	camaras    *Camaras
 	sala       *Sala
 	srv        *httptest.Server
+	servidor   *Servidor
+	claves     map[string]string // la clave que recibió cada página al unirse, para volver a conectarse
 }
 
 // nuevoEntorno levanta el servicio completo; sin relevo, la sala solo reintenta.
@@ -94,9 +96,10 @@ func nuevoEntorno(t *testing.T, gracia time.Duration, relevo string) *entorno {
 		relevo = "ws://127.0.0.1:1/api/v1/cameras"
 	}
 	sala := NuevaSala(ctx, relevo, cs)
-	srv := httptest.NewServer(NuevoServidor(cs, sala).Interno())
+	servidor := NuevoServidor(cs, sala)
+	srv := httptest.NewServer(servidor.Interno())
 	t.Cleanup(srv.Close)
-	return &entorno{aeropuerto: a, camaras: cs, sala: sala, srv: srv}
+	return &entorno{aeropuerto: a, camaras: cs, sala: sala, srv: srv, servidor: servidor, claves: map[string]string{}}
 }
 
 func conectarWS(t *testing.T, u string) *websocket.Conn {
@@ -119,12 +122,39 @@ func leerMensaje(t *testing.T, ws *websocket.Conn) mensaje {
 	return m
 }
 
-func unirseComo(t *testing.T, e *entorno, id, nombre string) *websocket.Conn {
+// nuevoCodigo crea un código de unión como lo haría el administrador.
+func (e *entorno) nuevoCodigo(t *testing.T) string {
+	t.Helper()
+	k, err := e.camaras.Codigos().Crear()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k.Texto
+}
+
+// pedirUnirse abre el WebSocket de una página y manda su primer mensaje (el código y la clave).
+func pedirUnirse(t *testing.T, e *entorno, id, nombre, codigo, clave string) *websocket.Conn {
 	t.Helper()
 	ws := conectarWS(t, e.srv.URL+"/ws?"+url.Values{"id": {id}, "nombre": {nombre}}.Encode())
-	if m := leerMensaje(t, ws); m.Tipo != "unido" {
-		t.Fatalf("esperaba «unido», llegó %+v", m)
+	if err := ws.WriteJSON(map[string]string{"tipo": "unirse", "codigo": codigo, "clave": clave}); err != nil {
+		t.Fatal(err)
 	}
+	return ws
+}
+
+// unirseComo une una página: con la clave que ya recibió si vuelve, y si no con un código nuevo.
+func unirseComo(t *testing.T, e *entorno, id, nombre string) *websocket.Conn {
+	t.Helper()
+	codigo, clave := "", e.claves[id]
+	if clave == "" {
+		codigo = e.nuevoCodigo(t)
+	}
+	ws := pedirUnirse(t, e, id, nombre, codigo, clave)
+	m := leerMensaje(t, ws)
+	if m.Tipo != "unido" || m.Clave == "" {
+		t.Fatalf("esperaba «unido» con su clave, llegó %+v", m)
+	}
+	e.claves[id] = m.Clave
 	return ws
 }
 
@@ -276,7 +306,8 @@ func TestQuitadaEnLaWebSeDesconecta(t *testing.T) {
 func TestErrorAlRegistrarSeMuestraYSeReintenta(t *testing.T) {
 	e := nuevoEntorno(t, time.Minute, "")
 	e.aeropuerto.fallar = errors.New("máximo 8 teléfonos a la vez")
-	ws := conectarWS(t, e.srv.URL+"/ws?id="+idPrueba)
+	codigo := e.nuevoCodigo(t)
+	ws := pedirUnirse(t, e, idPrueba, "", codigo, "")
 	if m := leerMensaje(t, ws); m.Tipo != "error" || !m.Reintentar || m.Mensaje != "máximo 8 teléfonos a la vez" {
 		t.Fatalf("mensaje = %+v", m)
 	}
@@ -543,7 +574,7 @@ func TestLaRedSoloVeLaPaginaDeCamara(t *testing.T) {
 	publico := httptest.NewServer(s.Publico())
 	defer publico.Close()
 	// Lo que sirve el puerto que ve la red (el 8444): la página y su WebSocket, y nada de lo que pide sesión en la web.
-	for ruta, esperado := range map[string]int{"/": http.StatusOK, "/app.js": http.StatusOK,
+	for ruta, esperado := range map[string]int{"/": http.StatusOK, "/app.js": http.StatusOK, "/codificador.js": http.StatusOK,
 		"/personas": http.StatusNotFound, "/ws/sala": http.StatusNotFound, "/estado?token=x": http.StatusNotFound,
 		"/video?token=x": http.StatusNotFound, "/foto.jpg?token=x": http.StatusNotFound} {
 		resp, err := http.Get(publico.URL + ruta)

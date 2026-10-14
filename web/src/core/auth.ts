@@ -3,7 +3,18 @@
 // pide el login), nunca una credencial.
 import { ref } from "vue";
 
-export type Sesion = { usuario: string; rol: string; vence?: string };
+/** Quién es: el servidor lo dice en /auth/me. `debe_cambiar_clave`: la clave es temporal y solo puede elegir una propia. */
+export type Sesion = {
+  usuario: string;
+  nombre?: string;
+  rol: string;
+  /** Solo la tienda: su local y el sitio al que pertenece. */
+  local_id?: number;
+  local?: string;
+  sitio?: string;
+  debe_cambiar_clave?: boolean;
+  vence?: string;
+};
 
 /** La sesión que reconoce el servidor; null mientras no se inicie una. */
 export const sesion = ref<Sesion | null>(null);
@@ -48,6 +59,26 @@ export async function login(usuario: string, clave: string): Promise<ResultadoLo
     }
     const cuerpo = (await r.json().catch(() => ({}))) as { error?: string };
     return { ok: false, mensaje: cuerpo.error ?? `No se pudo iniciar sesión (error ${r.status}).` };
+  } catch {
+    return { ok: false, mensaje: "No se pudo conectar con el servidor. Revisa tu conexión y vuelve a intentar." };
+  }
+}
+
+/** Elegir una clave propia (la que reemplaza a la temporal). Los demás inicios de sesión de la cuenta se cierran. */
+export async function cambiarClave(actual: string, nueva: string): Promise<ResultadoLogin> {
+  try {
+    const r = await fetch("/api/v1/auth/password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actual, nueva }),
+    });
+    if (r.status === 204) {
+      if (sesion.value) sesion.value = { ...sesion.value, debe_cambiar_clave: false };
+      return { ok: true };
+    }
+    if (r.status === 401) sesionTerminada();
+    const cuerpo = (await r.json().catch(() => ({}))) as { error?: string };
+    return { ok: false, mensaje: cuerpo.error ?? `No se pudo cambiar la contraseña (error ${r.status}).` };
   } catch {
     return { ok: false, mensaje: "No se pudo conectar con el servidor. Revisa tu conexión y vuelve a intentar." };
   }

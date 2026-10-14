@@ -17,9 +17,10 @@ import socket
 import sys
 import threading
 import time
+import traceback
 import urllib.request
 import warnings
-from collections import Counter, deque
+from collections import Counter, defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -51,6 +52,14 @@ CANAL_ESTADO = "telefonos"
 ANCHO_RELEVO = 640
 # Un frame del relevo no puede pasar de 512 KB (maxRelayFrame en backend-vivo): se baja la calidad si hace falta.
 MAX_JPEG_RELEVO = 480 * 1024
+# backend-vivo corta a quien publica si en 30 s no le llega un pong (un ping no cuenta): sin esto, cada 30 s se perdían
+# ~2,5 s de cajas de cada teléfono. Se le manda uno por iniciativa propia (lo permite el protocolo).
+PONG_RELEVO_S = 10.0
+# Con el modelo en otra máquina, la subida suele ser chica (~4 Mbit/s): un cuadro de video del relevo (~50 KB) la
+# ocupaba ~90 ms y las cajas que salían detrás esperaban eso. Con RELEVO_VIDEO_KBPS el video de los teléfonos sale en
+# trozos de TROZO_RELEVO espaciados a ese ritmo, y las cajas pasan entre trozo y trozo (scripts/modelo_local.py lo usa).
+KBPS_VIDEO_TELEFONOS = float(os.environ.get("RELEVO_VIDEO_KBPS") or 0)
+TROZO_RELEVO = 8 * 1024
 # Cuadros por segundo del video de cada teléfono por el relevo (vacío = todos los procesados). Teléfonos muestra el
 # video de la sala de camara-web y el del relevo solo si esa falta: con el modelo en otra máquina que la web
 # (scripts/modelo_local.py) se baja para no gastar en él la subida del enlace.
@@ -71,22 +80,31 @@ MARGEN_BORDE_TELEFONO = -1
 # 5 vistas y 2 s), a cambio de un poco más de riesgo de confundir a dos personas parecidas. Vale para el asociador y
 # para la memoria, así quien vuelve se compara con la memoria con las mismas vistas con que se confirma.
 ASOCIACION_TELEFONO = {"min_samples": 3, "min_query_samples": 3, "min_identity_duration_s": 1.0, "sample_interval_s": 0.3,
-                       # Vistas más lejanas y menos nítidas también cuentan, y el ID se mantiene más fácil: con un teléfono
-                       # el modelo ve pocos cuadros por segundo y una persona quieta en un lado no debe cambiar de ID
-                       # (los mismos ajustes que dieron IDs estables en Videos: 70 -> 58 identidades sin cortes).
-                       "min_conf": 0.35, "min_height": 28, "max_occlusion": 0.3,
+                       # Solo vistas nítidas para el Re-ID (40 px y 0,5, como el Build): con vistas desde 28 px, en un
+                       # centro comercial lleno visto desde un balcón el Re-ID confundía a la gente lejana. Umbrales los del
+                       # Build (0,60 entre teléfonos, 0,70 en el mismo): con dos teléfonos mirando la misma zona, la misma
+                       # persona desde dos ángulos se parece ~0,55-0,75 y con 0,70 entre teléfonos quedaba con un ID en
+                       # cada uno. Quien se ve muy chico conserva su caja y recibe el ID al acercarse.
+                       "min_conf": 0.5, "min_height": 40, "max_occlusion": 0.3,
                        "split_threshold": 0.25, "split_strikes": 3,
-                       "threshold": 0.58, "same_camera_threshold": 0.62, "tracklet_gap_s": 4.0}
+                       "threshold": 0.60, "same_camera_threshold": 0.70, "tracklet_gap_s": 4.0}
 # El seguidor abre tracks desde 0,25 de confianza (el Build pide 0,6) y acepta personas desde 24 px (el Build, 40): quien
 # se ve de lejos o a medias en un teléfono también recibe su caja. Con pocos cuadros por segundo cada persona se mueve más
 # entre uno y otro, así que las compuertas de movimiento son más amplias y quien se pierde un momento se recupera con menos
 # parecido (0,72).
 SEGUIDOR_TELEFONO = {"new_track_confidence": 0.25, "association_confidence": 0.20, "min_person_height": 24,
                      "reid_gate": 0.72, "active_motion_gate": 0.80, "distance_gate": 1.20, "active_iou_gate": 0.06}
+# Las ventanas del seguidor se cuentan en cuadros procesados (max_age 120, confirmation_window 5, appearance_interval 5)
+# y se ajustaron con el modelo procesando ~4 cuadros por segundo (en CPU o por el túnel): a quien salía de cuadro o
+# quedaba tapado lo retenía ~30 s. A 15 cuadros por segundo eran 8 s y volvía con otro ID. Se mantienen sus duraciones
+# en segundos a cualquier ritmo (ver SesionEnVivo._ventanas_seguidor).
+RITMO_AJUSTE_SEGUIDOR = 4.0
+VENTANAS_SEGUIDOR = ("max_age", "confirmation_window", "appearance_interval")
 # Detector más sensible (el Build usa 0,30) para captar a quien está lejos; con GPU además a mayor resolución.
 # iou 0,65: en una multitud la supresión de no máximos deja separadas a las personas que se tapan un poco.
 DETECTOR_TELEFONO = {"conf": 0.10, "iou": 0.65}
 IMGSZ_GPU_TELEFONO = 960
+HILOS_TORCH_GPU = 4
 DETECTOR_CPU_TELEFONO = "yolo26s.pt"
 DETECTOR_ONNX_TELEFONO = "yolo26s.onnx"  # el mismo yolo26s en ONNX Runtime: en CPU, casi el doble de rápido (detector_onnx.py)
 SITIO_TELEFONOS = os.environ.get("SITIO_TELEFONOS", "esan")  # plano donde están los teléfonos (Modelo/ubicacion/<sitio>)
@@ -95,16 +113,68 @@ POSE_TELEFONO = "yolo26s-pose.pt"  # detector con puntos del cuerpo: la caja dej
 # Lo que en este tiempo a la vista no se mueve (un maniquí, un afiche, un objeto) no se muestra ni se cuenta; quien se mueve
 # una vez cuenta para siempre.
 ESTATICO_TELEFONO_S = 3.0
+# Y no se mueve es no alejarse media altura de donde apareció (los videos subidos, 0,2): la caja de un maniquí tiembla y
+# deriva con el teléfono en la mano (hasta ~0,45 alturas en una vitrina de video1) y con 0,2 quedaba a la vista con ID;
+# quien camina se aleja media altura en menos de un segundo, mucho antes de los 3 s.
+ESTATICO_DESPLAZAMIENTO_TELEFONO = 0.5
 # Con esta certeza o más el género de una persona queda fijo y ya no cambia.
 GENERO_FIJO = 0.8
 GENERO_TELEFONO = {"min_height": 56, "min_detection_confidence": 0.35}
+# Género: a lo más INTENTOS_GENERO cuadros por track pasan por CLIP. Con el último se decide: si la certeza de sus votos
+# llega a GENERO_FIJO, el género queda fijo para ese track y su persona (su ID en la memoria) y no se vuelve a calcular;
+# si no llega, ese track queda sin género. Solo se muestra un género fijo, nunca uno con menos certeza. Así CLIP casi no
+# trabaja y el carril lento se dedica a los IDs.
+INTENTOS_GENERO = 3
 PUERTO_CAMARA = int(os.environ.get("CAMARA_PORT", "8444"))  # el de la página de cámara (compose: camara-web)  # como en camaras.json: alguien puede pasar de un teléfono a otro en hasta 60 s
+# Un cuadro que falla (un error raro del modelo) se salta; tantos seguidos indican algo roto (ej. la GPU) y el proceso
+# termina con error: scripts/modelo_local.py lo vuelve a levantar.
+FALLOS_SEGUIDOS_MAX = 10
 
 
 def leer_json(url, timeout=5):
     """GET de un JSON de la web."""
     with urllib.request.urlopen(url, timeout=timeout) as respuesta:
         return json.loads(respuesta.read().decode("utf-8"))
+
+
+class Sondeo:
+    """Pide a backend-vivo la lista de teléfonos y la de videos cada 2 s en un hilo propio y guarda la última.
+
+    Con el modelo en otra máquina (scripts/modelo_local.py) cada pedido cruza el túnel y tarda ~0,3 s: en el lazo
+    principal eso frenaba las cajas de todos los teléfonos más de medio segundo cada 2 s.
+    """
+
+    def __init__(self, url_api, cada=2.0):
+        self.url_api, self.cada = url_api, cada
+        self._ultimo, self._lock, self._parar = None, threading.Lock(), threading.Event()
+        threading.Thread(target=self._sondear, daemon=True).start()
+
+    def _sondear(self):
+        while True:
+            inicio = time.monotonic()
+            try:
+                telefonos = {t["id"]: t for t in leer_json(f"{self.url_api}/api/v1/telefonos")}
+            except Exception as error:  # el hilo no debe morir: sin él el modelo no vería entrar ni salir teléfonos
+                print(f"backend-vivo no responde en {self.url_api} ({error}); reintento en {self.cada:g} s", flush=True)
+                telefonos = None
+            if telefonos is not None:
+                try:
+                    videos = leer_json(f"{self.url_api}/api/v1/videos")
+                except Exception:
+                    videos = None  # backend-vivo sin la sección Videos: solo teléfonos
+                with self._lock:
+                    self._ultimo = (telefonos, videos)
+            if self._parar.wait(max(0.0, self.cada - (time.monotonic() - inicio))):
+                return
+
+    def tomar(self):
+        """(teléfonos, videos o None) si llegaron listas desde la última vez; si no, None."""
+        with self._lock:
+            ultimo, self._ultimo = self._ultimo, None
+        return ultimo
+
+    def detener(self):
+        self._parar.set()
 
 
 def enlace_camara():
@@ -212,31 +282,60 @@ class LectorMjpeg:
 
 
 class LectorFoto(LectorMjpeg):
-    """Como LectorMjpeg, pero pide el cuadro más nuevo (/foto.jpg?despues=<último>) y el siguiente al recibirlo: nunca
-    hay cuadros esperando en la red, así el modelo procesa el último aunque el enlace o el modelo vayan lentos."""
+    """Como LectorMjpeg, pero pide los cuadros de a uno (/foto.jpg?despues=N da el primero posterior al N, o el más
+    nuevo si ya hay varios): nunca hay cuadros acumulados en la red, así el modelo procesa el último aunque el enlace o
+    el modelo vayan lentos.
+
+    Van PEDIDOS a la vez, cada uno por su conexión y esperando un cuadro distinto (el próximo, el siguiente): el
+    servidor manda cada cuadro apenas llega del teléfono. Con un solo pedido, el cuadro que llegaba mientras volvía la
+    respuesta anterior esperaba en el servidor hasta el pedido siguiente (una ida y vuelta por internet, ~70 ms).
+    """
+
+    PEDIDOS = 2
 
     def _leer(self):
+        self._visto, self._pedido = 0, -1  # último cuadro recibido / último N pedido
+        for _ in range(self.PEDIDOS - 1):
+            threading.Thread(target=self._pedir, daemon=True).start()
+        self._pedir()
+
+    def _proximo(self):
+        """N del próximo pedido: el siguiente al último pedido, o el último recibido si ya se pasó de ahí."""
+        with self._lock:
+            self._pedido = max(self._visto, self._pedido + 1)
+            return self._pedido
+
+    def _pedir(self):
+        """Un pedido a la vez por su conexión; reconecta si se corta."""
         partes = urlsplit(self.url)
-        ruta, visto = f"{partes.path}?{partes.query}", 0
+        ruta = f"{partes.path}?{partes.query}"
         while not self._parar.is_set():
             conexion = http.client.HTTPConnection(partes.hostname, partes.port, timeout=5)
             try:
+                despues = self._proximo()
                 while not self._parar.is_set():
-                    conexion.request("GET", f"{ruta}&despues={visto}")
+                    conexion.request("GET", f"{ruta}&despues={despues}")
                     respuesta = conexion.getresponse()
                     cuerpo = respuesta.read()
                     if respuesta.status == 204:
-                        continue  # 2 s sin cuadros nuevos (la cámara dejó de enviar): no se repite el último
+                        continue  # 2 s sin cuadros nuevos (la cámara dejó de enviar): se sigue esperando el mismo
                     if respuesta.status != 200:
                         raise ConnectionError(f"HTTP {respuesta.status}")
                     cuadro = int(respuesta.getheader("X-Cuadro") or 0)
-                    visto = cuadro
+                    with self._lock:
+                        nuevo = not cuadro or cuadro > self._visto
+                        self._visto = max(self._visto, cuadro)
+                    despues = self._proximo()
+                    if not nuevo:
+                        continue  # el otro pedido ya trajo este cuadro o uno más nuevo
                     frame = cv2.imdecode(np.frombuffer(cuerpo, np.uint8), cv2.IMREAD_COLOR)
                     if frame is None:
                         continue
-                    self.leidos += 1
-                    self.error = None
                     with self._lock:
+                        if cuadro and self._ultimo is not None and (self._ultimo[3] or 0) > cuadro:
+                            continue  # mientras se decodificaba, el otro pedido dejó uno más nuevo
+                        self.leidos += 1
+                        self.error = None
                         self._ultimo = (self.leidos, frame, time.perf_counter(), cuadro or None)
             except Exception as error:
                 self.error = f"No se pudo leer {sin_token(self.url)}: {getattr(error, 'reason', None) or error}"
@@ -245,29 +344,26 @@ class LectorFoto(LectorMjpeg):
             self._parar.wait(1)
 
 
-class Relevo:
-    """WebSockets con backend-vivo: video y detecciones de cada teléfono, más el estado global del servicio.
+class Publicador:
+    """Un hilo que manda por WebSocket a backend-vivo el último mensaje pendiente de cada canal: si la web va lenta se
+    salta mensajes en vez de atrasarse. Un mensaje puede ser la función que lo arma (se llama en este hilo)."""
 
-    Publica en un hilo propio para no demorar el lazo del modelo: por cada canal guarda solo el último
-    mensaje (si la web va lenta se salta cuadros en vez de atrasarse) y el JPEG del video se codifica allí.
-    """
-
-    def __init__(self, url_api):
-        self.base = url_api.replace("https://", "wss://").replace("http://", "ws://") + "/api/v1/cameras"
-        self.sockets, self.reintento = {}, {}
+    def __init__(self, base):
+        self.base = base
+        self.sockets, self.reintento, self.pongs = {}, {}, {}
         self._pendientes, self._cerrado = {}, False
         self._hay = threading.Condition()
         self._hilo = threading.Thread(target=self._publicar, daemon=True)
         self._hilo.start()
 
-    def _encolar(self, ruta, mensaje):
-        """Deja el mensaje (o la función que lo arma) como el último de su canal."""
+    def encolar(self, ruta, mensaje, kbps=0):
+        """Deja el mensaje como el último de su canal; con `kbps` sale en trozos espaciados (ver _trozos)."""
         with self._hay:
-            self._pendientes[ruta] = mensaje
+            self._pendientes[ruta] = (mensaje, kbps)
             self._hay.notify()
 
     def _publicar(self):
-        """Hilo publicador: manda lo pendiente de cada canal; al cerrar, vacía la cola y termina."""
+        """Manda lo pendiente de cada canal; al cerrar, vacía la cola y termina."""
         while True:
             with self._hay:
                 while not self._pendientes and not self._cerrado:
@@ -275,27 +371,68 @@ class Relevo:
                 if not self._pendientes:
                     return
                 lote, self._pendientes = self._pendientes, {}
-            for ruta, mensaje in lote.items():
+            for ruta, (mensaje, kbps) in lote.items():
                 mensaje = mensaje() if callable(mensaje) else mensaje
                 if mensaje is not None:
-                    self._enviar(ruta, mensaje)
+                    self._enviar(ruta, mensaje, kbps)
 
-    def _enviar(self, ruta, mensaje):
-        """Envía por un canal, reconectando si hace falta (sin frenar el lazo si la web no está)."""
+    @staticmethod
+    def _trozos(mensaje, kbps):
+        """El mensaje en trozos de TROZO_RELEVO bytes, a no más de `kbps`: entre trozo y trozo la subida queda libre."""
+        for i in range(0, len(mensaje), TROZO_RELEVO):
+            if i:
+                time.sleep(TROZO_RELEVO / (kbps * 1024))
+            yield mensaje[i:i + TROZO_RELEVO]
+
+    def _enviar(self, ruta, mensaje, kbps=0):
+        """Envía por un canal. Si su conexión se había cortado, reconecta y reenvía en el acto; si no se puede
+        conectar, el canal descansa 2 s (sin frenar el lazo si la web no está)."""
         if time.monotonic() < self.reintento.get(ruta, 0):
             return
-        try:
-            if ruta not in self.sockets:
-                self.sockets[ruta] = connect(f"{self.base}/{ruta}", max_size=2 ** 20, open_timeout=3)
-            self.sockets[ruta].send(mensaje)
-        except Exception:
-            socket = self.sockets.pop(ruta, None)
-            if socket is not None:
-                socket.close()
-            self.reintento[ruta] = time.monotonic() + 2
+        while True:
+            nueva = ruta not in self.sockets
+            try:
+                if nueva:
+                    self.sockets[ruta] = connect(f"{self.base}/{ruta}", max_size=2 ** 20, open_timeout=3)
+                    self.pongs[ruta] = time.monotonic()
+                conexion = self.sockets[ruta]
+                if time.monotonic() - self.pongs[ruta] > PONG_RELEVO_S:
+                    conexion.pong()
+                    self.pongs[ruta] = time.monotonic()
+                conexion.send(self._trozos(mensaje, kbps) if kbps and len(mensaje) > TROZO_RELEVO else mensaje)
+                return
+            except Exception:
+                conexion = self.sockets.pop(ruta, None)
+                if conexion is not None:
+                    conexion.close()
+                if nueva:
+                    self.reintento[ruta] = time.monotonic() + 2
+                    return
 
-    def video(self, cid, frame, ancho=ANCHO_RELEVO, calidad=70):
-        """Publica el frame (reducido a `ancho` px) para que la web lo muestre."""
+    def cerrar(self):
+        """Manda lo pendiente y cierra las conexiones."""
+        with self._hay:
+            self._cerrado = True
+            self._hay.notify()
+        self._hilo.join(timeout=5)
+        for conexion in self.sockets.values():
+            conexion.close()
+        self.sockets = {}
+
+
+class Relevo:
+    """WebSockets con backend-vivo: video y detecciones de cada teléfono, más el estado global del servicio.
+
+    Dos hilos publican para no demorar el lazo del modelo: uno las cajas y el estado (chicos y urgentes) y otro el video
+    (el JPEG se codifica allí). Así una caja nunca espera a que se codifique o se mande un cuadro de video.
+    """
+
+    def __init__(self, url_api):
+        base = url_api.replace("https://", "wss://").replace("http://", "ws://") + "/api/v1/cameras"
+        self._urgente, self._video = Publicador(base), Publicador(base)
+
+    def video(self, cid, frame, ancho=ANCHO_RELEVO, calidad=70, kbps=0):
+        """Publica el frame (reducido a `ancho` px) para que la web lo muestre; con `kbps`, dosificado."""
         def codificar():
             alto = round(frame.shape[0] * ancho / frame.shape[1])
             imagen = frame if frame.shape[1] == ancho else cv2.resize(frame, (ancho, alto), interpolation=cv2.INTER_AREA)
@@ -304,25 +441,20 @@ class Relevo:
                 if ok and len(jpeg) <= MAX_JPEG_RELEVO:
                     return jpeg.tobytes()
             return None
-        self._encolar(f"{cid}/publish", codificar)
+        self._video.encolar(f"{cid}/publish", codificar, kbps)
 
     def detecciones(self, cid, mensaje):
         """Publica las cajas, IDs y género de un teléfono."""
-        self._encolar(f"{cid}/detections/publish", json.dumps(mensaje))
+        self._urgente.encolar(f"{cid}/detections/publish", json.dumps(mensaje))
 
     def estado(self, mensaje, canal=CANAL_ESTADO):
         """Publica el estado global del servicio y de cada teléfono (o, con canal="videos", el del video subido)."""
-        self._encolar(f"{canal}/detections/publish", json.dumps({"ts": time.time(), **mensaje}))
+        self._urgente.encolar(f"{canal}/detections/publish", json.dumps({"ts": time.time(), **mensaje}))
 
     def cerrar(self):
         """Manda lo pendiente (el último estado) y cierra las conexiones."""
-        with self._hay:
-            self._cerrado = True
-            self._hay.notify()
-        self._hilo.join(timeout=5)
-        for socket in self.sockets.values():
-            socket.close()
-        self.sockets = {}
+        self._urgente.cerrar()
+        self._video.cerrar()
 
 
 def config_telefonos(telefonos, asociacion):
@@ -345,8 +477,9 @@ class SesionEnVivo:
 
     def __init__(self, motor, reid, asociacion, memoria, ubicador=None):
         self.motor, self.reid, self.asociacion, self.memoria = motor, reid, asociacion, memoria
-        # Ubicación en el plano de cada cuadro (ubicacion.py): se calcula en otro hilo mientras el detector trabaja.
-        self.ubicador, self._ubicando = ubicador, ThreadPoolExecutor(max_workers=1)
+        # Ubicación en el plano (ubicacion.py): se calcula en otro hilo y las cajas no la esperan (ver _recoger_ubicacion).
+        self.ubicador, self._ubicando, self._ubicacion = ubicador, ThreadPoolExecutor(max_workers=1), None
+        self._ubicado = {}  # teléfono -> cuándo se pidió su última ubicación (por turnos, ver _pedir_ubicacion)
         self.camaras, self.planos = {}, {}  # teléfono -> su número de cámara (orden de ingreso) / su última ubicación
         self.asociador, self.telefonos, self.clave = None, [], []
         self.t0, self.t = time.perf_counter(), -1.0
@@ -355,6 +488,9 @@ class SesionEnVivo:
         self.generos = {}
         self.quietud = {}  # teléfono -> Quietud: qué tracks no se mueven
         self.fijos = {}  # (teléfono, track local) -> (género, certeza) ya fijado con certeza >= GENERO_FIJO
+        self.intentos_genero = {}  # (teléfono, track local) -> cuadros que ya pasaron por CLIP (hasta INTENTOS_GENERO)
+        seguidor = getattr(motor, "config", {}).get("tracker", {})
+        self._ventanas = {k: seguidor[k] for k in VENTANAS_SEGUIDOR if k in seguidor}  # en cuadros a RITMO_AJUSTE_SEGUIDOR
         # Dos carriles: el rápido (detectar y seguir, que da las cajas) corre en el lazo principal y publica enseguida;
         # el lento (género con CLIP, Re-ID y memoria de identidades) corre en un hilo aparte con el último instante
         # de cada teléfono. Así las cajas no esperan a lo más pesado y el ID/género de cada persona se actualiza solo
@@ -381,6 +517,8 @@ class SesionEnVivo:
         self.motor.trackers.update(siguen)
         self.motor.genero.memory.update(votos)
         self.fijos = {k: v for k, v in self.fijos.items() if k[0] in siguen}
+        self.intentos_genero = {k: v for k, v in self.intentos_genero.items() if k[0] in siguen}
+        self._ubicado = {cid: t for cid, t in self._ubicado.items() if cid in siguen}
         for cid in [c for c in self.planos if c not in siguen]:
             del self.planos[cid]
             if self.ubicador is not None:
@@ -414,13 +552,15 @@ class SesionEnVivo:
             frames[cid] = frame
         self._ritmo_genero()
         fuente = dict(self.procesados)
-        ubicando = self._ubicando.submit(self._ubicar, frames, time.monotonic()) if self.ubicador is not None else None
+        self._recoger_ubicacion()
+        self._pedir_ubicacion(frames)
         detectadas = self.motor.detectar(frames)
         if not isinstance(self.motor.detector, DetectorCuerpo):  # con pose las cajas ya son de cuerpo sin brazos
             detectadas = {cid: ajustar_cajas(*dato) for cid, dato in detectadas.items()}
+        self._ventanas_seguidor(frames)
         filas = self.motor.seguir(frames, fuente, detectadas)
         for cid, fs in filas.items():
-            quieta = self.quietud.setdefault(cid, Quietud(ESTATICO_TELEFONO_S))
+            quieta = self.quietud.setdefault(cid, Quietud(ESTATICO_TELEFONO_S, ESTATICO_DESPLAZAMIENTO_TELEFONO))
             quieta.actualizar(self.t, fs, frames[cid])
             filas[cid] = [f for f in fs if not quieta.estatico(f["local_id"], self.t)]
         # El carril lento recibe copias: modifica sus filas mientras el lazo principal publica las suyas.
@@ -430,11 +570,7 @@ class SesionEnVivo:
             for cid in frames:
                 self._trabajos[cid] = trabajo
             self._hay_trabajo.notify()
-        if ubicando is not None:
-            try:
-                self.planos.update(ubicando.result())
-            except Exception as error:  # sin ubicación esta vez: las cajas salen igual
-                print(f"Ubicación: {type(error).__name__}: {error}", flush=True)
+        self._recoger_ubicacion()
         ahora = time.perf_counter()
         for cid, (_, _, llegada, _) in datos.items():
             self.latencias[cid].append(ahora - llegada)
@@ -442,15 +578,73 @@ class SesionEnVivo:
             self.personas[cid] = len(filas[cid])
             for fila in filas[cid]:
                 self._conocido(cid, fila)
+            self._sin_repetidos(filas[cid])
+            for fila in filas[cid]:
                 self._genero(cid, fila)
         return filas
+
+    @staticmethod
+    def _sin_repetidos(filas):
+        """Una persona no está dos veces en el mismo cuadro: si dos cajas quedaron con el mismo ID (mientras el carril
+        lento lo corrige), lo muestra solo la que lo tiene desde antes; la otra va sin número."""
+        por_id = defaultdict(list)
+        for fila in filas:
+            if fila["global_id"] is not None:
+                por_id[fila["global_id"]].append(fila)
+        for repetidas in por_id.values():
+            for fila in sorted(repetidas, key=lambda f: (f.get("_desde", math.inf), f["local_id"]))[1:]:
+                fila["global_id"] = None
+
+    def _ventanas_seguidor(self, frames):
+        """Pasa a cuadros, con el ritmo medido de cada teléfono, las ventanas del seguidor (ver RITMO_AJUSTE_SEGUIDOR):
+        a 15 cuadros por segundo, quien sale de cuadro se retiene ~30 s igual que a 4."""
+        for cid in frames:
+            seguidor = self.motor.trackers.get(cid)
+            if seguidor is None:
+                continue
+            k = (self.fps(cid) or FPS_NOMINAL) / RITMO_AJUSTE_SEGUIDOR
+            if "max_age" in self._ventanas:
+                seguidor.max_age = max(1, round(self._ventanas["max_age"] * k))
+            if "confirmation_window" in self._ventanas:
+                seguidor.confirmation_window = max(seguidor.min_confirmations,
+                                                   round(self._ventanas["confirmation_window"] * k))
+            if "appearance_interval" in self._ventanas:
+                seguidor.appearance_interval = max(1, round(self._ventanas["appearance_interval"] * k))
 
     def _ubicar(self, frames, ahora):
         return {cid: self.ubicador.ubicar(cid, self.camaras.get(cid), frame, ahora) for cid, frame in frames.items()}
 
+    def _pedir_ubicacion(self, frames):
+        """Si el hilo de ubicación está libre, ubica el cuadro del teléfono activo que lleva más tiempo sin ubicarse:
+        con dos o más teléfonos van por turnos (si no, según los tiempos, uno podía quedarse con una ubicación vieja y
+        la web dejaba de unir a quien ven dos cámaras en el mismo lugar)."""
+        if self.ubicador is None or self._ubicacion is not None:
+            return
+        ahora = time.perf_counter()
+        activos = [c for c in self.telefonos if c in frames or (self.tiempos.get(c) and ahora - self.tiempos[c][-1] < 1.0)]
+        if not activos:
+            return
+        cid = min(activos, key=lambda c: self._ubicado.get(c, -math.inf))
+        if cid not in frames:
+            return  # le toca a otro teléfono: se ubica con su próximo cuadro
+        self._ubicado[cid] = ahora
+        self._ubicacion = self._ubicando.submit(self._ubicar, {cid: frames[cid]}, time.monotonic())
+
+    def _recoger_ubicacion(self):
+        """Guarda la ubicación en el plano que terminó de calcularse, si hay una. Las cajas no la esperan: con ORB
+        tarda hasta ~80 ms por cuadro (más que detectar), así que cada cuadro sale con la última ubicación lista, de
+        un cuadro o dos antes (el teléfono en la mano se mueve poco en ese tiempo), y se calcula la del siguiente."""
+        if self._ubicacion is None or not self._ubicacion.done():
+            return
+        try:
+            self.planos.update({cid: plano for cid, plano in self._ubicacion.result().items() if cid in self.telefonos})
+        except Exception as error:  # sin ubicación esta vez: las cajas salen igual
+            print(f"Ubicación: {type(error).__name__}: {error}", flush=True)
+        self._ubicacion = None
+
     def _conocido(self, cid, fila):
-        """ID global y género que el carril lento ya le dio a esta persona (si no, sin ID y sin género todavía)."""
-        fila["global_id"], fila["genero"], fila["confianza_genero"] = None, "Sin determinar", None
+        """ID global que el carril lento ya le dio a esta persona (si no, sin ID todavía); el género lo pone _genero."""
+        fila["global_id"] = None
         asociador = self.asociador
         tramo = asociador.locales.get((cid, fila["local_id"])) if asociador is not None else None
         if tramo is not None:
@@ -459,12 +653,11 @@ class SesionEnVivo:
             except KeyError:
                 pass
             fila["global_id"] = asociador.confirmadas.get(tramo.global_id)
-        estado = self.motor.genero.memory.get((cid, fila["local_id"]))
-        if estado is not None and estado["genero"] in ("Hombre", "Mujer"):
-            fila["genero"], fila["confianza_genero"] = estado["genero"], estado["confianza"]
+            fila["_desde"] = getattr(asociador, "_desde", {}).get(tramo.global_id, math.inf)
 
     def _lazo_lento(self):
-        """Carril lento: género (CLIP) y Re-ID con memoria de identidades; siempre con el instante más reciente."""
+        """Carril lento: Re-ID con memoria de identidades y, después, el género de quien todavía no lo tiene fijo;
+        siempre con el instante más reciente."""
         while True:
             with self._hay_trabajo:
                 while not self._trabajos and not self._cerrado:
@@ -480,10 +673,47 @@ class SesionEnVivo:
                     with self.bloqueo:
                         if generacion != self.generacion or self.asociador is None:
                             continue
-                        self.motor.genero.actualizar(frames, fuente, filas)
+                        # Primero los IDs: el género no hace falta para asociar y así lo pesado de CLIP no los demora.
                         self.asociador.actualizar(t, frames, filas, occluders=ocluyentes)
+                        self._muestrear_genero(frames, fuente, filas)
                 except Exception as error:  # un instante fallido no debe detener el carril
                     print(f"Carril lento: {type(error).__name__}: {error}", flush=True)
+
+    def _falta_genero(self, cid, fila):
+        """El track todavía puede pasar un cuadro por CLIP: ni él ni su persona tienen género fijo y le quedan intentos."""
+        llave = (cid, fila["local_id"])
+        if llave in self.fijos or self.intentos_genero.get(llave, 0) >= INTENTOS_GENERO:
+            return False
+        persona = self.memoria.personas.get(fila.get("global_id")) if fila.get("global_id") is not None else None
+        return not (persona is not None and persona.genero in ("Hombre", "Mujer")
+                    and (persona.confianza_genero or 0) >= GENERO_FIJO)
+
+    def _muestrear_genero(self, frames, fuente, filas):
+        """CLIP solo para los tracks a los que les falta el género (ver INTENTOS_GENERO); con su último cuadro se decide."""
+        genero = self.motor.genero
+        if not genero.enabled:
+            return
+        pendientes = {cid: [f for f in fs if self._falta_genero(cid, f)] for cid, fs in filas.items()}
+        if not any(pendientes.values()):
+            return
+        antes = {(cid, f["local_id"]): genero.memory.get((cid, f["local_id"]), {}).get("last_frame", -math.inf)
+                 for cid, fs in pendientes.items() for f in fs}
+        genero.actualizar(frames, fuente, pendientes)
+        for llave, ultimo in antes.items():
+            estado = genero.memory.get(llave)
+            if estado is None or estado["last_frame"] == ultimo:
+                continue  # este cuadro no pasó por CLIP (persona chica o poco segura, o todavía no le tocaba)
+            self.intentos_genero[llave] = self.intentos_genero.get(llave, 0) + 1
+            if self.intentos_genero[llave] < INTENTOS_GENERO:
+                continue
+            fila = next(f for f in pendientes[llave[0]] if f["local_id"] == llave[1])
+            etiqueta, certeza = genero_por_votos(estado["votes"])
+            if etiqueta is not None and len(estado["votes"]) >= 2 and certeza >= GENERO_FIJO:
+                self.fijos[llave] = (etiqueta, certeza)
+                pid = fila.get("global_id")
+                if pid is not None and pid in self.memoria.personas:
+                    self.memoria.genero(pid, etiqueta, certeza)
+            genero.memory.pop(llave, None)  # decidido: sus votos ya no hacen falta
 
     def cerrar(self):
         """Detiene el carril lento y el hilo de ubicación."""
@@ -504,40 +734,20 @@ class SesionEnVivo:
             genero.sample_frames[cid] = max(1, round(genero.sample_s * (self.fps(cid) or FPS_NOMINAL)))
 
     def _genero(self, cid, fila):
-        """Género que se muestra de una persona. Con certeza de GENERO_FIJO (0,8) o más queda fijo: no vuelve a cambiar.
-
-        Antes de fijarse: quien ya se vio muestra su género al reconocerlo; un género nuevo y confiable se guarda en la
-        memoria. Mientras no se confirma (votos de CLIP con consenso), se muestra el que va ganando entre los votos que ya
-        tiene (y, si su certeza llega a 0,8, también queda fijo); ese provisional no se guarda en la memoria.
-        """
+        """Género que se muestra de una persona: solo uno fijo (certeza de GENERO_FIJO o más, ver INTENTOS_GENERO), el
+        de su persona en la memoria o el de su track; si no, «Sin determinar». Un fijo no vuelve a cambiar."""
         pid = fila["global_id"]
         persona = self.memoria.personas.get(pid) if pid is not None else None
         llave = (cid, fila["local_id"])
-        # 1) Ya fijo: por persona (memoria) o, mientras no tiene ID, por su track local.
+        fila["genero"], fila["confianza_genero"] = "Sin determinar", None
         if persona is not None and persona.genero in ("Hombre", "Mujer") and (persona.confianza_genero or 0) >= GENERO_FIJO:
             fila["genero"], fila["confianza_genero"] = persona.genero, persona.confianza_genero
         elif llave in self.fijos:
             fila["genero"], fila["confianza_genero"] = self.fijos[llave]
             if persona is not None:
-                self.memoria.genero(pid, *self.fijos[llave])
-        elif fila.get("genero") in ("Hombre", "Mujer") and fila.get("confianza_genero"):
-            if persona is not None:
-                self.memoria.genero(pid, fila["genero"], fila["confianza_genero"])
-            if fila["confianza_genero"] >= GENERO_FIJO:
-                self.fijos[llave] = (fila["genero"], fila["confianza_genero"])
-        elif persona is not None and persona.genero:
-            fila["genero"], fila["confianza_genero"] = persona.genero, persona.confianza_genero
-        else:
-            votos = self.motor.genero.memory.get(llave, {}).get("votes", [])
-            etiqueta, certeza = genero_por_votos(votos)
-            if etiqueta is not None:
-                fila["genero"], fila["confianza_genero"] = etiqueta, certeza
-                if certeza >= GENERO_FIJO:
-                    self.fijos[llave] = (etiqueta, certeza)
-                    if persona is not None:
-                        self.memoria.genero(pid, etiqueta, certeza)
+                self.memoria.genero(pid, *self.fijos[llave])  # el track lo fijó antes de tener ID: pasa a su persona
         if pid is not None:
-            self.generos[pid] = fila.get("genero") or "Sin determinar"
+            self.generos[pid] = fila["genero"]
 
     def fps(self, cid):
         """FPS procesados de un teléfono en sus últimos 30 frames."""
@@ -587,6 +797,10 @@ def main():
         config["detector"]["imgsz"] = IMGSZ_GPU_TELEFONO
         # Media precisión en la GPU: el detector tarda bastante menos por cuadro con las mismas cajas (como en Videos).
         config["detector"]["fp16"] = True
+        # Con GPU, a la CPU le queda poco (preparar recortes): con los 10 hilos de PyTorch por defecto, el carril lento
+        # (género, Re-ID) le quitaba los núcleos al rápido y cada cuadro tardaba ~12 ms más (~25 ms más en el p90).
+        # Mismos cálculos, solo menos hilos; el carril lento también va más rápido.
+        torch.set_num_threads(HILOS_TORCH_GPU)
     else:
         # Sin GPU el detector es yolo26s (mismo modelo, más chico): a 640 px tarda ~0,9 s por 2 cuadros contra ~1,5 s de
         # yolo26m a 480, y ve mejor a quien está lejos. MODELO_DETECTOR=yolo26m.pt vuelve al grande.
@@ -635,51 +849,58 @@ def main():
     videos = VideosSubidos(url_api, motor, reid_videos, asociacion_build, relevo, personas_para_web)
     lectores, nombres, calentado = {}, {}, False
     relevado = {}  # último video de cada teléfono por el relevo (con FPS_RELEVO)
-    revisado, publicado = 0.0, 0.0
+    publicado, fallos = 0.0, 0
     enlace, enlace_visto = None, -math.inf
+    sondeo = Sondeo(url_api)
     try:
         while True:
-            if time.monotonic() - revisado > 2:
-                revisado = time.monotonic()
-                try:
-                    lista = {t["id"]: t for t in leer_json(f"{url_api}/api/v1/telefonos")}
-                except OSError as error:
-                    print(f"backend-vivo no responde en {url_api} ({error}); reintento en 2 s", flush=True)
-                    lista = None
-                if lista is not None:
-                    for cid in [c for c in lectores if c not in lista or url_lectura(lista[c]["url"]) != lectores[c].url]:
-                        lectores.pop(cid).detener()
-                    for cid, telefono in lista.items():
-                        if cid not in lectores:
-                            lectores[cid] = nuevo_lector(url_lectura(telefono["url"]))
-                    nombres = {cid: t["nombre"] for cid, t in lista.items()}
-                    sesion.camaras = {cid: t.get("camara") for cid, t in lista.items()}
-                    clave = sorted((cid, lector.url) for cid, lector in lectores.items())
-                    if sesion.clave != clave:
-                        sesion.cambiar_telefonos(sorted(lectores), clave)
-                        print(f"Procesando {len(lectores)} teléfono(s): {', '.join(nombres.values()) or 'ninguno'}", flush=True)
-                    try:
-                        videos.revisar(leer_json(f"{url_api}/api/v1/videos"))
-                    except OSError:
-                        pass  # backend-vivo sin la sección Videos: solo teléfonos
+            sondeado = sondeo.tomar()
+            if sondeado is not None:
+                lista, lista_videos = sondeado
+                for cid in [c for c in lectores if c not in lista or url_lectura(lista[c]["url"]) != lectores[c].url]:
+                    lectores.pop(cid).detener()
+                for cid, telefono in lista.items():
+                    if cid not in lectores:
+                        lectores[cid] = nuevo_lector(url_lectura(telefono["url"]))
+                nombres = {cid: t["nombre"] for cid, t in lista.items()}
+                sesion.camaras = {cid: t.get("camara") for cid, t in lista.items()}
+                clave = sorted((cid, lector.url) for cid, lector in lectores.items())
+                if sesion.clave != clave:
+                    sesion.cambiar_telefonos(sorted(lectores), clave)
+                    print(f"Procesando {len(lectores)} teléfono(s): {', '.join(nombres.values()) or 'ninguno'}", flush=True)
+                if lista_videos is not None:
+                    videos.revisar(lista_videos)
 
             hubo_video = videos.paso()
-            # Cada teléfono por su cuenta: en cada vuelta se procesa el que tiene esperando el cuadro más viejo y sus
-            # cajas salen enseguida, sin esperar a los demás (procesarlos juntos sumaba el tiempo de todos a cada uno).
-            datos = {}
+            # Cada teléfono por su cuenta y sus cajas salen enseguida, sin esperar a los demás (procesarlos juntos sumaba
+            # el tiempo de todos a cada uno). Por turnos: entre los que tienen un cuadro nuevo, el que hace más que no se
+            # procesa. Elegir el del cuadro más viejo dependía solo del desfase entre teléfonos y, con cuadros a 15 por
+            # segundo, favorecía casi siempre al mismo (medido con dos: 14 cuadros por segundo para uno y 4,8 para el otro).
+            datos, turno = {}, math.inf
             for cid in sesion.telefonos:
                 dato = lectores[cid].tomar(sesion.ultimo[cid])
-                if dato is not None and (not datos or dato[2] < next(iter(datos.values()))[2]):
-                    datos = {cid: dato}
+                procesado = sesion.tiempos[cid][-1] if sesion.tiempos.get(cid) else -math.inf
+                if dato is not None and (not datos or procesado < turno):
+                    datos, turno = {cid: dato}, procesado
             if datos:
-                if not calentado:
-                    motor.calentar({cid: d[1] for cid, d in datos.items()})
-                    calentado = True
-                filas = sesion.procesar(datos)
+                try:
+                    if not calentado:
+                        motor.calentar({cid: d[1] for cid, d in datos.items()})
+                        calentado = True
+                    filas = sesion.procesar(datos)
+                    fallos = 0
+                except Exception:
+                    # Ese cuadro queda sin cajas y se sigue con el próximo.
+                    fallos += 1
+                    print(f"Falló el cuadro de {', '.join(datos)} ({fallos} seguidos):", flush=True)
+                    traceback.print_exc()
+                    if fallos >= FALLOS_SEGUIDOS_MAX:
+                        raise
+                    continue
                 for cid, (_, frame, _, cuadro) in datos.items():
                     if not FPS_RELEVO or time.monotonic() - relevado.get(cid, -math.inf) >= 1 / FPS_RELEVO:
                         relevado[cid] = time.monotonic()
-                        relevo.video(cid, frame)
+                        relevo.video(cid, frame, kbps=KBPS_VIDEO_TELEFONOS)
                     relevo.detecciones(cid, {"ts": time.time(), "cuadro": cuadro, "frame_w": ANCHO_RELEVO,
                                              "frame_h": round(frame.shape[0] * ANCHO_RELEVO / frame.shape[1]),
                                              "people": personas_para_web(filas[cid], frame.shape[1]),
@@ -705,6 +926,7 @@ def main():
     except KeyboardInterrupt:
         print("Detenido. La memoria de identidades queda guardada en backend-vivo.", flush=True)
     finally:
+        sondeo.detener()
         for lector in lectores.values():
             lector.detener()
         sesion.cerrar()

@@ -5,13 +5,44 @@ import math
 import os
 import urllib.error
 import urllib.request
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 GENEROS_BD = {"Hombre": "HOMBRE", "Mujer": "MUJER"}
+
+
+class InicioGrabacionFaltante(ValueError):
+    """Falta INICIO_GRABACION (o no sirve): sin la hora real de la grabación, la sesión no se publica."""
+
+
+MENSAJE_INICIO = (
+    "No se publicó la sesión: falta INICIO_GRABACION, la fecha y hora (de Lima) en que empezó a grabarse el video, por ejemplo "
+    'INICIO_GRABACION = "2026-09-27T15:20:00-05:00". Sin ella, los análisis por franja horaria y por fecha quedarían corridos '
+    "(se usaría la hora en que corriste el Build). Si una cámara empezó con desfase, eso ya lo corrige timestamp_offset de camaras.json."
+)
+
+
+def exigir_inicio_grabacion(valor):
+    """Falla con un aviso claro si INICIO_GRABACION falta, no se entiende o está en el futuro; si sirve, devuelve el datetime.
+
+    Llámala antes de procesar cuando vayas a publicar en la base: así no se pierde el tiempo de un Build que luego no se puede guardar."""
+    if valor is None:
+        raise InicioGrabacionFaltante(MENSAJE_INICIO)
+    inicio = valor
+    if isinstance(valor, str):
+        try:
+            inicio = datetime.fromisoformat(valor)
+        except ValueError:
+            raise InicioGrabacionFaltante(
+                f'INICIO_GRABACION = "{valor}" no se entiende. Usa fecha y hora con zona horaria, por ejemplo "2026-09-27T15:20:00-05:00".') from None
+    if not isinstance(inicio, datetime):
+        raise InicioGrabacionFaltante("INICIO_GRABACION debe ser un texto con fecha y hora (por ejemplo \"2026-09-27T15:20:00-05:00\") o un datetime.")
+    if inicio > datetime.now(inicio.tzinfo) + timedelta(minutes=10):
+        raise InicioGrabacionFaltante("INICIO_GRABACION está en el futuro: revisa la fecha, la hora y la zona horaria.")
+    return inicio
 
 
 def _numero(valor, decimales):
@@ -30,7 +61,14 @@ def _angulo(direccion):
 
 def sesion_para_bd(resultado, *, nombre, kind="BUILD", status="DONE", mapa=None, config_camaras=None, config=None,
                    camaras_nombres=None):
-    """Arma el JSON de una sesión (identidades, tracklets y puntos en columnas) para la base de datos."""
+    """Arma el JSON de una sesión (identidades, tracklets y puntos en columnas) para la base de datos.
+
+    Un BUILD solo se publica si quien lo corrió declaró INICIO_GRABACION: con la hora en que corrió el Build, los análisis por franja
+    y por fecha quedarían corridos. Si falta, lanza InicioGrabacionFaltante y no se arma nada."""
+    if kind == "BUILD":
+        if not getattr(resultado, "inicio_declarado", False):
+            raise InicioGrabacionFaltante(MENSAJE_INICIO)
+        exigir_inicio_grabacion(resultado.inicio_grabacion)
     inicio = resultado.inicio_grabacion
     resumen = resultado.resumen
     session_id = resumen["session_uuid"]
@@ -96,6 +134,7 @@ def sesion_para_bd(resultado, *, nombre, kind="BUILD", status="DONE", mapa=None,
     return {
         "session": {"session_id": session_id, "name": nombre, "kind": kind, "status": status,
                     "recording_start": inicio.isoformat(),
+                    "recording_start_declared": kind != "BUILD" or bool(getattr(resultado, "inicio_declarado", False)),
                     "ended_at": (inicio + timedelta(seconds=float(duracion))).isoformat() if status != "RUNNING" else None,
                     "config_version": str((config or {}).get("version", ""))[:20],
                     "config_sha256": hashlib.sha256(texto_config.encode()).hexdigest() if texto_config else "",

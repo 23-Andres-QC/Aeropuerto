@@ -8,7 +8,9 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"time"
@@ -37,13 +39,14 @@ type Servidor struct {
 	camaras *Camaras
 	sala    *Sala
 	pagina  http.Handler
+	fallos  *intentos
 	// Personas lee la memoria de identidades para el panel «Personas» (nil: no disponible).
 	Personas func(context.Context) ([]byte, error)
 }
 
 func NuevoServidor(camaras *Camaras, sala *Sala) *Servidor {
 	sub, _ := fs.Sub(estaticos, "static")
-	return &Servidor{camaras: camaras, sala: sala, pagina: http.FileServerFS(sub)}
+	return &Servidor{camaras: camaras, sala: sala, pagina: http.FileServerFS(sub), fallos: nuevosIntentos()}
 }
 
 // Publico es lo que ven los dispositivos por la red: la página de cámara y su WebSocket, y nada más. Sin login
@@ -67,6 +70,11 @@ func (s *Servidor) Interno() http.Handler {
 	m.HandleFunc("GET /foto.jpg", s.foto)
 	m.HandleFunc("GET /estado", s.estado)
 	m.HandleFunc("GET /salud", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "ok") })
+	// Administración de la unión de teléfonos: solo el administrador (el nginx de la web pide su sesión antes).
+	m.HandleFunc("GET /api/codigos", s.verCodigos)
+	m.HandleFunc("POST /api/codigos", s.crearCodigo)
+	m.HandleFunc("DELETE /api/codigos/{id}", s.revocarCodigo)
+	m.HandleFunc("DELETE /api/dispositivos/{telefono}", s.revocarDispositivo)
 	return cabeceras(m)
 }
 
@@ -111,13 +119,38 @@ func (s *Servidor) unirse(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ws.Close()
 	c := &Conexion{ws: ws}
-	d, err := s.camaras.Conectar(r.Context(), id, r.URL.Query().Get("nombre"), c)
-	if err != nil {
-		c.Terminar(err.Error(), true)
+	ip := ipDe(r)
+	if s.fallos.bloqueada(ip) {
+		c.Terminar("Demasiados intentos con un código equivocado. Espera unos minutos.", false)
 		return
 	}
+	// El código y la clave no viajan en la URL (quedaría en los registros del nginx): el primer mensaje los trae.
+	ws.SetReadLimit(4096)
+	_ = ws.SetReadDeadline(time.Now().Add(10 * time.Second))
+	tipo, datos, err := ws.ReadMessage()
+	var pedido struct {
+		Tipo   string `json:"tipo"`
+		Codigo string `json:"codigo"`
+		Clave  string `json:"clave"`
+	}
+	if err != nil || tipo != websocket.TextMessage || json.Unmarshal(datos, &pedido) != nil || pedido.Tipo != "unirse" {
+		c.Terminar("Falta el código de unión.", false)
+		return
+	}
+	d, err := s.camaras.Conectar(r.Context(), id, r.URL.Query().Get("nombre"), pedido.Codigo, pedido.Clave, c)
+	if err != nil {
+		switch err {
+		case errCodigo, errClave, errRevocada:
+			s.fallos.fallo(ip)
+			c.Terminar(err.Error(), false)
+		default:
+			c.Terminar(err.Error(), true)
+		}
+		return
+	}
+	s.fallos.acierto(ip)
 	defer s.camaras.Desconectar(d, c)
-	if c.Enviar(mensaje{Tipo: "unido", Nombre: d.nombre, Telefono: d.telefono, Lectores: d.Lectores(),
+	if c.Enviar(mensaje{Tipo: "unido", Nombre: d.nombre, Telefono: d.telefono, Clave: d.clave, Lectores: d.Lectores(),
 		Espectadores: s.sala.Espectadores()}) != nil {
 		return
 	}
@@ -157,6 +190,82 @@ func (s *Servidor) unirse(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// ipDe es la dirección de quien llama: la que reenvía el nginx de la web (X-Real-IP) si la petición viene de la red
+// interna, y si no la de la conexión.
+func ipDe(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if ip := net.ParseIP(host); ip != nil && (ip.IsLoopback() || ip.IsPrivate()) {
+		if v := net.ParseIP(r.Header.Get("X-Real-IP")); v != nil {
+			return v.String()
+		}
+	}
+	return host
+}
+
+// mismoOrigen rechaza los cambios que vienen de otra página: si el navegador manda Origin, su host debe ser el de la web.
+func mismoOrigen(r *http.Request) bool {
+	o := r.Header.Get("Origin")
+	if o == "" {
+		return true
+	}
+	u, err := url.Parse(o)
+	return err == nil && u.Host == r.Host
+}
+
+func responderJSON(w http.ResponseWriter, estado int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(estado)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (s *Servidor) verCodigos(w http.ResponseWriter, r *http.Request) {
+	responderJSON(w, http.StatusOK, s.camaras.Codigos().Lista())
+}
+
+func (s *Servidor) crearCodigo(w http.ResponseWriter, r *http.Request) {
+	if !mismoOrigen(r) {
+		http.Error(w, "origen no permitido", http.StatusForbidden)
+		return
+	}
+	k, err := s.camaras.Codigos().Crear()
+	if err != nil {
+		responderJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	// El código no se escribe en el registro: solo que se creó uno.
+	log.Printf("código de unión creado (vence %s, hasta %d teléfonos)", k.Vence.Format(time.RFC3339), k.Max)
+	responderJSON(w, http.StatusCreated, CodigoVista{ID: k.ID, Codigo: mostrar(k.Texto), Creado: k.Creado, Vence: k.Vence, Max: k.Max, Activo: true})
+}
+
+func (s *Servidor) revocarCodigo(w http.ResponseWriter, r *http.Request) {
+	if !mismoOrigen(r) {
+		http.Error(w, "origen no permitido", http.StatusForbidden)
+		return
+	}
+	if !s.camaras.Codigos().Revocar(r.PathValue("id")) {
+		responderJSON(w, http.StatusNotFound, map[string]string{"error": "Ese código no existe"})
+		return
+	}
+	log.Printf("código de unión revocado")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Servidor) revocarDispositivo(w http.ResponseWriter, r *http.Request) {
+	if !mismoOrigen(r) {
+		http.Error(w, "origen no permitido", http.StatusForbidden)
+		return
+	}
+	if !s.camaras.Revocar(r.PathValue("telefono")) {
+		responderJSON(w, http.StatusNotFound, map[string]string{"error": "Ese teléfono no es una cámara web unida"})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // verSala transmite la sala: todas las cámaras con el proceso del modelo en vivo.

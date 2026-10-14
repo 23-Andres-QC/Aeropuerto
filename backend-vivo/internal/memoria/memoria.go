@@ -132,6 +132,8 @@ type Persona struct {
 	ID              int64     `json:"id"`
 	Suma            Vector    `json:"suma"`
 	Muestras        int       `json:"muestras"`
+	// Genero y ConfianzaGenero se aceptan (el modelo aún los manda) pero NO se guardan: la memoria no conserva el
+	// género de nadie junto a su apariencia, así que al leer vuelven vacíos.
 	Genero          *string   `json:"genero"`
 	ConfianzaGenero *float32  `json:"confianza_genero"`
 	Camaras         []string  `json:"camaras"`
@@ -208,14 +210,12 @@ type Resumen struct {
 
 // Ficha es una persona de la memoria tal como se muestra en la web: sin vectores.
 type Ficha struct {
-	ID              int64     `json:"id"`
-	Genero          *string   `json:"genero"`
-	ConfianzaGenero *float32  `json:"confianza_genero"`
-	Muestras        int       `json:"muestras"`
-	Apariciones     int       `json:"apariciones"`
-	Camaras         []string  `json:"camaras"`
-	PrimeraVez      time.Time `json:"primera_vez"`
-	UltimaVez       time.Time `json:"ultima_vez"`
+	ID          int64     `json:"id"`
+	Muestras    int       `json:"muestras"`
+	Apariciones int       `json:"apariciones"`
+	Camaras     []string  `json:"camaras"`
+	PrimeraVez  time.Time `json:"primera_vez"`
+	UltimaVez   time.Time `json:"ultima_vez"`
 }
 
 // Repositorio guarda la memoria (PostgreSQL + pgvector).

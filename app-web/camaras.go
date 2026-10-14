@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"log"
 	"strings"
 	"sync"
@@ -20,6 +21,8 @@ type Dispositivo struct {
 	id       string // lo genera la página; permite reconectar sin volver a registrarse
 	nombre   string
 	token    string // protege su MJPEG: solo lo lee quien tiene la URL registrada
+	clave    string // la que la página guarda para volver a conectarse sin código; solo viaja por su WebSocket
+	codigo   string // id del código con que se unió
 	telefono string // su id en Teléfonos de backend-vivo (tel-…)
 
 	mu      sync.Mutex // frame, seq, cambio y llegada
@@ -77,6 +80,7 @@ type mensaje struct {
 	Tipo         string `json:"tipo"` // unido, ok (acuse de un frame) o error
 	Nombre       string `json:"nombre,omitempty"`
 	Telefono     string `json:"telefono,omitempty"`
+	Clave        string `json:"clave,omitempty"`       // al unirse: con ella vuelve a conectarse sin código
 	Lectores     int32  `json:"lectores"`               // conexiones del modelo a su MJPEG
 	Espectadores int    `json:"espectadores,omitempty"` // páginas de la web que miran la sala
 	Cuadro       uint64 `json:"cuadro,omitempty"`       // acuse: número que se le dio al cuadro (vuelve con sus cajas)
@@ -122,20 +126,41 @@ type Camaras struct {
 	registro sync.Mutex // una unión a la vez: registrar pasa por la plataforma
 	mu       sync.Mutex
 	porID    map[string]*Dispositivo
+	codigos  *Codigos
+	// revocados son las páginas (su id) que el administrador desconectó: no vuelven a unirse mientras el servicio siga arriba.
+	revocados map[string]bool
 }
+
+// Por qué no entra una cámara. Los mensajes no dicen más de lo necesario.
+var (
+	errClave    = errors.New("Esta cámara ya no está unida. Escanea el código de unión otra vez.")
+	errRevocada = errors.New("El administrador desconectó esta cámara.")
+)
 
 func NuevasCamaras(aeropuerto Aeropuerto, urlMJPEG string, gracia time.Duration) *Camaras {
 	return &Camaras{aeropuerto: aeropuerto, urlMJPEG: strings.TrimRight(urlMJPEG, "/"), gracia: gracia,
-		porID: map[string]*Dispositivo{}}
+		porID: map[string]*Dispositivo{}, codigos: NuevosCodigos(), revocados: map[string]bool{}}
 }
+
+// Codigos son los códigos de unión que el administrador crea desde Teléfonos.
+func (cs *Camaras) Codigos() *Codigos { return cs.codigos }
 
 // Conectar asocia la pestaña c a la cámara id. Si es nueva la registra en
 // Teléfonos; si vuelve dentro de la espera conserva su registro (y su token).
-func (cs *Camaras) Conectar(ctx context.Context, id, nombre string, c *Conexion) (*Dispositivo, error) {
+func (cs *Camaras) Conectar(ctx context.Context, id, nombre, codigo, clave string, c *Conexion) (*Dispositivo, error) {
 	cs.registro.Lock()
 	defer cs.registro.Unlock()
 	cs.mu.Lock()
+	if cs.revocados[id] {
+		cs.mu.Unlock()
+		return nil, errRevocada
+	}
 	if d, ok := cs.porID[id]; ok {
+		// Quien vuelve prueba que es la misma página con la clave que se le dio al unirse.
+		if subtle.ConstantTimeCompare([]byte(clave), []byte(d.clave)) != 1 {
+			cs.mu.Unlock()
+			return nil, errClave
+		}
 		anterior := d.conexion
 		d.conexion = c
 		if d.retiro != nil {
@@ -150,13 +175,23 @@ func (cs *Camaras) Conectar(ctx context.Context, id, nombre string, c *Conexion)
 	}
 	cs.mu.Unlock()
 
+	// Una página nueva entra solo con un código de unión; si trae una clave de una cámara que ya no existe (el
+	// servicio se reinició, o salió), no hay a qué volver.
+	if clave != "" && codigo == "" {
+		return nil, errClave
+	}
+	usado, err := cs.codigos.Canjear(codigo)
+	if err != nil {
+		return nil, err
+	}
 	nombre = limpiarNombre(nombre)
 	token := aleatorio()
 	telefono, err := cs.aeropuerto.Registrar(ctx, nombre, cs.urlMJPEG+"/video?token="+token)
 	if err != nil {
+		cs.codigos.Devolver(usado)
 		return nil, err
 	}
-	d := &Dispositivo{id: id, nombre: nombre, token: token, telefono: telefono,
+	d := &Dispositivo{id: id, nombre: nombre, token: token, clave: aleatorio(), codigo: usado, telefono: telefono,
 		cambio: make(chan struct{}), fin: make(chan struct{}), conexion: c}
 	cs.mu.Lock()
 	cs.porID[id] = d
@@ -280,6 +315,32 @@ func (cs *Camaras) RetirarTodas() {
 	for _, d := range todas {
 		cs.quitarDeLaPlataforma(d)
 	}
+}
+
+// Revocar desconecta la cámara web registrada como ese teléfono y su página no vuelve a unirse (aunque le quede
+// un código vigente). Devuelve false si no es una cámara web.
+func (cs *Camaras) Revocar(telefono string) bool {
+	cs.mu.Lock()
+	var d *Dispositivo
+	for _, x := range cs.porID {
+		if x.telefono == telefono {
+			d = x
+		}
+	}
+	if d == nil {
+		cs.mu.Unlock()
+		return false
+	}
+	cs.revocados[d.id] = true
+	c := d.conexion
+	cs.olvidar(d)
+	cs.mu.Unlock()
+	if c != nil {
+		c.Terminar(errRevocada.Error(), false)
+	}
+	cs.quitarDeLaPlataforma(d)
+	log.Printf("revocada «%s» (%s)", d.nombre, d.telefono)
+	return true
 }
 
 // PorToken busca la cámara dueña de un token de MJPEG.

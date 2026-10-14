@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
-import { api, mapaDelSitio, type Camara, type Config, type Punto, type Zona } from "../api";
+import { api, mapaDelSitio, TIPOS_DE_LOCAL, TIPOS_ZONA, type Camara, type Config, type Local, type Punto, type Zona } from "../api";
 import PlanoSitio from "../components/PlanoSitio.vue";
+import GrupoMinimo from "../components/GrupoMinimo.vue";
+import UmbralesTrafico from "../components/UmbralesTrafico.vue";
 import { useSitios } from "../useSitios";
 
 // El plano base del sitio lo publica el modelo (Build) y no se toca aquí: solo se editan zonas y cámaras.
 const COLORES = ["#3d8bff", "#16a34a", "#f59e0b", "#a855f7", "#ef4444", "#0ea5e9", "#db2777", "#65a30d", "#475569"];
 
-const { slug } = useSitios();
+const { slug, actual: sitioActual } = useSitios();
 const config = ref<Config>();
 const error = ref("");
 const guardado = ref("");
@@ -17,7 +19,11 @@ const dibujo = ref<"zona" | "camara" | null>(null);
 const borrador = ref<Punto[]>([]);
 const zonaActiva = ref<number | null>(null);
 const camaraActiva = ref<string | null>(null);
-const datosZona = ref({ name: "", color: COLORES[0] });
+const localActivo = ref<number | null>(null);
+const datosZona = ref<{ name: string; color: string; tipo: string; local_id: number | null }>({ name: "", color: COLORES[0], tipo: "OTRO", local_id: null });
+const datosLocal = ref({ name: "", category: "" });
+const nombreLocal = ref<HTMLInputElement>();
+const CATEGORIAS = ["Stand", "Expendedora", "Cafetería", "Restaurante", "Tienda", "Kiosco", "Farmacia", "Souvenirs"];
 const datosCamara = ref({ name: "", active: true, x: 0, y: 0, angulo: 0 });
 const nombreZona = ref<HTMLInputElement>();
 const nombreCamara = ref<HTMLInputElement>();
@@ -26,6 +32,11 @@ let avisoGuardado: ReturnType<typeof setTimeout> | undefined;
 const mapa = computed(() => mapaDelSitio(config.value));
 const zonaSel = computed(() => config.value?.zones.find((z) => z.zone_id === zonaActiva.value));
 const camaraSel = computed(() => config.value?.cameras.find((c) => c.camera_id === camaraActiva.value));
+const localSel = computed(() => config.value?.locales.find((l) => l.local_id === localActivo.value));
+/** La zona elegida es el interior o el frente de una tienda: tiene que pertenecer a una. */
+const requiereLocal = computed(() => TIPOS_DE_LOCAL.has(datosZona.value.tipo));
+const zonasDeLocal = (id: number) => config.value?.zones.filter((z) => z.local_id === id) ?? [];
+const nombreDeLocal = (id: number | null) => config.value?.locales.find((l) => l.local_id === id)?.name ?? "";
 const informe = computed(() =>
   Object.entries(mapa.value?.informe ?? {})
     .filter(([clave]) => clave.includes("->"))
@@ -50,6 +61,7 @@ async function cargar() {
     config.value = await api.config(slug.value);
     if (zonaActiva.value != null && !zonaSel.value) zonaActiva.value = null;
     if (camaraActiva.value != null && !camaraSel.value) camaraActiva.value = null;
+    if (localActivo.value != null && !localSel.value) localActivo.value = null;
   } catch (e) {
     error.value = (e as Error).message;
   }
@@ -76,8 +88,9 @@ function elegirZona(id: number) {
   const z = config.value?.zones.find((o) => o.zone_id === id);
   if (!z) return;
   camaraActiva.value = null;
+  localActivo.value = null;
   zonaActiva.value = id;
-  datosZona.value = { name: z.name, color: z.color || COLORES[0] };
+  datosZona.value = { name: z.name, color: z.color || COLORES[0], tipo: z.zone_type, local_id: z.local_id };
 }
 
 function elegirCamara(id: string) {
@@ -85,6 +98,7 @@ function elegirCamara(id: string) {
   const c = config.value?.cameras.find((o) => o.camera_id === id);
   if (!c) return;
   zonaActiva.value = null;
+  localActivo.value = null;
   camaraActiva.value = id;
   datosCamara.value = {
     name: c.name,
@@ -98,6 +112,7 @@ function elegirCamara(id: string) {
 function soltarSeleccion() {
   zonaActiva.value = null;
   camaraActiva.value = null;
+  localActivo.value = null;
 }
 
 function activarEdicion() {
@@ -116,8 +131,8 @@ function reemplazarZona(z: Zona) {
   config.value.zones = config.value.zones.map((o) => (o.zone_id === z.zone_id ? z : o));
 }
 
-/** Guarda la zona conservando lo que no se edita aquí (tipo y local, que usa la Parte III). */
-function guardarZona(z: Zona, cambios: Partial<Pick<Zona, "name" | "color" | "points">>) {
+/** Guarda la zona conservando lo que no se cambia (el tipo y la tienda deciden qué cuenta como frente, interior o descanso). */
+function guardarZona(z: Zona, cambios: Partial<Pick<Zona, "name" | "color" | "points" | "zone_type" | "local_id">>) {
   const datos = { local_id: z.local_id, zone_type: z.zone_type, name: z.name, color: z.color, points: z.points, ...cambios };
   return tarea(async () => {
     const guardada = await api.guardarZona(slug.value, datos, z.zone_id);
@@ -140,6 +155,22 @@ function guardarDatosZona() {
     return;
   }
   if (nombre !== z.name || datosZona.value.color !== z.color) return guardarZona(z, { name: nombre, color: datosZona.value.color });
+}
+
+/** Cambia el tipo de la zona o su tienda. Interior y frente necesitan tienda: con una sola en el sitio se elige sola; con varias, hasta que se elija una no se guarda. */
+function guardarClasificacion() {
+  const z = zonaSel.value;
+  if (!z) return;
+  const tipo = datosZona.value.tipo;
+  let local = datosZona.value.local_id;
+  if (TIPOS_DE_LOCAL.has(tipo) && local == null) {
+    const tiendas = config.value?.locales ?? [];
+    if (tiendas.length !== 1) return;
+    local = tiendas[0].local_id;
+    datosZona.value.local_id = local;
+  }
+  if (tipo === z.zone_type && local === z.local_id) return;
+  return guardarZona(z, { zone_type: tipo, local_id: local });
 }
 
 function elegirColor(color: string) {
@@ -199,6 +230,61 @@ async function borrarZona(z: Zona) {
   const r = await tarea(() => api.borrarZona(slug.value, z.zone_id), `Zona «${z.name}» eliminada`);
   if (!r.ok) return;
   zonaActiva.value = null;
+  await cargar();
+}
+
+// --- Tiendas -------------------------------------------------------------
+function elegirLocal(id: number) {
+  if (dibujo.value) return;
+  const l = config.value?.locales.find((o) => o.local_id === id);
+  if (!l) return;
+  zonaActiva.value = null;
+  camaraActiva.value = null;
+  localActivo.value = id;
+  datosLocal.value = { name: l.name, category: l.category };
+}
+
+function nombreNuevaTienda() {
+  const nombres = new Set(config.value?.locales.map((l) => l.name));
+  let n = (config.value?.locales.length ?? 0) + 1;
+  while (nombres.has(`Tienda ${n}`)) n++;
+  return `Tienda ${n}`;
+}
+
+async function crearTienda() {
+  const nueva = await tarea(() => api.crearLocal(slug.value, { name: nombreNuevaTienda(), category: "" }), "Tienda creada");
+  if (!nueva.ok) return;
+  await cargar();
+  elegirLocal(nueva.valor.local_id);
+  await nextTick();
+  nombreLocal.value?.focus();
+  nombreLocal.value?.select();
+}
+
+function guardarDatosLocal() {
+  const l = localSel.value;
+  const nombre = datosLocal.value.name.trim();
+  if (!l) return;
+  if (!nombre) {
+    datosLocal.value.name = l.name;
+    return;
+  }
+  const categoria = datosLocal.value.category.trim();
+  if (nombre === l.name && categoria === l.category) return;
+  return tarea(async () => {
+    const guardado = await api.actualizarLocal(slug.value, l.local_id, { name: nombre, category: categoria });
+    if (config.value) config.value.locales = config.value.locales.map((o) => (o.local_id === guardado.local_id ? guardado : o));
+    return guardado;
+  }, "Tienda guardada");
+}
+
+async function borrarTienda(l: Local) {
+  const zonas = zonasDeLocal(l.local_id).filter((z) => TIPOS_DE_LOCAL.has(z.zone_type));
+  const aviso = zonas.length ? ` Se eliminan también sus zonas de interior y frente (${zonas.map((z) => z.name).join(", ")}).` : "";
+  if (!confirm(`¿Eliminar la tienda «${l.name}»?${aviso} Si tiene ventas guardadas no se podrá eliminar.`)) return;
+  const r = await tarea(() => api.borrarLocal(slug.value, l.local_id), `Tienda «${l.name}» eliminada`);
+  if (!r.ok) return;
+  localActivo.value = null;
   await cargar();
 }
 
@@ -310,6 +396,7 @@ function teclas(ev: KeyboardEvent) {
   } else if (!dibujo.value && ev.key === "Delete") {
     if (zonaSel.value) void borrarZona(zonaSel.value);
     else if (camaraSel.value) void borrarCamara(camaraSel.value);
+    else if (localSel.value) void borrarTienda(localSel.value);
   }
 }
 
@@ -327,7 +414,7 @@ onUnmounted(() => {
   <section class="page-title">
     <div>
       <p class="eyebrow">{{ config?.site.name ?? slug }} · CONFIGURACIÓN</p>
-      <h1>Zonas y cámaras</h1>
+      <h1>Zonas, tiendas y cámaras</h1>
     </div>
   </section>
   <p v-if="error" class="error" role="alert">{{ error }}</p>
@@ -364,6 +451,25 @@ onUnmounted(() => {
               ></button>
             </div>
           </div>
+          <label
+            >Tipo de zona
+            <select v-model="datosZona.tipo" @change="guardarClasificacion">
+              <option v-for="(nombre, id) in TIPOS_ZONA" :key="id" :value="id">{{ nombre }}</option>
+            </select>
+          </label>
+          <label
+            >Tienda
+            <select v-model="datosZona.local_id" @change="guardarClasificacion">
+              <option :value="null">{{ requiereLocal ? "— elige la tienda —" : "Ninguna" }}</option>
+              <option v-for="l in config.locales" :key="l.local_id" :value="l.local_id">{{ l.name }}</option>
+            </select>
+          </label>
+          <p v-if="requiereLocal && datosZona.local_id == null" class="aviso" role="alert">
+            {{ config.locales.length ? "El interior y el frente de una tienda pertenecen a una: elige cuál." : "Primero crea la tienda en el panel «Tiendas»." }}
+          </p>
+          <p v-else-if="datosZona.tipo === 'FRONTAGE'" class="ayuda">El frente es la franja por donde pasa la gente frente a la tienda: de ahí salen «pasan» y «se detienen».</p>
+          <p v-else-if="datosZona.tipo === 'INTERIOR'" class="ayuda">El interior es donde se entra a la tienda: de ahí salen «entran» y «interesados».</p>
+          <p v-else-if="datosZona.tipo === 'DESCANSO'" class="ayuda">Un lugar donde la gente se sienta o espera: se mide cuánto se queda, sin contarlo como tienda.</p>
           <p class="dato">{{ zonaSel.area_m2.toFixed(1) }} m² · {{ zonaSel.points.length }} puntos</p>
           <p v-if="editando" class="ayuda">
             Arrastra la zona para moverla entera · arrastra un punto para cambiar la forma · el punto chico de cada lado agrega uno · doble clic en un
@@ -400,6 +506,38 @@ onUnmounted(() => {
         </div>
       </section>
 
+      <section v-else-if="localSel" class="panel editor" aria-label="Tienda elegida">
+        <div class="panel-heading">
+          <h2>Tienda</h2>
+          <button class="icon-button" type="button" aria-label="Cerrar" title="Cerrar (Esc)" @click="soltarSeleccion">✕</button>
+        </div>
+        <div class="bloque">
+          <label
+            >Nombre<input
+              ref="nombreLocal"
+              v-model="datosLocal.name"
+              maxlength="100"
+              @change="guardarDatosLocal"
+              @keydown.enter="($event.target as HTMLInputElement).blur()"
+          /></label>
+          <label
+            >Categoría<input v-model="datosLocal.category" list="categorias-tienda" maxlength="50" placeholder="Stand, Expendedora, Cafetería…" @change="guardarDatosLocal" />
+            <datalist id="categorias-tienda">
+              <option v-for="c in CATEGORIAS" :key="c" :value="c"></option>
+            </datalist>
+          </label>
+          <ul class="zonas-de-tienda">
+            <li v-for="z in zonasDeLocal(localSel.local_id)" :key="z.zone_id">
+              <button type="button" class="enlace" @click="elegirZona(z.zone_id)">{{ z.name }}</button
+              ><small class="muted">{{ TIPOS_ZONA[z.zone_type] ?? z.zone_type }}</small>
+            </li>
+            <li v-if="!zonasDeLocal(localSel.local_id).length" class="muted">Sin zonas: elige una zona del plano y asígnale esta tienda.</li>
+          </ul>
+          <p v-if="zonasDeLocal(localSel.local_id).every((z) => z.zone_type !== 'FRONTAGE')" class="aviso">Sin frente: no se puede contar a quienes pasan ni se detienen.</p>
+          <button class="danger-button" type="button" @click="borrarTienda(localSel)">Eliminar tienda</button>
+        </div>
+      </section>
+
       <section class="panel">
         <div class="panel-heading">
           <h2>Zonas</h2>
@@ -416,11 +554,51 @@ onUnmounted(() => {
           >
             <span class="color" :style="{ background: z.color || '#3d8bff' }"></span>
             <span
-              ><b>{{ z.name }}</b><small class="muted">{{ z.area_m2.toFixed(1) }} m²</small></span
+              ><b>{{ z.name }}</b
+              ><small class="muted">{{ TIPOS_ZONA[z.zone_type] ?? z.zone_type }}{{ z.local_id != null ? ` · ${nombreDeLocal(z.local_id)}` : "" }} · {{ z.area_m2.toFixed(1) }} m²</small></span
             >
           </li>
           <li v-if="!config.zones.length" class="vacia muted">Sin zonas todavía.</li>
         </ul>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>Tiendas</h2>
+          <span class="pill">{{ config.locales.length }}</span>
+        </div>
+        <ul class="lista">
+          <li
+            v-for="l in config.locales"
+            :key="l.local_id"
+            :class="{ activa: l.local_id === localActivo }"
+            tabindex="0"
+            @click="elegirLocal(l.local_id)"
+            @keydown.enter="elegirLocal(l.local_id)"
+          >
+            <span class="icono-camara" aria-hidden="true">▣</span>
+            <span
+              ><b>{{ l.name }}</b
+              ><small class="muted">{{ l.category || "Sin categoría" }} · {{ zonasDeLocal(l.local_id).length }} zonas</small></span
+            >
+          </li>
+          <li v-if="!config.locales.length" class="vacia muted">Sin tiendas todavía: créalas aquí y dibuja su frente y su interior.</li>
+        </ul>
+        <div class="bloque"><button type="button" @click="crearTienda">＋ Tienda</button></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>Umbrales de tráfico</h2>
+        </div>
+        <div class="bloque"><UmbralesTrafico :sitio="slug" /></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>Privacidad del género</h2>
+        </div>
+        <div class="bloque"><GrupoMinimo :sitio="slug" :actual="sitioActual?.min_group_size ?? 5" /></div>
       </section>
 
       <section class="panel">
@@ -612,6 +790,38 @@ onUnmounted(() => {
   font-size: 11px;
   color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
+}
+.aviso {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--warn-ink, #8a5a00);
+  background: var(--warn-bg, rgba(245, 158, 11, 0.14));
+}
+.zonas-de-tienda {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 11.5px;
+}
+.zonas-de-tienda li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.enlace {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--blue-600);
+  font-size: 11.5px;
+  font-weight: 650;
+  text-decoration: underline;
 }
 .ayuda {
   margin: 0;

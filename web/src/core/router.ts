@@ -1,9 +1,10 @@
 import { createRouter, createWebHistory } from "vue-router";
-import { asegurarSesion, isAuthenticated } from "./auth";
+import { asegurarSesion, sesion } from "./auth";
+import { inicioPara, rutaPermitida } from "./roles";
 import { ultimoSitio } from "../features/sitios/useSitios";
 
 // Cada sección funciona igual para cualquier sitio: /sitios/<sitio>/<sección>.
-const inicio = () => `/sitios/${ultimoSitio()}/en-vivo`;
+const inicio = () => inicioPara(sesion.value?.rol, ultimoSitio());
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -20,6 +21,10 @@ export const router = createRouter({
       meta: { seccion: "configuracion" },
     },
     { path: "/sitios/:sitio", redirect: (to) => `/sitios/${to.params.sitio}/en-vivo` },
+    { path: "/cambiar-clave", component: () => import("../features/cuentas/pages/CambiarClavePage.vue") },
+    { path: "/privacidad", component: () => import("../features/cuentas/pages/PrivacidadPage.vue"), meta: { abierta: true } },
+    { path: "/tienda", component: () => import("../features/cuentas/pages/TiendaPage.vue") },
+    { path: "/cuentas", component: () => import("../features/cuentas/pages/CuentasPage.vue") },
     { path: "/telefonos", component: () => import("../features/telefonos/pages/TelefonosPage.vue") },
     { path: "/videos", component: () => import("../features/videos/pages/VideosPage.vue") },
     { path: "/:pathMatch(.*)*", redirect: inicio },
@@ -42,8 +47,14 @@ router.onError((error, to) => {
 router.beforeEach(async (to) => {
   // La sesión la valida el servidor: se le pregunta una vez al abrir la página.
   await asegurarSesion();
-  const autenticado = isAuthenticated();
-  if (to.meta.public && autenticado) return inicio();
-  if (!to.meta.public && !autenticado) return "/login";
+  const s = sesion.value;
+  // El aviso de privacidad lo puede leer cualquiera, con o sin sesión.
+  if (to.meta.abierta) return true;
+  if (!s) return to.meta.public ? true : "/login";
+  if (to.meta.public) return inicio();
+  // Con una contraseña temporal solo se puede elegir una propia.
+  if (s.debe_cambiar_clave) return to.path === "/cambiar-clave" ? true : "/cambiar-clave";
+  // Cada rol abre solo lo suyo (el servidor lo vuelve a comprobar en cada pregunta).
+  if (!rutaPermitida(s.rol, to.path)) return inicio();
   return true;
 });

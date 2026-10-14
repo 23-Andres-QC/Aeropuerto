@@ -10,6 +10,7 @@ teléfono ──WebSocket (JPEG)──▶ camara-web ──MJPEG con token──
 
 - Al unirse, la cámara se registra sola en la lista de **backend-vivo** (`POST /api/v1/telefonos`), el backend de las cámaras en vivo, separado del del demo. La URL que registra es la de su MJPEG, en el formato que lee `camara_telefono.py`. Al salir, o 10 s después de perder la conexión, se quita de la lista.
 - Si alguien la quita en **Teléfonos**, el teléfono se desconecta y no vuelve a registrarse solo.
+- **Solo se une con un código de unión.** El administrador lo crea en **Teléfonos → Crear código de unión** (QR y texto `XXXX-XXXX`): dura 15 minutos y une hasta 10 teléfonos. La página lo manda, con la clave de reconexión, en el **primer mensaje del WebSocket** (no en la URL). Cada teléfono recibe su propia clave para volver sin código; el administrador puede revocar el código o un teléfono (que no vuelve). Las claves y los códigos viven en memoria: reiniciar el servicio exige escanear de nuevo. La API de administración (`/api/codigos`, `/api/dispositivos/{teléfono}`) solo está en el puerto interno, detrás del nginx de la web (que pide la sesión del administrador).
 - La sala (`/ws/sala`) la usa Teléfonos, a través del nginx de la web: el video procesado por el modelo, con cajas, o el directo de la cámara si el modelo aún no la procesa.
 
 ## Usar
@@ -17,7 +18,7 @@ teléfono ──WebSocket (JPEG)──▶ camara-web ──MJPEG con token──
 1. Levanta el stack: `docker compose up -d --build` (servicios `camara-web`, `backend-vivo` y `vivo-db`).
 2. En cada teléfono, conectado a la misma red que la laptop, abre `https://<IP-de-la-laptop>:8444`. Para ver la IP, en la laptop: `ipconfig` (IPv4 de la Wi-Fi).
 3. El navegador advierte que el certificado no es de confianza: es autofirmado a propósito, porque sin HTTPS no da acceso a la cámara. **Avanzado → Continuar**. Se acepta una sola vez: el certificado se guarda en el volumen `camara-cert`.
-4. **Unirse con la cámara** y permite la cámara. Se pide el formato completo del sensor (4:3 en teléfonos); 16:9 lo recortaría.
+4. Escanea el QR de **Teléfonos** (o escribe el código) y pulsa **Unirse con la cámara**; permite la cámara. Se pide el formato completo del sensor (4:3 en teléfonos); 16:9 lo recortaría.
 5. En la laptop, corre el modelo: `python "Modelo/Test Modelo/camara_telefono.py"`.
 
 Arriba, el teléfono muestra su estado («El modelo procesa esta cámara») y cuánto tarda cada cuadro en llegar (por ejemplo, «15 fps · 40 ms»). Mantén la página abierta: si pasa a segundo plano, el navegador corta la cámara. La página pide mantener la pantalla encendida.

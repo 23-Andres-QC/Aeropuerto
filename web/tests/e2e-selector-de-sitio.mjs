@@ -102,7 +102,7 @@ try {
     assert.equal(e.url, "/sitios/lap/configuracion");
     assert.match(e.tarjeta, /LAP · Jorge Chávez/);
     assert.equal(e.abierto, false);
-    assert.equal(e.titulo, "Zonas y cámaras");
+    assert.equal(e.titulo, "Zonas, tiendas y cámaras");
     assert.equal(e.plano, "Plano · 546.4 × 978.4 m", "se ve el plano del aeropuerto");
     assert.ok(e.capasDelPlano > 100, `el plano está dibujado (${e.capasDelPlano} elementos)`);
     assert.equal(e.panelZonas, true, "está el panel de Zonas");

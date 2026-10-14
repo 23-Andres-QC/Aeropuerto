@@ -42,7 +42,6 @@ type StayEvent struct {
 // PersonSpan is when the model saw a person and who they are in the session.
 type PersonSpan struct {
 	Number    int
-	Gender    string
 	FirstSeen time.Time
 	LastSeen  time.Time
 }
@@ -51,7 +50,6 @@ type PersonSpan struct {
 type Stay struct {
 	GlobalID   string
 	Person     int
-	Gender     string
 	LocalID    int
 	Start, End time.Time
 	Confidence float64
@@ -90,7 +88,7 @@ func PairStays(events []StayEvent, people map[string]PersonSpan) []Stay {
 		case "ENTER":
 			closeOpen(e.At)
 			p := people[e.GlobalID]
-			open = &Stay{GlobalID: e.GlobalID, Person: p.Number, Gender: p.Gender, LocalID: e.LocalID, Start: e.At, Confidence: e.Confidence}
+			open = &Stay{GlobalID: e.GlobalID, Person: p.Number, LocalID: e.LocalID, Start: e.At, Confidence: e.Confidence}
 		case "EXIT":
 			if open != nil && !e.At.Before(open.Start) {
 				open.End = e.At

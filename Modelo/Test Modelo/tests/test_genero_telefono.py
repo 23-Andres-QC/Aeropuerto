@@ -1,4 +1,6 @@
-"""Teléfonos: mientras el género no se confirma se muestra el que va ganando entre los votos que hay, sin guardarlo."""
+"""Teléfonos: el género sale de 3 cuadros por track, solo se muestra si quedó fijo (certeza de 0,8 o más) y las ventanas
+del seguidor duran lo mismo en segundos a cualquier ritmo."""
+import math
 import sys
 import types
 import unittest
@@ -8,7 +10,7 @@ from pathlib import Path
 
 TEST = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TEST))
-from camara_telefono import SesionEnVivo  # noqa: E402
+from camara_telefono import INTENTOS_GENERO, SesionEnVivo  # noqa: E402
 
 
 class MemoriaFalsa:
@@ -19,78 +21,122 @@ class MemoriaFalsa:
         self.guardados.append((pid, genero, confianza))
 
 
-def sesion(votos, personas=None):
+class GeneroFalso:
+    """Como ClasificadorGeneroCLIP: cada fila que recibe pasa un cuadro por «CLIP» y deja el voto que le toca."""
+
+    def __init__(self, votos):
+        self.enabled, self.memory, self.votos, self.llamadas = True, {}, iter(votos), 0
+
+    def actualizar(self, frames, fuente, filas):
+        for cid, fs in filas.items():
+            for f in fs:
+                self.llamadas += 1
+                estado = self.memory.setdefault((cid, f["local_id"]), {"last_frame": -math.inf, "votes": []})
+                estado["last_frame"] = fuente[cid]
+                estado["votes"].append(next(self.votos))
+
+
+def sesion(votos=(), personas=None):
     s = object.__new__(SesionEnVivo)
-    s.motor = types.SimpleNamespace(genero=types.SimpleNamespace(memory={("tel-1", 4): {"votes": votos}}))
-    s.memoria, s.generos, s.fijos = MemoriaFalsa(personas), {}, {}
+    s.motor = types.SimpleNamespace(genero=GeneroFalso(votos))
+    s.memoria, s.generos, s.fijos, s.intentos_genero = MemoriaFalsa(personas), {}, {}, {}
     return s
 
 
-def fila(genero="Sin determinar", confianza=None, pid=7):
-    return {"global_id": pid, "local_id": 4, "genero": genero, "confianza_genero": confianza}
+def fila(pid=7):
+    return {"global_id": pid, "local_id": 4}
 
 
-class GeneroProvisional(unittest.TestCase):
-    def test_sin_votos_no_inventa(self):
+def persona(genero=None, confianza=None):
+    return types.SimpleNamespace(genero=genero, confianza_genero=confianza)
+
+
+def muestrear(s, veces, pid=7):
+    for k in range(veces):
+        s._muestrear_genero({"tel-1": None}, {"tel-1": k + 1}, {"tel-1": [fila(pid)]})
+
+
+class GeneroSoloFijo(unittest.TestCase):
+    def test_sin_fijar_no_se_muestra(self):
+        s = sesion()
+        s.motor.genero.memory[("tel-1", 4)] = {"last_frame": 3, "votes": [("Mujer", 0.95)] * 2}
         f = fila()
-        sesion([])._genero("tel-1", f)
+        s._genero("tel-1", f)
+        self.assertEqual((f["genero"], f["confianza_genero"]), ("Sin determinar", None))
+
+    def test_el_fijo_del_track_se_muestra_y_pasa_a_su_persona(self):
+        s = sesion(personas={7: persona()})
+        s.fijos[("tel-1", 4)] = ("Mujer", 0.85)
+        f = fila()
+        s._genero("tel-1", f)
+        self.assertEqual((f["genero"], f["confianza_genero"]), ("Mujer", 0.85))
+        self.assertEqual(s.memoria.guardados, [(7, "Mujer", 0.85)])
+        self.assertEqual(s.generos[7], "Mujer")
+
+    def test_la_persona_con_genero_fijo_se_muestra_y_con_menos_certeza_no(self):
+        f = fila()
+        sesion(personas={7: persona("Hombre", 0.9)})._genero("tel-1", f)
+        self.assertEqual(f["genero"], "Hombre")
+        f = fila()
+        sesion(personas={7: persona("Hombre", 0.7)})._genero("tel-1", f)
         self.assertEqual(f["genero"], "Sin determinar")
-
-    def test_el_primer_voto_y_despues_el_que_va_ganando_sin_guardarlo(self):
-        s = sesion([("Mujer", 0.7)])
-        f = fila()
-        s._genero("tel-1", f)
-        self.assertEqual((f["genero"], f["confianza_genero"]), ("Mujer", 0.7))
-        s.motor.genero.memory[("tel-1", 4)]["votes"] += [("Hombre", 0.9), ("Hombre", 0.85)]
-        f = fila()
-        s._genero("tel-1", f)
-        self.assertEqual(f["genero"], "Hombre")
-        self.assertEqual(s.memoria.guardados, [], "el provisional no va a la memoria de identidades")
-        self.assertEqual(s.generos[7], "Hombre")
-
-    def test_tambien_sin_id_global_y_el_confirmado_si_se_guarda(self):
-        f = fila(pid=None)
-        sesion([("Hombre", 0.75)])._genero("tel-1", f)
-        self.assertEqual(f["genero"], "Hombre")
-        s = sesion([], personas={7: types.SimpleNamespace(genero=None)})
-        s._genero("tel-1", fila("Mujer", 0.81))
-        self.assertEqual(s.memoria.guardados, [(7, "Mujer", 0.81)])
-
-
-class GeneroFijo(unittest.TestCase):
-    def test_con_certeza_de_0_8_o_mas_queda_fijo_y_no_cambia(self):
-        s = sesion([])
-        f = fila("Mujer", 0.83, pid=None)
-        s._genero("tel-1", f)
-        # el seguidor después vota lo contrario con otra certeza: sigue Mujer
-        f = fila("Hombre", 0.91, pid=None)
-        s._genero("tel-1", f)
-        self.assertEqual((f["genero"], f["confianza_genero"]), ("Mujer", 0.83))
-
-    def test_bajo_0_8_si_puede_cambiar(self):
-        s = sesion([])
-        s._genero("tel-1", fila("Mujer", 0.7, pid=None))
-        f = fila("Hombre", 0.75, pid=None)
-        s._genero("tel-1", f)
-        self.assertEqual(f["genero"], "Hombre")
-
-    def test_el_provisional_de_votos_con_0_8_tambien_se_fija(self):
-        s = sesion([("Hombre", 0.85), ("Hombre", 0.9)], personas={7: types.SimpleNamespace(genero=None, confianza_genero=None)})
-        f = fila(pid=7)
-        s._genero("tel-1", f)
-        self.assertEqual(f["genero"], "Hombre")
-        s.motor.genero.memory[("tel-1", 4)]["votes"] += [("Mujer", 0.99)] * 6
-        f = fila(pid=7)
-        s._genero("tel-1", f)
-        self.assertEqual(f["genero"], "Hombre", "ya estaba fijo")
 
     def test_la_memoria_no_cambia_un_genero_fijo(self):
         from memoria_identidades import MemoriaIdentidades
         m = object.__new__(MemoriaIdentidades)
-        persona = types.SimpleNamespace(genero="Mujer", confianza_genero=0.85)
-        m.personas, m._marcar = {3: persona}, lambda *a, **k: None
+        p = types.SimpleNamespace(genero="Mujer", confianza_genero=0.85)
+        m.personas, m._marcar = {3: p}, lambda *a, **k: None
         m.genero(3, "Hombre", 0.99)
-        self.assertEqual(persona.genero, "Mujer")
+        self.assertEqual(p.genero, "Mujer")
+
+
+class TresCuadros(unittest.TestCase):
+    def test_con_tres_cuadros_seguros_queda_fijo_y_no_se_vuelve_a_calcular(self):
+        s = sesion([("Mujer", 0.9), ("Mujer", 0.85), ("Mujer", 0.95)], personas={7: persona()})
+        muestrear(s, INTENTOS_GENERO + 2)
+        self.assertEqual(s.motor.genero.llamadas, INTENTOS_GENERO)
+        self.assertEqual(s.fijos[("tel-1", 4)][0], "Mujer")
+        self.assertAlmostEqual(s.fijos[("tel-1", 4)][1], 0.9)
+        self.assertEqual(s.memoria.guardados, [(7, "Mujer", s.fijos[("tel-1", 4)][1])])
+        self.assertNotIn(("tel-1", 4), s.motor.genero.memory, "decidido: sus votos se sueltan")
+
+    def test_antes_del_tercero_no_se_fija_aunque_vaya_seguro(self):
+        s = sesion([("Hombre", 0.95), ("Hombre", 0.95), ("Hombre", 0.95)])
+        muestrear(s, INTENTOS_GENERO - 1)
+        self.assertEqual(s.fijos, {})
+
+    def test_sin_llegar_al_umbral_no_se_fija_ni_sigue_gastando(self):
+        s = sesion([("Hombre", 0.6), ("Mujer", 0.7), ("Hombre", 0.65)] + [("Hombre", 0.99)] * 5)
+        muestrear(s, INTENTOS_GENERO + 3)
+        self.assertEqual(s.fijos, {})
+        self.assertEqual(s.motor.genero.llamadas, INTENTOS_GENERO)
+        f = fila()
+        s._genero("tel-1", f)
+        self.assertEqual(f["genero"], "Sin determinar")
+
+    def test_si_su_persona_ya_tiene_genero_fijo_no_pasa_por_clip(self):
+        s = sesion([("Mujer", 0.9)] * 3, personas={7: persona("Hombre", 0.92)})
+        muestrear(s, 2)
+        self.assertEqual(s.motor.genero.llamadas, 0)
+
+
+class VentanasSeguidor(unittest.TestCase):
+    def _sesion(self, fps):
+        s = object.__new__(SesionEnVivo)
+        seguidor = types.SimpleNamespace(min_confirmations=3, max_age=0, confirmation_window=0, appearance_interval=0)
+        s.motor = types.SimpleNamespace(trackers={"tel-1": seguidor})
+        s._ventanas = {"max_age": 120, "confirmation_window": 5, "appearance_interval": 5}
+        s.fps = lambda cid: fps
+        s._ventanas_seguidor({"tel-1": None})
+        return seguidor
+
+    def test_a_15_cuadros_por_segundo_duran_lo_mismo_que_a_4(self):
+        a15, a4 = self._sesion(15.0), self._sesion(4.0)
+        self.assertEqual((a4.max_age, a4.confirmation_window, a4.appearance_interval), (120, 5, 5))
+        self.assertEqual((a15.max_age, a15.confirmation_window, a15.appearance_interval), (450, 19, 19))
+
+    def test_sin_ritmo_medido_todavia_usa_el_nominal(self):
+        self.assertEqual(self._sesion(0.0).max_age, 450)
 
 
 class Continuidad(unittest.TestCase):
@@ -139,6 +185,25 @@ class Estaticos(unittest.TestCase):
         self.assertTrue(q.estatico(1, 3.5))
         self.assertFalse(q.estatico(2, 3.5), "quien se mueve cuenta")
         self.assertFalse(q.estatico(1, 1.0), "todavía no pasaron 3 s")
+
+    def test_la_caja_que_salta_a_la_figura_de_al_lado_no_cuenta_como_moverse(self):
+        from videos_subidos import Quietud
+        q = Quietud(3.0)
+        maniqui = lambda x: {"local_id": 1, "x1": x, "y1": 100, "x2": x + 40, "y2": 200}
+        for k in range(60):  # 15 cuadros por segundo; a los 2 s la caja salta 30 px (0,3 alturas) a la figura de al lado
+            q.actualizar(k / 15, [maniqui(100 if k < 30 else 130)])
+        self.assertTrue(q.estatico(1, 59 / 15))
+
+    def test_en_el_telefono_el_temblor_de_media_altura_no_cuenta_y_quien_camina_si(self):
+        from camara_telefono import ESTATICO_DESPLAZAMIENTO_TELEFONO, ESTATICO_TELEFONO_S
+        from videos_subidos import Quietud
+        q = Quietud(ESTATICO_TELEFONO_S, ESTATICO_DESPLAZAMIENTO_TELEFONO)
+        tiembla = lambda k: {"local_id": 1, "x1": 100 + 35 * (k % 2), "y1": 100, "x2": 140 + 35 * (k % 2), "y2": 200}
+        camina = lambda k: {"local_id": 2, "x1": 300 + 5 * k, "y1": 100, "x2": 340 + 5 * k, "y2": 200}  # 0,75 alturas/s
+        for k in range(60):
+            q.actualizar(k / 15, [tiembla(k), camina(k)])
+        self.assertTrue(q.estatico(1, 59 / 15), "tiembla 0,35 alturas de un cuadro a otro: es un salto, no camina")
+        self.assertFalse(q.estatico(2, 59 / 15))
 
 
 class CajasCenidas(unittest.TestCase):

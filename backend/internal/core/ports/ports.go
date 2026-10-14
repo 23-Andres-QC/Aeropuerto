@@ -19,6 +19,10 @@ type SiteRepository interface {
 	UpdateSite(ctx context.Context, site domain.Site, in domain.SiteInput) (domain.Site, error)
 	// DeleteSite removes a site with no sessions (with its cameras and zones).
 	DeleteSite(ctx context.Context, site domain.Site) error
+	// SetDemo marks or unmarks the demonstration site.
+	SetDemo(ctx context.Context, site domain.Site, demo bool) error
+	// SetMinGroupSize stores the minimum group size for the gender counts of a site.
+	SetMinGroupSize(ctx context.Context, site domain.Site, n int) error
 
 	Map(ctx context.Context, site domain.Site) (json.RawMessage, error)
 	Plan(ctx context.Context, site domain.Site) (json.RawMessage, error)
@@ -49,6 +53,10 @@ type SessionRepository interface {
 	// ReplayTracks returns each person with one averaged position per step, and the last step.
 	ReplayTracks(ctx context.Context, sessionID string, step float64) ([]*domain.Track, int, error)
 	Insights(ctx context.Context, site domain.Site, sessionID string) (domain.InsightsData, error)
+
+	// ShiftSession moves a stored session in time so it starts at start, and marks the start as declared. The matches
+	// of its people with tickets depended on the old times and are removed.
+	ShiftSession(ctx context.Context, site domain.Site, session domain.Session, start time.Time) (domain.StartShift, error)
 
 	// Points exports a session's trajectory for Part III.
 	Points(ctx context.Context, session domain.Session) (domain.SessionPoints, error)
@@ -90,6 +98,47 @@ type SalesRepository interface {
 	ReplaceMatches(ctx context.Context, session domain.Session, matches []domain.Match) error
 	// MatchedAt is when the session's matching last ran, or nil.
 	MatchedAt(ctx context.Context, session domain.Session) (*time.Time, error)
+}
+
+// TrafficRepository stores the traffic aggregates (per zone and window, and the heat cells) and answers
+// the questions about them. A filter selects days, an hour slot (Lima time) and the data origin.
+type TrafficRepository interface {
+	// Now is the database clock: the same one that stamps plan_updated_at, so the two can be compared.
+	Now(ctx context.Context) (time.Time, error)
+	// Params are the site's thresholds (the defaults when never set) and when they last changed (zero when never set).
+	Params(ctx context.Context, site domain.Site) (domain.TrafficParams, time.Time, error)
+	SaveParams(ctx context.Context, site domain.Site, p domain.TrafficParams) error
+
+	// Zones are the site's active zones as the computation needs them.
+	Zones(ctx context.Context, site domain.Site) ([]domain.TrafficZone, error)
+	// People returns every stored position of each person of a session.
+	People(ctx context.Context, session domain.Session) ([]domain.TrafficPerson, error)
+	// ReplaceSession stores the traffic of a real session in place of the one it had; computedAt is when the computation started.
+	ReplaceSession(ctx context.Context, site domain.Site, session domain.Session, res domain.TrafficResult, params domain.TrafficParams, computedAt time.Time) error
+	// ForgetSession drops the computed traffic of a session (its positions changed): it counts as out of date until recomputed.
+	ForgetSession(ctx context.Context, sessionID string) error
+	// StaleSessions lists the finished sessions of the site never computed or computed before since.
+	StaleSessions(ctx context.Context, site domain.Site, since time.Time, all bool) ([]domain.Session, error)
+
+	Summary(ctx context.Context, site domain.Site, f domain.TrafficFilter) ([]domain.TrafficZoneRow, error)
+	Series(ctx context.Context, site domain.Site, f domain.TrafficFilter, zoneID int) ([]domain.TrafficPoint, error)
+	// Heat returns the seconds-person per 1 m cell, their total and how many hours have data.
+	Heat(ctx context.Context, site domain.Site, f domain.TrafficFilter) ([][3]float64, float64, int, error)
+	Dwell(ctx context.Context, site domain.Site, f domain.TrafficFilter, zoneIDs []int) (domain.DwellTotals, error)
+	// Funnel counts, per local, the people in front of it and inside it.
+	Funnel(ctx context.Context, site domain.Site, f domain.TrafficFilter) ([]domain.FunnelCounts, error)
+	// TicketCounts counts the tickets sold per local in the filter's days and slot.
+	TicketCounts(ctx context.Context, site domain.Site, f domain.TrafficFilter) (map[int]int, error)
+	// Sources tells where the answer's numbers come from; since is the plan's last change (what out of date means).
+	Sources(ctx context.Context, site domain.Site, f domain.TrafficFilter, since time.Time) (domain.TrafficSources, error)
+
+	// SimulatedVisits are the simulated visitors per local and hour the sales demo generated.
+	SimulatedVisits(ctx context.Context, site domain.Site) ([]domain.VisitCount, error)
+	ReplaceSimulated(ctx context.Context, site domain.Site, buckets []domain.TrafficBucket, heat []domain.HeatCell, params domain.TrafficParams) error
+	// SimulatedState says whether simulated traffic exists and whether it was drawn before since (the plan or the thresholds changed after it).
+	SimulatedState(ctx context.Context, site domain.Site, since time.Time) (exists, stale bool, err error)
+	// DeleteSimulated removes the simulated traffic and reports how many window rows.
+	DeleteSimulated(ctx context.Context, site domain.Site) (int, error)
 }
 
 // PhoneRepository keeps the registered phones (in memory by design).

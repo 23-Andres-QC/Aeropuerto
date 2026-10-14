@@ -20,7 +20,7 @@ var (
 	colorPattern  = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 	// ZoneTypes are the kinds of zone a site can have. INTERIOR (entering a
 	// local) and FRONTAGE (passing in front of it) belong to a local.
-	ZoneTypes  = map[string]bool{"INTERIOR": true, "FRONTAGE": true, "PASILLO": true, "ENTRADA": true, "COLA": true, "CHECKIN": true, "SEGURIDAD": true, "PUERTA": true, "OTRO": true}
+	ZoneTypes  = map[string]bool{"INTERIOR": true, "FRONTAGE": true, "PASILLO": true, "ENTRADA": true, "COLA": true, "CHECKIN": true, "SEGURIDAD": true, "PUERTA": true, "DESCANSO": true, "OTRO": true}
 	LocalZones = map[string]bool{"INTERIOR": true, "FRONTAGE": true}
 )
 
@@ -39,6 +39,10 @@ type Site struct {
 	// PlanUpdatedAt is the last change of locales or zones: analyses computed
 	// before it are out of date.
 	PlanUpdatedAt time.Time `json:"plan_updated_at"`
+	// Demo marks the demonstration site: everything in it is SIMULADO and only an admin can delete it whole.
+	Demo bool `json:"demo"`
+	// MinGroupSize is the smallest group of people whose gender count is shown (5 by default; only an admin lowers it, for tests).
+	MinGroupSize int `json:"min_group_size"`
 }
 
 type SiteInput struct {

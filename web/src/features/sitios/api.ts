@@ -54,6 +54,10 @@ export type Sitio = {
   zones: number;
   sessions: number;
   plan_updated_at: string;
+  /** El sitio de demostración: todo lo que tiene es SIMULADO. */
+  demo?: boolean;
+  /** Tamaño mínimo de grupo del género (5 por defecto; solo un admin lo baja, para pruebas). */
+  min_group_size?: number;
 };
 
 export type Camara = {
@@ -116,6 +120,8 @@ export type Sesion = {
   kind: "BUILD" | "LIVE";
   status: string;
   recording_start: string;
+  /** false: nadie declaró cuándo empezó a grabarse (INICIO_GRABACION); recording_start es la hora en que se procesó. */
+  recording_start_declared: boolean;
   ended_at: string | null;
   summary: Record<string, unknown> | null;
   identities: number;
@@ -125,8 +131,6 @@ export type Sesion = {
 
 export type Recorrido = {
   numero: number;
-  genero: string;
-  confianza: number | null;
   camaras: string[];
   inicio_s: number;
   fin_s: number;
@@ -160,7 +164,12 @@ export type Insights = {
   session: Sesion;
   resumen: {
     personas: number;
+    /** Solo las categorías con 5 personas o más; las demás no se desglosan (ver `genero_ocultos`). */
     genero: Record<string, number>;
+    /** Personas que están en las categorías que no se muestran. */
+    genero_ocultos: number;
+    /** Tamaño mínimo de grupo que se aplicó (menos de 5: desglose solo para pruebas). */
+    genero_minimo?: number;
     permanencia: { media_s: number; mediana_s: number; max_s: number };
   };
   calor: { celda_m: number; celdas: [number, number, number][] };
@@ -254,6 +263,7 @@ export const TIPOS_ZONA: Record<string, string> = {
   CHECKIN: "Atención / check-in",
   SEGURIDAD: "Control / seguridad",
   PUERTA: "Puerta",
+  DESCANSO: "Descanso (sala de espera)",
   OTRO: "Otro",
 };
 

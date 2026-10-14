@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { logout, sesion } from "./core/auth";
+import { esTienda as rolTienda, NOMBRE_ROL, ROL_ADMIN } from "./core/roles";
 import PaletaComandos from "./core/PaletaComandos.vue";
 import SelectorSitio from "./features/sitios/components/SelectorSitio.vue";
 import { fijarModoVivo, modoVivo, usarSitioVivo } from "./features/sitios/enVivo";
@@ -35,9 +36,14 @@ function toggleTheme() {
 const seccion = computed(() => (route.meta.seccion as string | undefined) ?? "");
 const sitioNav = computed(() => slug.value || ultimoSitio());
 const telefonos = computed(() => route.path === "/telefonos");
+const cuentas = computed(() => route.path === "/cuentas");
+const esAdmin = computed(() => sesion.value?.rol === ROL_ADMIN);
+// Una tienda, el cambio de contraseña y el aviso de privacidad van en una pantalla sencilla, sin el menú del análisis.
+const simple = computed(() => rolTienda(sesion.value?.rol) || route.path === "/cambiar-clave" || route.path === "/privacidad");
 const videos = computed(() => route.path === "/videos");
 const title = computed(() => {
   if (telefonos.value) return "Cámaras de teléfono · modelo final";
+  if (cuentas.value) return "Cuentas y privacidad";
   if (videos.value) return "Videos · modelo final sin guardar nada";
   const nombre = SECCIONES.find((s) => s.id === seccion.value)?.nombre ?? "";
   return `${actual.value?.name ?? slug.value} · ${nombre}`;
@@ -63,7 +69,8 @@ watch(
 watch(
   sesion,
   (s) => {
-    if (s) void recargar();
+    // Una tienda no ve la lista de sitios (la API se la niega): solo tiene su pantalla.
+    if (s && !rolTienda(s.rol)) void recargar();
     else vaciarSitios();
   },
   { immediate: true },
@@ -77,14 +84,23 @@ function elegirSitio(s: Sitio) {
 
 <template>
   <div v-if="route.path === '/login'"><RouterView /></div>
+  <div v-else-if="simple" class="shell-simple">
+    <header class="simple-cabecera">
+      <RouterLink class="brand simple-marca" to="/"><span class="brand-icon">✈</span><span>LAP</span></RouterLink>
+      <span v-if="sesion" class="simple-quien" data-prueba="quien">{{ sesion.nombre || sesion.usuario }} · {{ NOMBRE_ROL[sesion.rol] ?? sesion.rol }}</span>
+      <button v-if="sesion" class="logout-button" type="button" @click="salir">Salir</button>
+    </header>
+    <RouterView />
+  </div>
   <div v-else class="app-shell">
     <aside class="sidebar">
       <RouterLink class="brand" to="/"
         ><span class="brand-icon">✈</span><span>LAP<small>LIMA AIRPORT PARTNERS</small></span></RouterLink
       >
-      <div v-if="telefonos || videos" class="airport-switch">
+      <div v-if="telefonos || videos || cuentas" class="airport-switch">
         <span class="airport-symbol">⌖</span>
         <div v-if="telefonos"><b>Teléfonos</b><small>Modelo final en vivo · IDs estables</small></div>
+        <div v-else-if="cuentas"><b>Cuentas</b><small>Roles, privacidad y sitio Demo</small></div>
         <div v-else><b>Videos</b><small>Modelo final sobre un archivo · nada se guarda</small></div>
       </div>
       <SelectorSitio v-else :sitios="sitios" :slug="slug" :actual="actual" @elegir="elegirSitio" />
@@ -100,6 +116,8 @@ function elegirSitio(s: Sitio) {
           ><span>📱</span><span class="nav-label"><b class="nav-step">6.</b>Teléfonos</span></RouterLink
         ><RouterLink to="/videos"
           ><span>🎞</span><span class="nav-label"><b class="nav-step">7.</b>Videos</span></RouterLink
+        ><RouterLink v-if="esAdmin" to="/cuentas" data-prueba="ir-cuentas"
+          ><span>🔐</span><span class="nav-label"><b class="nav-step">8.</b>Cuentas</span></RouterLink
         >
       </nav>
       <div class="sidebar-bottom">
@@ -147,7 +165,8 @@ function elegirSitio(s: Sitio) {
       </main>
       <!-- Teléfonos y Videos van sin textos: solo el enlace o el video y el modelo. -->
       <footer v-if="!telefonos && !videos">
-        <span>Modelo LAP01 · YOLO26m + tracking + Re-ID + mapa 2D</span><span>Datos del modelo en PostgreSQL/PostGIS</span>
+        <span>Modelo LAP01 · YOLO26m + tracking + Re-ID + mapa 2D</span
+        ><span>Datos del modelo en PostgreSQL/PostGIS · <RouterLink to="/privacidad">Aviso de privacidad</RouterLink> · <RouterLink to="/cambiar-clave">Mi contraseña</RouterLink></span>
       </footer>
     </div>
   </div>
@@ -165,6 +184,23 @@ function elegirSitio(s: Sitio) {
   border-color: transparent;
   background: #d92d4a;
   box-shadow: 0 0 0 3px rgba(217, 45, 74, 0.2);
+}
+.shell-simple {
+  min-height: 100vh;
+}
+.simple-cabecera {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line, rgba(100, 116, 139, 0.25));
+}
+.simple-marca {
+  margin-right: auto;
+}
+.simple-quien {
+  font-size: 13px;
+  color: var(--ink-3, #64748b);
 }
 .sitio-tabs a.activo {
   color: white;

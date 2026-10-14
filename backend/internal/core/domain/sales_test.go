@@ -51,8 +51,8 @@ func ev(gid string, local int, typ string, at float64) StayEvent {
 
 func TestPairStays(t *testing.T) {
 	people := map[string]PersonSpan{
-		"a": {Number: 1, Gender: "MUJER", FirstSeen: sec(0), LastSeen: sec(100)},
-		"b": {Number: 2, Gender: "HOMBRE", FirstSeen: sec(0), LastSeen: sec(100)},
+		"a": {Number: 1, FirstSeen: sec(0), LastSeen: sec(100)},
+		"b": {Number: 2, FirstSeen: sec(0), LastSeen: sec(100)},
 	}
 	stays := PairStays([]StayEvent{
 		ev("a", 1, "ENTER", 10), ev("a", 1, "EXIT", 30), ev("a", 1, "ENTER", 50), // second visit never exits
@@ -74,7 +74,7 @@ func TestPairStays(t *testing.T) {
 			t.Errorf("stay %d = %+v, want %+v", i, s, w)
 		}
 	}
-	if stays[0].Person != 1 || stays[0].Gender != "MUJER" {
+	if stays[0].Person != 1 {
 		t.Errorf("person not carried: %+v", stays[0])
 	}
 }
