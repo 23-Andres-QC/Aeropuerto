@@ -54,6 +54,8 @@ Los datos se conservan en el volumen `aeropuerto-demo_pgdata`. La base se crea v
    ```
 
    `--zonas` crea las zonas de `zonas_iniciales.json` (Ascensores, Tacho, Reciclaje y los locales Carpa azul, Expendedora negra y Expendedora roja, cada uno con su zona INTERIOR: llegar a una expendedora cuenta como una visita) solo si el sitio aún no tiene zonas; después se editan desde la web.
+   **Zona grabada 2 (`esan-zona-2`).** El comedor del 2.º piso del Edificio D es otra sección de ESAN con su propio plano en metros, así que es un sitio más del selector (migración `015_esan_zona_2.sql`, con su dibujo `web/public/planos/esan-zona-2.svg` y su ubicación en el mapa del campus). Sale del plano de evacuación S-05, enderezado de una foto y trazado en `Modelo/Build Modelo/plano_esan/zona2/generar_zona2.py`; su escala (29,7 px/m) se ajusta a las áreas reales del cuadro del plano. `python "Modelo/Build Modelo/plano_esan/zona2/generar_zona2.py"` regenera los tres archivos y compara las áreas dibujadas con las del plano; con `--zonas` crea los locales y zonas iniciales (Comedor, Comedor de profesores, Zona de atención, escaleras, SS.HH., depósito y cuarto de data) solo si el sitio no tiene ninguna. Todavía no tiene cámaras ni sesiones: nada simulado.
+
 3. **Procesamiento histórico (Parte III).**
 
    ```bash
@@ -165,7 +167,7 @@ web/src/                      Vue 3 + TypeScript
   features/videos/            probar el modelo con un video subido (sin guardar nada)
   features/acceso/            login
 Modelo/Build Modelo/          Partes I y II: construcción del modelo y publicación
-  plano_esan/                 levantamiento del piso de ESAN y zonas iniciales
+  plano_esan/                 levantamiento del piso de ESAN y zonas iniciales (zona2/: el comedor del Edificio D)
 Modelo/Test Modelo/           modelo publicado, prueba en tiempo real y teléfonos
 Modelo/Insights Modelo/       Parte III: procesamiento histórico (paquete historico/)
 backend-vivo/                 Go · backend de las cámaras en vivo: teléfonos, relevo y memoria de identidades

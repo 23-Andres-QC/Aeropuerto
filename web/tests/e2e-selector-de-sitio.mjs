@@ -2,7 +2,7 @@
 //
 // Entra por la pantalla de login (en un navegador sin pantalla) y comprueba que
 //   1. justo después de iniciar sesión ya están los sitios (antes quedaba «Cargando sitio…» y sin pestañas hasta recargar),
-//   2. la tarjeta abre una lista con ESAN y LAP, con ratón y con teclado (↓ abre, ↑ elige, Enter confirma, Esc y clic fuera cierran),
+//   2. la tarjeta abre una lista con ESAN, su zona grabada 2 (el comedor del Edificio D) y LAP, con ratón y con teclado (↓ abre, ↑ elige, Enter confirma, Esc y clic fuera cierran),
 //   3. al elegir LAP, que aún no tiene cámaras ni capturas, se abre su plano y su configuración; ESAN conserva la sección en la que se estaba,
 //   4. las pestañas de sitio y «Cambiar a LAP» de Ctrl+K llevan al mismo lugar,
 //   5. tras Salir y volver a entrar, la lista se pide de nuevo.
@@ -87,14 +87,15 @@ try {
   await paso("justo tras iniciar sesión ya están los sitios (tarjeta y pestañas)", (e) => {
     assert.doesNotMatch(e.tarjeta, /Cargando/, `la tarjeta sigue cargando: ${e.tarjeta}`);
     assert.match(e.tarjeta, /ESAN/);
-    assert.deepEqual(e.pestanas, ["ESAN*", "LAP · Jorge Chávez"]);
+    assert.deepEqual(e.pestanas, ["ESAN*", "ESAN · Zona grabada 2", "LAP · Jorge Chávez"]);
   });
 
   await clic(`document.querySelector('.sitio-boton')`);
-  await paso("la tarjeta abre la lista con ESAN y LAP", (e) => {
+  await paso("la tarjeta abre la lista con ESAN, su zona grabada 2 y LAP", (e) => {
     assert.equal(e.abierto, true);
-    assert.equal(e.opciones.length, 2);
-    assert.match(e.opciones[1], /LAP · Jorge Chávez/);
+    assert.equal(e.opciones.length, 3);
+    assert.match(e.opciones[1], /ESAN · Zona grabada 2/);
+    assert.match(e.opciones[2], /LAP · Jorge Chávez/);
   });
 
   await clic(`[...document.querySelectorAll('.sitio-lista li')].find((li) => /LAP/.test(li.innerText))`);
@@ -112,6 +113,7 @@ try {
   await tecla("ArrowDown", 40);
   await paso("con teclado, ↓ abre la lista", (e) => assert.equal(e.abierto, true));
   await tecla("ArrowUp", 38);
+  await tecla("ArrowUp", 38);
   await tecla("Enter", 13);
   await paso("con teclado, ↑ y Enter eligen ESAN", (e) => {
     assert.equal(e.url, "/sitios/esan/configuracion");
@@ -122,7 +124,7 @@ try {
   await cdp("Page.navigate", { url: `${WEB}/sitios/lap/configuracion` });
   await paso("abrir LAP directo, con la sesión ya guardada: tarjeta, pestañas y plano", (e) => {
     assert.match(e.tarjeta, /LAP · Jorge Chávez/);
-    assert.deepEqual(e.pestanas, ["ESAN", "LAP · Jorge Chávez*"]);
+    assert.deepEqual(e.pestanas, ["ESAN", "ESAN · Zona grabada 2", "LAP · Jorge Chávez*"]);
     assert.equal(e.plano, "Plano · 546.4 × 978.4 m");
     assert.ok(e.capasDelPlano > 100);
   });
@@ -150,7 +152,7 @@ try {
   await iniciarSesion();
   await paso("al volver a entrar la lista de sitios se pide de nuevo", (e) => {
     assert.doesNotMatch(e.tarjeta, /Cargando/);
-    assert.equal(e.pestanas.length, 2);
+    assert.equal(e.pestanas.length, 3);
   });
 
   await cdp("Page.navigate", { url: `${WEB}/sitios/esan/en-vivo` });

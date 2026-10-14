@@ -64,6 +64,10 @@ func TestPrivacyMigrationsUndoAndRedo(t *testing.T) {
 		t.Fatalf("el conteo de género de la sesión: %d %v", n, err)
 	}
 
+	run(migrations.DownFS, "down/015_esan_zona_2.down.sql")
+	if has("SELECT EXISTS (SELECT 1 FROM sites WHERE slug = 'esan-zona-2')") {
+		t.Error("el sitio esan-zona-2 debe desaparecer al deshacer la 015")
+	}
 	run(migrations.DownFS, "down/014_grupo_minimo.down.sql")
 	if column("sites", "min_group_size") {
 		t.Error("min_group_size debe desaparecer al deshacer la 014")
@@ -89,6 +93,10 @@ func TestPrivacyMigrationsUndoAndRedo(t *testing.T) {
 	run(migrations.FS, "014_grupo_minimo.sql")
 	if !column("sites", "min_group_size") {
 		t.Error("min_group_size debe volver")
+	}
+	run(migrations.FS, "015_esan_zona_2.sql")
+	if !has("SELECT EXISTS (SELECT 1 FROM sites WHERE slug = 'esan-zona-2' AND map IS NOT NULL AND plano IS NOT NULL)") {
+		t.Error("el sitio esan-zona-2 debe volver con su plano")
 	}
 	for _, name := range []string{"users", "auth_sessions", "store_api_keys", "audit_log", "session_gender_counts"} {
 		if !table(name) {
