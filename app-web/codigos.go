@@ -3,37 +3,40 @@ package main
 import (
 	"crypto/rand"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
+	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 )
 
 // Un teléfono solo se une con un código de unión que crea el administrador desde Teléfonos (se muestra como QR):
-// dura 15 minutos y sirve para unir hasta 10 teléfonos. Cada teléfono recibe después su propia clave para volver a
-// conectarse; el administrador puede revocar el código (no se unen más) o un teléfono (se desconecta y no vuelve).
-// Todo vive en memoria, igual que las cámaras unidas: reiniciar el servicio las desuñe y exige códigos nuevos.
+// no vence ni tiene tope de teléfonos, así que el mismo código sirve siempre para cualquier teléfono hasta que el
+// administrador lo revoque. Cada teléfono recibe después su propia clave para volver a conectarse; el administrador
+// puede revocar el código (no se une nadie más) o un teléfono (se desconecta y no vuelve). Los códigos se guardan en
+// un archivo (volumen camara-datos) y sobreviven a reiniciar el servicio; los teléfonos unidos viven en memoria y,
+// tras un reinicio, la página vuelve a unirse sola con el código que ya tiene.
 const (
-	vigenciaCodigo  = 15 * time.Minute
-	maxPorCodigo    = 10
 	largoCodigo     = 8
 	alfabetoCodigo  = "ABCDEFGHJKMNPQRSTUVWXYZ23456789" // sin 0/O ni 1/I/L: se escribe a mano si el QR no se puede leer
-	recuerdoCodigo  = time.Hour                         // cuánto sigue en la lista un código vencido o revocado
+	recuerdoCodigo  = time.Hour                         // cuánto sigue en la lista un código revocado
 	maxCodigosVivos = 20
 )
 
-// errCodigo es la única respuesta ante un código que no sirve: no dice si no existe, venció, se revocó o se agotó.
-var errCodigo = errors.New("El código de unión no sirve: venció, se revocó o ya se usó en 10 teléfonos. Pide uno nuevo.")
+// errCodigo es la única respuesta ante un código que no sirve: no dice si no existe o se revocó.
+var errCodigo = errors.New("El código de unión no sirve: no existe o se revocó. Pide el código vigente.")
 
 // Codigo es un código de unión. Solo lo ve el administrador.
 type Codigo struct {
-	ID       string
-	Texto    string
-	Creado   time.Time
-	Vence    time.Time
-	Max      int
-	Usos     int
-	Revocado bool
+	ID         string    `json:"id"`
+	Texto      string    `json:"texto"`
+	Creado     time.Time `json:"creado"`
+	Usos       int       `json:"usos"`
+	Revocado   bool      `json:"revocado"`
+	RevocadoEn time.Time `json:"revocado_en"`
 }
 
 // CodigoVista es lo que ve la web del administrador.
@@ -41,21 +44,70 @@ type CodigoVista struct {
 	ID       string    `json:"id"`
 	Codigo   string    `json:"codigo"`
 	Creado   time.Time `json:"creado"`
-	Vence    time.Time `json:"vence"`
-	Max      int       `json:"max"`
 	Usos     int       `json:"usos"`
 	Revocado bool      `json:"revocado"`
 	Activo   bool      `json:"activo"`
 }
 
-// Codigos son los códigos de unión vigentes y los recientes.
+// Codigos son los códigos de unión vigentes y los revocados hace poco.
 type Codigos struct {
-	mu    sync.Mutex
-	lista map[string]*Codigo
-	ahora func() time.Time
+	mu      sync.Mutex
+	lista   map[string]*Codigo
+	ahora   func() time.Time
+	archivo string // dónde se guardan; vacío, solo en memoria
 }
 
-func NuevosCodigos() *Codigos { return &Codigos{lista: map[string]*Codigo{}, ahora: time.Now} }
+// NuevosCodigos carga los códigos guardados en archivo (si existe) y guarda ahí cada cambio. Con archivo vacío
+// viven solo en memoria.
+func NuevosCodigos(archivo string) *Codigos {
+	c := &Codigos{lista: map[string]*Codigo{}, ahora: time.Now, archivo: archivo}
+	if archivo == "" {
+		return c
+	}
+	datos, err := os.ReadFile(archivo)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			log.Printf("códigos de unión: no se pudo leer el archivo: %v", err)
+		}
+		return c
+	}
+	var guardados []*Codigo
+	if err := json.Unmarshal(datos, &guardados); err != nil {
+		log.Printf("códigos de unión: archivo ilegible, se empieza sin códigos: %v", err)
+		return c
+	}
+	for _, k := range guardados {
+		if k != nil && k.ID != "" && len(k.Texto) == largoCodigo {
+			c.lista[k.ID] = k
+		}
+	}
+	return c
+}
+
+// guardar escribe la lista en el archivo (con c.mu tomado). Se escribe aparte y se renombra: un corte a mitad no
+// deja el archivo a medias.
+func (c *Codigos) guardar() {
+	if c.archivo == "" {
+		return
+	}
+	lista := make([]*Codigo, 0, len(c.lista))
+	for _, k := range c.lista {
+		lista = append(lista, k)
+	}
+	datos, _ := json.Marshal(lista)
+	tmp := c.archivo + ".tmp"
+	if err := os.MkdirAll(filepath.Dir(c.archivo), 0o700); err != nil {
+		log.Printf("códigos de unión: no se pudo guardar: %v", err)
+		return
+	}
+	if err := os.WriteFile(tmp, datos, 0o600); err != nil {
+		log.Printf("códigos de unión: no se pudo guardar: %v", err)
+		return
+	}
+	if err := os.Rename(tmp, c.archivo); err != nil {
+		log.Printf("códigos de unión: no se pudo guardar: %v", err)
+	}
+}
 
 func aleatorioDe(alfabeto string, n int) string {
 	b := make([]byte, n)
@@ -93,7 +145,7 @@ func (c *Codigos) Crear() (Codigo, error) {
 	c.limpiar(ahora)
 	activos := 0
 	for _, k := range c.lista {
-		if c.activo(k, ahora) {
+		if k.activo() {
 			activos++
 		}
 	}
@@ -101,33 +153,31 @@ func (c *Codigos) Crear() (Codigo, error) {
 		return Codigo{}, errors.New("Hay demasiados códigos vigentes: revoca alguno.")
 	}
 	k := &Codigo{ID: aleatorioDe("abcdefghijklmnopqrstuvwxyz0123456789", 10), Texto: aleatorioDe(alfabetoCodigo, largoCodigo),
-		Creado: ahora, Vence: ahora.Add(vigenciaCodigo), Max: maxPorCodigo}
+		Creado: ahora}
 	c.lista[k.ID] = k
+	c.guardar()
 	return *k, nil
 }
 
-func (c *Codigos) activo(k *Codigo, ahora time.Time) bool {
-	return !k.Revocado && ahora.Before(k.Vence) && k.Usos < k.Max
-}
+func (k *Codigo) activo() bool { return !k.Revocado }
 
 func (c *Codigos) limpiar(ahora time.Time) {
 	for id, k := range c.lista {
-		if ahora.Sub(k.Vence) > recuerdoCodigo {
+		if k.Revocado && ahora.Sub(k.RevocadoEn) > recuerdoCodigo {
 			delete(c.lista, id)
 		}
 	}
 }
 
-// Lista devuelve los códigos vigentes y los de la última hora, los nuevos primero.
+// Lista devuelve los códigos vigentes y los revocados en la última hora, los nuevos primero.
 func (c *Codigos) Lista() []CodigoVista {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	ahora := c.ahora()
-	c.limpiar(ahora)
+	c.limpiar(c.ahora())
 	out := make([]CodigoVista, 0, len(c.lista))
 	for _, k := range c.lista {
-		out = append(out, CodigoVista{ID: k.ID, Codigo: mostrar(k.Texto), Creado: k.Creado, Vence: k.Vence, Max: k.Max, Usos: k.Usos,
-			Revocado: k.Revocado, Activo: c.activo(k, ahora)})
+		out = append(out, CodigoVista{ID: k.ID, Codigo: mostrar(k.Texto), Creado: k.Creado, Usos: k.Usos, Revocado: k.Revocado,
+			Activo: k.activo()})
 	}
 	for i := 1; i < len(out); i++ {
 		for j := i; j > 0 && out[j].Creado.After(out[j-1].Creado); j-- {
@@ -142,21 +192,21 @@ func (c *Codigos) Revocar(id string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	k, ok := c.lista[id]
-	if ok {
-		k.Revocado = true
+	if ok && !k.Revocado {
+		k.Revocado, k.RevocadoEn = true, c.ahora()
+		c.guardar()
 	}
 	return ok
 }
 
-// Canjear usa un lugar de un código: devuelve su id, o errCodigo. Compara contra todos, en tiempo constante.
+// Canjear usa un código: devuelve su id, o errCodigo. Compara contra todos, en tiempo constante.
 func (c *Codigos) Canjear(texto string) (string, error) {
 	texto = normalizar(texto)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	ahora := c.ahora()
 	var hallado *Codigo
 	for _, k := range c.lista {
-		if subtle.ConstantTimeCompare([]byte(texto), []byte(k.Texto)) == 1 && c.activo(k, ahora) {
+		if subtle.ConstantTimeCompare([]byte(texto), []byte(k.Texto)) == 1 && k.activo() {
 			hallado = k
 		}
 	}
@@ -164,6 +214,7 @@ func (c *Codigos) Canjear(texto string) (string, error) {
 		return "", errCodigo
 	}
 	hallado.Usos++
+	c.guardar()
 	return hallado.ID, nil
 }
 
@@ -173,6 +224,7 @@ func (c *Codigos) Devolver(id string) {
 	defer c.mu.Unlock()
 	if k, ok := c.lista[id]; ok && k.Usos > 0 {
 		k.Usos--
+		c.guardar()
 	}
 }
 

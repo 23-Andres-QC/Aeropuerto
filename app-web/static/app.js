@@ -202,8 +202,9 @@ function conectar() {
   const ws = new WebSocket(url);
   app.ws = ws;
   app.unida = false;
-  // El código y la clave van en el primer mensaje, no en la URL (quedaría en los registros del servidor).
-  ws.onopen = () => ws.send(JSON.stringify({ tipo: 'unirse', codigo: app.clave ? '' : $('codigo').value.trim(), clave: app.clave || '' }));
+  // El código y la clave van en el primer mensaje, no en la URL (quedaría en los registros del servidor). El código va
+  // siempre: no vence, así que si el servicio se reinició y ya no conoce la clave, la cámara se vuelve a unir sola.
+  ws.onopen = () => ws.send(JSON.stringify({ tipo: 'unirse', codigo: $('codigo').value.trim(), clave: app.clave || '' }));
   app.enVuelo = [];
   app.capturas = [];
   app.codificando = false;
@@ -217,6 +218,7 @@ function conectar() {
     }
     if (m.tipo === 'unido') {
       if (m.clave) app.clave = m.clave;
+      guardar('camara-web.codigo', $('codigo').value.trim()); // no vence: la próxima vez ya está puesto
       Object.assign(app, { unida: true, motivo: null, nombre: m.nombre, lectores: m.lectores, espectadores: m.espectadores || 0 });
       $('nombre-camara').textContent = m.nombre;
     } else if (m.tipo === 'ok') {
@@ -732,7 +734,6 @@ function terminar(mensaje) {
   $('inicio').hidden = false;
   $('unirse').disabled = false;
   if (mensaje) mostrarError(mensaje);
-  else $('codigo').value = '';
 }
 
 function iniciar() {
@@ -743,6 +744,8 @@ function iniciar() {
   if (fragmento.get('c')) {
     $('codigo').value = fragmento.get('c').slice(0, 12);
     history.replaceState(null, '', location.pathname + location.search);
+  } else {
+    $('codigo').value = leer('camara-web.codigo') || '';
   }
   $('unirse').addEventListener('click', unirse);
   $('salir').addEventListener('click', salir);

@@ -196,8 +196,6 @@ try {
   await t.hasta(`!!document.querySelector('[data-prueba=codigo-vigente]')`, "crear el código");
   const codigo = await t.texto("[data-prueba=codigo-vigente]");
   assert.match(codigo, /^[A-HJKMNP-Z2-9]{4}-[A-HJKMNP-Z2-9]{4}$/);
-  const cuenta = await t.texto("[data-prueba=cuenta-regresiva]");
-  assert.match(cuenta, /^1[45]:\d\d$/, "dura 15 minutos");
   const hayQR = await t.evalua(`(() => { const s = document.querySelector('svg.qr'); return !!s && s.querySelector('path').getAttribute('d').length > 500; })()`);
   // El QR lleva al enlace de la cámara (el que publica el modelo, o la IP con que se abrió la web): sin enlace conocido solo se ve el código.
   const enlaceConocido = await t.evalua(`!!document.querySelector('.enlace-texto')`);
@@ -252,7 +250,7 @@ try {
   await t.hasta(`!document.querySelector('[data-prueba=codigo-vigente]')`, "el código revocado deja de estar vigente");
   const tarde = await abrirTelefono(`e2e-tarde-${sufijo}`.padEnd(32, "c"), { tipo: "unirse", codigo, clave: "" });
   assert.ok(tarde.mensajes.some((m) => m.tipo === "error") && !tarde.mensajes.some((m) => m.tipo === "unido"), "un código revocado no sirve");
-  paso("un código de unión (QR, 15 min) une teléfonos de verdad; se revocan un teléfono y un código");
+  paso("un código de unión (QR, no vence) une teléfonos de verdad; se revocan un teléfono y un código");
 
   // ---------- Privacidad ----------
   await t.ir("/privacidad", 1500);

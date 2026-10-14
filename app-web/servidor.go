@@ -239,8 +239,8 @@ func (s *Servidor) crearCodigo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// El código no se escribe en el registro: solo que se creó uno.
-	log.Printf("código de unión creado (vence %s, hasta %d teléfonos)", k.Vence.Format(time.RFC3339), k.Max)
-	responderJSON(w, http.StatusCreated, CodigoVista{ID: k.ID, Codigo: mostrar(k.Texto), Creado: k.Creado, Vence: k.Vence, Max: k.Max, Activo: true})
+	log.Printf("código de unión creado (no vence, sin tope de teléfonos)")
+	responderJSON(w, http.StatusCreated, CodigoVista{ID: k.ID, Codigo: mostrar(k.Texto), Creado: k.Creado, Activo: true})
 }
 
 func (s *Servidor) revocarCodigo(w http.ResponseWriter, r *http.Request) {

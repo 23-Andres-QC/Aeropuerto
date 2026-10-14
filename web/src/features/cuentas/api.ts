@@ -70,9 +70,9 @@ export const cuentas = {
   borrarDemo: (confirmar: string) => request<{ borrados: number }>(`/api/v1/demo?confirmar=${encodeURIComponent(confirmar)}`, { method: "DELETE" }),
 };
 
-// Unir teléfonos como cámaras: códigos de unión (15 min, hasta 10 teléfonos) y revocación de un teléfono. Los atiende la
-// cámara web (app-web) por el nginx de la web, que pide la sesión del administrador.
-export type CodigoUnion = { id: string; codigo: string; creado: string; vence: string; max: number; usos: number; revocado: boolean; activo: boolean };
+// Unir teléfonos como cámaras: códigos de unión (no vencen ni tienen tope de teléfonos) y revocación de un teléfono. Los
+// atiende la cámara web (app-web) por el nginx de la web, que pide la sesión del administrador.
+export type CodigoUnion = { id: string; codigo: string; creado: string; usos: number; revocado: boolean; activo: boolean };
 
 export const union = {
   codigos: () => request<CodigoUnion[]>("/camara-web/api/codigos"),

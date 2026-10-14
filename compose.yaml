@@ -118,6 +118,8 @@ services:
       # El certificado autofirmado sobrevive a reconstruir el contenedor: los
       # teléfonos aceptan la advertencia una sola vez.
       - camara-cert:/home/app/certs
+      # Los códigos de unión (no vencen) sobreviven a reiniciar o reconstruir el contenedor.
+      - camara-datos:/home/app/datos
     depends_on:
       backend-vivo:
         condition: service_healthy
@@ -156,4 +158,5 @@ services:
 volumes:
   pgdata:
   camara-cert:
+  camara-datos:
   vivo-pgdata:

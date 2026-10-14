@@ -7,8 +7,8 @@ RUN go vet ./... && go test ./... && CGO_ENABLED=0 go build -trimpath -ldflags="
 FROM alpine:3.22
 RUN adduser -D -u 10001 app
 USER app
-# Aquí se guarda el certificado autofirmado (volumen camara-cert en compose).
-RUN mkdir -p /home/app/certs
+# Aquí se guardan el certificado autofirmado y los códigos de unión (volúmenes camara-cert y camara-datos en compose).
+RUN mkdir -p /home/app/certs /home/app/datos
 COPY --from=build /camara-web /camara-web
 EXPOSE 8080 8443
 ENTRYPOINT ["/camara-web"]

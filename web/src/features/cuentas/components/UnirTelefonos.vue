@@ -1,23 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { cuentaRegresiva, enlaceConCodigo } from "../../../core/roles";
+import { enlaceConCodigo } from "../../../core/roles";
 import { union, type CodigoUnion } from "../api";
 import CodigoQR from "./CodigoQR.vue";
 
-// Unir teléfonos como cámaras: el administrador crea un código (15 minutos, hasta 10 teléfonos), lo muestra como QR y lo escanean.
-// Revocar el código impide que se unan más; revocar un teléfono (en su tarjeta, abajo) lo desconecta y no vuelve.
+// Unir teléfonos como cámaras: el administrador crea un código (no vence y sirve para cualquier teléfono), lo muestra como QR y lo
+// escanean. Revocar el código impide que se unan más; revocar un teléfono (en su tarjeta, abajo) lo desconecta y no vuelve.
 const props = defineProps<{ enlace: string | null; telefonos: { id: string; nombre: string; simulado?: boolean }[] }>();
 const emit = defineEmits<{ revocado: [] }>();
 
 const codigos = ref<CodigoUnion[]>([]);
 const error = ref("");
 const creando = ref(false);
-const ahora = ref(Date.now());
 const copiado = ref(false);
 let sondeo: ReturnType<typeof setInterval> | undefined;
-let reloj: ReturnType<typeof setInterval> | undefined;
 
-const vigente = computed(() => codigos.value.find((c) => c.activo && new Date(c.vence).getTime() > ahora.value) ?? null);
+const vigente = computed(() => codigos.value.find((c) => c.activo) ?? null);
 const anteriores = computed(() => codigos.value.filter((c) => c.id !== vigente.value?.id));
 const url = computed(() => (vigente.value && props.enlace ? enlaceConCodigo(props.enlace, vigente.value.codigo) : ""));
 
@@ -75,24 +73,20 @@ async function copiar() {
   }
 }
 
-const estado = (c: CodigoUnion) => (c.revocado ? "revocado" : c.usos >= c.max ? "agotado" : new Date(c.vence).getTime() <= ahora.value ? "vencido" : "vigente");
+const estado = (c: CodigoUnion) => (c.revocado ? "revocado" : "vigente");
 
 onMounted(() => {
   void cargar();
   sondeo = setInterval(cargar, 5000);
-  reloj = setInterval(() => (ahora.value = Date.now()), 1000);
 });
-onUnmounted(() => {
-  clearInterval(sondeo);
-  clearInterval(reloj);
-});
+onUnmounted(() => clearInterval(sondeo));
 </script>
 
 <template>
   <section class="panel unir" aria-label="Unir teléfonos como cámaras">
     <div class="panel-heading">
       <h2>Unir teléfonos</h2>
-      <span class="muted">solo con un código de unión · dura 15 min · hasta 10 teléfonos</span>
+      <span class="muted">solo con un código de unión · no vence · cualquier teléfono</span>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
 
@@ -105,8 +99,8 @@ onUnmounted(() => {
         <p class="muted">Escanea el QR con el teléfono, o escribe este código en la página de cámara:</p>
         <p class="codigo" data-prueba="codigo-vigente">{{ vigente.codigo }}</p>
         <p class="cuenta">
-          Vence en <b data-prueba="cuenta-regresiva">{{ cuentaRegresiva(vigente.vence, ahora) }}</b> · se usó en
-          <b data-prueba="usos">{{ vigente.usos }}</b> de {{ vigente.max }} teléfonos
+          No vence · se usó en <b data-prueba="usos">{{ vigente.usos }}</b>
+          {{ vigente.usos === 1 ? "teléfono" : "teléfonos" }}
         </p>
         <p v-if="enlace" class="muted enlace-texto">{{ enlace }}</p>
         <div class="acciones">
@@ -136,7 +130,7 @@ onUnmounted(() => {
       <summary>Códigos anteriores ({{ anteriores.length }})</summary>
       <ul>
         <li v-for="c in anteriores" :key="c.id">
-          <b>{{ c.codigo }}</b> · {{ estado(c) }} · {{ c.usos }}/{{ c.max }} teléfonos
+          <b>{{ c.codigo }}</b> · {{ estado(c) }} · {{ c.usos }} {{ c.usos === 1 ? "teléfono" : "teléfonos" }}
         </li>
       </ul>
     </details>

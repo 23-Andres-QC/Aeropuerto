@@ -52,7 +52,7 @@ import { sesion } from "../../../core/auth";
         <li>
           <b>Cada tienda:</b> ve solo las cifras de su local (cuántos pasan, se detienen y entran; cuánto se quedan). Nunca ve personas ni cámaras, ni el género de nadie.
         </li>
-        <li><b>Cámaras de teléfono:</b> solo se unen con un código de unión que crea el administrador, vale 15 minutos y se puede revocar.</li>
+        <li><b>Cámaras de teléfono:</b> solo se unen con un código de unión que crea el administrador; no vence y se puede revocar.</li>
       </ul>
 
       <h2>Tus derechos</h2>

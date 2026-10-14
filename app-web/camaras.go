@@ -139,11 +139,14 @@ var (
 
 func NuevasCamaras(aeropuerto Aeropuerto, urlMJPEG string, gracia time.Duration) *Camaras {
 	return &Camaras{aeropuerto: aeropuerto, urlMJPEG: strings.TrimRight(urlMJPEG, "/"), gracia: gracia,
-		porID: map[string]*Dispositivo{}, codigos: NuevosCodigos(), revocados: map[string]bool{}}
+		porID: map[string]*Dispositivo{}, codigos: NuevosCodigos(""), revocados: map[string]bool{}}
 }
 
 // Codigos son los códigos de unión que el administrador crea desde Teléfonos.
 func (cs *Camaras) Codigos() *Codigos { return cs.codigos }
+
+// GuardarCodigosEn carga los códigos de unión de archivo y guarda ahí cada cambio (antes de atender a nadie).
+func (cs *Camaras) GuardarCodigosEn(archivo string) { cs.codigos = NuevosCodigos(archivo) }
 
 // Conectar asocia la pestaña c a la cámara id. Si es nueva la registra en
 // Teléfonos; si vuelve dentro de la espera conserva su registro (y su token).
