@@ -114,6 +114,8 @@ type InsightsSummary struct {
 	// belong to the ones left out, so the total still adds up.
 	Gender       map[string]int `json:"genero"`
 	GenderHidden int            `json:"genero_ocultos"`
+	// GenderMin is the minimum group size that was applied (below 5 the breakdown is for tests only).
+	GenderMin int `json:"genero_minimo"`
 	Dwell        DwellStats     `json:"permanencia"`
 }
 

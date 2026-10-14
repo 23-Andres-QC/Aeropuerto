@@ -41,6 +41,8 @@ type Site struct {
 	PlanUpdatedAt time.Time `json:"plan_updated_at"`
 	// Demo marks the demonstration site: everything in it is SIMULADO and only an admin can delete it whole.
 	Demo bool `json:"demo"`
+	// MinGroupSize is the smallest group of people whose gender count is shown (5 by default; only an admin lowers it, for tests).
+	MinGroupSize int `json:"min_group_size"`
 }
 
 type SiteInput struct {

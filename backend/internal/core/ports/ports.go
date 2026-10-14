@@ -21,6 +21,8 @@ type SiteRepository interface {
 	DeleteSite(ctx context.Context, site domain.Site) error
 	// SetDemo marks or unmarks the demonstration site.
 	SetDemo(ctx context.Context, site domain.Site, demo bool) error
+	// SetMinGroupSize stores the minimum group size for the gender counts of a site.
+	SetMinGroupSize(ctx context.Context, site domain.Site, n int) error
 
 	Map(ctx context.Context, site domain.Site) (json.RawMessage, error)
 	Plan(ctx context.Context, site domain.Site) (json.RawMessage, error)

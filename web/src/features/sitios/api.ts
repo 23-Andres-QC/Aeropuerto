@@ -56,6 +56,8 @@ export type Sitio = {
   plan_updated_at: string;
   /** El sitio de demostración: todo lo que tiene es SIMULADO. */
   demo?: boolean;
+  /** Tamaño mínimo de grupo del género (5 por defecto; solo un admin lo baja, para pruebas). */
+  min_group_size?: number;
 };
 
 export type Camara = {
@@ -166,6 +168,8 @@ export type Insights = {
     genero: Record<string, number>;
     /** Personas que están en las categorías que no se muestran. */
     genero_ocultos: number;
+    /** Tamaño mínimo de grupo que se aplicó (menos de 5: desglose solo para pruebas). */
+    genero_minimo?: number;
     permanencia: { media_s: number; mediana_s: number; max_s: number };
   };
   calor: { celda_m: number; celdas: [number, number, number][] };

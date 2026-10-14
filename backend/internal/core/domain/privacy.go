@@ -6,6 +6,26 @@ import "sort"
 // specific person (a session with 1 woman among 30 men says who she is), so it is left out of every view.
 const MinGenderGroup = 5
 
+// MaxGenderGroup is the largest minimum group a site may ask for.
+const MaxGenderGroup = 50
+
+// ValidGroupSize checks a site's minimum group size: from 1 (every category shown, only for tests) to 50.
+func ValidGroupSize(n int) error {
+	if n < 1 || n > MaxGenderGroup {
+		return Invalid("El tamaño mínimo de grupo va de 1 a 50 (5 por defecto)")
+	}
+	return nil
+}
+
+// EffectiveMinGroup is the minimum group size that applies to who asks: a store account always gets the default (5), whatever
+// the site's setting says; everyone else gets the site's.
+func EffectiveMinGroup(role string, site int) int {
+	if role == RoleStore || role == RoleStoreFeed || site < 1 {
+		return MinGenderGroup
+	}
+	return site
+}
+
 // GenderLabels are the estimated genders of a session, in the order they are shown.
 var GenderLabels = []string{"HOMBRE", "MUJER", "SIN_DETERMINAR"}
 

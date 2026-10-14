@@ -122,7 +122,7 @@ var (
 	// A store account may read these two questions about its own local, and nothing else of the platform.
 	storeAllowed = regexp.MustCompile(`^/api/v1/sites/([a-z0-9-]+)/trafico/(permanencia|embudo)$`)
 	// What only an admin_lap login may touch: accounts, keys, the audit log, the demo site and the retention.
-	adminOnly = regexp.MustCompile(`^/api/v1/(usuarios|auditoria|demo|privacidad)(/|$)|/llaves(/|$)`)
+	adminOnly = regexp.MustCompile(`^/api/v1/(usuarios|auditoria|demo|privacidad)(/|$)|/llaves(/|$)|/grupo-minimo$`)
 )
 
 // scope applies what each role may reach. It returns false after answering when the request is out of reach. A store

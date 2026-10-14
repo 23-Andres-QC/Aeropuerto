@@ -2,13 +2,14 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { api, mapaDelSitio, TIPOS_DE_LOCAL, TIPOS_ZONA, type Camara, type Config, type Local, type Punto, type Zona } from "../api";
 import PlanoSitio from "../components/PlanoSitio.vue";
+import GrupoMinimo from "../components/GrupoMinimo.vue";
 import UmbralesTrafico from "../components/UmbralesTrafico.vue";
 import { useSitios } from "../useSitios";
 
 // El plano base del sitio lo publica el modelo (Build) y no se toca aquí: solo se editan zonas y cámaras.
 const COLORES = ["#3d8bff", "#16a34a", "#f59e0b", "#a855f7", "#ef4444", "#0ea5e9", "#db2777", "#65a30d", "#475569"];
 
-const { slug } = useSitios();
+const { slug, actual: sitioActual } = useSitios();
 const config = ref<Config>();
 const error = ref("");
 const guardado = ref("");
@@ -591,6 +592,13 @@ onUnmounted(() => {
           <h2>Umbrales de tráfico</h2>
         </div>
         <div class="bloque"><UmbralesTrafico :sitio="slug" /></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>Privacidad del género</h2>
+        </div>
+        <div class="bloque"><GrupoMinimo :sitio="slug" :actual="sitioActual?.min_group_size ?? 5" /></div>
       </section>
 
       <section class="panel">

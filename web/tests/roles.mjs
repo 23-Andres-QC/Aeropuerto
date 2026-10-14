@@ -87,4 +87,8 @@ assert.equal(textoGenero(26, { HOMBRE: 12, MUJER: 9, SIN_DETERMINAR: 5 }, 0), "1
 assert.equal(textoGenero(30, { MUJER: 20 }, 10), "20 M · 10 sin desglosar");
 assert.equal(textoGenero(8, {}, 8), "género no desglosado (grupos de menos de 5)");
 assert.equal(textoGenero(0, {}, 0), "");
+// Con otro mínimo (el ajuste del sitio, solo para pruebas): 1 muestra todo; 2 oculta a los solitarios juntos.
+assert.deepEqual(suprimirGenero({ HOMBRE: 1, MUJER: 1, SIN_DETERMINAR: 1 }, 1), { visibles: { HOMBRE: 1, MUJER: 1, SIN_DETERMINAR: 1 }, ocultas: 0 });
+assert.deepEqual(suprimirGenero({ HOMBRE: 6, MUJER: 1, SIN_DETERMINAR: 1 }, 2), { visibles: { HOMBRE: 6 }, ocultas: 2 });
+assert.deepEqual(suprimirGenero({ HOMBRE: 6, MUJER: 1 }, 2), { visibles: {}, ocultas: 7 }, "un solo grupo pequeño arrastra al otro");
 console.log("roles y privacidad: todo bien");

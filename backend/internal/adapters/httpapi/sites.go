@@ -351,7 +351,8 @@ func (h siteHandler) replay(w http.ResponseWriter, r *http.Request) {
 func (h siteHandler) insights(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r, 20*time.Second)
 	defer cancel()
-	insights, err := h.sessions.Insights(ctx, r.PathValue("site"), r.PathValue("session"))
+	p, _ := PrincipalOf(r)
+	insights, err := h.sessions.Insights(ctx, r.PathValue("site"), r.PathValue("session"), p.Role)
 	if err != nil {
 		writeError(w, r, err, dbError)
 		return

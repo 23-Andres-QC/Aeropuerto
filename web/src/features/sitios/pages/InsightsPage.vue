@@ -12,7 +12,7 @@ import { GENEROS_ABREV, resumenGenero, suprimirGenero, textoGenero } from "../..
 import { useSitios } from "../useSitios";
 
 const route = useRoute();
-const { slug } = useSitios();
+const { slug, actual: sitioActual } = useSitios();
 const config = ref<Config>();
 const sesiones = ref<Sesion[]>([]);
 const sesionId = ref("");
@@ -187,7 +187,7 @@ const tarjetasVivo = computed<Tarjeta[]>(() => {
   const conteo = { HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0 };
   for (const h of hs) conteo[h.genero === "Hombre" ? "HOMBRE" : h.genero === "Mujer" ? "MUJER" : "SIN_DETERMINAR"]++;
   // En vivo se cuenta en la pantalla; de una captura guardada, el servidor trae los conteos (sin el género de cada persona).
-  const priv = modoVivo.value ? suprimirGenero(conteo) : { visibles: r.value?.genero ?? {}, ocultas: r.value?.genero_ocultos ?? 0 };
+  const priv = modoVivo.value ? suprimirGenero(conteo, minimoGenero.value) : { visibles: r.value?.genero ?? {}, ocultas: r.value?.genero_ocultos ?? 0 };
   const tiene = (h: (typeof hs)[number], tipo: string) => zonas.value.some((o) => o.zone_type === tipo && h.zonas.has(o.zone_id));
   const hayLocales = zonas.value.some((o) => o.zone_type === "INTERIOR" || o.zone_type === "FRONTAGE");
   const expuestos = hs.filter((h) => tiene(h, "FRONTAGE"));
@@ -243,12 +243,14 @@ function sparkline(valores: (number | null)[] | undefined, w = 72, h = 22, pad =
 // --- Hombres y mujeres: de la sesión o de quienes pasaron por la zona elegida ---
 // Solo cuentas: de una sesión guardada el servidor no guarda el género de nadie, y entrega las categorías con 5 personas o más.
 // En vivo (que no se guarda) se cuenta en la pantalla con el mismo criterio. Una categoría oculta se dice, sin cifra.
+// El mínimo que se aplica: el del sitio (en vivo) o el que usó el servidor para esa sesión. Menos de 5: desglose solo para pruebas.
+const minimoGenero = computed(() => (modoVivo.value ? (sitioActual.value?.min_group_size ?? 5) : (r.value?.genero_minimo ?? sitioActual.value?.min_group_size ?? 5)));
 const generoVisible = computed(() => {
   if (modoVivo.value) {
     const n: Record<string, number> = { HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0 };
     const lista = historiasDe(zonaId.value);
     for (const h of lista) n[h.genero === "Hombre" ? "HOMBRE" : h.genero === "Mujer" ? "MUJER" : "SIN_DETERMINAR"]++;
-    const p = suprimirGenero(n);
+    const p = suprimirGenero(n, minimoGenero.value);
     return { hay: true, total: lista.length, visibles: p.visibles, ocultas: p.ocultas };
   }
   const res = r.value;
@@ -574,6 +576,9 @@ onMounted(async () => {
         <div v-if="generos.some((x) => x.n)" class="barra-genero" aria-hidden="true">
           <span v-for="x in generos.filter((y) => y.n)" :key="x.g" :class="'g-' + x.g" :style="{ flex: x.n ?? 0 }"></span>
         </div>
+        <p v-if="minimoGenero < 5" class="nota-genero aviso-pruebas" role="note" data-prueba="aviso-pruebas">
+          Desglose con grupos pequeños: solo para pruebas (mínimo {{ minimoGenero }}).
+        </p>
         <p v-if="notaGenero" class="muted nota-genero">{{ notaGenero }}</p>
       </article>
       <div class="metrics">
@@ -856,6 +861,10 @@ onMounted(async () => {
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 12px;
   padding: 14px 15px 6px;
+}
+.aviso-pruebas {
+  color: #8a5a00;
+  font-weight: 700;
 }
 .nota-genero {
   margin: 8px 14px 0;

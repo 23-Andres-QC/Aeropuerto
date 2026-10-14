@@ -50,6 +50,23 @@ func (s *SiteService) UpdateSite(ctx context.Context, slug string, in domain.Sit
 	return s.repo.UpdateSite(ctx, site, in)
 }
 
+// SetMinGroupSize changes the minimum group size of the gender counts of a site and returns the previous one.
+func (s *SiteService) SetMinGroupSize(ctx context.Context, slug string, n int) (domain.Site, int, error) {
+	site, err := s.Site(ctx, slug)
+	if err != nil {
+		return domain.Site{}, 0, err
+	}
+	if err = domain.ValidGroupSize(n); err != nil {
+		return domain.Site{}, 0, err
+	}
+	old := site.MinGroupSize
+	if err = s.repo.SetMinGroupSize(ctx, site, n); err != nil {
+		return domain.Site{}, 0, err
+	}
+	site.MinGroupSize = n
+	return site, old, nil
+}
+
 // DeleteSite removes an empty site; one with sessions keeps its history.
 func (s *SiteService) DeleteSite(ctx context.Context, slug string) error {
 	site, err := s.Site(ctx, slug)

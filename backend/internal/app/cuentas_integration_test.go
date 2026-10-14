@@ -64,6 +64,10 @@ func TestPrivacyMigrationsUndoAndRedo(t *testing.T) {
 		t.Fatalf("el conteo de género de la sesión: %d %v", n, err)
 	}
 
+	run(migrations.DownFS, "down/014_grupo_minimo.down.sql")
+	if column("sites", "min_group_size") {
+		t.Error("min_group_size debe desaparecer al deshacer la 014")
+	}
 	run(migrations.DownFS, "down/013_demo_y_retencion.down.sql")
 	run(migrations.DownFS, "down/012_cuentas.down.sql")
 	run(migrations.DownFS, "down/011_genero_agregado.down.sql")
@@ -82,6 +86,10 @@ func TestPrivacyMigrationsUndoAndRedo(t *testing.T) {
 	run(migrations.FS, "011_genero_agregado.sql")
 	run(migrations.FS, "012_cuentas.sql")
 	run(migrations.FS, "013_demo_y_retencion.sql")
+	run(migrations.FS, "014_grupo_minimo.sql")
+	if !column("sites", "min_group_size") {
+		t.Error("min_group_size debe volver")
+	}
 	for _, name := range []string{"users", "auth_sessions", "store_api_keys", "audit_log", "session_gender_counts"} {
 		if !table(name) {
 			t.Errorf("%s debe volver al aplicar otra vez", name)

@@ -119,12 +119,14 @@ func (s *SessionService) Replay(ctx context.Context, slug, id string, step float
 
 // Insights aggregates a session: people, gender, dwell, occupancy over time,
 // cameras, flows between cameras, a 1 m heat map and the site's zones.
-func (s *SessionService) Insights(ctx context.Context, slug, id string) (domain.Insights, error) {
+// role picks the minimum group size of the gender counts: a store always gets 5.
+func (s *SessionService) Insights(ctx context.Context, slug, id, role string) (domain.Insights, error) {
 	site, session, err := s.session(ctx, slug, id)
 	if err != nil {
 		return domain.Insights{}, err
 	}
-	key := "insights:" + session.ID
+	minGroup := domain.EffectiveMinGroup(role, site.MinGroupSize)
+	key := fmt.Sprintf("insights:%s:%d", session.ID, minGroup)
 	if v, ok := s.cache.get(key); ok && session.Finished() {
 		return v.(domain.Insights), nil
 	}
@@ -136,10 +138,10 @@ func (s *SessionService) Insights(ctx context.Context, slug, id string) (domain.
 	for _, p := range d.People {
 		dwell = append(dwell, p.DwellS)
 	}
-	gender, hidden := domain.PrivateGender(d.Gender, domain.MinGenderGroup)
+	gender, hidden := domain.PrivateGender(d.Gender, minGroup)
 	insights := domain.Insights{
 		Session: session,
-		Summary: domain.InsightsSummary{People: len(d.People), Gender: gender, GenderHidden: hidden, Dwell: dwellStats(dwell)},
+		Summary: domain.InsightsSummary{People: len(d.People), Gender: gender, GenderHidden: hidden, GenderMin: minGroup, Dwell: dwellStats(dwell)},
 		Heat:    domain.Heat{CellM: 1, Cells: d.Heat},
 		Zones:   d.Zones,
 	}
