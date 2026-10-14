@@ -95,6 +95,16 @@ type PlanCampus struct {
 	CenterM    [2]float64 `json:"centro_m"`
 	PxPerMeter float64    `json:"px_por_metro"`
 	AngleDeg   float64    `json:"angulo_deg"`
+	// Neighbors are the other recorded areas on the same campus (e.g. the second zone of a university): their outline on
+	// the campus image, so the campus view shows them all together and a click goes to the one chosen.
+	Neighbors []CampusNeighbor `json:"vecinos,omitempty"`
+}
+
+// CampusNeighbor is another site of the same campus, outlined in image pixels.
+type CampusNeighbor struct {
+	Slug    string       `json:"slug"`
+	Name    string       `json:"nombre"`
+	Outline [][2]float64 `json:"poligono_px"`
 }
 
 func (c *PlanCampus) normalize() error {
@@ -112,6 +122,22 @@ func (c *PlanCampus) normalize() error {
 	}
 	if c.PxPerMeter <= 0 || c.PxPerMeter > 1000 || math.Abs(c.AngleDeg) > 360 || !insidePlan([][2]float64{c.CenterM}) {
 		return Invalid("ubicación del sitio en el campus inválida")
+	}
+	if len(c.Neighbors) > 10 {
+		return Invalid("hasta 10 zonas vecinas por campus")
+	}
+	for i := range c.Neighbors {
+		n := &c.Neighbors[i]
+		n.Name = strings.TrimSpace(n.Name)
+		if !ValidSlug(n.Slug) || n.Name == "" || len([]rune(n.Name)) > 80 || len(n.Outline) < 3 || len(n.Outline) > 100 {
+			return Invalid(fmt.Sprintf("zona vecina %d: identificador, nombre (1-80) o contorno (3 a 100 vértices) inválidos", i+1))
+		}
+		w, h := float64(c.Size[0]), float64(c.Size[1])
+		for _, p := range n.Outline {
+			if !finite(p[0]) || !finite(p[1]) || p[0] < -2*w || p[0] > 3*w || p[1] < -2*h || p[1] > 3*h {
+				return Invalid(fmt.Sprintf("zona vecina %d: contorno fuera del campus", i+1))
+			}
+		}
 	}
 	return nil
 }

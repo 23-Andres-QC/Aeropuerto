@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { recordarVista, vistaRecordada } from "../vistaPlano";
 import type { Camara, Mapa, Punto, Zona } from "../api";
 
@@ -107,6 +108,21 @@ const matrizCampus = computed(() => {
   const [X, Y] = [px(c.centro_m[0]), py(c.centro_m[1])];
   return { a, b, c: cc, d, e: X - (a * u + cc * v), f: Y - (b * u + d * v) };
 });
+const route = useRoute();
+const router = useRouter();
+/** Las otras zonas grabadas del campus, con su contorno en px del plano y dónde va su nombre (ya girado). */
+const vecinos = computed(() => {
+  const m = matrizCampus.value;
+  const lista = campus.value?.vecinos;
+  if (!m || !lista?.length) return [];
+  return lista.map((v) => {
+    const ps: Punto[] = v.poligono_px.map(([u, w]) => [m.a * u + m.c * w + m.e, m.b * u + m.d * w + m.f]);
+    const c = caja(ps.map((q) => girar(q, giro.value)));
+    return { slug: v.slug, nombre: v.nombre, puntos: ps.map((q) => q.join(",")).join(" "), x: c.x + c.w / 2, arriba: c.y, abajo: c.y + c.h };
+  });
+});
+/** Ir a otra zona del campus, en la misma sección en la que se estaba. */
+const irAVecino = (slug: string) => router.push(`/sitios/${encodeURIComponent(slug)}/${String(route.meta.seccion ?? "configuracion")}`);
 const transformCampus = computed(() => {
   const m = matrizCampus.value;
   return m ? `matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.e} ${m.f})` : undefined;
@@ -725,11 +741,23 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
           <rect v-else :width="ancho" :height="alto" class="marca-sitio" />
           <title>Acercar a {{ campus?.nombre || "la zona grabada" }}</title>
         </g>
+        <!-- Las otras zonas grabadas del campus: un clic lleva a ellas. -->
+        <template v-if="enCampus">
+          <g v-for="v in vecinos" :key="v.slug" class="entrada-vecino" role="link" tabindex="0" @click.stop="irAVecino(v.slug)" @keydown.enter="irAVecino(v.slug)">
+            <polygon :points="v.puntos" class="marca-vecino" />
+            <title>Ir a {{ v.nombre }}</title>
+          </g>
+        </template>
       </g>
       <!-- Fuera del grupo girado: los textos siempre derechos. -->
       <g v-if="enCampus" class="entrada-sitio" @click.stop="entrarAlSitio">
         <text :x="etiquetaSitio.x" :y="etiquetaSitio.arriba - 14 * e" class="nombre-sitio">{{ campus?.nombre || "Zona grabada" }}</text>
         <text :x="etiquetaSitio.x" :y="etiquetaSitio.abajo + 24 * e" class="ayuda-sitio">Clic para acercar</text>
+      </g>
+      <g v-if="enCampus">
+        <g v-for="v in vecinos" :key="'n' + v.slug" class="entrada-vecino" @click.stop="irAVecino(v.slug)">
+          <text :x="v.x" :y="v.abajo + 18 * e" class="nombre-vecino">{{ v.nombre }}</text>
+        </g>
       </g>
       <g class="escala" :transform="`translate(${vista.x + 14 * e} ${vista.y + vista.h - 18 * e})`">
         <rect :width="escalaM * k" :height="5 * e" />
@@ -850,6 +878,30 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
   .marca-sitio {
     animation: none;
   }
+}
+.entrada-vecino {
+  cursor: pointer;
+}
+.marca-vecino {
+  fill: rgba(234, 88, 12, 0.2);
+  stroke: #ea580c;
+  stroke-width: 3;
+}
+.entrada-vecino:hover .marca-vecino,
+.entrada-vecino:focus-visible .marca-vecino {
+  fill: rgba(234, 88, 12, 0.4);
+}
+.nombre-vecino {
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #fff;
+  pointer-events: none;
+}
+.nombre-vecino {
+  font-size: calc(15px * var(--e));
+  font-weight: 750;
+  fill: #c2410c;
+  stroke-width: calc(4px * var(--e));
 }
 .nombre-sitio,
 .ayuda-sitio {

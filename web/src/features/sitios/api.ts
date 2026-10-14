@@ -36,6 +36,8 @@ export type CampusPlano = {
   centro_m: Punto;
   px_por_metro: number;
   angulo_deg: number;
+  /** Otras zonas grabadas del mismo campus (contorno en px de la imagen): se ven juntas y un clic lleva a la elegida. */
+  vecinos?: { slug: string; nombre: string; poligono_px: Punto[] }[];
 };
 
 export type Obstaculo = { nombre: string; puntos_m: Punto[] };
