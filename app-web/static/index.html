@@ -24,15 +24,23 @@
 
     <label for="nombre">Nombre de esta cámara</label>
     <input id="nombre" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Ej. Entrada norte">
+    <label for="codigo">Código de unión</label>
+    <input id="codigo" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" aria-describedby="ayuda-codigo">
+    <p id="ayuda-codigo" class="tenue-texto">Lo crea el administrador en <strong>Teléfonos</strong> y vale 15 minutos. Si escaneaste el QR, ya está puesto.</p>
     <button id="unirse" class="primario" type="button">Unirse con la cámara</button>
     <button id="ver-personas" class="secundario" type="button">Ver personas en memoria</button>
     <p id="error-inicio" class="error" role="alert" hidden></p>
 
     <ol class="pasos">
-      <li>Pulsa <strong>Unirse con la cámara</strong> y permite la cámara.</li>
+      <li>Escanea el QR de <strong>Teléfonos</strong> (o escribe el código) y pulsa <strong>Unirse con la cámara</strong>; permite la cámara.</li>
       <li>Aparece sola en <strong>Teléfonos</strong> de la web del aeropuerto.</li>
       <li>Deja esta pantalla abierta y el teléfono fijo.</li>
     </ol>
+
+    <details class="privacidad">
+      <summary>Aviso de privacidad</summary>
+      <p>El video <strong>no se guarda</strong>: se procesa al instante. Del modelo solo quedan la posición de las personas en el plano y, por unas 24 horas, una descripción numérica de su apariencia para reconocerlas entre cámaras (nunca imágenes ni rostros). Las posiciones se borran a los 90 días; los conteos agregados no identifican a nadie. No se guarda el género de ninguna persona.</p>
+    </details>
   </section>
 
   <section id="camara" class="camara" hidden>

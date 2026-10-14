@@ -3,11 +3,15 @@ package memoria
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"vivo/migrations"
 )
 
 // Prueba contra PostgreSQL + pgvector reales. Solo corre con
@@ -68,7 +72,7 @@ func TestPostgresGuardaYRecuerda(t *testing.T) {
 		t.Fatalf("numeracion=%+v personas=%+v", numeracion, personas)
 	}
 	leida := personas[1]
-	if leida.Muestras != 21 || leida.Apariciones != 3 || len(leida.Vistas) != 2 || *leida.Genero != "Mujer" || personas[0].Genero != nil {
+	if leida.Muestras != 21 || leida.Apariciones != 3 || len(leida.Vistas) != 2 || leida.Genero != nil || leida.ConfianzaGenero != nil || personas[0].Genero != nil {
 		t.Fatalf("persona leída = %+v", leida)
 	}
 	for i := range p.Suma {
@@ -121,5 +125,52 @@ func TestPostgresGuardaYRecuerda(t *testing.T) {
 	}
 	if err = repo.Borrar(ctx, 3, epoca); !errors.Is(err, ErrEpoca) {
 		t.Fatalf("borrado de época vieja = %v", err)
+	}
+}
+
+// La migración 002 quita el género de la base y se puede deshacer y volver a aplicar. Solo con VIVO_TEST_DATABASE_URL.
+func TestMigracionSinGeneroSeDeshace(t *testing.T) {
+	url := os.Getenv("VIVO_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("sin VIVO_TEST_DATABASE_URL")
+	}
+	ctx := context.Background()
+	db, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err = Migrar(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	tiene := func(tx pgx.Tx) bool {
+		var hay bool
+		if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'personas' AND column_name IN ('genero', 'confianza_genero'))").Scan(&hay); err != nil {
+			t.Fatal(err)
+		}
+		return hay
+	}
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if tiene(tx) {
+		t.Fatal("la memoria no debe tener columnas de género")
+	}
+	for _, f := range []struct {
+		fsys fs.FS
+		name string
+	}{{migrations.DownFS, "down/002_sin_genero.down.sql"}, {migrations.FS, "002_sin_genero.sql"}} {
+		sql, err := fs.ReadFile(f.fsys, f.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = tx.Exec(ctx, string(sql)); err != nil {
+			t.Fatalf("%s: %v", f.name, err)
+		}
+		if got := tiene(tx); got != (f.name != "002_sin_genero.sql") {
+			t.Errorf("tras %s las columnas de género existen = %v", f.name, got)
+		}
 	}
 }

@@ -296,6 +296,28 @@ func (s *AccountService) SetActive(ctx context.Context, actor domain.Principal, 
 	return rec.User, nil
 }
 
+// DeleteUser removes an account for good (its logins go with it). Nobody deletes their own account, and the last active
+// admin stays.
+func (s *AccountService) DeleteUser(ctx context.Context, actor domain.Principal, id string) (domain.User, error) {
+	rec, err := s.repo.UserByID(ctx, id)
+	if err != nil {
+		return domain.User{}, err
+	}
+	if rec.ID == actor.UserID {
+		return domain.User{}, domain.Conflict("No puedes borrar tu propia cuenta")
+	}
+	if rec.Role == domain.RoleAdmin && rec.Active {
+		n, err := s.repo.CountActiveAdmins(ctx)
+		if err != nil {
+			return domain.User{}, err
+		}
+		if n <= 1 {
+			return domain.User{}, domain.Conflict("Es la única cuenta admin_lap activa")
+		}
+	}
+	return rec.User, s.repo.DeleteUser(ctx, id)
+}
+
 // ---- store keys ----
 
 const storeKeyPrefix = "lapk"

@@ -246,6 +246,15 @@ func TestAccountsInTheDatabase(t *testing.T) {
 			t.Errorf("(%s) una cuenta desactivada conservó el login: %d", name, w.Code)
 		}
 	}
+	// Deleting an account removes it for good.
+	if w := c.do("DELETE", "/api/v1/usuarios/"+created.User.ID, nil, cookie(admin)); w.Code != http.StatusNoContent {
+		t.Fatalf("borrar la cuenta: %d %s", w.Code, w.Body)
+	}
+	var left int
+	db.QueryRow(ctx, "SELECT count(*) FROM users WHERE username = 'it-tienda-a'").Scan(&left)
+	if left != 0 {
+		t.Error("la cuenta borrada sigue en la base")
+	}
 	// A store cannot manage anything; a store key identifies the store and nothing else.
 	if w := c.do("POST", site+"/tiendas/"+strconv.Itoa(locA.ID)+"/llaves", map[string]string{"etiqueta": "caja"}, bearer(testAPIKey)); w.Code != http.StatusForbidden {
 		t.Errorf("la llave de los scripts no crea llaves de tienda: %d", w.Code)

@@ -18,6 +18,8 @@ type AccountRepository interface {
 	// SetPassword replaces the hash. changedByOwner marks that its owner chose it (the settings stop setting it).
 	SetPassword(ctx context.Context, id, hash string, mustChange, changedByOwner bool) error
 	SetActive(ctx context.Context, id string, active bool) error
+	// DeleteUser removes an account with its logins.
+	DeleteUser(ctx context.Context, id string) error
 	// CountActiveAdmins is how many admin_lap accounts can log in.
 	CountActiveAdmins(ctx context.Context) (int, error)
 	// RecordFailure counts a failed login and locks the account when it reaches max; it returns the new count.

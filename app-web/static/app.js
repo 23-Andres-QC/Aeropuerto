@@ -34,6 +34,7 @@ const $ = (id) => document.getElementById(id);
 const app = {
   activa: false,
   id: null, // esta pestaña como cámara (permite reconectar sin registrarse de nuevo)
+  clave: null, // la que recibe al unirse: con ella reconecta sin código (solo en memoria de esta pestaña)
   nombre: '',
   unida: false,
   flujo: null,
@@ -197,6 +198,8 @@ function conectar() {
   const ws = new WebSocket(url);
   app.ws = ws;
   app.unida = false;
+  // El código y la clave van en el primer mensaje, no en la URL (quedaría en los registros del servidor).
+  ws.onopen = () => ws.send(JSON.stringify({ tipo: 'unirse', codigo: app.clave ? '' : $('codigo').value.trim(), clave: app.clave || '' }));
   app.enVuelo = [];
   app.capturas = [];
   app.codificando = false;
@@ -209,6 +212,7 @@ function conectar() {
       return;
     }
     if (m.tipo === 'unido') {
+      if (m.clave) app.clave = m.clave;
       Object.assign(app, { unida: true, motivo: null, nombre: m.nombre, lectores: m.lectores, espectadores: m.espectadores || 0 });
       $('nombre-camara').textContent = m.nombre;
     } else if (m.tipo === 'ok') {
@@ -637,6 +641,10 @@ async function unirse() {
     mostrarError(window.isSecureContext ? 'Este navegador no permite usar la cámara.' : 'La cámara solo funciona por HTTPS: abre esta página con https://');
     return;
   }
+  if (!$('codigo').value.trim()) {
+    mostrarError('Escribe el código de unión (o escanea el QR de Teléfonos).');
+    return;
+  }
   $('unirse').disabled = true;
   try {
     await abrirCamara(leer('camara-web.dispositivo'));
@@ -664,7 +672,7 @@ function salir() {
 function terminar(mensaje) {
   const ws = app.ws;
   clearTimeout(app.reintento);
-  Object.assign(app, { activa: false, id: null, unida: false, ws: null, motivo: null, lectores: 0, espectadores: 0,
+  Object.assign(app, { activa: false, id: null, clave: null, unida: false, ws: null, motivo: null, lectores: 0, espectadores: 0,
     det: null, proceso: null });
   dibujarCajas();
   if (ws) ws.close();
@@ -675,11 +683,18 @@ function terminar(mensaje) {
   $('inicio').hidden = false;
   $('unirse').disabled = false;
   if (mensaje) mostrarError(mensaje);
+  else $('codigo').value = '';
 }
 
 function iniciar() {
   $('nombre').value = leer('camara-web.nombre') || nombrePorDefecto();
   $('aviso-https').hidden = window.isSecureContext;
+  // El QR trae el código en el fragmento (#c=XXXX), que nunca viaja al servidor; se quita de la barra de direcciones.
+  const fragmento = new URLSearchParams(location.hash.replace(/^#/, ''));
+  if (fragmento.get('c')) {
+    $('codigo').value = fragmento.get('c').slice(0, 12);
+    history.replaceState(null, '', location.pathname + location.search);
+  }
   $('unirse').addEventListener('click', unirse);
   $('salir').addEventListener('click', salir);
   $('ver-personas').addEventListener('click', abrirPersonas);

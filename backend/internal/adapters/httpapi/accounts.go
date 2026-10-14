@@ -24,6 +24,7 @@ func (h accountHandler) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/v1/usuarios", h.createUser)
 	m.HandleFunc("POST /api/v1/usuarios/{id}/clave", h.resetPassword)
 	m.HandleFunc("PUT /api/v1/usuarios/{id}/activo", h.setActive)
+	m.HandleFunc("DELETE /api/v1/usuarios/{id}", h.deleteUser)
 	m.HandleFunc("GET /api/v1/auditoria", h.audit)
 	m.HandleFunc("GET /api/v1/sites/{site}/tiendas/{local}/llaves", h.keys)
 	m.HandleFunc("POST /api/v1/sites/{site}/tiendas/{local}/llaves", h.createKey)
@@ -107,6 +108,19 @@ func (h accountHandler) setActive(w http.ResponseWriter, r *http.Request) {
 	}
 	h.accounts.Audit(ctx, actor, clientIP(r), action, u.Username, "")
 	ok(w, u)
+}
+
+func (h accountHandler) deleteUser(w http.ResponseWriter, r *http.Request) {
+	actor, _ := PrincipalOf(r)
+	ctx, cancel := withTimeout(r, 10*time.Second)
+	defer cancel()
+	u, err := h.accounts.DeleteUser(ctx, actor, r.PathValue("id"))
+	if err != nil {
+		writeError(w, r, err, dbError)
+		return
+	}
+	h.accounts.Audit(ctx, actor, clientIP(r), "usuario_borrado", u.Username, "")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h accountHandler) audit(w http.ResponseWriter, r *http.Request) {

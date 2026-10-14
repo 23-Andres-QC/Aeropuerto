@@ -39,7 +39,7 @@ func correr() error {
 	if urlBase == "" {
 		return errors.New("falta DATABASE_URL")
 	}
-	retencion, err := strconv.Atoi(env("RETENCION_HORAS", "168"))
+	retencion, err := strconv.Atoi(env("RETENCION_HORAS", "24"))
 	if err != nil || retencion < 1 {
 		return errors.New("RETENCION_HORAS debe ser un entero positivo")
 	}

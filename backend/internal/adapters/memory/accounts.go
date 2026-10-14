@@ -124,6 +124,21 @@ func (r *AccountRepository) SetActive(_ context.Context, id string, active bool)
 	return nil
 }
 
+func (r *AccountRepository) DeleteUser(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.users[id]; !ok {
+		return domain.NotFound("Esa cuenta no existe")
+	}
+	delete(r.users, id)
+	for h, s := range r.sessions {
+		if s.userID == id {
+			delete(r.sessions, h)
+		}
+	}
+	return nil
+}
+
 func (r *AccountRepository) CountActiveAdmins(context.Context) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -28,7 +28,6 @@ services:
       APP_ENV: ${APP_ENV:-local}
       ADMIN_USER: ${ADMIN_USER:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
-      SESSION_SECRET: ${SESSION_SECRET:-}
       API_KEY: ${API_KEY:-}
     volumes:
       # Archivos que exportó el Build de cada sitio (videos procesados, mapa,
@@ -88,7 +87,7 @@ services:
     environment:
       DATABASE_URL: postgres://vivo:${VIVO_DB_PASSWORD:-vivo_local_only}@vivo-db:5432/vivo?sslmode=disable
       # Quien no vuelve a verse en este plazo se borra de la memoria.
-      RETENCION_HORAS: ${VIVO_RETENCION_HORAS:-168}
+      RETENCION_HORAS: ${VIVO_RETENCION_HORAS:-24}
     ports:
       - "127.0.0.1:${VIVO_API_PORT:-8093}:8080"
     depends_on:

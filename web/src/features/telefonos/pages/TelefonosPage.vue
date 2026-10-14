@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { wsUrl } from "../../../core/http";
 import { api, RELEVO_VIVO, type EstadoServicio, type FichaPersona, type ResumenMemoria, type Telefono } from "../api";
+import UnirTelefonos from "../../cuentas/components/UnirTelefonos.vue";
 import MemoriaPersonas from "../components/MemoriaPersonas.vue";
 import SalaTelefonos from "../components/SalaTelefonos.vue";
 import VistaTelefono from "../components/VistaTelefono.vue";
@@ -117,6 +118,7 @@ onUnmounted(() => {
     </span>
   </section>
   <p v-if="error" class="error" role="alert">{{ error }}</p>
+  <UnirTelefonos :enlace="urlCamara" :telefonos="telefonos" @revocado="cargar" />
 
   <SalaTelefonos
     v-show="salaDisponible"

@@ -98,6 +98,14 @@ func (r *AccountRepository) SetActive(ctx context.Context, id string, active boo
 	return err
 }
 
+func (r *AccountRepository) DeleteUser(ctx context.Context, id string) error {
+	tag, err := r.db.Exec(ctx, `DELETE FROM users WHERE user_id = $1::text::uuid`, id)
+	if err == nil && tag.RowsAffected() == 0 {
+		return domain.NotFound("Esa cuenta no existe")
+	}
+	return err
+}
+
 func (r *AccountRepository) CountActiveAdmins(ctx context.Context) (int, error) {
 	var n int
 	err := r.db.QueryRow(ctx, `SELECT count(*) FROM users WHERE role = 'admin_lap' AND active`).Scan(&n)

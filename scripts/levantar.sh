@@ -39,7 +39,7 @@ servidor)
       "$(aleatoria)" "$(aleatoria)" > .env)
     echo "Creado .env con contraseñas nuevas para las bases."
   fi
-  # Acceso a la web y a la API (README, «Seguridad»): usuario, contraseña, firma de las sesiones y llave de los
+  # Acceso a la web y a la API (README, «Seguridad»): usuario y contraseña del primer administrador y llave de los
   # scripts. Se crean una sola vez, al azar, y la API no arranca en el servidor sin ellas. Solo se agregan las
   # que faltan, así un .env que ya existe (con las contraseñas de las bases) se conserva.
   [ -z "$(tail -c1 .env)" ] || echo >> .env
@@ -52,7 +52,6 @@ servidor)
   }
   agregar ADMIN_USER admin
   agregar ADMIN_PASSWORD "$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"
-  agregar SESSION_SECRET "$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
   agregar API_KEY "$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
   if [ -n "$nuevas" ]; then
     echo "Acceso creado en .env (no versionado):$nuevas"

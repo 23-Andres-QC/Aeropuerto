@@ -8,6 +8,7 @@ import { CELDA_CALOR, SESION_VIVO, capturasVersion, entradasPorIntervalo, fijarM
 import ContrasteSesiones from "../components/ContrasteSesiones.vue";
 import TraficoSitio from "../components/TraficoSitio.vue";
 import { desdeReplay, entradasPorIntervalo as entradasEntre, resumir, type HistoriaBasica, type ResumenVivo } from "../analisisVivo";
+import { GENEROS_ABREV, resumenGenero, suprimirGenero, textoGenero } from "../../../core/roles";
 import { useSitios } from "../useSitios";
 
 const route = useRoute();
@@ -134,7 +135,7 @@ const tarjetas = computed<Tarjeta[]>(() => {
       titulo: "PERSONAS",
       icono: "◍",
       valor: n(enZona ? z?.visitantes : res?.personas),
-      detalle: res ? (enZona ? `de ${res.personas} en la sesión` : `${g.HOMBRE ?? 0} H · ${g.MUJER ?? 0} M · ${g.SIN_DETERMINAR ?? 0} s/d`) : "sin sesión",
+      detalle: res ? (enZona ? `de ${res.personas} en la sesión` : textoGenero(res.personas, g, res.genero_ocultos ?? 0) || "género no registrado") : "sin sesión",
       serie: serie.value?.personas,
     },
     {
@@ -183,8 +184,10 @@ const tarjetasVivo = computed<Tarjeta[]>(() => {
   const enZona = zonaId.value != null;
   const z = enZona ? (res.zonas.find((o) => o.id === zonaId.value) ?? null) : null;
   const hs = a.historias(zonaId.value);
-  const g = { HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0 };
-  for (const h of hs) g[h.genero === "Hombre" ? "HOMBRE" : h.genero === "Mujer" ? "MUJER" : "SIN_DETERMINAR"]++;
+  const conteo = { HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0 };
+  for (const h of hs) conteo[h.genero === "Hombre" ? "HOMBRE" : h.genero === "Mujer" ? "MUJER" : "SIN_DETERMINAR"]++;
+  // En vivo se cuenta en la pantalla; de una captura guardada, el servidor trae los conteos (sin el género de cada persona).
+  const priv = modoVivo.value ? suprimirGenero(conteo) : { visibles: r.value?.genero ?? {}, ocultas: r.value?.genero_ocultos ?? 0 };
   const tiene = (h: (typeof hs)[number], tipo: string) => zonas.value.some((o) => o.zone_type === tipo && h.zonas.has(o.zone_id));
   const hayLocales = zonas.value.some((o) => o.zone_type === "INTERIOR" || o.zone_type === "FRONTAGE");
   const expuestos = hs.filter((h) => tiene(h, "FRONTAGE"));
@@ -193,7 +196,7 @@ const tarjetasVivo = computed<Tarjeta[]>(() => {
   const permanencia = enZona ? (z?.permanencia ?? null) : res.permanenciaMedia;
   const pico = enZona ? (z?.densidad ?? 0) : (res.densidadMax?.valor ?? 0);
   return [
-    { titulo: "PERSONAS", icono: "◍", valor: hs.length.toLocaleString(), detalle: enZona ? `de ${res.personas} en vivo` : `${g.HOMBRE} H · ${g.MUJER} M · ${g.SIN_DETERMINAR} s/d` },
+    { titulo: "PERSONAS", icono: "◍", valor: hs.length.toLocaleString(), detalle: enZona ? `de ${res.personas} en vivo` : textoGenero(hs.length, priv.visibles, priv.ocultas) || "género no registrado" },
     { titulo: "VISITAS", icono: "⬡", valor: hayLocales ? entraron.length.toLocaleString() : "—", detalle: hayLocales ? "entraron a un local" : "sin locales" },
     { titulo: "EXPOSICIÓN", icono: "⇥", valor: hayLocales ? expuestos.length.toLocaleString() : "—", detalle: "pasan por el frente" },
     {
@@ -238,15 +241,28 @@ function sparkline(valores: (number | null)[] | undefined, w = 72, h = 22, pad =
 }
 
 // --- Hombres y mujeres: de la sesión o de quienes pasaron por la zona elegida ---
-const generos = computed(() => {
-  const n: Record<string, number> = { HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0 };
-  const lista: { genero: string }[] = modoVivo.value
-    ? historiasDe(zonaId.value).map((h) => ({ genero: h.genero === "Hombre" ? "HOMBRE" : h.genero === "Mujer" ? "MUJER" : "SIN_DETERMINAR" }))
-    : personasMapa.value;
-  for (const p of lista) n[p.genero in n ? p.genero : "SIN_DETERMINAR"]++;
-  const total = lista.length;
-  return Object.keys(n).map((g) => ({ g, nombre: GENEROS[g], n: n[g], pct: total ? Math.round((100 * n[g]) / total) : 0 }));
+// Solo cuentas: de una sesión guardada el servidor no guarda el género de nadie, y entrega las categorías con 5 personas o más.
+// En vivo (que no se guarda) se cuenta en la pantalla con el mismo criterio. Una categoría oculta se dice, sin cifra.
+const generoVisible = computed(() => {
+  if (modoVivo.value) {
+    const n: Record<string, number> = { HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0 };
+    const lista = historiasDe(zonaId.value);
+    for (const h of lista) n[h.genero === "Hombre" ? "HOMBRE" : h.genero === "Mujer" ? "MUJER" : "SIN_DETERMINAR"]++;
+    const p = suprimirGenero(n);
+    return { hay: true, total: lista.length, visibles: p.visibles, ocultas: p.ocultas };
+  }
+  const res = r.value;
+  if (!res) return { hay: false, total: 0, visibles: {} as Record<string, number>, ocultas: 0 };
+  return { hay: true, total: res.personas, visibles: res.genero, ocultas: res.genero_ocultos ?? 0 };
 });
+const generos = computed(() => {
+  const v = generoVisible.value;
+  return GENEROS_ABREV.map(([g]) => {
+    const n = v.visibles[g];
+    return { g, nombre: GENEROS[g], n: n ?? null, pct: n != null && v.total ? Math.round((100 * n) / v.total) : 0 };
+  });
+});
+const notaGenero = computed(() => (generoVisible.value.hay ? resumenGenero(generoVisible.value.total, generoVisible.value.visibles, generoVisible.value.ocultas).nota : ""));
 
 // --- Entradas por intervalo --------------------------------------------------
 const barras = computed(() => {
@@ -377,7 +393,7 @@ function exportarCSV() {
     [],
     ["Indicador", "Valor", "Detalle"],
     ...tarjetas.value.map((t) => [t.titulo, t.valor, t.detalle]),
-    ...generos.value.map((g) => [g.nombre, g.n, `${g.pct} %`]),
+    ...generos.value.map((g) => [g.nombre, g.n ?? "no se muestra (grupo de menos de 5)", g.n == null ? "" : `${g.pct} %`]),
     [],
     ["Zona", "Personas", "Permanencia media (s)", "Densidad máx (pers/m²)"],
     ...comparacion.value.map((z) => [z.nombre, z.personas, z.permanencia, z.densidad]),
@@ -548,15 +564,17 @@ onMounted(async () => {
               </svg>
             </span>
             <span class="genero-datos">
-              <strong>{{ replay || modoVivo ? x.n : "—" }}</strong>
+              <strong>{{ x.n ?? "—" }}</strong>
               <small>{{ x.nombre }}</small>
-              <em v-if="replay || modoVivo">{{ x.pct }} %</em>
+              <em v-if="x.n != null">{{ x.pct }} %</em>
+              <em v-else-if="generoVisible.hay" title="Los grupos de menos de 5 personas no se muestran">oculto</em>
             </span>
           </div>
         </div>
-        <div v-if="(replay || modoVivo) && generos.some((x) => x.n)" class="barra-genero" aria-hidden="true">
-          <span v-for="x in generos" :key="x.g" :class="'g-' + x.g" :style="{ flex: x.n }"></span>
+        <div v-if="generos.some((x) => x.n)" class="barra-genero" aria-hidden="true">
+          <span v-for="x in generos.filter((y) => y.n)" :key="x.g" :class="'g-' + x.g" :style="{ flex: x.n ?? 0 }"></span>
         </div>
+        <p v-if="notaGenero" class="muted nota-genero">{{ notaGenero }}</p>
       </article>
       <div class="metrics">
         <article v-for="t in tarjetas" :key="t.titulo" class="panel metric" :class="{ vacio: esVacio(t.valor) }">

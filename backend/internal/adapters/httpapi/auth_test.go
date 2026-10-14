@@ -620,6 +620,37 @@ func TestDisablingAndResettingEndLogins(t *testing.T) {
 	}
 }
 
+// Deleting an account closes its logins and frees its name; nobody deletes themselves or the last admin.
+func TestDeletingAnAccount(t *testing.T) {
+	rg := newRig(t)
+	ctx := context.Background()
+	u, c, _ := rg.newStoreUser(t, "tienda-a", storeID)
+	admin := domain.Principal{UserID: "otro", Role: domain.RoleAdmin}
+	if _, err := rg.svc.DeleteUser(ctx, admin, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if w := call(rg.h, "GET", "/api/v1/auth/me", nil, withCookie(c)); w.Code != 401 {
+		t.Errorf("a deleted account kept its login: %d", w.Code)
+	}
+	if _, err := rg.repo.UserByName(ctx, "tienda-a"); err == nil {
+		t.Error("the account must be gone")
+	}
+	if _, err := rg.svc.DeleteUser(ctx, admin, u.ID); err == nil {
+		t.Error("deleting it twice")
+	}
+	seed, _ := rg.repo.UserByName(ctx, testUser)
+	if _, err := rg.svc.DeleteUser(ctx, domain.Principal{UserID: seed.ID, Role: domain.RoleAdmin}, seed.ID); err == nil {
+		t.Error("nobody deletes their own account")
+	}
+	if _, err := rg.svc.DeleteUser(ctx, admin, seed.ID); err == nil {
+		t.Error("the only active admin cannot be deleted")
+	}
+	// Only an admin login may delete (the key of the scripts never deletes).
+	if w := call(rg.h, "DELETE", "/api/v1/usuarios/"+seed.ID, nil, withKey(testKey)); w.Code != http.StatusForbidden {
+		t.Errorf("DELETE with the scripts' key: %d", w.Code)
+	}
+}
+
 func TestLastAdminAndYourselfCannotBeDisabled(t *testing.T) {
 	rg := newRig(t)
 	seed, _ := rg.repo.UserByName(context.Background(), testUser)

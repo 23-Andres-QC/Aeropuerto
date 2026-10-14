@@ -46,8 +46,6 @@ export type ResumenMemoria = { personas: number; vistas: number; siguiente_id: n
 /** Una persona de la memoria de identidades (tabla personas de vivo-db), sin vectores. */
 export type FichaPersona = {
   id: number;
-  genero: "Hombre" | "Mujer" | null;
-  confianza_genero: number | null;
   muestras: number;
   apariciones: number;
   camaras: string[];

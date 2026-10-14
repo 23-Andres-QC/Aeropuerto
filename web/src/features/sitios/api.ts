@@ -54,6 +54,8 @@ export type Sitio = {
   zones: number;
   sessions: number;
   plan_updated_at: string;
+  /** El sitio de demostración: todo lo que tiene es SIMULADO. */
+  demo?: boolean;
 };
 
 export type Camara = {
@@ -127,8 +129,6 @@ export type Sesion = {
 
 export type Recorrido = {
   numero: number;
-  genero: string;
-  confianza: number | null;
   camaras: string[];
   inicio_s: number;
   fin_s: number;
@@ -162,7 +162,10 @@ export type Insights = {
   session: Sesion;
   resumen: {
     personas: number;
+    /** Solo las categorías con 5 personas o más; las demás no se desglosan (ver `genero_ocultos`). */
     genero: Record<string, number>;
+    /** Personas que están en las categorías que no se muestran. */
+    genero_ocultos: number;
     permanencia: { media_s: number; mediana_s: number; max_s: number };
   };
   calor: { celda_m: number; celdas: [number, number, number][] };
