@@ -32,6 +32,10 @@ const RETRASO_PERCENTIL = 0.75;
 const MARGEN_RETRASO_MS = 30;
 const HORIZONTE_SINCRONIZADO_MS = 150;
 const BUFER_MAX = 45; // cuadros guardados para mostrarlos atrasados (2 s a 15 fps, con holgura)
+// El atraso de la pantalla cambia de a poco (como en Teléfonos de la web): al subir, el video va al 70 % de su velocidad;
+// al bajar, al 110 %. Recalcularlo de golpe en cada cuadro de pantalla saltaba cuadros o congelaba la imagen.
+const ATRASO_SUBE_POR_S = 0.3;
+const ATRASO_BAJA_POR_S = 0.1;
 
 const $ = (id) => document.getElementById(id);
 
@@ -68,6 +72,8 @@ const app = {
   retrasos: [], // ms entre tomar un cuadro y recibir sus cajas (los últimos)
   bufer: [], // cuadros enviados { t: hora de captura, imagen }, para mostrarlos atrasados
   mostrado: null, // el cuadro del búfer que está en pantalla
+  atraso: 0, // ms con que se muestra la pantalla ahora (va de a poco hacia retrasoActual)
+  horaAtraso: 0,
 };
 
 const video = $('video');
@@ -494,11 +500,21 @@ function retrasoActual() {
 
 // Por cuadro de pantalla, con cajas numeradas: con el modelo procesando, el cuadro enviado al que ya le toca (con su
 // atraso) y sus cajas; si no, las cajas llevadas hasta este instante sobre el video en vivo.
+// El atraso de la pantalla hacia el necesario, de a poco; al empezar a procesar (o al dejar de) cambia de una vez.
+function atrasoSuave(objetivo, ahora) {
+  const dt = Math.min(0.25, Math.max(0, (ahora - app.horaAtraso) / 1000));
+  app.horaAtraso = ahora;
+  if (!objetivo || !app.atraso) app.atraso = objetivo;
+  else if (objetivo > app.atraso) app.atraso = Math.min(objetivo, app.atraso + 1000 * ATRASO_SUBE_POR_S * dt);
+  else app.atraso = Math.max(objetivo, app.atraso - 1000 * ATRASO_BAJA_POR_S * dt);
+  return app.atraso;
+}
+
 function animar() {
   requestAnimationFrame(animar);
   if (!app.activa) return;
   const ahora = performance.now();
-  const retraso = app.instantaneas.length ? retrasoActual() : 0;
+  const retraso = atrasoSuave(app.instantaneas.length ? retrasoActual() : 0, ahora);
   if (!retraso) {
     if (!diferido.hidden) diferido.hidden = true;
     if (!app.instantaneas.length) return;

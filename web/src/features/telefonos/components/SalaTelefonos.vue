@@ -16,7 +16,10 @@ import type { Detecciones, EstadoServicio } from "../api";
 // cajas (medido en vivo, hasta RETRASO_MAX_MS): cada cuadro se muestra con las
 // suyas, o interpoladas entre los dos procesados que lo rodean, así las cajas
 // van sincronizadas y desaparecen en el cuadro en que la persona se fue. Sin
-// modelo el video va en directo.
+// modelo el video va en directo. El atraso es uno solo para todas las cámaras
+// (el de la que más tarda), así todas muestran el mismo instante, y cambia de a
+// poco: el video se ve un poco más lento o más rápido unos instantes en vez de
+// saltar cuadros o quedarse congelado.
 type CamaraSala = { id: string; nombre: string; web: boolean; camara?: number };
 type MensajeSala = { tipo: string; id?: string; camaras?: CamaraSala[]; datos?: unknown };
 type Cuadro = { seq: number; llegada: number; imagen: ImageBitmap };
@@ -60,6 +63,10 @@ const MARGEN_RETRASO_MS = 30;
 const HORIZONTE_SINCRONIZADO_MS = 150;
 // Cuadros decodificados que esperan su turno (2 s a 15 fps, con holgura).
 const BUFER_MAX = 45;
+// Cuánto puede cambiar el atraso común por segundo de reloj: al subir, el video va al 70 % de su velocidad; al bajar,
+// al 110 %. Recalcularlo de golpe en cada cuadro de pantalla (como antes) saltaba cuadros o congelaba la imagen.
+const ATRASO_SUBE_POR_S = 0.3;
+const ATRASO_BAJA_POR_S = 0.1;
 
 const camaras = ref<CamaraSala[]>([]);
 // Ancho/alto de cada cámara: el mosaico toma su forma y la imagen se ve
@@ -76,6 +83,9 @@ let abierta = false;
 let reintento: ReturnType<typeof setTimeout> | undefined;
 let reloj: ReturnType<typeof setInterval> | undefined;
 let activo = true;
+// Atraso con que se muestran todas las cámaras ahora (ms) y cuándo se ajustó por última vez.
+let atrasoComun = 0;
+let horaAtraso = 0;
 
 const columnas = computed(() => {
   const n = camaras.value.length;
@@ -217,10 +227,10 @@ function animar() {
   if (!activo) return;
   requestAnimationFrame(animar);
   const ahoraMs = performance.now();
+  const retraso = atrasoAl(ahoraMs);
   for (const [id, p] of pantallas) {
     if (!p.cuadros.length) continue;
-    // El último cuadro al que ya le toca (con el atraso del modelo); los anteriores ya no se usan.
-    const retraso = retrasoDe(p, ahoraMs);
+    // El último cuadro al que ya le toca (con el atraso común); los anteriores ya no se usan.
     const limite = ahoraMs - retraso;
     let k = p.cuadros.length - 1;
     while (k > 0 && p.cuadros[k].llegada > limite) k--;
@@ -245,7 +255,22 @@ function animar() {
   }
 }
 
-/** Cuánto atrasar el video para que cada cuadro vaya con sus cajas; 0 (en directo) si el modelo no está procesando. */
+/**
+ * Atraso común de todas las cámaras: el que necesita la que más tarda en recibir sus cajas, alcanzado de a poco. Sin
+ * modelo procesando ninguna, en directo. Al empezar a procesar toma el necesario de una vez (no había nada que saltar).
+ */
+function atrasoAl(ahoraMs: number): number {
+  let objetivo = 0;
+  for (const p of pantallas.values()) objetivo = Math.max(objetivo, retrasoDe(p, ahoraMs));
+  const dt = Math.min(0.25, Math.max(0, (ahoraMs - horaAtraso) / 1000));
+  horaAtraso = ahoraMs;
+  if (!objetivo || !atrasoComun) atrasoComun = objetivo;
+  else if (objetivo > atrasoComun) atrasoComun = Math.min(objetivo, atrasoComun + 1000 * ATRASO_SUBE_POR_S * dt);
+  else atrasoComun = Math.max(objetivo, atrasoComun - 1000 * ATRASO_BAJA_POR_S * dt);
+  return atrasoComun;
+}
+
+/** Cuánto atrasar el video de una cámara para que cada cuadro vaya con sus cajas; 0 si el modelo no la procesa. */
 function retrasoDe(p: Pantalla, ahoraMs: number): number {
   if (!p.instantaneas.length || !p.retrasos.length || ahoraMs - p.horaDet > DET_VIGENTE_MS) return 0;
   const orden = [...p.retrasos].sort((a, b) => a - b);

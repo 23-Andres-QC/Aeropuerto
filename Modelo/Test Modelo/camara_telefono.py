@@ -872,16 +872,17 @@ def main():
                     videos.revisar(lista_videos)
 
             hubo_video = videos.paso()
-            # Cada teléfono por su cuenta y sus cajas salen enseguida, sin esperar a los demás (procesarlos juntos sumaba
-            # el tiempo de todos a cada uno). Por turnos: entre los que tienen un cuadro nuevo, el que hace más que no se
-            # procesa. Elegir el del cuadro más viejo dependía solo del desfase entre teléfonos y, con cuadros a 15 por
-            # segundo, favorecía casi siempre al mismo (medido con dos: 14 cuadros por segundo para uno y 4,8 para el otro).
-            datos, turno = {}, math.inf
+            # Todos los teléfonos con un cuadro nuevo van juntos, en una sola pasada del detector (y de los puntos del
+            # cuerpo): así se procesan en el mismo instante, sus cajas salen sincronizadas entre sí y el mapa une a la
+            # misma persona con lo que vio cada cámara a la vez. Por turnos (uno por pasada) cada teléfono esperaba a
+            # los demás y el lote cuesta mucho menos que tres pasadas: medido con tres teléfonos a 15 fps, por turnos
+            # salían 4,6 cuadros por segundo por teléfono, con huecos de más de 0,4 s y los tres casi nunca en el mismo
+            # instante (cajas y mapa desfasados).
+            datos = {}
             for cid in sesion.telefonos:
                 dato = lectores[cid].tomar(sesion.ultimo[cid])
-                procesado = sesion.tiempos[cid][-1] if sesion.tiempos.get(cid) else -math.inf
-                if dato is not None and (not datos or procesado < turno):
-                    datos, turno = {cid: dato}, procesado
+                if dato is not None:
+                    datos[cid] = dato
             if datos:
                 try:
                     if not calentado:
