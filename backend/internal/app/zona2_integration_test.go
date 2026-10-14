@@ -49,8 +49,12 @@ func TestEsanZona2(t *testing.T) {
 	if err := plan.Normalize(); err != nil {
 		t.Fatalf("el plano de la zona 2 no pasa la validación: %v", err)
 	}
-	if plan.Background == nil || plan.Background.URL != "/planos/esan-zona-2.svg" || plan.Campus == nil || plan.Campus.URL != "/planos/esan-campus.jpg" || len(plan.Obstacles) == 0 {
+	if plan.Background == nil || plan.Background.URL != "/planos/esan-zona-2.svg" || plan.Campus == nil || plan.Campus.URL != "/planos/esan-campus.svg" || len(plan.Obstacles) == 0 {
 		t.Errorf("plano incompleto: %+v", plan)
+	}
+	// Comparte el campus con el patio (zona 1): lo trae como vecino, con su contorno sobre la imagen.
+	if len(plan.Campus.Neighbors) != 1 || plan.Campus.Neighbors[0].Slug != "esan" || len(plan.Campus.Neighbors[0].Outline) < 3 {
+		t.Errorf("la zona 2 debe traer al patio como vecino en el campus: %+v", plan.Campus.Neighbors)
 	}
 	// El edificio mide unos 33 × 22 m (el campus lo ubica con 1,75 px/m) y su contorno cabe en el lienzo.
 	var maxX, maxY float64

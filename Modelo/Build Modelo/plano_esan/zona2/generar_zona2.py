@@ -10,7 +10,7 @@ Sin opciones escribe tres archivos (no toca la base):
   backend/migrations/015_esan_zona_2.sql    el sitio `esan-zona-2` con su plano (como el de LAP en la 004) y su ubicación en el campus
   backend/migrations/down/015_esan_zona_2.down.sql
 
-Con --zonas, en cambio, solo crea, por la misma API que usa la web, los locales y zonas iniciales, solo si el sitio aún no tiene zonas (después se
+Con --publicar, en cambio, solo guarda el plano en el sitio por la API, y con --zonas solo crea, por la misma API que usa la web, los locales y zonas iniciales, solo si el sitio aún no tiene zonas (después se
 editan en Configuración y este script no las vuelve a tocar):
 
     python "Modelo/Build Modelo/plano_esan/zona2/generar_zona2.py" --zonas
@@ -41,8 +41,31 @@ LIENZO = (ANCHO + 2 * MARGEN, ALTO + 2 * MARGEN)
 
 # Ubicación en el mapa del campus (esan-campus.jpg, 789 × 585): el Edificio D es el rectángulo girado ~28° que se ve abajo a la
 # izquierda; su largo (59 px) y su ancho (37 px) a 1,75 px/m dan los 33,7 × 21,1 m de este piso. Es una ubicación aproximada.
-CAMPUS = {"url": "/planos/esan-campus.jpg", "fuente": "Mapa del campus de la Universidad ESAN", "nombre": "Edificio D · 2.º piso · zona grabada 2",
+CAMPUS = {"url": "/planos/esan-campus.svg", "fuente": "Mapa del campus de la Universidad ESAN", "nombre": "Zona grabada 2 · comedor",
           "tam_px": [789, 585], "centro_px": [318.0, 498.5], "px_por_metro": 1.75, "angulo_deg": 28.0}
+
+CAMPUS_PATIO = AQUI.parent / "campus.json"  # dónde cae el patio (zona 1) en el mismo mapa
+PISO_PATIO = AQUI.parent / "zonas_iniciales.json"  # su contorno, en metros
+
+
+def a_campus(punto_m, campus):
+    """Un punto del sitio (metros) → píxel de la imagen del campus (el eje este del sitio girado `angulo_deg` en sentido antihorario)."""
+    t = math.radians(campus["angulo_deg"])
+    dx, dy = (punto_m[0] - campus["centro_m"][0]) * campus["px_por_metro"], (punto_m[1] - campus["centro_m"][1]) * campus["px_por_metro"]
+    return [round(campus["centro_px"][0] + dx * math.cos(t) - dy * math.sin(t), 1), round(campus["centro_px"][1] - (dx * math.sin(t) + dy * math.cos(t)), 1)]
+
+
+def contorno_zona2():
+    """El edificio (esta zona) sobre el campus, en px de la imagen."""
+    campus = {**CAMPUS, "centro_m": metros((ANCHO / 2, ALTO / 2))}
+    return [a_campus(metros(p), campus) for p in rect(0, 0, ANCHO, ALTO)]
+
+
+def contorno_patio():
+    """El patio (zona grabada 1) sobre el mismo campus, en px de la imagen."""
+    campus = json.loads(CAMPUS_PATIO.read_text(encoding="utf-8"))
+    return [a_campus(p, campus) for p in json.loads(PISO_PATIO.read_text(encoding="utf-8"))["piso"]]
+
 
 # Áreas reales del cuadro «2do Piso» del plano (m²), con el rectángulo que las encierra en el dibujo.
 AREAS_OFICIALES = {"Comedor de profesores": 97.0, "Depósito de limpieza": 6.5, "Cuarto de data": 5.7, "Zona de atención": 53.0, "Comedor": 378.0}
@@ -248,7 +271,8 @@ def dibujar():
 def datos_del_sitio():
     origen = [round(-MARGEN / ESCALA, 3), round((ALTO + MARGEN) / ESCALA, 3)]
     mapa = {"mapa": {"px_por_metro": ESCALA, "origen_m": origen, "tam_px": list(LIENZO), "cuadricula_m": 1, "desfases_s": {}, "camaras": {}}}
-    campus = {**CAMPUS, "centro_m": metros((ANCHO / 2, ALTO / 2))}
+    campus = {**CAMPUS, "centro_m": metros((ANCHO / 2, ALTO / 2)),
+              "vecinos": [{"slug": "esan", "nombre": "Patio · zona grabada 1", "poligono_px": contorno_patio()}]}
     plano = {"fondo": {"url": URL_FONDO, "fuente": FUENTE}, "piso_m": [metros(p) for p in rect(0, 0, ANCHO, ALTO)],
              "obstaculos": [{"nombre": n, "puntos_m": [metros(p) for p in pts]} for n, pts in OBSTACULOS.items()], "campus": campus}
     return mapa, plano
@@ -269,7 +293,20 @@ def escribir():
         "INSERT INTO sites (slug, name, description, map, map_updated_at, plano)\n"
         f"VALUES ('{SLUG}', '{NOMBRE}', '{DESCRIPCION}',\n        {sql_json(mapa)},\n        now(),\n        {sql_json(plano)})\n"
         "ON CONFLICT (slug) DO NOTHING;\n", encoding="utf-8")
+    # La zona 1 (el patio) también muestra a esta en el campus: se anota en el campus.json que publica generar_plano.py.
+    patio = json.loads(CAMPUS_PATIO.read_text(encoding="utf-8"))
+    patio["vecinos"] = [{"slug": SLUG, "nombre": "Zona grabada 2 · comedor", "poligono_px": contorno_zona2()}]
+    CAMPUS_PATIO.write_text(json.dumps(patio, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     REVERSA.write_text("-- Deshace 015_esan_zona_2.sql: quita el sitio con todo lo que cuelgue de él.\n" f"DELETE FROM sites WHERE slug = '{SLUG}';\n", encoding="utf-8")
+
+
+def publicar(web, sitio):
+    """Guarda el plano de esta zona en un sitio que ya existe (por ejemplo, si se aplicó una versión anterior de la migración)."""
+    from generar_plano import llamar
+
+    _, plano = datos_del_sitio()
+    llamar(web, "PUT", f"/api/v1/sites/{sitio}/plano", plano)
+    print(f"Plano guardado en el sitio {sitio}.")
 
 
 def crear_zonas(web, sitio):
@@ -291,10 +328,14 @@ def crear_zonas(web, sitio):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--zonas", action="store_true", help="solo crear los locales y zonas iniciales si el sitio no tiene ninguna (no escribe archivos)")
+    parser.add_argument("--publicar", action="store_true", help="solo guardar el plano (fondo, piso, obstáculos y campus) en el sitio, por la API")
     parser.add_argument("--web", default="http://127.0.0.1:8080")
     args = parser.parse_args()
+    if args.publicar:
+        publicar(args.web, SLUG)
     if args.zonas:
         crear_zonas(args.web, SLUG)
+    if args.zonas or args.publicar:
         return
     escribir()
     print(f"SVG: {SVG} ({SVG.stat().st_size // 1024} KB)")

@@ -68,6 +68,7 @@ try {
     titulo: (document.querySelector('main h1, main h2')?.textContent ?? '').trim(),
     plano: (document.querySelector('main')?.innerText ?? '').match(/Plano · [\\d.]+ × [\\d.]+ m/)?.[0] ?? null,
     capasDelPlano: document.querySelectorAll('main svg *').length,
+    vecinos: document.querySelectorAll('g.entrada-vecino[role=link]').length,
     panelZonas: [...document.querySelectorAll('main h2, main h3')].some((h) => h.textContent.trim() === 'Zonas'),
   }))()`);
   const paso = async (texto, verifica) => { await esperar(2500); const e = await estado(); verifica(e); console.log(`✓ ${texto}`); };
@@ -146,6 +147,15 @@ try {
   await paso("la pestaña LAP, estando en Insights de ESAN, abre la configuración de LAP", (e) => assert.equal(e.url, "/sitios/lap/configuracion"));
   await clic(`[...document.querySelectorAll('.sitio-tabs a')].find((a) => /ESAN/.test(a.textContent))`);
   await paso("la pestaña ESAN vuelve a ESAN", (e) => assert.equal(e.url, "/sitios/esan/configuracion"));
+
+  // Las dos zonas grabadas de ESAN se ven juntas en el mapa del campus, y un clic en la otra lleva a ella.
+  await cdp("Page.navigate", { url: `${WEB}/sitios/esan/configuracion` });
+  await esperar(3000);
+  await clic(`(() => { const b = document.querySelector('button.alternar-campus'); return /Ver campus/.test(b.textContent) ? b : document.body; })()`);
+  await esperar(1500);
+  await paso("desde ESAN, el campus muestra la zona grabada 2 como vecina", (e) => assert.equal(e.vecinos, 1));
+  await evalua(`document.querySelector('g.entrada-vecino[role=link]').dispatchEvent(new MouseEvent('click', { bubbles: true })); 0`); // un <g> de SVG no tiene click()
+  await paso("un clic en la zona vecina lleva a la zona grabada 2, en la misma sección", (e) => assert.equal(e.url, "/sitios/esan-zona-2/configuracion"));
 
   await clic(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Salir')`);
   await paso("Salir lleva al login", (e) => assert.equal(e.url, "/login"));
