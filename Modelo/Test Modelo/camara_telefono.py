@@ -80,14 +80,14 @@ MARGEN_BORDE_TELEFONO = -1
 # 5 vistas y 2 s), a cambio de un poco más de riesgo de confundir a dos personas parecidas. Vale para el asociador y
 # para la memoria, así quien vuelve se compara con la memoria con las mismas vistas con que se confirma.
 ASOCIACION_TELEFONO = {"min_samples": 3, "min_query_samples": 3, "min_identity_duration_s": 1.0, "sample_interval_s": 0.3,
-                       # Solo vistas nítidas para el Re-ID (40 px y 0,5, como el Build) y umbrales más altos que el Build
-                       # (0,60 / 0,70). Con vistas desde 28 px y umbrales de 0,58 / 0,62, en un centro comercial lleno
-                       # visto desde un balcón (video1 y video2, dos teléfonos en lugares distintos) el Re-ID confundía a
-                       # gente lejana: 26 IDs compartidos entre los dos lugares y 92 cambios de ID dentro de un track;
-                       # así, 12 y 63. Quien se ve muy chico conserva su caja y recibe el ID al acercarse.
+                       # Solo vistas nítidas para el Re-ID (40 px y 0,5, como el Build): con vistas desde 28 px, en un
+                       # centro comercial lleno visto desde un balcón el Re-ID confundía a la gente lejana. Umbrales los del
+                       # Build (0,60 entre teléfonos, 0,70 en el mismo): con dos teléfonos mirando la misma zona, la misma
+                       # persona desde dos ángulos se parece ~0,55-0,75 y con 0,70 entre teléfonos quedaba con un ID en
+                       # cada uno. Quien se ve muy chico conserva su caja y recibe el ID al acercarse.
                        "min_conf": 0.5, "min_height": 40, "max_occlusion": 0.3,
                        "split_threshold": 0.25, "split_strikes": 3,
-                       "threshold": 0.70, "same_camera_threshold": 0.75, "tracklet_gap_s": 4.0}
+                       "threshold": 0.60, "same_camera_threshold": 0.70, "tracklet_gap_s": 4.0}
 # El seguidor abre tracks desde 0,25 de confianza (el Build pide 0,6) y acepta personas desde 24 px (el Build, 40): quien
 # se ve de lejos o a medias en un teléfono también recibe su caja. Con pocos cuadros por segundo cada persona se mueve más
 # entre uno y otro, así que las compuertas de movimiento son más amplias y quien se pierde un momento se recupera con menos
