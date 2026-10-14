@@ -578,3 +578,37 @@ func TestRetention(t *testing.T) {
 		t.Errorf("política: %+v", pol)
 	}
 }
+
+// TestScriptsKeyReadsAndWrites: the key of the scripts (Build, Part III) keeps working as before: it creates a site, publishes a
+// session, reads its insights and saves the thresholds, but it never deletes and does not manage accounts, keys or the demo.
+func TestScriptsKeyReadsAndWrites(t *testing.T) {
+	c, _ := newClient(t)
+	db, _, _ := setup(t)
+	ctx := context.Background()
+	const slug, id = "prueba-llave-scripts", "11111111-1111-1111-1111-0000000000f9"
+	db.Exec(ctx, "DELETE FROM sites WHERE slug = $1", slug)
+	t.Cleanup(func() { db.Exec(ctx, "DELETE FROM sites WHERE slug = $1", slug) })
+	key := bearer(testAPIKey)
+	if w := c.do("POST", "/api/v1/sites", map[string]string{"slug": slug, "name": "Scripts"}, key); w.Code != 201 {
+		t.Fatalf("crear el sitio con la llave: %d %s", w.Code, w.Body)
+	}
+	if w := c.do("POST", "/api/v1/sites/"+slug+"/sessions", session(id), key); w.Code != 200 {
+		t.Fatalf("publicar una sesión con la llave (el Build): %d %s", w.Code, w.Body)
+	}
+	if w := c.do("GET", "/api/v1/sites/"+slug+"/sessions/"+id+"/insights", nil, key); w.Code != 200 {
+		t.Errorf("leer con la llave: %d", w.Code)
+	}
+	if w := c.do("PUT", "/api/v1/sites/"+slug+"/trafico/umbrales", map[string]any{"defecto": map[string]int{"se_detiene_s": 5, "interesado_s": 30}}, key); w.Code != 200 {
+		t.Errorf("escribir con la llave: %d %s", w.Code, w.Body)
+	}
+	for _, p := range []string{"/api/v1/sites/" + slug + "/sessions/" + id, "/api/v1/sites/" + slug, "/api/v1/demo?confirmar=x", "/api/v1/usuarios/00000000-0000-0000-0000-000000000001"} {
+		if w := c.do("DELETE", p, nil, key); w.Code != http.StatusForbidden {
+			t.Errorf("DELETE %s con la llave: %d (debe ser 403)", p, w.Code)
+		}
+	}
+	for _, p := range []string{"/api/v1/usuarios", "/api/v1/auditoria", "/api/v1/privacidad"} {
+		if w := c.do("GET", p, nil, key); w.Code != http.StatusForbidden {
+			t.Errorf("GET %s con la llave: %d (debe ser 403)", p, w.Code)
+		}
+	}
+}

@@ -182,7 +182,7 @@ try {
   await t.clicTexto("button", /^Listo, ya la guardé/);
   assert.ok(!(await t.texto("body")).includes(llave), "la llave completa ya no se muestra");
   await t.clicTexto("button", /^Revocar$/);
-  await t.hasta(`document.body.innerText.includes('revocada')`, "revocar la llave");
+  await t.hasta(`[...document.querySelectorAll('table.tabla .pill')].some((p) => p.innerText.trim() === 'revocada')`, "revocar la llave");
   assert.equal((await fetch(`${WEB}/api/v1/auth/me`, { headers: { Authorization: `Bearer ${llave}` } })).status, 401, "la llave revocada ya no sirve");
   paso("la llave de ingesta de una tienda se muestra una vez, identifica a su tienda y se revoca");
 
