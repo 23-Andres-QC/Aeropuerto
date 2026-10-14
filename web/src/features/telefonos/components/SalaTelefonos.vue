@@ -50,10 +50,13 @@ const CUADRO_VIGENTE_MS = 3000;
 const PREDICCION_MAX_MS = 1500;
 // Cuadros sin decodificar: si el navegador no da abasto, se saltan los más viejos.
 const COLA_MAX = 6;
-// Video atrasado para ir con sus cajas: el percentil 90 de lo que tardan en volver, más un margen; con el modelo más
-// lejos que RETRASO_MAX_MS el video no se atrasa más y la caja sigue a la persona por HORIZONTE_SINCRONIZADO_MS.
+// Video atrasado para ir con sus cajas: el percentil RETRASO_PERCENTIL de lo que tardan en volver, más un margen; al
+// cuadro cuyas cajas tardan más (1 de cada 4) y con el modelo más lejos que RETRASO_MAX_MS, la caja sigue a la persona
+// con su velocidad por HORIZONTE_SINCRONIZADO_MS. Con el percentil 90 y 60 ms el video iba ~0,1 s más atrasado para
+// cubrir los pocos cuadros más lentos (igual que la página de la cámara, app-web/static/app.js).
 const RETRASO_MAX_MS = 2000;
-const MARGEN_RETRASO_MS = 60;
+const RETRASO_PERCENTIL = 0.75;
+const MARGEN_RETRASO_MS = 30;
 const HORIZONTE_SINCRONIZADO_MS = 150;
 // Cuadros decodificados que esperan su turno (2 s a 15 fps, con holgura).
 const BUFER_MAX = 45;
@@ -246,7 +249,7 @@ function animar() {
 function retrasoDe(p: Pantalla, ahoraMs: number): number {
   if (!p.instantaneas.length || !p.retrasos.length || ahoraMs - p.horaDet > DET_VIGENTE_MS) return 0;
   const orden = [...p.retrasos].sort((a, b) => a - b);
-  return Math.min(RETRASO_MAX_MS, orden[Math.floor(orden.length * 0.9)] + MARGEN_RETRASO_MS);
+  return Math.min(RETRASO_MAX_MS, orden[Math.floor(orden.length * RETRASO_PERCENTIL)] + MARGEN_RETRASO_MS);
 }
 
 async function decodificar(id: string, p: Pantalla) {

@@ -77,6 +77,10 @@ GENEROS = ("Hombre", "Mujer")
 # (descontando el movimiento de la cámara) es algo quieto: no se dibuja ni se cuenta.
 ESTATICO_S = 4.0
 ESTATICO_DESPLAZAMIENTO = 0.2
+# Más rápido que esto (alturas de la caja por segundo) no es alguien que camina (~0,8) sino la caja que saltó: a la
+# figura de al lado o a otra forma al recortarla sin brazos. No cuenta como moverse: con un solo salto así, los maniquíes
+# de una vitrina quedaban como «se movió» para siempre y se mostraban con ID.
+ESTATICO_SALTO = 2.0
 # El movimiento de la cámara se mide sobre el frame reducido a este ancho, con al menos estos puntos del fondo.
 ANCHO_FLUJO = 320
 MIN_PUNTOS_FONDO = 8
@@ -188,11 +192,12 @@ class Quietud:
     ESTATICO_DESPLAZAMIENTO de su altura, es estático; quien se mueve una vez cuenta para siempre.
     """
 
-    def __init__(self, estatico_s=ESTATICO_S):
-        self.estatico_s = estatico_s
+    def __init__(self, estatico_s=ESTATICO_S, desplazamiento=ESTATICO_DESPLAZAMIENTO):
+        self.estatico_s, self.desplazamiento = estatico_s, desplazamiento
         self.camara = np.zeros(2)
         self.previos = {}   # local_id -> centro en el frame anterior
         self.origen = {}    # local_id -> (t, centro en el fondo, alto) al aparecer
+        self.ultimo = {}    # local_id -> (t, centro en el fondo) en su última vista
         self.movidos = set()
         self.fondo = None   # (gris chico, máscara sin las personas, escala) del frame anterior
 
@@ -229,11 +234,15 @@ class Quietud:
         for f in filas:
             lid, alto = f["local_id"], f["y2"] - f["y1"]
             fondo = centros[lid] - self.camara
+            previo = self.ultimo.get(lid)
+            self.ultimo[lid] = (t, fondo)
             if lid not in self.origen:
                 self.origen[lid] = (t, fondo, alto)
             elif lid not in self.movidos:
-                _, origen, alto0 = self.origen[lid]
-                if np.linalg.norm(fondo - origen) > ESTATICO_DESPLAZAMIENTO * max(alto0, alto, 1.0):
+                t0, origen, alto0 = self.origen[lid]
+                if previo is not None and t > previo[0] and                         np.linalg.norm(fondo - previo[1]) / max(alto, 1.0) / (t - previo[0]) > ESTATICO_SALTO:
+                    self.origen[lid] = (t0, origen + (fondo - previo[1]), alto0)  # el salto no cuenta
+                elif np.linalg.norm(fondo - origen) > self.desplazamiento * max(alto0, alto, 1.0):
                     self.movidos.add(lid)
 
     def estatico(self, lid, t):

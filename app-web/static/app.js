@@ -22,10 +22,14 @@ const DET_VIGENTE_MS = 2500;
 // velocidad que traía entre sus dos últimos cuadros procesados, hasta este tiempo después del último (ver cajasAl).
 const PREDICCION_MAX_MS = 1500;
 // Mientras el modelo procesa, la pantalla muestra los cuadros enviados atrasados lo que tardan en volver sus cajas
-// (percentil 90, más un margen, hasta RETRASO_MAX_MS): cada uno va con las suyas o interpoladas entre los dos
-// procesados que lo rodean, así las cajas van sincronizadas y desaparecen cuando la persona se va. Sin modelo, en vivo.
+// (percentil RETRASO_PERCENTIL, más un margen, hasta RETRASO_MAX_MS): cada uno va con las suyas o interpoladas entre
+// los dos procesados que lo rodean, así las cajas van sincronizadas y desaparecen cuando la persona se va. Al cuadro
+// cuyas cajas tardan más que eso (1 de cada 4) se le llevan las del anterior con su velocidad (hasta
+// HORIZONTE_SINCRONIZADO_MS, unas decenas de ms): con el percentil 90 y 60 ms de margen la pantalla iba ~0,1 s más
+// atrasada para cubrir los pocos cuadros más lentos. Sin modelo, en vivo.
 const RETRASO_MAX_MS = 2000;
-const MARGEN_RETRASO_MS = 60;
+const RETRASO_PERCENTIL = 0.75;
+const MARGEN_RETRASO_MS = 30;
 const HORIZONTE_SINCRONIZADO_MS = 150;
 const BUFER_MAX = 45; // cuadros guardados para mostrarlos atrasados (2 s a 15 fps, con holgura)
 
@@ -301,7 +305,7 @@ function bucleEnvio() {
       if (viejo !== app.mostrado) viejo.imagen.close();
     }
   }).catch(() => {});
-  lienzo.toBlob((blob) => {
+  comprimir().then((blob) => {
     app.codificando = false;
     if (!blob || ws.readyState !== WebSocket.OPEN) return;
     ws.send(blob);
@@ -311,7 +315,52 @@ function bucleEnvio() {
       app.capturas.push(captura);
     }
     app.envios.push(enviado);
-  }, 'image/jpeg', CALIDAD);
+  });
+}
+
+// El JPEG del cuadro que está en el lienzo. canvas.toBlob comprime en los ratos libres del hilo principal, que con la
+// pantalla redibujando cada cuadro pueden faltar (Chrome espera hasta 1 s; medido: ~1 s con la página ocupada); en un
+// Worker con OffscreenCanvas tarda solo lo que cuesta comprimir (~10-20 ms) y no le quita tiempo al dibujo. Sin
+// OffscreenCanvas, o si el Worker falla, se vuelve a toBlob.
+const codificador = { worker: null, pendientes: new Map(), siguiente: 0, roto: typeof OffscreenCanvas === 'undefined' };
+
+function porToBlob() {
+  return new Promise((listo) => lienzo.toBlob(listo, 'image/jpeg', CALIDAD));
+}
+
+function iniciarCodificador() {
+  try {
+    const worker = new Worker('codificador.js');
+    worker.onmessage = (e) => {
+      const { id, blob, error } = e.data;
+      const listo = codificador.pendientes.get(id);
+      codificador.pendientes.delete(id);
+      if (error) codificador.roto = true; // este navegador no comprime en el Worker: desde ahora, toBlob
+      if (listo) listo(error ? null : blob);
+    };
+    worker.onerror = () => {
+      // No se pudo cargar o se cayó: lo pendiente sale sin cuadro (el próximo va por toBlob).
+      codificador.roto = true;
+      for (const listo of codificador.pendientes.values()) listo(null);
+      codificador.pendientes.clear();
+    };
+    codificador.worker = worker;
+  } catch {
+    codificador.roto = true;
+  }
+}
+
+function comprimir() {
+  if (!codificador.roto && !codificador.worker) iniciarCodificador();
+  if (codificador.roto) return porToBlob();
+  return createImageBitmap(lienzo)
+    .then((imagen) => new Promise((listo) => {
+      const id = ++codificador.siguiente;
+      codificador.pendientes.set(id, listo);
+      codificador.worker.postMessage({ id, imagen, calidad: CALIDAD }, [imagen]);
+    }))
+    .then((blob) => blob || (codificador.roto ? porToBlob() : null))
+    .catch(() => porToBlob());
 }
 
 function mostrarEstado() {
@@ -438,7 +487,7 @@ const conCuadros = () => app.instantaneas.length > 0 && performance.now() - app.
 function retrasoActual() {
   if (!conCuadros() || !app.retrasos.length) return 0;
   const orden = [...app.retrasos].sort((a, b) => a - b);
-  return Math.min(RETRASO_MAX_MS, orden[Math.floor(orden.length * 0.9)] + MARGEN_RETRASO_MS);
+  return Math.min(RETRASO_MAX_MS, orden[Math.floor(orden.length * RETRASO_PERCENTIL)] + MARGEN_RETRASO_MS);
 }
 
 // Por cuadro de pantalla, con cajas numeradas: con el modelo procesando, el cuadro enviado al que ya le toca (con su
