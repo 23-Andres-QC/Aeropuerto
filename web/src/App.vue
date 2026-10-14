@@ -97,9 +97,10 @@ function elegirSitio(s: Sitio) {
       <RouterLink class="brand" to="/"
         ><span class="brand-icon">✈</span><span>LAP<small>LIMA AIRPORT PARTNERS</small></span></RouterLink
       >
-      <div v-if="telefonos || videos" class="airport-switch">
+      <div v-if="telefonos || videos || cuentas" class="airport-switch">
         <span class="airport-symbol">⌖</span>
         <div v-if="telefonos"><b>Teléfonos</b><small>Modelo final en vivo · IDs estables</small></div>
+        <div v-else-if="cuentas"><b>Cuentas</b><small>Roles, privacidad y sitio Demo</small></div>
         <div v-else><b>Videos</b><small>Modelo final sobre un archivo · nada se guarda</small></div>
       </div>
       <SelectorSitio v-else :sitios="sitios" :slug="slug" :actual="actual" @elegir="elegirSitio" />

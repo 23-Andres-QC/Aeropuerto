@@ -34,7 +34,7 @@ Qué se guarda por persona:
 - su género;
 - las cámaras donde se vio, la primera y la última vez, y cuántas veces reapareció.
 
-**No se guarda video ni fotos.** Quien no se vuelve a ver en `RETENCION_HORAS` (por defecto 168 = 7 días) se borra solo. **Olvidar a todos** en Teléfonos vacía la memoria y reinicia la numeración en 1: la base sube de «época» y rechaza (409) cualquier guardado anterior, así el modelo no resucita a nadie y olvida también lo suyo.
+**No se guarda video ni fotos.** Quien no se vuelve a ver en `RETENCION_HORAS` (por defecto **24 horas**) se borra solo. La memoria **no guarda el género** de nadie (migración `002_sin_genero.sql`): el modelo lo sigue calculando en vivo y se muestra solo en En vivo, para el admin. **Olvidar a todos** en Teléfonos vacía la memoria y reinicia la numeración en 1: la base sube de «época» y rechaza (409) cualquier guardado anterior, así el modelo no resucita a nadie y olvida también lo suyo.
 
 ## Videos
 
@@ -71,7 +71,7 @@ Los vectores viajan como base64 de float32 little-endian (2,7 KB cada uno). Los 
 | Variable (`.env`) | Por defecto | |
 |---|---|---|
 | `VIVO_DB_PASSWORD` | `vivo_local_only` | contraseña de `vivo-db` |
-| `VIVO_RETENCION_HORAS` | `168` | horas sin verse antes de olvidar a una persona |
+| `VIVO_RETENCION_HORAS` | `24` | horas sin verse antes de olvidar a una persona |
 | `VIVO_API_PORT` | `8093` | puerto local donde el modelo le habla |
 | `VIDEO_MAX_MB` (entorno del contenedor) | `1024` | tamaño máximo de un video subido; nginx también corta en 1 GB |
 | `VIDEOS_DIR` (entorno del contenedor) | `/tmp/videos` | carpeta temporal del video subido |

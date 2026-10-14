@@ -857,6 +857,11 @@ onMounted(async () => {
   gap: 12px;
   padding: 14px 15px 6px;
 }
+.nota-genero {
+  margin: 8px 14px 0;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
 .panel-genero {
   display: flex;
   flex-direction: column;
