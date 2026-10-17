@@ -233,6 +233,13 @@ def enlace_camara():
     if os.environ.get("ENLACE_CAMARA"):
         return os.environ["ENLACE_CAMARA"]
     try:
+        propias = socket.gethostbyname_ex(socket.gethostname())[2]
+    except OSError:
+        propias = []
+    hotspot = next((ip for ip in propias if ip.startswith(RED_HOTSPOT_WINDOWS)), None)
+    if hotspot:
+        return f"https://{hotspot}:{PUERTO_CAMARA}"
+    try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sonda:
             sonda.connect(("8.8.8.8", 80))
             ip = sonda.getsockname()[0]
@@ -259,6 +266,13 @@ def sin_token(url):
     return f"{partes.scheme}://{partes.netloc}{partes.path}"
 
 
+LECTURA_MAX_S = 15.0
+ESPERA_REINTENTO_S = 0.5
+# Zona con cobertura inalámbrica móvil de Windows: la red propia de la laptop (los teléfonos se conectan a ella sin pasar
+# por la Wi-Fi del lugar). Si está prendida, el enlace de Teléfonos es el de esa red.
+RED_HOTSPOT_WINDOWS = "192.168.137."
+
+
 class LectorMjpeg:
     """Lee el MJPEG de un teléfono en un hilo, reconectando si se corta, y guarda solo el último frame."""
 
@@ -281,14 +295,17 @@ class LectorMjpeg:
         return "procesando" if self.conectado else ("sin_conexion" if self.error else "conectando")
 
     def _leer(self):
-        """Conecta y lee partes multipart (con Content-Length); ante un fallo espera 2 s y reintenta."""
+        """Conecta y lee partes multipart (con Content-Length); ante un fallo espera ESPERA_REINTENTO_S y reintenta.
+
+        Espera hasta LECTURA_MAX_S un cuadro antes de dar la conexión por caída: en una Wi-Fi cargada el teléfono deja de
+        mandar varios segundos y, con 5 s, el modelo cortaba y tardaba 2 s más en volver a leerlo cuando ya mandaba."""
         while not self._parar.is_set():
             try:
-                with urllib.request.urlopen(self.url, timeout=5) as respuesta:
+                with urllib.request.urlopen(self.url, timeout=LECTURA_MAX_S) as respuesta:
                     self._leer_partes(respuesta)
             except Exception as error:
                 self.error = f"No se pudo leer {sin_token(self.url)}: {getattr(error, 'reason', None) or error}"
-            self._parar.wait(2)
+            self._parar.wait(ESPERA_REINTENTO_S)
 
     def _leer_partes(self, respuesta):
         """Decodifica cada JPEG del stream y lo deja como el más reciente, con su número de cuadro (X-Cuadro, el

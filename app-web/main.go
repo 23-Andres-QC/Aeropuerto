@@ -34,7 +34,10 @@ func main() {
 	defer stop()
 	api := env("API_VIVO", "http://backend-vivo:8080")
 	aeropuerto := NuevaAPIAeropuerto(api)
-	camaras := NuevasCamaras(aeropuerto, env("URL_MJPEG", "http://127.0.0.1:8092"), 10*time.Second)
+	// Una cámara que pierde la conexión se espera 60 s antes de sacarla de Teléfonos (cerrar la pestaña la saca en el
+	// acto: la página avisa al salir). Con 10 s, en una Wi-Fi cargada (la de ESAN cortaba hasta ~13 s) volvía como otra
+	// cámara y el modelo empezaba de cero con ella: otros IDs y unos segundos sin video.
+	camaras := NuevasCamaras(aeropuerto, env("URL_MJPEG", "http://127.0.0.1:8092"), 60*time.Second)
 	home, _ := os.UserHomeDir()
 	// Los códigos de unión no vencen: se guardan en el volumen camara-datos y sobreviven a reiniciar el servicio.
 	camaras.GuardarCodigosEn(env("CODIGOS_ARCHIVO", filepath.Join(home, "datos", "codigos.json")))
