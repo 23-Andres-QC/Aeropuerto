@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
 import { recordarVista, vistaRecordada } from "../vistaPlano";
 import type { Camara, Mapa, Punto, Zona } from "../api";
 
@@ -108,21 +107,27 @@ const matrizCampus = computed(() => {
   const [X, Y] = [px(c.centro_m[0]), py(c.centro_m[1])];
   return { a, b, c: cc, d, e: X - (a * u + cc * v), f: Y - (b * u + d * v) };
 });
-const route = useRoute();
-const router = useRouter();
-/** Las otras zonas grabadas del campus, con su contorno en px del plano y dónde va su nombre (ya girado). */
-const vecinos = computed(() => {
-  const m = matrizCampus.value;
-  const lista = campus.value?.vecinos;
-  if (!m || !lista?.length) return [];
-  return lista.map((v) => {
-    const ps: Punto[] = v.poligono_px.map(([u, w]) => [m.a * u + m.c * w + m.e, m.b * u + m.d * w + m.f]);
-    const c = caja(ps.map((q) => girar(q, giro.value)));
-    return { slug: v.slug, nombre: v.nombre, puntos: ps.map((q) => q.join(",")).join(" "), x: c.x + c.w / 2, arriba: c.y, abajo: c.y + c.h };
-  });
-});
-/** Ir a otra zona del campus, en la misma sección en la que se estaba. */
-const irAVecino = (slug: string) => router.push(`/sitios/${encodeURIComponent(slug)}/${String(route.meta.seccion ?? "configuracion")}`);
+/** Otras zonas grabadas del sitio: cada una con su dibujo colocado en los metros del plano, su contorno y dónde va su nombre. */
+const capas = computed(() =>
+  (props.mapa.capas ?? []).map((c) => {
+    const t = (c.angulo_deg * Math.PI) / 180;
+    const f = k.value / c.px_por_metro;
+    const [a, b, cc, d] = [f * Math.cos(t), -f * Math.sin(t), f * Math.sin(t), f * Math.cos(t)];
+    const [u, v] = c.ancla_px;
+    const [X, Y] = [px(c.ancla_m[0]), py(c.ancla_m[1])];
+    const ps: Punto[] = c.piso_m.map(([x, y]) => [px(x), py(y)]);
+    const g = caja(ps.map((q) => girar(q, giro.value)));
+    return { nombre: c.nombre, fondo: c.fondo, ancho: c.tam_px[0], alto: c.tam_px[1], transform: `matrix(${a} ${b} ${cc} ${d} ${X - (a * u + cc * v)} ${Y - (b * u + d * v)})`,
+      contorno: ps.map((q) => q.join(",")).join(" "), caja: caja(ps), x: g.x + g.w / 2, abajo: g.y + g.h };
+  }),
+);
+/** Acercar a una de las zonas grabadas. */
+const irACapa = (i: number) => {
+  const c = capas.value[i].caja;
+  const w = Math.max(c.w * 1.3, (c.h * 1.3 * ancho.value) / alto.value);
+  const h = (w * alto.value) / ancho.value;
+  irA({ x: c.x + c.w / 2 - w / 2, y: c.y + c.h / 2 - h / 2, w, h });
+};
 const transformCampus = computed(() => {
   const m = matrizCampus.value;
   return m ? `matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.e} ${m.f})` : undefined;
@@ -183,7 +188,9 @@ const vista = ref<Vista>({ x: 0, y: 0, w: 0, h: 0 });
 let animacion = 0;
 const giro = computed(() => giroDe(vista.value.w));
 /** Con el campus a la vista (lejos del sitio): el sitio se marca y un clic acerca a él. */
-const enCampus = computed(() => !!campus.value && vista.value.w > ancho.value * 1.8);
+/** El ancho de vista más grande que aún es «de cerca»: el sitio o la más ancha de sus zonas grabadas. */
+const anchoCerca = computed(() => Math.max(ancho.value, ...capas.value.map((c) => c.caja.w * 1.3)));
+const enCampus = computed(() => !!campus.value && vista.value.w > anchoCerca.value * 1.8);
 /** Dónde van el nombre del sitio (arriba) y la ayuda (abajo) en la vista, ya girada. */
 const etiquetaSitio = computed(() => {
   const piso = props.mapa.piso_L_m;
@@ -636,6 +643,7 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
         </template>
         <rect v-else :width="ancho" :height="alto" class="fondo" />
         <image v-if="mapa.fondo" :href="mapa.fondo.url" x="0" y="0" :width="ancho" :height="alto" preserveAspectRatio="none" class="dibujo" />
+        <image v-for="c in capas" :key="c.nombre" :href="c.fondo.url" x="0" y="0" :width="c.ancho" :height="c.alto" :transform="c.transform" preserveAspectRatio="none" class="dibujo" />
         <polygon v-if="mapa.piso_L_m?.length" :points="puntos(mapa.piso_L_m)" class="piso" :class="{ 'sobre-dibujo': mapa.fondo }" />
         <!-- Los obstáculos ya están en el dibujo de fondo; sin dibujo, se marcan aquí. -->
         <template v-if="!mapa.fondo">
@@ -741,11 +749,11 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
           <rect v-else :width="ancho" :height="alto" class="marca-sitio" />
           <title>Acercar a {{ campus?.nombre || "la zona grabada" }}</title>
         </g>
-        <!-- Las otras zonas grabadas del campus: un clic lleva a ellas. -->
+        <!-- Las otras zonas grabadas del sitio: desde el campus se marcan y un clic acerca a ellas. -->
         <template v-if="enCampus">
-          <g v-for="v in vecinos" :key="v.slug" class="entrada-vecino" role="link" tabindex="0" @click.stop="irAVecino(v.slug)" @keydown.enter="irAVecino(v.slug)">
-            <polygon :points="v.puntos" class="marca-vecino" />
-            <title>Ir a {{ v.nombre }}</title>
+          <g v-for="(c, i) in capas" :key="'m' + c.nombre" class="entrada-vecino" role="button" tabindex="0" @click.stop="irACapa(i)" @keydown.enter="irACapa(i)">
+            <polygon :points="c.contorno" class="marca-vecino" />
+            <title>Acercar a {{ c.nombre }}</title>
           </g>
         </template>
       </g>
@@ -755,8 +763,8 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
         <text :x="etiquetaSitio.x" :y="etiquetaSitio.abajo + 24 * e" class="ayuda-sitio">Clic para acercar</text>
       </g>
       <g v-if="enCampus">
-        <g v-for="v in vecinos" :key="'n' + v.slug" class="entrada-vecino" @click.stop="irAVecino(v.slug)">
-          <text :x="v.x" :y="v.abajo + 18 * e" class="nombre-vecino">{{ v.nombre }}</text>
+        <g v-for="(c, i) in capas" :key="'n' + c.nombre" class="entrada-vecino" @click.stop="irACapa(i)">
+          <text :x="c.x" :y="c.abajo + 18 * e" class="nombre-vecino">{{ c.nombre }}</text>
         </g>
       </g>
       <g class="escala" :transform="`translate(${vista.x + 14 * e} ${vista.y + vista.h - 18 * e})`">
@@ -774,9 +782,12 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
       <button type="button" aria-label="Alejar" title="Alejar" @click="acercar(1 / 0.7)">－</button>
       <button type="button" :aria-label="campus ? 'Ver todo el campus' : 'Ver todo el plano'" :title="campus ? 'Ver todo el campus' : 'Ver todo el plano'" @click="verTodo">⤢</button>
     </div>
-    <button v-if="campus" class="alternar-campus" type="button" @click="enCampus ? entrarAlSitio() : verTodo()">
-      {{ enCampus ? `Ir a ${campus.nombre || "la zona grabada"}` : "Ver campus" }}
-    </button>
+    <div v-if="campus" class="barra-campus">
+      <button class="alternar-campus" type="button" @click="enCampus ? entrarAlSitio() : verTodo()">
+        {{ enCampus ? `Ir a ${campus.nombre || "la zona grabada"}` : "Ver campus" }}
+      </button>
+      <button v-for="(c, i) in capas" :key="'b' + c.nombre" class="alternar-campus ir-capa" type="button" @click="irACapa(i)">Ir a {{ c.nombre }}</button>
+    </div>
     <ul v-if="leyenda" class="leyenda-plano" aria-label="Leyenda del plano">
       <li v-if="elementos.piso"><span class="muestra m-piso"></span>Piso</li>
       <li v-if="elementos.obstaculos"><span class="muestra m-obstaculo"></span>Obstáculo</li>
@@ -922,10 +933,15 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
   fill: #1e3a8a;
   stroke-width: calc(3px * var(--e));
 }
-.alternar-campus {
+.barra-campus {
   position: absolute;
   top: 8px;
   left: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.alternar-campus {
   padding: 6px 12px;
   font-size: 12px;
   font-weight: 650;

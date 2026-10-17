@@ -64,6 +64,7 @@ func TestPrivacyMigrationsUndoAndRedo(t *testing.T) {
 		t.Fatalf("el conteo de género de la sesión: %d %v", n, err)
 	}
 
+	run(migrations.DownFS, "down/016_esan_zona_2_en_esan.down.sql")
 	run(migrations.DownFS, "down/015_esan_zona_2.down.sql")
 	if has("SELECT EXISTS (SELECT 1 FROM sites WHERE slug = 'esan-zona-2')") {
 		t.Error("el sitio esan-zona-2 debe desaparecer al deshacer la 015")
@@ -97,6 +98,10 @@ func TestPrivacyMigrationsUndoAndRedo(t *testing.T) {
 	run(migrations.FS, "015_esan_zona_2.sql")
 	if !has("SELECT EXISTS (SELECT 1 FROM sites WHERE slug = 'esan-zona-2' AND map IS NOT NULL AND plano IS NOT NULL)") {
 		t.Error("el sitio esan-zona-2 debe volver con su plano")
+	}
+	run(migrations.FS, "016_esan_zona_2_en_esan.sql")
+	if has("SELECT EXISTS (SELECT 1 FROM sites WHERE slug = 'esan-zona-2')") {
+		t.Error("la 016 quita el sitio esan-zona-2: la zona 2 es una capa del plano de ESAN")
 	}
 	for _, name := range []string{"users", "auth_sessions", "store_api_keys", "audit_log", "session_gender_counts"} {
 		if !table(name) {
