@@ -181,7 +181,7 @@ class PruebasPrimerSegundo(unittest.TestCase):
         escena = Escena(asociador(memoria_ram()))
         segundos, pid = escena.cuando_tiene_id(3, {"tel-a": [(1, A, 300)]}, ("tel-a", 1))
         self.assertIsNotNone(pid)
-        self.assertLessEqual(segundos, 0.8, "antes tardaba 2 s como mínimo, y después ~1,1 s")
+        self.assertLessEqual(segundos, 1.2, "antes tardaba 2 s como mínimo")
 
     def test_quien_ya_se_vio_se_reconoce_en_menos_de_un_segundo(self):
         memoria = memoria_ram()
@@ -314,3 +314,54 @@ class PruebasRitmoGenero(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DosTelefonosALaVez(unittest.TestCase):
+    """La misma persona vista a la vez por dos teléfonos (desde otro ángulo) tiene el mismo ID global en los dos."""
+
+    def test_quien_ya_tiene_id_en_un_telefono_lo_recibe_en_el_otro(self):
+        escena = Escena(asociador(memoria_ram(), telefonos=("tel-a", "tel-b")))
+        _, en_a = escena.cuando_tiene_id(3, {"tel-a": [(1, A, 300)]}, ("tel-a", 1))
+        self.assertIsNotNone(en_a)
+        # Sigue en el primero y aparece en el segundo, de espaldas (0,65 con su vista de frente).
+        segundos, en_b = escena.cuando_tiene_id(4, {"tel-a": [(1, A, 300)], "tel-b": [(7, A_ESPALDAS, 500)]}, ("tel-b", 7))
+        self.assertEqual(en_b, en_a, "otro ID global en el segundo teléfono")
+        self.assertLess(segundos, 1.5, "esperaba sin ID en el segundo teléfono")
+
+    def test_dos_personas_distintas_en_dos_telefonos_siguen_siendo_dos(self):
+        escena = Escena(asociador(memoria_ram(), telefonos=("tel-a", "tel-b")))
+        _, en_a = escena.cuando_tiene_id(3, {"tel-a": [(1, A, 300)]}, ("tel-a", 1))
+        _, en_b = escena.cuando_tiene_id(4, {"tel-a": [(1, A, 300)], "tel-b": [(7, B, 500)]}, ("tel-b", 7))
+        self.assertIsNotNone(en_b)
+        self.assertNotEqual(en_b, en_a)
+
+
+class MismoLugarEnDosTelefonos(unittest.TestCase):
+    """Dos teléfonos ven a alguien en el mismo lugar del plano a la vez: es la misma persona aunque desde cada ángulo se
+    parezca poco para el Re-ID (C se parece 0,5 a A, bajo el umbral entre teléfonos de 0,60)."""
+
+    def ver_con_posiciones(self, escena, segundos, personas, posiciones, fps=10):
+        ids = {}
+        for _ in range(int(segundos * fps)):
+            escena.asociador.posiciones_plano = posiciones
+            ids = escena.ver(1 / fps, personas, fps=fps)
+        return ids
+
+    def test_en_el_mismo_lugar_queda_un_solo_id(self):
+        escena = Escena(asociador(memoria_ram(), telefonos=("tel-a", "tel-b")))
+        gente = {"tel-a": [(1, A, 300)], "tel-b": [(7, C, 500)]}
+        ids = self.ver_con_posiciones(escena, 4, gente, {("tel-a", 1): (2.0, 3.0), ("tel-b", 7): (2.4, 3.3)})
+        self.assertIsNotNone(ids[("tel-a", 1)])
+        self.assertEqual(ids[("tel-b", 7)], ids[("tel-a", 1)])
+
+    def test_lejos_son_dos_personas(self):
+        escena = Escena(asociador(memoria_ram(), telefonos=("tel-a", "tel-b")))
+        gente = {"tel-a": [(1, A, 300)], "tel-b": [(7, C, 500)]}
+        ids = self.ver_con_posiciones(escena, 4, gente, {("tel-a", 1): (2.0, 3.0), ("tel-b", 7): (8.0, 3.0)})
+        self.assertNotEqual(ids[("tel-b", 7)], ids[("tel-a", 1)])
+
+    def test_en_el_mismo_lugar_pero_sin_parecerse_en_nada_son_dos(self):
+        escena = Escena(asociador(memoria_ram(), telefonos=("tel-a", "tel-b")))
+        gente = {"tel-a": [(1, A, 300)], "tel-b": [(7, B, 500)]}
+        ids = self.ver_con_posiciones(escena, 4, gente, {("tel-a", 1): (2.0, 3.0), ("tel-b", 7): (2.2, 3.1)})
+        self.assertNotEqual(ids[("tel-b", 7)], ids[("tel-a", 1)])

@@ -85,23 +85,20 @@ ASOCIACION_TELEFONO = {"min_samples": 3, "min_query_samples": 3, "min_identity_d
                        # centro comercial lleno visto desde un balcón el Re-ID confundía a la gente lejana. Umbrales los del
                        # Build (0,60 entre teléfonos, 0,70 en el mismo): con dos teléfonos mirando la misma zona, la misma
                        # persona desde dos ángulos se parece ~0,55-0,75 y con 0,70 entre teléfonos quedaba con un ID en
-                       # cada uno. Quien se ve muy chico conserva su caja y recibe el ID al acercarse. La confianza mínima de
-                       # una vista es 0,35 (era 0,5; MODELO_CONF_REID la cambia): con el cuerpo cortado por el borde (de
-                       # cerca) YOLO da ~0,45 y esa persona no llegaba nunca a tener ID. Con 0,2 también la tendría quien se
-                       # ve desde arriba (~0,2), pero el Re-ID con vistas tan borrosas confundía más a la gente.
-                       "min_conf": float(os.environ.get("MODELO_CONF_REID") or 0.35), "min_height": 40, "max_occlusion": 0.3,
+                       # cada uno. Quien se ve muy chico conserva su caja y recibe el ID al acercarse. Vistas desde 0,5 de
+                       # confianza, como el Build: con 0,35 entraban vistas borrosas y el Re-ID confundía a la gente
+                       # (MODELO_CONF_REID la cambia).
+                       "min_conf": float(os.environ.get("MODELO_CONF_REID") or 0.5), "min_height": 40, "max_occlusion": 0.3,
                        "split_threshold": 0.25, "split_strikes": 3,
                        "threshold": 0.60, "same_camera_threshold": 0.70, "tracklet_gap_s": 4.0}
-# El seguidor abre tracks desde 0,15 de confianza (el Build pide 0,6) y acepta personas desde 24 px (el Build, 40): quien
-# se ve de lejos o a medias en un teléfono también recibe su caja. Con 0,25 no aparecía quien se ve desde arriba (solo
-# cabeza y hombros: YOLO lo ve con ~0,2) hasta que se le veía el cuerpo entero; lo que no se mueve (un afiche, un maniquí)
-# sigue sin mostrarse (ver ESTATICO_TELEFONO_S) y un track pide 3 detecciones seguidas para confirmarse. Medido con los
-# videos del dataset como dos teléfonos: de 32 a ~40 personas seguidas, a cambio de algo más de cambios de ID (de ~20 a
-# ~30 en 2 min, con mucho ruido de una corrida a otra). MODELO_CONF_TRACK lo cambia. Con pocos cuadros por segundo cada persona se mueve más
+# El seguidor abre tracks desde 0,25 de confianza (el Build pide 0,6) y acepta personas desde 24 px (el Build, 40): quien
+# se ve de lejos o a medias en un teléfono también recibe su caja. Con 0,15 aparecía antes quien se ve desde arriba, pero
+# las detecciones débiles abrían tracks de más y el multitracking cambiaba más de ID (de ~20 a ~30 cambios en 2 min con
+# los videos del dataset): se volvió a 0,25. MODELO_CONF_TRACK lo cambia. Con pocos cuadros por segundo cada persona se mueve más
 # entre uno y otro, así que las compuertas de movimiento son más amplias y quien se pierde un momento se recupera con menos
 # parecido (0,72).
-CONF_TRACK = float(os.environ.get("MODELO_CONF_TRACK") or 0.15)
-SEGUIDOR_TELEFONO = {"new_track_confidence": CONF_TRACK, "association_confidence": min(0.10, CONF_TRACK), "min_person_height": 24,
+CONF_TRACK = float(os.environ.get("MODELO_CONF_TRACK") or 0.25)
+SEGUIDOR_TELEFONO = {"new_track_confidence": CONF_TRACK, "association_confidence": min(0.20, CONF_TRACK), "min_person_height": 24,
                      "reid_gate": 0.72, "active_motion_gate": 0.80, "distance_gate": 1.20, "active_iou_gate": 0.06}
 # Las ventanas del seguidor se cuentan en cuadros procesados (max_age 120, confirmation_window 5, appearance_interval 5)
 # y se ajustaron con el modelo procesando ~4 cuadros por segundo (en CPU o por el túnel): a quien salía de cuadro o
@@ -146,6 +143,10 @@ PUERTO_CAMARA = int(os.environ.get("CAMARA_PORT", "8444"))  # el de la página d
 # dentro del ruido de una corrida a otra); su ventaja es con el teléfono cerca, donde las piernas salen cortadas.
 # MODELO_PARTE_SUPERIOR=1 vuelve al cuerpo entero (y 0.6, por ejemplo, llega hasta debajo de la cadera).
 MITAD_SUPERIOR = min(1.0, max(0.3, float(os.environ.get("MODELO_PARTE_SUPERIOR") or 0.5)))
+# El Re-ID ve el cuerpo entero, como el Build: entre teléfonos (de frente y de espaldas) lo que más se mantiene son el
+# pantalón y las piernas, y con la mitad de arriba la misma persona quedaba con un ID en cada teléfono. Solo el género
+# (CLIP) usa la parte de arriba. MODELO_PARTE_SUPERIOR_REID=0.5 vuelve a recortarlo.
+PARTE_SUPERIOR_REID = min(1.0, max(0.3, float(os.environ.get("MODELO_PARTE_SUPERIOR_REID") or 1.0)))
 
 
 def mitad_superior(crop):
@@ -154,13 +155,15 @@ def mitad_superior(crop):
 
 
 class ReIDMitadSuperior:
-    """El Re-ID de los teléfonos sobre la mitad de arriba de cada recorte (ver MITAD_SUPERIOR)."""
+    """El Re-ID de los teléfonos sobre la parte de arriba de cada recorte: `fraccion` de su alto (MITAD_SUPERIOR si no se da)."""
 
-    def __init__(self, reid):
-        self.reid = reid
+    def __init__(self, reid, fraccion=None):
+        self.reid, self.fraccion = reid, fraccion
 
     def __call__(self, crops):
-        return self.reid([mitad_superior(c) for c in crops])
+        if self.fraccion is None:
+            return self.reid([mitad_superior(c) for c in crops])
+        return self.reid([c[:max(1, round(c.shape[0] * self.fraccion))] for c in crops])
 
     def __getattr__(self, nombre):
         return getattr(self.reid, nombre)
@@ -766,9 +769,29 @@ class SesionEnVivo:
                     with self.bloqueo:
                         if generacion != self.generacion or self.asociador is None:
                             continue
+                        self.asociador.posiciones_plano = self._posiciones_plano(frames, filas)
                         self.asociador.actualizar(t, frames, filas, occluders=ocluyentes)
                 except Exception as error:  # un instante fallido no debe detener el carril
                     print(f"Carril lento: {type(error).__name__}: {error}", flush=True)
+
+    def _posiciones_plano(self, frames, filas):
+        """(teléfono, track local) -> (x, y) en metros: el pie de cada persona llevado al plano con la última ubicación
+        de su teléfono (ubicacion.py). Sin ubicación, o con los pies fuera del cuadro, no hay posición."""
+        posiciones = {}
+        for cid, fs in filas.items():
+            plano = self.planos.get(cid)
+            if not plano or cid not in frames:
+                continue
+            H = np.asarray(plano["H"], float).reshape(3, 3)
+            alto, ancho = frames[cid].shape[:2]
+            k = plano["ancho"] / ancho
+            for f in fs:
+                if f["y2"] >= alto - 3:
+                    continue
+                p = H @ np.array([(f["x1"] + f["x2"]) / 2 * k, f["y2"] * k, 1.0])
+                if abs(p[2]) > 1e-9 and np.all(np.isfinite(p)):
+                    posiciones[(cid, f["local_id"])] = (float(p[0] / p[2]), float(p[1] / p[2]))
+        return posiciones
 
     def _lazo_genero(self):
         """Carril del género: CLIP para los tracks a los que les falta, en paralelo con el de los IDs y siempre con el
@@ -947,13 +970,15 @@ def main():
         clasificar = motor.genero._clasificar
         motor.genero._clasificar = lambda crops: clasificar([mitad_superior(c) for c in crops])
     ubicador = Ubicador.cargar(MODELO / "ubicacion" / SITIO_TELEFONOS)
-    print(f"Re-ID y género con {'el cuerpo entero' if MITAD_SUPERIOR >= 1 else f'la parte de arriba del cuerpo ({MITAD_SUPERIOR:.0%})'}.", flush=True)
+    parte = lambda f: "el cuerpo entero" if f >= 1 else f"la parte de arriba del cuerpo ({f:.0%})"  # noqa: E731
+    print(f"Re-ID con {parte(PARTE_SUPERIOR_REID)}; género con {parte(MITAD_SUPERIOR)}.", flush=True)
     print(f"Modelo listo en {motor.device} · detector {type(getattr(motor.detector, 'base', motor.detector)).__name__} a "
           f"{config['detector']['imgsz']} px · ubicación: {SITIO_TELEFONOS if ubicador else 'sin referencias'} · "
           f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no'}", flush=True)
     memoria = MemoriaIdentidades(url_api, asociacion)
     relevo = Relevo(url_api)
-    sesion = SesionEnVivo(motor, ReIDMitadSuperior(reid) if MITAD_SUPERIOR < 1 else reid, asociacion, memoria, ubicador)
+    reid_sesion = ReIDMitadSuperior(reid, PARTE_SUPERIOR_REID) if PARTE_SUPERIOR_REID < 1 else reid
+    sesion = SesionEnVivo(motor, reid_sesion, asociacion, memoria, ubicador)
     # Los videos subidos van con la asociación del Build, sin los ajustes para teléfonos. Sin GPU tienen su propio Re-ID
     # con todos los núcleos (en el servidor es lo que más tarda por frame): corre en el hilo principal, sin esperar al de
     # los teléfonos, que usa el carril lento.

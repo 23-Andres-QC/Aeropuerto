@@ -55,7 +55,10 @@ function leerModo(): boolean {
 }
 /** El sistema está en modo en vivo: En vivo e Insights muestran lo que ven los teléfonos, no una sesión guardada. */
 export const modoVivo = ref(leerModo());
+/** Se acaba de prender En vivo (no es una recarga con el modo ya prendido): la sesión empieza con la memoria vacía. */
+let empezarLimpio = false;
 export function fijarModoVivo(valor: boolean) {
+  if (valor && !modoVivo.value) empezarLimpio = true;
   modoVivo.value = valor;
   try {
     localStorage.setItem(CLAVE_MODO, valor ? "1" : "0");
@@ -905,6 +908,15 @@ function cerrarCaptura() {
 }
 
 /** Vacía la memoria de identidades del modelo (backend-vivo sube la época y el modelo, al notarlo, olvida lo suyo). */
+async function vaciarMemoriaAlPrender() {
+  try {
+    const { borradas } = await apiVivo.olvidarTodas();
+    if (borradas) mensajeGuardado.value = `Sesión nueva: el modelo olvidó a ${borradas} persona${borradas === 1 ? "" : "s"} de antes; los IDs empiezan en 1.`;
+  } catch (e) {
+    mensajeGuardado.value = `No se pudo vaciar la memoria del modelo (${(e as Error).message}): usa «Olvidar a todos» en Teléfonos.`;
+  }
+}
+
 async function olvidarAlApagar() {
   try {
     const { borradas } = await apiVivo.olvidarTodas();
@@ -940,6 +952,13 @@ function arrancar() {
   if (corriendo) return;
   corriendo = true;
   reiniciarVivo();
+  // Cada sesión en vivo empieza de cero: lo de la anterior ya quedó en Registros (se guarda al apagar) y la memoria de
+  // identidades del modelo se vacía, así los IDs empiezan en 1 y el modelo no compara con gente de otras sesiones. Una
+  // recarga de la página con En vivo ya prendido no la vacía (sería a mitad de la sesión).
+  if (empezarLimpio) {
+    empezarLimpio = false;
+    void vaciarMemoriaAlPrender();
+  }
   // La captura empieza sola: lo que se ve en vivo queda registrado (Terminar la corta e Iniciar empieza otra).
   grabando.value = true;
   mensajeGuardado.value = "Grabando esta escena…";
