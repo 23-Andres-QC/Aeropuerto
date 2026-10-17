@@ -146,6 +146,8 @@ function tocar(clave: string, acercar: () => void) {
     acercar();
   } else elegida.value = clave;
 }
+/** ¿Se ve la zona grabada del sitio (el patio)? Sin campus, siempre; con campus, no desde lejos ni sobre otra zona grabada. */
+const veSitio = computed(() => !campus.value || (!enCampus.value && !capaEnVista.value));
 /** Acercar a una de las zonas grabadas. */
 const irACapa = (i: number) => {
   const c = capas.value[i].caja;
@@ -813,17 +815,20 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
       <button type="button" :aria-label="campus ? 'Ver todo el campus' : 'Ver todo el plano'" :title="campus ? 'Ver todo el campus' : 'Ver todo el plano'" @click="verTodo">⤢</button>
     </div>
     <ul v-if="leyenda" class="leyenda-plano" aria-label="Leyenda del plano">
-      <li v-if="elementos.piso"><span class="muestra m-piso"></span>Piso</li>
-      <li v-if="elementos.obstaculos"><span class="muestra m-obstaculo"></span>Obstáculo</li>
-      <li v-for="z in elementos.zonas" :key="z.nombre">
-        <span class="muestra" :style="{ background: z.color + '33', borderColor: z.color }"></span>{{ z.nombre }}
-      </li>
-      <li v-if="elementos.camaras">
-        <svg class="muestra-icono" viewBox="-13 -10 27 20" aria-hidden="true">
-          <rect x="-12" y="-8" width="18" height="16" rx="3.5" class="m-cuerpo" /><path d="M 5 -4.5 L 13 -9 L 13 9 L 5 4.5 Z" class="m-cuerpo" />
-        </svg>
-        Cámara
-      </li>
+      <!-- Lo que hay en la zona (piso, zonas, cámaras) solo se lista con la zona a la vista: con el campus entero serían decenas de textos. -->
+      <template v-if="veSitio">
+        <li v-if="elementos.piso"><span class="muestra m-piso"></span>Piso</li>
+        <li v-if="elementos.obstaculos"><span class="muestra m-obstaculo"></span>Obstáculo</li>
+        <li v-for="z in elementos.zonas" :key="z.nombre">
+          <span class="muestra" :style="{ background: z.color + '33', borderColor: z.color }"></span>{{ z.nombre }}
+        </li>
+        <li v-if="elementos.camaras">
+          <svg class="muestra-icono" viewBox="-13 -10 27 20" aria-hidden="true">
+            <rect x="-12" y="-8" width="18" height="16" rx="3.5" class="m-cuerpo" /><path d="M 5 -4.5 L 13 -9 L 13 9 L 5 4.5 Z" class="m-cuerpo" />
+          </svg>
+          Cámara
+        </li>
+      </template>
       <li v-if="elementos.personas"><span class="muestra m-persona"></span>Persona (G = ID global)</li>
       <li v-if="elementos.estimadas"><span class="muestra m-persona estimada"></span>Sin detección un momento (posición estimada)</li>
       <li v-if="elementos.salieron"><span class="muestra m-persona salio"></span>Ya salió (última posición)</li>
@@ -1202,6 +1207,9 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
   padding: 0;
   font-size: 15px;
   line-height: 1;
+}
+.leyenda-plano:not(:has(li)) {
+  display: none;
 }
 .leyenda-plano {
   display: flex;
