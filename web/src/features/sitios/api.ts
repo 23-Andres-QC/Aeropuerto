@@ -21,6 +21,8 @@ export type Mapa = {
   obstaculos?: Obstaculo[];
   /** Imagen del lugar entero (el campus) con el sitio ubicado encima: la web abre ahí y acerca al sitio. */
   campus?: CampusPlano;
+  /** Otras zonas grabadas del mismo sitio (cada una con su dibujo), puestas en los mismos metros del plano. */
+  capas?: CapaPlano[];
 };
 
 /**
@@ -36,8 +38,22 @@ export type CampusPlano = {
   centro_m: Punto;
   px_por_metro: number;
   angulo_deg: number;
-  /** Otras zonas grabadas del mismo campus (contorno en px de la imagen): se ven juntas y un clic lleva a la elegida. */
-  vecinos?: { slug: string; nombre: string; poligono_px: Punto[] }[];
+};
+
+/**
+ * Otra zona grabada del sitio, con su propio dibujo: el píxel `ancla_px` del dibujo cae en el punto `ancla_m` (metros del sitio), con
+ * `px_por_metro` píxeles del dibujo por metro y su eje este girado `angulo_deg` (antihorario). `piso_m` y `obstaculos` ya van en metros del sitio.
+ */
+export type CapaPlano = {
+  nombre: string;
+  fondo: FondoPlano;
+  tam_px: [number, number];
+  px_por_metro: number;
+  ancla_px: Punto;
+  ancla_m: Punto;
+  angulo_deg: number;
+  piso_m: Punto[];
+  obstaculos: Obstaculo[];
 };
 
 export type Obstaculo = { nombre: string; puntos_m: Punto[] };
@@ -45,7 +61,7 @@ export type Obstaculo = { nombre: string; puntos_m: Punto[] };
 export type FondoPlano = { url: string; fuente?: string };
 
 /** Dibujo guardado del sitio (levantamiento o plano arquitectónico), aparte de lo que publica el Build. */
-export type Plano = { fondo: FondoPlano | null; piso_m?: Punto[] | null; obstaculos?: Obstaculo[] | null; campus?: CampusPlano | null };
+export type Plano = { fondo: FondoPlano | null; piso_m?: Punto[] | null; obstaculos?: Obstaculo[] | null; campus?: CampusPlano | null; capas?: CapaPlano[] | null };
 
 export type Sitio = {
   slug: string;
@@ -113,6 +129,7 @@ export function mapaDelSitio(c: Config | null | undefined): Mapa | undefined {
     piso_L_m: piso?.length ? piso : mapa.piso_L_m,
     obstaculos: c.plano?.obstaculos ?? [],
     campus: c.plano?.campus ?? undefined,
+    capas: c.plano?.capas ?? undefined,
   };
 }
 

@@ -168,3 +168,42 @@ func TestSitePlanCampus(t *testing.T) {
 		}
 	}
 }
+
+// TestSitePlanLayers: un sitio puede tener varias zonas grabadas dibujadas aparte (capas) en los mismos metros del plano.
+func TestSitePlanLayers(t *testing.T) {
+	capa := func() PlanLayer {
+		return PlanLayer{Name: " Zona 2 ", Background: &PlanBackground{URL: "/planos/zona-2.svg"}, Size: [2]int{1190, 856}, PxPerMeter: 29.7,
+			Anchor: [2]float64{595, 428}, AnchorM: [2]float64{-59.4, 16.6}, AngleDeg: -8.3,
+			Floor:     [][2]float64{{-70, 8}, {-48, 8}, {-48, 24}, {-70, 24}},
+			Obstacles: []PlanObstacle{{Name: "Columna", Points: [][2]float64{{-60, 10}, {-59, 10}, {-59, 11}}}}}
+	}
+	ok := SitePlan{Floor: [][2]float64{{0, 0}, {5, 0}, {5, 4}}, Layers: []PlanLayer{capa()}}
+	if err := ok.Normalize(); err != nil || ok.Layers[0].Name != "Zona 2" {
+		t.Fatalf("una capa válida debe aceptarse y limpiarse: %v %+v", err, ok.Layers)
+	}
+	for nombre, cambiar := range map[string]func(*PlanLayer){
+		"sin nombre":       func(l *PlanLayer) { l.Name = " " },
+		"sin fondo":        func(l *PlanLayer) { l.Background = nil },
+		"fondo externo":    func(l *PlanLayer) { l.Background.URL = "https://otro.sitio/zona.svg" },
+		"escala cero":      func(l *PlanLayer) { l.PxPerMeter = 0 },
+		"sin tamaño":       func(l *PlanLayer) { l.Size = [2]int{} },
+		"ángulo NaN":       func(l *PlanLayer) { l.AngleDeg = math.NaN() },
+		"ancla fuera":      func(l *PlanLayer) { l.AnchorM = [2]float64{5000, 0} },
+		"contorno chico":   func(l *PlanLayer) { l.Floor = l.Floor[:2] },
+		"obstáculo fuera":  func(l *PlanLayer) { l.Obstacles[0].Points[0] = [2]float64{9999, 0} },
+	} {
+		l := capa()
+		cambiar(&l)
+		p := SitePlan{Floor: [][2]float64{{0, 0}, {5, 0}, {5, 4}}, Layers: []PlanLayer{l}}
+		if err := p.Normalize(); err == nil {
+			t.Errorf("%s debe rechazarse", nombre)
+		}
+	}
+	many := SitePlan{Floor: [][2]float64{{0, 0}, {5, 0}, {5, 4}}}
+	for i := 0; i < 11; i++ {
+		many.Layers = append(many.Layers, capa())
+	}
+	if err := many.Normalize(); err == nil {
+		t.Error("más de 10 capas debe rechazarse")
+	}
+}

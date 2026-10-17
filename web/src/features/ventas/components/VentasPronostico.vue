@@ -94,7 +94,7 @@ const filasLocal = computed(() =>
   porLocal.value.map(({ local, p }) => {
     const t = suma(p, "tickets");
     const v = suma(p, "visitors");
-    return { local, ingresos: p.expected, visitantes: v, conversion: v > 0 ? t / v : null, hay: p.forecast.length > 0, error: p.quality.revenue.wape };
+    return { local, ingresos: p.expected, visitantes: v, conversion: v > 0 ? t / v : null, hay: p.forecast.length > 0, error: p.quality?.revenue?.wape ?? null };
   }),
 );
 const maxLocal = computed(() => Math.max(1, ...filasLocal.value.map((f) => f.ingresos.value)));

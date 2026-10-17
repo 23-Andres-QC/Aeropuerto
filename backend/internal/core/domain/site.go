@@ -80,6 +80,58 @@ type SitePlan struct {
 	// Campus is the whole place around the recorded area (e.g. the university
 	// map): the web opens on it and zooms into the site when it is clicked.
 	Campus *PlanCampus `json:"campus,omitempty"`
+	// Layers are other recorded areas of the same site drawn in their own drawing (e.g. the second zone of a university, a
+	// floor of another building) and placed in the site's metres: one map, one coordinate frame, several areas.
+	Layers []PlanLayer `json:"capas,omitempty"`
+}
+
+// PlanLayer is a drawing (SVG of /planos/) of one recorded area: its pixel Anchor falls on the site point AnchorM (metres) and the
+// drawing's east axis is turned AngleDeg counter-clockwise on the site's plan, at PxPerMeter drawing pixels per metre. Floor is the
+// area's outline and Obstacles what nobody walks through, both already in the site's metres.
+type PlanLayer struct {
+	Name       string          `json:"nombre"`
+	Background *PlanBackground `json:"fondo"`
+	Size       [2]int          `json:"tam_px"`
+	PxPerMeter float64         `json:"px_por_metro"`
+	Anchor     [2]float64      `json:"ancla_px"`
+	AnchorM    [2]float64      `json:"ancla_m"`
+	AngleDeg   float64         `json:"angulo_deg"`
+	Floor      [][2]float64    `json:"piso_m"`
+	Obstacles  []PlanObstacle  `json:"obstaculos"`
+}
+
+func (l *PlanLayer) normalize() error {
+	l.Name = strings.TrimSpace(l.Name)
+	if l.Name == "" || len([]rune(l.Name)) > 80 || l.Background == nil {
+		return Invalid("cada capa necesita nombre (1-80) y fondo")
+	}
+	b := l.Background
+	b.URL, b.Source = strings.TrimSpace(b.URL), strings.TrimSpace(b.Source)
+	if !backgroundPattern.MatchString(b.URL) || len([]rune(b.Source)) > 200 {
+		return Invalid("el fondo de la capa debe ser un SVG de /planos/ y la fuente tener hasta 200 caracteres")
+	}
+	if l.Size[0] < 1 || l.Size[1] < 1 || l.Size[0] > 20000 || l.Size[1] > 20000 || !finite(l.PxPerMeter) || l.PxPerMeter <= 0 || l.PxPerMeter > 1000 {
+		return Invalid("tamaño o escala de la capa inválidos")
+	}
+	for _, v := range []float64{l.Anchor[0], l.Anchor[1], l.AngleDeg} {
+		if !finite(v) {
+			return Invalid("ubicación de la capa inválida")
+		}
+	}
+	if math.Abs(l.AngleDeg) > 360 || !insidePlan([][2]float64{l.AnchorM}) || len(l.Floor) < 3 || len(l.Floor) > 500 || !insidePlan(l.Floor) {
+		return Invalid("ubicación o contorno de la capa inválidos (3 a 500 vértices dentro del plano)")
+	}
+	if len(l.Obstacles) > 200 {
+		return Invalid("hasta 200 obstáculos por capa")
+	}
+	for i := range l.Obstacles {
+		o := &l.Obstacles[i]
+		o.Name = strings.TrimSpace(o.Name)
+		if len([]rune(o.Name)) > 80 || len(o.Points) < 3 || len(o.Points) > 100 || !insidePlan(o.Points) {
+			return Invalid(fmt.Sprintf("capa %q, obstáculo %d: nombre de hasta 80 caracteres y entre 3 y 100 vértices dentro del plano", l.Name, i+1))
+		}
+	}
+	return nil
 }
 
 // PlanCampus is a static image of the surroundings and where the site sits
@@ -95,16 +147,6 @@ type PlanCampus struct {
 	CenterM    [2]float64 `json:"centro_m"`
 	PxPerMeter float64    `json:"px_por_metro"`
 	AngleDeg   float64    `json:"angulo_deg"`
-	// Neighbors are the other recorded areas on the same campus (e.g. the second zone of a university): their outline on
-	// the campus image, so the campus view shows them all together and a click goes to the one chosen.
-	Neighbors []CampusNeighbor `json:"vecinos,omitempty"`
-}
-
-// CampusNeighbor is another site of the same campus, outlined in image pixels.
-type CampusNeighbor struct {
-	Slug    string       `json:"slug"`
-	Name    string       `json:"nombre"`
-	Outline [][2]float64 `json:"poligono_px"`
 }
 
 func (c *PlanCampus) normalize() error {
@@ -122,22 +164,6 @@ func (c *PlanCampus) normalize() error {
 	}
 	if c.PxPerMeter <= 0 || c.PxPerMeter > 1000 || math.Abs(c.AngleDeg) > 360 || !insidePlan([][2]float64{c.CenterM}) {
 		return Invalid("ubicación del sitio en el campus inválida")
-	}
-	if len(c.Neighbors) > 10 {
-		return Invalid("hasta 10 zonas vecinas por campus")
-	}
-	for i := range c.Neighbors {
-		n := &c.Neighbors[i]
-		n.Name = strings.TrimSpace(n.Name)
-		if !ValidSlug(n.Slug) || n.Name == "" || len([]rune(n.Name)) > 80 || len(n.Outline) < 3 || len(n.Outline) > 100 {
-			return Invalid(fmt.Sprintf("zona vecina %d: identificador, nombre (1-80) o contorno (3 a 100 vértices) inválidos", i+1))
-		}
-		w, h := float64(c.Size[0]), float64(c.Size[1])
-		for _, p := range n.Outline {
-			if !finite(p[0]) || !finite(p[1]) || p[0] < -2*w || p[0] > 3*w || p[1] < -2*h || p[1] > 3*h {
-				return Invalid(fmt.Sprintf("zona vecina %d: contorno fuera del campus", i+1))
-			}
-		}
 	}
 	return nil
 }
@@ -171,6 +197,14 @@ func (p *SitePlan) Normalize() error {
 	}
 	if p.Campus != nil {
 		if err := p.Campus.normalize(); err != nil {
+			return err
+		}
+	}
+	if len(p.Layers) > 10 {
+		return Invalid("hasta 10 capas por plano")
+	}
+	for i := range p.Layers {
+		if err := p.Layers[i].normalize(); err != nil {
 			return err
 		}
 	}
