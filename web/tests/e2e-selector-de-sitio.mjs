@@ -162,6 +162,24 @@ try {
     assert.equal(e.marcasEnCampus, 0, "de cerca ya no es campus");
   });
 
+  // En vivo: los videos y las personas grabados son del patio; con el comedor a la vista no se muestran.
+  await cdp("Page.navigate", { url: `${WEB}/sitios/esan/en-vivo` });
+  await esperar(3500);
+  const vistaEnVivo = () => evalua(`({ videos: document.querySelectorAll('.videos-esan video').length, aviso: !!document.querySelector('[data-prueba=zona-sin-videos]'), controles: !!document.querySelector('.controles') })`);
+  await clic(`[...document.querySelectorAll('.barra-campus button')].find((b) => /Ir a Patio/.test(b.textContent))`);
+  await esperar(1200);
+  let ev = await vistaEnVivo();
+  assert.deepEqual(ev, { videos: 3, aviso: false, controles: true }, "mirando el patio se ven sus 3 videos");
+  await clic(`[...document.querySelectorAll('.barra-campus button')].find((b) => /Zona grabada 2/.test(b.textContent))`);
+  await esperar(1200);
+  ev = await vistaEnVivo();
+  assert.deepEqual(ev, { videos: 0, aviso: true, controles: false }, "mirando el comedor no se ven los videos del patio");
+  await clic(`[...document.querySelectorAll('.barra-campus button')].find((b) => /Ir a Patio/.test(b.textContent))`);
+  await esperar(1200);
+  ev = await vistaEnVivo();
+  assert.deepEqual(ev, { videos: 3, aviso: false, controles: true }, "al volver al patio vuelven sus videos");
+  console.log("✓ los videos son del patio; con el comedor a la vista se ocultan y vuelven al regresar");
+
   await clic(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Salir')`);
   await paso("Salir lleva al login", (e) => assert.equal(e.url, "/login"));
   await iniciarSesion();

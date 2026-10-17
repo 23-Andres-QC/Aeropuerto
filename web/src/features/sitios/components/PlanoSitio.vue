@@ -73,6 +73,8 @@ const emit = defineEmits<{
   pose: [id: string, pose: { position?: Punto; angle_deg?: number }];
   /** Clic en una parte vacía del plano (fuera de zonas y cámaras). */
   fondo: [];
+  /** Cambia la zona grabada que se mira de cerca: su nombre, o null cuando se mira el sitio o el campus. */
+  capa: [nombre: string | null];
 }>();
 const svg = ref<SVGSVGElement>();
 /** Grupo con todo lo que está en px del plano (girado junto con la vista cuando hay campus). */
@@ -118,9 +120,18 @@ const capas = computed(() =>
     const ps: Punto[] = c.piso_m.map(([x, y]) => [px(x), py(y)]);
     const g = caja(ps.map((q) => girar(q, giro.value)));
     return { nombre: c.nombre, fondo: c.fondo, ancho: c.tam_px[0], alto: c.tam_px[1], transform: `matrix(${a} ${b} ${cc} ${d} ${X - (a * u + cc * v)} ${Y - (b * u + d * v)})`,
-      contorno: ps.map((q) => q.join(",")).join(" "), caja: caja(ps), x: g.x + g.w / 2, abajo: g.y + g.h };
+      contorno: ps.map((q) => q.join(",")).join(" "), caja: caja(ps), vista: g, x: g.x + g.w / 2, abajo: g.y + g.h };
   }),
 );
+/** La zona grabada (otra capa) que se está mirando de cerca: la que tiene el centro de la vista; ninguna desde el campus ni sobre el sitio. */
+const capaEnVista = computed(() => {
+  if (enCampus.value) return null;
+  const [cx, cy] = [vista.value.x + vista.value.w / 2, vista.value.y + vista.value.h / 2];
+  const dist = (x: number, y: number) => Math.hypot(cx - x, cy - y);
+  const delSitio = dist(etiquetaSitio.value.x, (etiquetaSitio.value.arriba + etiquetaSitio.value.abajo) / 2);
+  const c = capas.value.find((q) => Math.abs(cx - (q.vista.x + q.vista.w / 2)) <= q.vista.w * 0.65 && Math.abs(cy - (q.vista.y + q.vista.h / 2)) <= q.vista.h * 0.65 && dist(q.vista.x + q.vista.w / 2, q.vista.y + q.vista.h / 2) < delSitio);
+  return c?.nombre ?? null;
+});
 /** Acercar a una de las zonas grabadas. */
 const irACapa = (i: number) => {
   const c = capas.value[i].caja;
@@ -605,6 +616,8 @@ const escalaM = computed(() => {
 const idPiso = `piso-${Math.random().toString(36).slice(2, 9)}`;
 
 const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.length, ps.reduce((a, p) => a + p[1], 0) / ps.length];
+// Al final del script, cuando ya existe todo lo que la vista necesita.
+watch(capaEnVista, (n) => emit("capa", n), { immediate: true });
 </script>
 
 <template>
@@ -783,9 +796,8 @@ const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.le
       <button type="button" :aria-label="campus ? 'Ver todo el campus' : 'Ver todo el plano'" :title="campus ? 'Ver todo el campus' : 'Ver todo el plano'" @click="verTodo">⤢</button>
     </div>
     <div v-if="campus" class="barra-campus">
-      <button class="alternar-campus" type="button" @click="enCampus ? entrarAlSitio() : verTodo()">
-        {{ enCampus ? `Ir a ${campus.nombre || "la zona grabada"}` : "Ver campus" }}
-      </button>
+      <button v-if="enCampus || capaEnVista" class="alternar-campus ir-sitio" type="button" @click="entrarAlSitio()">Ir a {{ campus.nombre || "la zona grabada" }}</button>
+      <button v-if="!enCampus" class="alternar-campus" type="button" @click="verTodo()">Ver campus</button>
       <button v-for="(c, i) in capas" :key="'b' + c.nombre" class="alternar-campus ir-capa" type="button" @click="irACapa(i)">Ir a {{ c.nombre }}</button>
     </div>
     <ul v-if="leyenda" class="leyenda-plano" aria-label="Leyenda del plano">
