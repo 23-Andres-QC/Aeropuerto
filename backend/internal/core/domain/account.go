@@ -233,3 +233,81 @@ type ResetTokenRecord struct {
 	Expires time.Time
 	UsedAt  *time.Time
 }
+
+// AccessSummary is the dashboard of the accounts for the superadmin: what happened in the last days (logins, failures,
+// password changes and recoveries, lockouts, refusals) and how the accounts stand now. It is built from the audit log
+// and the accounts: it never carries a password, a token or a link.
+type AccessSummary struct {
+	Days  int       `json:"dias"`
+	Since time.Time `json:"desde"`
+	// Totals count the audit actions of the period.
+	Totals AccessTotals `json:"totales"`
+	// PerDay has one entry for each day of the period (Lima time), also the quiet ones.
+	PerDay []AccessDay `json:"por_dia"`
+	// Now is how the accounts stand at this moment.
+	Now AccessNow `json:"ahora"`
+	// PerUser has every account with what it did in the period, the busiest first.
+	PerUser []AccessUser `json:"por_usuario"`
+	// Noisy are the addresses with the most failed logins and refusals.
+	Noisy []AccessIP `json:"ips"`
+}
+
+type AccessTotals struct {
+	Logins          int `json:"ingresos"`
+	FailedLogins    int `json:"ingresos_fallidos"`
+	Logouts         int `json:"salidas"`
+	PasswordChanges int `json:"cambios_clave"`
+	ResetsRequested int `json:"recuperaciones_pedidas"`
+	ResetsByMail    int `json:"claves_restablecidas_por_correo"`
+	ResetsByAdmin   int `json:"claves_restablecidas_por_admin"`
+	Lockouts        int `json:"bloqueos"`
+	Denied          int `json:"accesos_denegados"`
+	AccountsCreated int `json:"cuentas_creadas"`
+}
+
+type AccessDay struct {
+	Day             string `json:"dia"`
+	Logins          int    `json:"ingresos"`
+	FailedLogins    int    `json:"ingresos_fallidos"`
+	PasswordChanges int    `json:"cambios_clave"`
+	Denied          int    `json:"accesos_denegados"`
+}
+
+type AccessNow struct {
+	ActiveSessions int            `json:"sesiones_activas"`
+	Accounts       int            `json:"cuentas"`
+	ActiveAccounts int            `json:"cuentas_activas"`
+	ByRole         map[string]int `json:"por_rol"`
+	Locked         int            `json:"bloqueadas"`
+	TempPassword   int            `json:"con_clave_temporal"`
+}
+
+type AccessUser struct {
+	User            string     `json:"usuario"`
+	Role            string     `json:"rol"`
+	Active          bool       `json:"activo"`
+	Logins          int        `json:"ingresos"`
+	FailedLogins    int        `json:"ingresos_fallidos"`
+	PasswordChanges int        `json:"cambios_clave"`
+	LastLogin       *time.Time `json:"ultimo_ingreso"`
+}
+
+type AccessIP struct {
+	IP           string `json:"ip"`
+	FailedLogins int    `json:"ingresos_fallidos"`
+	Denied       int    `json:"accesos_denegados"`
+}
+
+// Audit actions the dashboard counts. The names are what the audit log stores.
+const (
+	ActLogin           = "login"
+	ActLoginFailed     = "login_fallido"
+	ActLogout          = "logout"
+	ActPasswordChange  = "cambio_clave"
+	ActResetRequested  = "recuperacion_solicitada"
+	ActPasswordReset   = "clave_restablecida"
+	ActLockout         = "cuenta_bloqueada"
+	ActDenied          = "acceso_denegado"
+	ActAccountCreated  = "usuario_creado"
+	DetailResetByEmail = "por correo"
+)

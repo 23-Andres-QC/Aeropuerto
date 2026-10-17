@@ -344,6 +344,7 @@ func (a *Auth) login(w http.ResponseWriter, r *http.Request) {
 	if wait, blocked := a.limiter.blocked(ip, now); blocked {
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
 		slog.Warn("login bloqueado por intentos fallidos", "ip", ip)
+		a.accounts.Audit(r.Context(), Principal{}, ip, domain.ActLoginFailed, forLog(in.User), "dirección bloqueada por intentos fallidos")
 		fail(w, http.StatusTooManyRequests, "Demasiados intentos. Espera unos minutos y vuelve a probar.")
 		return
 	}
@@ -353,11 +354,13 @@ func (a *Auth) login(w http.ResponseWriter, r *http.Request) {
 	case errors.As(err, &locked):
 		w.Header().Set("Retry-After", strconv.Itoa(int(time.Until(locked.Until).Seconds())+1))
 		slog.Warn("login rechazado: cuenta bloqueada", "usuario", forLog(in.User), "ip", ip)
+		a.accounts.Audit(r.Context(), Principal{}, ip, domain.ActLoginFailed, forLog(in.User), "cuenta bloqueada")
 		fail(w, http.StatusTooManyRequests, "Esta cuenta está bloqueada unos minutos por intentos fallidos.")
 		return
 	case errors.Is(err, services.ErrBadLogin):
 		n := a.limiter.fail(ip, now)
 		slog.Warn("login fallido", "usuario", forLog(in.User), "ip", ip, "intentos", n)
+		a.accounts.Audit(r.Context(), Principal{}, ip, domain.ActLoginFailed, forLog(in.User), "usuario o contraseña incorrectos")
 		time.Sleep(300 * time.Millisecond)
 		fail(w, http.StatusUnauthorized, "Usuario o contraseña incorrectos.")
 		return
@@ -379,6 +382,7 @@ func (a *Auth) logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(CookieName); err == nil && a.accounts != nil {
 		if p, err := a.accounts.Authenticate(r.Context(), cookie.Value); err == nil {
 			slog.Info("sesión cerrada", "usuario", forLog(p.User), "ip", clientIP(r))
+			a.accounts.Audit(r.Context(), p, clientIP(r), domain.ActLogout, p.User, "")
 		}
 		if err := a.accounts.Logout(r.Context(), cookie.Value); err != nil {
 			slog.Error("no se pudo revocar la sesión", "error", err)

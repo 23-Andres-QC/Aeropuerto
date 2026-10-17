@@ -54,6 +54,8 @@ type AccountRepository interface {
 	AddAudit(ctx context.Context, e domain.AuditEntry) error
 	Audit(ctx context.Context, limit int) ([]domain.AuditEntry, error)
 	PurgeAudit(ctx context.Context, cutoff time.Time) (int, error)
+	// AccessSummary counts the audit actions since the given moment (days in Lima time) and the state of the accounts now.
+	AccessSummary(ctx context.Context, since time.Time, now time.Time) (domain.AccessSummary, error)
 }
 
 // PrivacyRepository applies the retention of raw data.

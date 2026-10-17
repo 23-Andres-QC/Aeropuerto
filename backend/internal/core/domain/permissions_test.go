@@ -5,14 +5,15 @@ import "testing"
 func TestModuleOf(t *testing.T) {
 	for _, c := range []struct{ method, path, want string }{
 		{"GET", "/api/v1/sites", ModBase}, {"GET", "/api/v1/sites/esan/config", ModBase}, {"GET", "/api/v1/sites/esan/sessions", ModBase},
-		{"GET", "/api/v1/sites/esan/sessions/s1/replay", ModEnVivo}, {"GET", "/api/v1/sites/esan/media/a/b.mp4", ModEnVivo},
+		{"GET", "/api/v1/sites/esan/sessions/s1/replay", ModBase}, {"GET", "/api/v1/sites/esan/media/a/b.mp4", ModEnVivo},
+		{"POST", "/api/v1/sites/esan/sessions", ModEnVivo}, {"DELETE", "/api/v1/sites/esan/sessions/s1", ModConfig},
 		{"GET", "/api/v1/cameras/cam01/watch", ModEnVivo}, {"POST", "/api/v1/cameras/cam01/detections/publish", ModEnVivo},
 		{"GET", "/api/v1/telefonos", ModTelefono}, {"DELETE", "/api/v1/telefonos/x", ModTelefono},
-		{"GET", "/api/v1/sites/esan/ventas/resumen", ModVentas}, {"POST", "/api/v1/sites/esan/sessions/s1/ventas/emparejar", ModVentas},
+		{"GET", "/api/v1/sites/esan/ventas/resumen", ModVentas}, {"POST", "/api/v1/sites/esan/sessions/s1/ventas/emparejar", ModConfig}, {"POST", "/api/v1/sites/esan/ventas/tickets", ModConfig},
+		{"POST", "/api/v1/sites/esan/ventas/simulados", ModConfig},
 		{"GET", "/api/v1/sites/esan/trafico/calor", ModInsights}, {"GET", "/api/v1/sites/esan/sessions/s1/insights", ModInsights},
 		{"PUT", "/api/v1/sites/esan/trafico/umbrales", ModConfig}, {"POST", "/api/v1/sites/esan/trafico/recalcular", ModConfig},
 		{"POST", "/api/v1/sites", ModConfig}, {"PUT", "/api/v1/sites/esan/plano", ModConfig}, {"POST", "/api/v1/sites/esan/zones", ModConfig},
-		{"POST", "/api/v1/sites/esan/sessions", ModConfig},
 		{"GET", "/api/v1/usuarios", ModUsuarios}, {"GET", "/api/v1/auditoria", ModUsuarios}, {"PUT", "/api/v1/sites/esan/grupo-minimo", ModUsuarios},
 		{"GET", "/api/v1/sites/esan/tiendas/3/llaves", ModUsuarios}, {"POST", "/api/v1/demo", ModUsuarios}, {"GET", "/api/v1/privacidad", ModUsuarios},
 		// lo que nadie listó va al módulo más estricto que puede cambiar cosas

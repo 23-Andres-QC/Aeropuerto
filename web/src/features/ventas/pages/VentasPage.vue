@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { sesion } from "../../../core/auth";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, type Config, type Local } from "../../sitios/api";
@@ -22,14 +23,18 @@ const route = useRoute();
 const router = useRouter();
 
 type Pestana = "resumen" | "pronostico" | "cuando" | "emparejamiento" | "tickets" | "datos";
-const PESTANAS: { id: Pestana; nombre: string }[] = [
+const TODAS: { id: Pestana; nombre: string; edita?: boolean }[] = [
   { id: "resumen", nombre: "Resumen" },
   { id: "pronostico", nombre: "Pronóstico" },
   { id: "cuando", nombre: "Cuándo se vende" },
-  { id: "emparejamiento", nombre: "Emparejamiento" },
-  { id: "tickets", nombre: "Tickets" },
-  { id: "datos", nombre: "Datos" },
+  { id: "emparejamiento", nombre: "Emparejamiento", edita: true },
+  { id: "tickets", nombre: "Tickets", edita: true },
+  { id: "datos", nombre: "Datos", edita: true },
 ];
+// Quien solo mira (el rol negocio) ve el resumen, el pronóstico y cuándo se vende; cargar tickets, emparejar y generar datos son de
+// Configuración y la API se los niega.
+const puedeEditar = sesion.value?.modulos?.includes("configuracion") ?? true;
+const PESTANAS = TODAS.filter((p) => puedeEditar || !p.edita);
 const pestana = ref<Pestana>(PESTANAS.some((p) => p.id === route.query.vista) ? (route.query.vista as Pestana) : "resumen");
 watch(pestana, (v) => router.replace({ query: { ...route.query, vista: v } }));
 // La paleta de comandos (Ctrl+K) manda a otra pestaña con la página ya abierta.

@@ -88,7 +88,10 @@ func TestRolesInTheDatabase(t *testing.T) {
 		{"negocio abre Ventas", bizCookie, "GET", "/api/v1/sites/esan/ventas/resumen", 200},
 		{"negocio abre Insights", bizCookie, "GET", "/api/v1/sites/esan/trafico/resumen", 200},
 		{"negocio no abre Teléfonos", bizCookie, "GET", "/api/v1/telefonos", 403},
-		{"negocio no abre la reproducción", bizCookie, "GET", "/api/v1/sites/esan/sessions/00000000-0000-0000-0000-000000000000/replay", 403},
+		{"negocio sí abre la reproducción (Insights dibuja sus mapas con ella)", bizCookie, "GET", "/api/v1/sites/esan/sessions/00000000-0000-0000-0000-000000000000/replay", 404},
+		{"seguridad abre la reproducción", secCookie, "GET", "/api/v1/sites/esan/sessions/00000000-0000-0000-0000-000000000000/replay", 404},
+		{"negocio no carga tickets", bizCookie, "POST", "/api/v1/sites/esan/ventas/tickets", 403},
+		{"negocio no guarda capturas", bizCookie, "POST", "/api/v1/sites/esan/sessions", 403},
 		{"negocio no ve la bitácora", bizCookie, "GET", "/api/v1/auditoria", 403},
 		{"negocio no borra", bizCookie, "DELETE", "/api/v1/sites/esan/ventas/tickets/1", 403},
 	} {
@@ -189,5 +192,87 @@ func TestPasswordResetInTheDatabase(t *testing.T) {
 	now = now.Add(31 * time.Minute)
 	if err = svc.ValidateReset(ctx, newer); err == nil {
 		t.Error("el enlace debía vencer a los 30 minutos")
+	}
+}
+
+// TestAccessDashboardInTheDatabase: the dashboard's SQL counts what the audit log holds (logins, failures, password changes,
+// logouts, accounts created), per day, per user and per address, in Lima time.
+func TestAccessDashboardInTheDatabase(t *testing.T) {
+	c, _ := newClient(t)
+	db, _, _ := setup(t)
+	ctx := context.Background()
+	const user = "it-panel"
+	db.Exec(ctx, "DELETE FROM users WHERE username = $1", user)
+	t.Cleanup(func() { db.Exec(ctx, "DELETE FROM users WHERE username = $1", user) })
+	admin := c.login(testAdminUser, testAdminPassword)
+	summary := func() domain.AccessSummary {
+		w := c.do("GET", "/api/v1/auditoria/resumen?dias=14", nil, cookie(admin))
+		if w.Code != 200 {
+			t.Fatalf("resumen: %d %s", w.Code, w.Body)
+		}
+		return decodeJSON[domain.AccessSummary](t, w.Body.Bytes())
+	}
+	before := summary()
+	if before.Days != 14 || len(before.PerDay) != 14 || before.Now.ActiveSessions < 1 || before.Now.ByRole[domain.RoleAdmin] < 1 {
+		t.Fatalf("antes: %+v", before)
+	}
+
+	w := c.do("POST", "/api/v1/usuarios", map[string]any{"usuario": user, "correo": user + "@lap.test", "rol": "negocio"}, cookie(admin))
+	if w.Code != 201 {
+		t.Fatalf("crear: %d %s", w.Code, w.Body)
+	}
+	temp := decodeJSON[struct {
+		Temporary string `json:"clave_temporal"`
+	}](t, w.Body.Bytes()).Temporary
+	from := func(ip string) func(*http.Request) { return func(r *http.Request) { r.Header.Set("X-Real-IP", ip) } }
+	for i := 0; i < 2; i++ {
+		if w := c.do("POST", "/api/v1/auth/login", map[string]string{"usuario": user, "clave": "clave-equivocada-1"}, from("198.51.100.88")); w.Code != 401 {
+			t.Fatalf("login fallido: %d", w.Code)
+		}
+	}
+	ck := c.login(user, temp)
+	if w := c.do("POST", "/api/v1/auth/password", map[string]string{"actual": temp, "nueva": "Clave-definitiva-9-panel"}, cookie(ck)); w.Code != 204 {
+		t.Fatalf("cambiar clave: %d", w.Code)
+	}
+	if w := c.do("POST", "/api/v1/auth/logout", nil, cookie(ck)); w.Code != 204 {
+		t.Fatalf("salir: %d", w.Code)
+	}
+
+	after := summary()
+	d := func(a, b int) int { return a - b }
+	if d(after.Totals.Logins, before.Totals.Logins) != 1 || d(after.Totals.FailedLogins, before.Totals.FailedLogins) != 2 ||
+		d(after.Totals.PasswordChanges, before.Totals.PasswordChanges) != 1 || d(after.Totals.Logouts, before.Totals.Logouts) != 1 ||
+		d(after.Totals.AccountsCreated, before.Totals.AccountsCreated) != 1 {
+		t.Errorf("los totales no avanzaron como debían:\nantes   %+v\ndespués %+v", before.Totals, after.Totals)
+	}
+	today := after.PerDay[len(after.PerDay)-1]
+	if today.Logins < 1 || today.FailedLogins < 2 || today.PasswordChanges < 1 {
+		t.Errorf("hoy: %+v", today)
+	}
+	var mine *domain.AccessUser
+	for i := range after.PerUser {
+		if after.PerUser[i].User == user {
+			mine = &after.PerUser[i]
+		}
+	}
+	if mine == nil || mine.Logins != 1 || mine.FailedLogins != 2 || mine.PasswordChanges != 1 || mine.Role != domain.RoleBusiness || mine.LastLogin == nil || !mine.Active {
+		t.Errorf("la cuenta de prueba: %+v", mine)
+	}
+	found := false
+	for _, ip := range after.Noisy {
+		found = found || (ip.IP == "198.51.100.88" && ip.FailedLogins == 2)
+	}
+	if !found {
+		t.Errorf("la dirección con los fallos debía salir: %+v", after.Noisy)
+	}
+	if after.Now.Accounts != before.Now.Accounts+1 || after.Now.ByRole[domain.RoleBusiness] != before.Now.ByRole[domain.RoleBusiness]+1 || after.Now.TempPassword != before.Now.TempPassword {
+		t.Errorf("las cuentas ahora: %+v (antes %+v)", after.Now, before.Now)
+	}
+	// Ni la contraseña equivocada ni la nueva están en lo que se devuelve.
+	raw := c.do("GET", "/api/v1/auditoria/resumen?dias=14", nil, cookie(admin)).Body.String()
+	for _, secret := range []string{"clave-equivocada-1", "Clave-definitiva-9-panel", temp} {
+		if strings.Contains(raw, secret) {
+			t.Errorf("el panel no debe llevar %q", secret)
+		}
 	}
 }
