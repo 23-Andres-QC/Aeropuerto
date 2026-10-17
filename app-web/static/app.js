@@ -63,6 +63,7 @@ const app = {
   capturas: [], // y la hora en que se tomó cada uno (antes de comprimirlo): a esa hora corresponden sus cajas
   codificando: false,
   ultimoEnvio: 0,
+  ultimoCuadro: 0, // cuándo se tomó el último cuadro (para la pantalla; se envía si la red lo permite)
   envios: [],
   idas: [], // ms entre enviar un cuadro y su acuse
   nivel: 0, // índice en LADOS_ENVIO
@@ -303,10 +304,16 @@ function bucleEnvio() {
     app.capturas = [];
   }
   const fps = app.lectores > 0 || app.espectadores > 0 ? FPS_VIVO : FPS_EN_ESPERA;
-  if (app.codificando || app.enVuelo.length >= enVueloPermitido(fps)) return;
-  if (ahora - app.ultimoEnvio < 1000 / fps - 4) return;
-  app.codificando = true;
-  app.ultimoEnvio = ahora;
+  // Un cuadro a su ritmo, se pueda enviar o no: la pantalla de este teléfono muestra todos (atrasados, con sus cajas
+  // interpoladas) aunque la red retenga los envíos. Antes solo guardaba los que lograba enviar y, con la Wi-Fi trabada
+  // (pausas de ~0,5 s), su propia pantalla se congelaba aunque la cámara siguiera.
+  if (ahora - app.ultimoCuadro < 1000 / fps - 4) return;
+  app.ultimoCuadro = ahora;
+  const enviar = !app.codificando && app.enVuelo.length < enVueloPermitido(fps);
+  if (enviar) {
+    app.codificando = true;
+    app.ultimoEnvio = ahora;
+  }
   const k = Math.min(1, LADOS_ENVIO[app.nivel] / Math.max(video.videoWidth, video.videoHeight));
   const w = Math.round(video.videoWidth * k);
   const h = Math.round(video.videoHeight * k);
@@ -323,6 +330,7 @@ function bucleEnvio() {
       if (viejo !== app.mostrado) viejo.imagen.close();
     }
   }).catch(() => {});
+  if (!enviar) return; // la red todavía no acusó los anteriores: este cuadro solo va a la pantalla
   comprimir().then((blob) => {
     app.codificando = false;
     if (!blob || ws.readyState !== WebSocket.OPEN) return;
