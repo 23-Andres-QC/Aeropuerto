@@ -1,5 +1,6 @@
-"""Teléfonos: el género sale de 3 cuadros por track, solo se muestra si quedó fijo (certeza de 0,8 o más) y las ventanas
-del seguidor duran lo mismo en segundos a cualquier ritmo."""
+"""Teléfonos: el género queda fijo en cuanto 2 votos o más llegan a 0,8 de certeza (se sigue probando hasta
+INTENTOS_GENERO cuadros por track), solo se muestra si quedó fijo y las ventanas del seguidor duran lo mismo en segundos
+a cualquier ritmo."""
 import math
 import sys
 import types
@@ -90,23 +91,33 @@ class GeneroSoloFijo(unittest.TestCase):
         self.assertEqual(p.genero, "Mujer")
 
 
-class TresCuadros(unittest.TestCase):
-    def test_con_tres_cuadros_seguros_queda_fijo_y_no_se_vuelve_a_calcular(self):
-        s = sesion([("Mujer", 0.9), ("Mujer", 0.85), ("Mujer", 0.95)], personas={7: persona()})
+class HastaFijarse(unittest.TestCase):
+    def test_con_dos_votos_seguros_queda_fijo_y_no_se_vuelve_a_calcular(self):
+        s = sesion([("Mujer", 0.9), ("Mujer", 0.85)] + [("Mujer", 0.95)] * 10, personas={7: persona()})
         muestrear(s, INTENTOS_GENERO + 2)
-        self.assertEqual(s.motor.genero.llamadas, INTENTOS_GENERO)
+        self.assertEqual(s.motor.genero.llamadas, 2, "fijo al segundo voto seguro: CLIP ya no trabaja para este track")
         self.assertEqual(s.fijos[("tel-1", 4)][0], "Mujer")
-        self.assertAlmostEqual(s.fijos[("tel-1", 4)][1], 0.9)
-        self.assertEqual(s.memoria.guardados, [(7, "Mujer", s.fijos[("tel-1", 4)][1])])
         self.assertNotIn(("tel-1", 4), s.motor.genero.memory, "decidido: sus votos se sueltan")
+        # El carril rápido lo muestra y se lo pasa a su persona.
+        f = fila()
+        s._genero("tel-1", f)
+        self.assertEqual(f["genero"], "Mujer")
+        self.assertEqual(s.memoria.guardados, [(7, "Mujer", s.fijos[("tel-1", 4)][1])])
 
-    def test_antes_del_tercero_no_se_fija_aunque_vaya_seguro(self):
-        s = sesion([("Hombre", 0.95), ("Hombre", 0.95), ("Hombre", 0.95)])
-        muestrear(s, INTENTOS_GENERO - 1)
+    def test_un_solo_voto_no_lo_fija_aunque_vaya_seguro(self):
+        s = sesion([("Hombre", 0.95)] * 3)
+        muestrear(s, 1)
         self.assertEqual(s.fijos, {})
 
-    def test_sin_llegar_al_umbral_no_se_fija_ni_sigue_gastando(self):
-        s = sesion([("Hombre", 0.6), ("Mujer", 0.7), ("Hombre", 0.65)] + [("Hombre", 0.99)] * 5)
+    def test_sin_certeza_al_principio_sigue_probando_y_se_fija_despues(self):
+        # Antes, con 3 cuadros dudosos el track quedaba sin género para siempre.
+        s = sesion([("Hombre", 0.6), ("Mujer", 0.7), ("Hombre", 0.65)] + [("Hombre", 0.99)] * 10)
+        muestrear(s, INTENTOS_GENERO)
+        self.assertEqual(s.fijos[("tel-1", 4)][0], "Hombre")
+        self.assertGreaterEqual(s.fijos[("tel-1", 4)][1], 0.8)
+
+    def test_sin_llegar_al_umbral_en_todos_sus_intentos_no_se_fija_ni_sigue_gastando(self):
+        s = sesion([("Hombre", 0.9), ("Mujer", 0.9)] * INTENTOS_GENERO)
         muestrear(s, INTENTOS_GENERO + 3)
         self.assertEqual(s.fijos, {})
         self.assertEqual(s.motor.genero.llamadas, INTENTOS_GENERO)

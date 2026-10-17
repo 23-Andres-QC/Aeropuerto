@@ -181,7 +181,7 @@ class PruebasPrimerSegundo(unittest.TestCase):
         escena = Escena(asociador(memoria_ram()))
         segundos, pid = escena.cuando_tiene_id(3, {"tel-a": [(1, A, 300)]}, ("tel-a", 1))
         self.assertIsNotNone(pid)
-        self.assertLessEqual(segundos, 1.2, "antes tardaba 2 s como mínimo")
+        self.assertLessEqual(segundos, 0.8, "antes tardaba 2 s como mínimo, y después ~1,1 s")
 
     def test_quien_ya_se_vio_se_reconoce_en_menos_de_un_segundo(self):
         memoria = memoria_ram()
@@ -203,8 +203,9 @@ class PruebasPrimerSegundo(unittest.TestCase):
         segundos, pid = escena.cuando_tiene_id(5, {"tel-a": [(6, D, 600)]}, ("tel-a", 6))
         self.assertIsNotNone(pid)
         self.assertNotEqual(pid, de_a)
-        self.assertGreaterEqual(segundos, 2.9)
-        self.assertLessEqual(segundos, 3.3)
+        from memoria_identidades import ESPERA_DUDA_S
+        self.assertGreaterEqual(segundos, ESPERA_DUDA_S - 0.1)
+        self.assertLessEqual(segundos, ESPERA_DUDA_S + 0.3)
 
 
 class BackendFalso(BaseHTTPRequestHandler):
