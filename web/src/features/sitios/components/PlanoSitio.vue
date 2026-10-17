@@ -123,7 +123,7 @@ const capas = computed(() =>
     const ps: Punto[] = c.piso_m.map(([x, y]) => [px(x), py(y)]);
     const g = caja(ps.map((q) => girar(q, giro.value)));
     return { nombre: c.nombre, fondo: c.fondo, ancho: c.tam_px[0], alto: c.tam_px[1], transform: `matrix(${a} ${b} ${cc} ${d} ${X - (a * u + cc * v)} ${Y - (b * u + d * v)})`,
-      contorno: ps.map((q) => q.join(",")).join(" "), caja: caja(ps), vista: g, x: g.x + g.w / 2, abajo: g.y + g.h };
+      contorno: ps.map((q) => q.join(",")).join(" "), caja: caja(ps), vista: g, x: g.x + g.w / 2, arriba: g.y, abajo: g.y + g.h };
   }),
 );
 /** La zona grabada (otra capa) que se está mirando de cerca: la que tiene el centro de la vista; ninguna desde el campus ni sobre el sitio. */
@@ -135,6 +135,17 @@ const capaEnVista = computed(() => {
   const c = capas.value.find((q) => Math.abs(cx - (q.vista.x + q.vista.w / 2)) <= q.vista.w * 0.65 && Math.abs(cy - (q.vista.y + q.vista.h / 2)) <= q.vista.h * 0.65 && dist(q.vista.x + q.vista.w / 2, q.vista.y + q.vista.h / 2) < delSitio);
   return c?.nombre ?? null;
 });
+/**
+ * Desde el campus las zonas grabadas se marcan sin texto (con varias, los nombres se pisarían): un clic en una zona muestra su nombre y un
+ * segundo clic acerca a ella. Un clic en otro lado, o acercarse, la suelta.
+ */
+const elegida = ref<string | null>(null);
+function tocar(clave: string, acercar: () => void) {
+  if (elegida.value === clave) {
+    elegida.value = null;
+    acercar();
+  } else elegida.value = clave;
+}
 /** Acercar a una de las zonas grabadas. */
 const irACapa = (i: number) => {
   const c = capas.value[i].caja;
@@ -537,6 +548,7 @@ function soltar() {
 
 function clic(ev: MouseEvent) {
   if (suprimido()) return;
+  elegida.value = null;
   if (!props.dibujando) {
     emit("fondo");
     return;
@@ -760,27 +772,28 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
           <text :x="px(p.x) + 12 * e" :y="py(p.y) - 8 * e" class="persona-etiqueta" :style="{ fill: p.color }">{{ p.etiqueta }}</text>
         </g>
         <!-- Desde el campus, el sitio grabado se marca y un clic acerca a él. -->
-        <g v-if="enCampus" class="entrada-sitio" role="button" tabindex="0" @click.stop="entrarAlSitio" @keydown.enter="entrarAlSitio">
+        <g v-if="enCampus" class="entrada-sitio" :class="{ elegida: elegida === 'sitio' }" role="button" tabindex="0" @click.stop="tocar('sitio', entrarAlSitio)" @keydown.enter="tocar('sitio', entrarAlSitio)">
           <polygon v-if="mapa.piso_L_m?.length" :points="puntos(mapa.piso_L_m)" class="marca-sitio" />
           <rect v-else :width="ancho" :height="alto" class="marca-sitio" />
-          <title>Acercar a {{ campus?.nombre || "la zona grabada" }}</title>
+          <title>{{ campus?.nombre || "Zona grabada" }}</title>
         </g>
         <!-- Las otras zonas grabadas del sitio: desde el campus se marcan y un clic acerca a ellas. -->
         <template v-if="enCampus">
-          <g v-for="(c, i) in capas" :key="'m' + c.nombre" class="entrada-vecino" role="button" tabindex="0" @click.stop="irACapa(i)" @keydown.enter="irACapa(i)">
+          <g v-for="(c, i) in capas" :key="'m' + c.nombre" class="entrada-vecino" :class="{ elegida: elegida === c.nombre }" role="button" tabindex="0" @click.stop="tocar(c.nombre, () => irACapa(i))" @keydown.enter="tocar(c.nombre, () => irACapa(i))">
             <polygon :points="c.contorno" class="marca-vecino" />
-            <title>Acercar a {{ c.nombre }}</title>
+            <title>{{ c.nombre }}</title>
           </g>
         </template>
       </g>
       <!-- Fuera del grupo girado: los textos siempre derechos. -->
-      <g v-if="enCampus" class="entrada-sitio" @click.stop="entrarAlSitio">
+      <g v-if="enCampus && elegida === 'sitio'" data-prueba="etiqueta-zona">
         <text :x="etiquetaSitio.x" :y="etiquetaSitio.arriba - 14 * e" class="nombre-sitio">{{ campus?.nombre || "Zona grabada" }}</text>
-        <text :x="etiquetaSitio.x" :y="etiquetaSitio.abajo + 24 * e" class="ayuda-sitio">Clic para acercar</text>
+        <text :x="etiquetaSitio.x" :y="etiquetaSitio.abajo + 24 * e" class="ayuda-sitio">Clic otra vez para acercar</text>
       </g>
       <g v-if="enCampus">
-        <g v-for="(c, i) in capas" :key="'n' + c.nombre" class="entrada-vecino" @click.stop="irACapa(i)">
-          <text :x="c.x" :y="c.abajo + 18 * e" class="nombre-vecino">{{ c.nombre }}</text>
+        <g v-for="c in capas.filter((q) => q.nombre === elegida)" :key="'n' + c.nombre" data-prueba="etiqueta-zona">
+          <text :x="c.x" :y="c.arriba - 26 * e" class="nombre-vecino">{{ c.nombre }}</text>
+          <text :x="c.x" :y="c.arriba - 9 * e" class="ayuda-vecino">Clic otra vez para acercar</text>
         </g>
       </g>
       <g class="escala" :transform="`translate(${vista.x + 14 * e} ${vista.y + vista.h - 18 * e})`">
@@ -887,7 +900,8 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
   animation: latido 1.6s ease-in-out infinite;
 }
 .entrada-sitio:hover .marca-sitio,
-.entrada-sitio:focus-visible .marca-sitio {
+.entrada-sitio:focus-visible .marca-sitio,
+.entrada-sitio.elegida .marca-sitio {
   fill: rgba(37, 99, 235, 0.4);
 }
 @keyframes latido {
@@ -910,8 +924,19 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
   stroke-width: 3;
 }
 .entrada-vecino:hover .marca-vecino,
-.entrada-vecino:focus-visible .marca-vecino {
+.entrada-vecino:focus-visible .marca-vecino,
+.entrada-vecino.elegida .marca-vecino {
   fill: rgba(234, 88, 12, 0.4);
+}
+.ayuda-vecino {
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #fff;
+  pointer-events: none;
+  font-size: calc(12px * var(--e));
+  font-weight: 600;
+  fill: #9a3412;
+  stroke-width: calc(3px * var(--e));
 }
 .nombre-vecino {
   text-anchor: middle;
