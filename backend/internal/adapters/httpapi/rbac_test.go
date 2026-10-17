@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -378,5 +379,84 @@ func TestRecoveryRateLimit(t *testing.T) {
 	}
 	if w := forgot(rg, "nadie@lap.test", "198.51.100.10"); w.Code != http.StatusAccepted {
 		t.Errorf("otra dirección no se frena: %d", w.Code)
+	}
+}
+
+// El panel de accesos cuenta lo que pasó: ingresos, fallidos, salidas, cambios y restablecimientos de clave, recuperaciones,
+// bloqueos y accesos denegados; por día, por usuario y por dirección. Solo lo ve el superadmin.
+func TestAccessDashboard(t *testing.T) {
+	rg := newRig(t)
+	m := http.NewServeMux() // el router de verdad: con las rutas de cuentas y del panel
+	rg.a.routes(m)
+	accountHandler{accounts: rg.svc}.routes(m)
+	m.HandleFunc("GET /api/v1/telefonos", func(w http.ResponseWriter, r *http.Request) {})
+	rg.h = sameOrigin(rg.a.Require(m))
+	mail := newFakeMailer()
+	rg.svc.SetMailer(mail, "http://app.test")
+	admin := rg.login(t)
+	business := rg.newStaff(t, "gerente", domain.RoleBusiness) // 1 ingreso y 1 cambio de clave
+	for i := 0; i < 3; i++ {
+		call(rg.h, "POST", "/api/v1/auth/login", map[string]string{"usuario": "gerente", "clave": "mala-clave-77"}, func(r *http.Request) { r.Header.Set("X-Real-IP", "198.51.100.77") })
+	}
+	call(rg.h, "GET", "/api/v1/telefonos", nil, withCookie(business)) // un acceso denegado
+	forgot(rg, "gerente@lap.test", "198.51.100.5")
+	_, _, text := mail.wait(t)
+	if w := call(rg.h, "POST", "/api/v1/auth/restablecer", map[string]string{"token": tokenFrom(t, text), "nueva": "Nueva-clave-2026"}, nil); w.Code != http.StatusNoContent {
+		t.Fatalf("restablecer: %d", w.Code)
+	}
+	call(rg.h, "POST", "/api/v1/auth/logout", nil, withCookie(admin))
+
+	admin = rg.login(t)
+	w := call(rg.h, "GET", "/api/v1/auditoria/resumen?dias=7", nil, withCookie(admin))
+	if w.Code != 200 {
+		t.Fatalf("resumen: %d %s", w.Code, w.Body)
+	}
+	var sum domain.AccessSummary
+	if err := json.Unmarshal(w.Body.Bytes(), &sum); err != nil {
+		t.Fatal(err)
+	}
+	tot := sum.Totals
+	if tot.Logins != 3 || tot.FailedLogins != 3 || tot.Logouts != 1 || tot.PasswordChanges != 1 || tot.ResetsRequested != 1 || tot.ResetsByMail != 1 || tot.ResetsByAdmin != 0 || tot.Denied != 1 || tot.AccountsCreated != 0 {
+		t.Errorf("totales: %+v", tot)
+	}
+	if sum.Days != 7 || len(sum.PerDay) != 7 {
+		t.Fatalf("un día por cada uno de los 7: %d %d", sum.Days, len(sum.PerDay))
+	}
+	today := sum.PerDay[len(sum.PerDay)-1]
+	if today.Logins != 3 || today.FailedLogins != 3 || today.PasswordChanges != 1 || today.Denied != 1 || sum.PerDay[0].Logins != 0 {
+		t.Errorf("hoy: %+v, hace 6 días: %+v", today, sum.PerDay[0])
+	}
+	var gerente *domain.AccessUser
+	for i := range sum.PerUser {
+		if sum.PerUser[i].User == "gerente" {
+			gerente = &sum.PerUser[i]
+		}
+	}
+	if gerente == nil || gerente.Logins != 1 || gerente.FailedLogins != 3 || gerente.PasswordChanges != 2 || gerente.Role != domain.RoleBusiness {
+		t.Errorf("gerente: %+v", gerente)
+	}
+	if len(sum.Noisy) == 0 || sum.Noisy[0].IP != "198.51.100.77" || sum.Noisy[0].FailedLogins != 3 {
+		t.Errorf("la dirección con más fallos: %+v", sum.Noisy)
+	}
+	if sum.Now.ActiveSessions < 1 || sum.Now.Accounts != 2 || sum.Now.ByRole[domain.RoleBusiness] != 1 {
+		t.Errorf("ahora: %+v", sum.Now)
+	}
+	// Nunca una contraseña, un enlace ni un token.
+	body := w.Body.String()
+	for _, secret := range []string{"mala-clave-77", "Nueva-clave-2026", testPassword, tokenFrom(t, text)} {
+		if strings.Contains(body, secret) {
+			t.Errorf("el panel no debe llevar %q", secret)
+		}
+	}
+	// Solo el superadmin; los demás roles reciben 403 y el rango se acota.
+	business = rg.loginAs(t, "gerente", "Nueva-clave-2026") // el restablecimiento cerró su sesión
+	if w := call(rg.h, "GET", "/api/v1/auditoria/resumen", nil, withCookie(business)); w.Code != http.StatusForbidden {
+		t.Errorf("negocio no ve el panel: %d", w.Code)
+	}
+	if w := call(rg.h, "GET", "/api/v1/auditoria/resumen", nil, nil); w.Code != http.StatusUnauthorized {
+		t.Errorf("sin sesión: %d", w.Code)
+	}
+	if w := call(rg.h, "GET", "/api/v1/auditoria/resumen?dias=99999", nil, withCookie(admin)); w.Code != 200 || !strings.Contains(w.Body.String(), `"dias":365`) {
+		t.Errorf("el rango máximo es 365 días: %d", w.Code)
 	}
 }

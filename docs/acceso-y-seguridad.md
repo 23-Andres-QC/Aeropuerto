@@ -80,6 +80,19 @@ Para probarlo: crea una cuenta con tu correo (Cuentas → Crear cuenta) y usa «
 - **Auditoría** (`audit_log`, se ve en 4. Registros solo para el superadmin): ingresos, cuentas bloqueadas, cambios y restablecimientos de contraseña, solicitudes de
   recuperación, cuentas creadas/desactivadas/borradas, cambios de correo y de rol, accesos denegados (403). Cada línea lleva quién, qué, IP y cuándo; nunca contraseñas, tokens ni cuerpos.
 
+## Panel de accesos (dónde ver ingresos y cambios de contraseña)
+
+**4. Registros → «Accesos y contraseñas»** (solo superadmin; también `GET /api/v1/auditoria/resumen?dias=7|30|90`). Con selector de 7, 30 o 90 días muestra:
+
+- Tarjetas: **ingresos**, **ingresos fallidos**, **cambios de contraseña**, **recuperaciones por correo** (pedidas y completadas), **claves restablecidas por el admin**,
+  **accesos denegados**, **cuentas bloqueadas**, **sesiones activas ahora** y cuentas con clave temporal.
+- Gráfico de **ingresos y fallidos por día** (hora de Lima; los días sin movimiento también salen).
+- Tabla **por cuenta**: ingresos, fallidos, cambios de clave y último ingreso. Y las **direcciones con más fallos**.
+- Debajo, la bitácora completa («Accesos y cambios de cuentas», últimas 200 acciones).
+
+Sale de la bitácora (`audit_log`) y de las cuentas. Ahora también se registran los ingresos fallidos (`login_fallido`, con el usuario que se intentó y la dirección,
+nunca la contraseña) y las salidas (`logout`). Nunca lleva contraseñas, enlaces ni tokens. La bitácora se conserva el tiempo de la política de retención.
+
 ## Checklist de seguridad
 
 Cubierto:

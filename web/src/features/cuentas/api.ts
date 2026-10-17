@@ -35,6 +35,28 @@ export type LlaveTienda = {
 
 export type LineaBitacora = { cuando: string; quien: string; rol: string; accion: string; sobre: string; detalle: string; ip: string };
 
+/** Panel de accesos: lo que dice la bitácora y las cuentas de los últimos días (sin contraseñas, enlaces ni tokens). */
+export type ResumenAccesos = {
+  dias: number;
+  desde: string;
+  totales: {
+    ingresos: number;
+    ingresos_fallidos: number;
+    salidas: number;
+    cambios_clave: number;
+    recuperaciones_pedidas: number;
+    claves_restablecidas_por_correo: number;
+    claves_restablecidas_por_admin: number;
+    bloqueos: number;
+    accesos_denegados: number;
+    cuentas_creadas: number;
+  };
+  por_dia: { dia: string; ingresos: number; ingresos_fallidos: number; cambios_clave: number; accesos_denegados: number }[];
+  ahora: { sesiones_activas: number; cuentas: number; cuentas_activas: number; por_rol: Record<string, number>; bloqueadas: number; con_clave_temporal: number };
+  por_usuario: { usuario: string; rol: string; activo: boolean; ingresos: number; ingresos_fallidos: number; cambios_clave: number; ultimo_ingreso: string | null }[];
+  ips: { ip: string; ingresos_fallidos: number; accesos_denegados: number }[];
+};
+
 export type Politica = {
   vectores_horas: number;
   puntos_dias: number;
@@ -57,6 +79,7 @@ export const cuentas = {
   cambiarCorreo: (id: string, correo: string) => request<Usuario>(`/api/v1/usuarios/${id}/correo`, json("PUT", { correo })),
   activar: (id: string, activo: boolean) => request<Usuario>(`/api/v1/usuarios/${id}/activo`, json("PUT", { activo })),
   borrarUsuario: (id: string) => request<void>(`/api/v1/usuarios/${id}`, { method: "DELETE" }),
+  resumenAccesos: (dias = 30) => request<ResumenAccesos>(`/api/v1/auditoria/resumen?dias=${dias}`),
   bitacora: (limite = 100) => request<LineaBitacora[]>(`/api/v1/auditoria?limite=${limite}`),
 
   llaves: (sitio: string, local: number) => request<LlaveTienda[]>(`/api/v1/sites/${sitio}/tiendas/${local}/llaves`),

@@ -402,3 +402,119 @@ func (r *AccountRepository) CountResetTokens(_ context.Context, userID string, s
 	}
 	return n, nil
 }
+
+func (r *AccountRepository) AccessSummary(_ context.Context, since, now time.Time) (domain.AccessSummary, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	sum := domain.AccessSummary{PerDay: []domain.AccessDay{}, PerUser: []domain.AccessUser{}, Noisy: []domain.AccessIP{}, Now: domain.AccessNow{ByRole: map[string]int{}}}
+	lima := time.FixedZone("America/Lima", -5*3600)
+	days := map[string]*domain.AccessDay{}
+	ips := map[string]*domain.AccessIP{}
+	perUser := map[string]*domain.AccessUser{}
+	for _, u := range r.users {
+		sum.Now.Accounts++
+		if u.Active {
+			sum.Now.ActiveAccounts++
+			sum.Now.ByRole[u.Role]++
+		}
+		if u.LockedUntil != nil && u.LockedUntil.After(now) {
+			sum.Now.Locked++
+		}
+		if u.MustChange {
+			sum.Now.TempPassword++
+		}
+		perUser[u.Username] = &domain.AccessUser{User: u.Username, Role: u.Role, Active: u.Active, LastLogin: u.LastLoginAt}
+	}
+	for _, s := range r.sessions {
+		if s.revokedAt == nil && s.expires.After(now) && s.idle.After(now) {
+			sum.Now.ActiveSessions++
+		}
+	}
+	t := &sum.Totals
+	for _, e := range r.audit {
+		if e.At.Before(since) {
+			continue
+		}
+		day := e.At.In(lima).Format("2006-01-02")
+		d := days[day]
+		if d == nil {
+			d = &domain.AccessDay{Day: day}
+			days[day] = d
+		}
+		ip := func() *domain.AccessIP {
+			if e.IP == "" {
+				return &domain.AccessIP{}
+			}
+			if ips[e.IP] == nil {
+				ips[e.IP] = &domain.AccessIP{IP: e.IP}
+			}
+			return ips[e.IP]
+		}
+		switch e.Action {
+		case domain.ActLogin:
+			t.Logins++
+			d.Logins++
+			if u := perUser[e.Actor]; u != nil {
+				u.Logins++
+			}
+		case domain.ActLoginFailed:
+			t.FailedLogins++
+			d.FailedLogins++
+			ip().FailedLogins++
+			for _, u := range r.users {
+				if u.Username == e.Target || (u.Email != "" && u.Email == e.Target) {
+					perUser[u.Username].FailedLogins++
+				}
+			}
+		case domain.ActLogout:
+			t.Logouts++
+		case domain.ActPasswordChange:
+			t.PasswordChanges++
+			d.PasswordChanges++
+			if u := perUser[e.Actor]; u != nil {
+				u.PasswordChanges++
+			}
+		case domain.ActResetRequested:
+			t.ResetsRequested++
+		case domain.ActPasswordReset:
+			if e.Detail == domain.DetailResetByEmail {
+				t.ResetsByMail++
+			} else {
+				t.ResetsByAdmin++
+			}
+			if u := perUser[e.Target]; u != nil {
+				u.PasswordChanges++
+			}
+		case domain.ActLockout:
+			t.Lockouts++
+		case domain.ActDenied:
+			t.Denied++
+			d.Denied++
+			ip().Denied++
+		case domain.ActAccountCreated:
+			t.AccountsCreated++
+		}
+	}
+	for _, d := range days {
+		sum.PerDay = append(sum.PerDay, *d)
+	}
+	sort.Slice(sum.PerDay, func(i, j int) bool { return sum.PerDay[i].Day < sum.PerDay[j].Day })
+	for _, u := range perUser {
+		sum.PerUser = append(sum.PerUser, *u)
+	}
+	sort.Slice(sum.PerUser, func(i, j int) bool {
+		a, b := sum.PerUser[i], sum.PerUser[j]
+		if a.Logins != b.Logins {
+			return a.Logins > b.Logins
+		}
+		return a.User < b.User
+	})
+	for _, i := range ips {
+		sum.Noisy = append(sum.Noisy, *i)
+	}
+	sort.Slice(sum.Noisy, func(i, j int) bool { return sum.Noisy[i].FailedLogins > sum.Noisy[j].FailedLogins })
+	if len(sum.Noisy) > 5 {
+		sum.Noisy = sum.Noisy[:5]
+	}
+	return sum, nil
+}

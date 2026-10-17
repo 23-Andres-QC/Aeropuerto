@@ -541,3 +541,43 @@ func (s *AccountService) SetEmail(ctx context.Context, id, email string) (domain
 	rec, err := s.repo.UserByID(ctx, id)
 	return rec.User, err
 }
+
+// AccessSummary is the dashboard of the accounts for the last days (1 to 365, 30 by default).
+func (s *AccountService) AccessSummary(ctx context.Context, days int) (domain.AccessSummary, error) {
+	if days <= 0 {
+		days = 30
+	}
+	if days > 365 {
+		days = 365
+	}
+	now := s.now()
+	lima := limaZone()
+	today := now.In(lima)
+	since := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, lima).AddDate(0, 0, -(days - 1))
+	sum, err := s.repo.AccessSummary(ctx, since, now)
+	if err != nil {
+		return sum, err
+	}
+	sum.Days, sum.Since = days, since
+	// One entry per day, also the days nothing happened, so the chart has no holes.
+	have := map[string]domain.AccessDay{}
+	for _, d := range sum.PerDay {
+		have[d.Day] = d
+	}
+	sum.PerDay = sum.PerDay[:0]
+	for i := 0; i < days; i++ {
+		day := since.AddDate(0, 0, i).Format("2006-01-02")
+		d := have[day]
+		d.Day = day
+		sum.PerDay = append(sum.PerDay, d)
+	}
+	return sum, nil
+}
+
+// limaZone is America/Lima (UTC-5, no daylight saving), also where the zone database is missing.
+func limaZone() *time.Location {
+	if l, err := time.LoadLocation("America/Lima"); err == nil {
+		return l
+	}
+	return time.FixedZone("America/Lima", -5*3600)
+}
