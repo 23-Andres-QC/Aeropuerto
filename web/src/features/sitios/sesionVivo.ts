@@ -52,7 +52,10 @@ export type CargaSesion = {
  * Arma el cuerpo del POST. `sesionId` fijo permite volver a guardar la misma captura: el backend reemplaza la anterior.
  * No toca el plano ni las cámaras del sitio (map y cameras van vacíos); las cámaras de las trazas deben existir en el sitio.
  */
-export function construirSesion(personas: PersonaGuardable[], opciones: { sesionId: string; nombre: string; inicio: number; fin: number }): CargaSesion {
+export function construirSesion(
+  personas: PersonaGuardable[],
+  opciones: { sesionId: string; nombre: string; inicio: number; fin: number; conteoDireccion?: unknown },
+): CargaSesion {
   const { sesionId, nombre, inicio, fin } = opciones;
   const iso = (ms: number) => new Date(ms).toISOString();
   const identities: CargaSesion["identities"] = [];
@@ -138,7 +141,13 @@ export function construirSesion(personas: PersonaGuardable[], opciones: { sesion
       status: "DONE",
       recording_start: iso(inicio),
       ended_at: iso(Math.max(fin, inicio)),
-      summary: { personas: identities.length, estado: "Captura en vivo con teléfonos", puntos: p.t.length },
+      // conteo_direccion: quién cruzó la línea de conteo de cada cámara, por sentido, género y con o sin ID (ver enVivo.ts).
+      summary: {
+        personas: identities.length,
+        estado: "Captura en vivo con teléfonos",
+        puntos: p.t.length,
+        ...(opciones.conteoDireccion ? { conteo_direccion: opciones.conteoDireccion } : {}),
+      },
     },
     map: null,
     cameras: [],
