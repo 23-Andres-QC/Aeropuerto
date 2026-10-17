@@ -135,7 +135,11 @@ def caja_de_cuerpo(caja, puntos, confianzas, ancho_frame, alto_frame):
     return np.array([max(0.0, izq), max(0.0, arriba), min(float(ancho_frame), der), min(float(alto_frame), abajo)], np.float32)
 
 
-ASPECTO_SOSPECHOSO = 0.5     # ancho / alto: una caja así de ancha probablemente incluye brazos o a alguien al lado
+# Los puntos del cuerpo se calculan para toda persona de ALTO_MIN_POSE px o más, en cada cuadro. Antes solo para quien
+# medía 90 px o más o tenía una caja ancha (los brazos): alguien que camina balancea los brazos y su caja salía un cuadro
+# de los puntos y el siguiente de YOLO, así que su centro saltaba hasta un 19 % de su alto entre cuadros (p90) y el
+# marcador sobre su cabeza temblaba.
+ALTO_MIN_POSE = 40
 MARGEN_RECORTE = 0.12        # el recorte de cada persona para los puntos, con este margen alrededor de su caja
 
 
@@ -164,7 +168,7 @@ class DetectorCuerpo:
             salida[cid] = [cajas, confianzas, np.zeros(len(cajas), bool)]
             for i, (x1, y1, x2, y2) in enumerate(cajas):
                 a, h = x2 - x1, y2 - y1
-                if h < ALTO_MIN_PARA_PUNTOS and a / max(h, 1.0) < ASPECTO_SOSPECHOSO:
+                if h < ALTO_MIN_POSE:
                     continue
                 mx, my = MARGEN_RECORTE * a + 6, MARGEN_RECORTE * h + 6
                 cx1, cy1 = int(max(0, x1 - mx)), int(max(0, y1 - my))
@@ -186,6 +190,9 @@ class DetectorCuerpo:
                 certeza = r.keypoints.conf.cpu().numpy()[j]
                 caja = caja_de_cuerpo(salida[cid][0][i], puntos, certeza, ancho_f, alto_f)
                 if caja is not None:
+                    # El borde de arriba queda el de YOLO (lo alto de la cabeza): el que se estima desde los ojos y la
+                    # nariz salta más de un cuadro a otro, y de ahí cuelga el marcador.
+                    caja[1] = salida[cid][0][i][1]
                     salida[cid][0][i] = caja
                     salida[cid][2][i] = True
         resultado = {}
