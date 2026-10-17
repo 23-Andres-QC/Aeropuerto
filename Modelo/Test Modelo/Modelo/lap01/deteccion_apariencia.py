@@ -190,8 +190,38 @@ class Appearance:
         return float(mezcla(colour, float(self.deep @ other.deep)))
 
 
+def _galeria_apilada(track):
+    """(firmas de color · pesos, vectores profundos o None) de la galería de un track, ya apiladas. Se rehacen solo
+    cuando la galería cambia (solo crece por el final, con tope): apilar todas las vistas de todos los tracks en cada
+    cuadro era casi todo el tiempo del seguidor con mucha gente (~54 ms por llamada con ~20 personas por cámara)."""
+    galeria = track.gallery
+    clave = (len(galeria), id(galeria[0]), id(galeria[-1]))
+    guardada = getattr(track, "_galeria_apilada", None)
+    if guardada is None or guardada[0] != clave:
+        color = np.stack([v.unit() for v in galeria]) * _PESOS_COLOR
+        deep = np.stack([v.deep for v in galeria]) if all(v.deep is not None for v in galeria) else None
+        guardada = (clave, color, deep)
+        track._galeria_apilada = guardada
+    return guardada[1], guardada[2]
+
+
 def gallery_similarities(signatures, tracks, mezcla):
     """Matriz tracks × detecciones con la mejor vista de la galería de cada track."""
+    if not signatures or not tracks:
+        return np.zeros((len(tracks), len(signatures)), dtype=np.float32)
+    if any(not track.gallery for track in tracks):
+        return _gallery_similarities_sin_cache(signatures, tracks, mezcla)
+    apiladas = [_galeria_apilada(track) for track in tracks]
+    starts = np.cumsum([0] + [len(color) for color, _ in apiladas[:-1]])
+    similarity = np.stack([s.unit() for s in signatures]) @ np.concatenate([color for color, _ in apiladas]).T
+    if all(deep is not None for _, deep in apiladas) and all(s.deep is not None for s in signatures):
+        deep = np.stack([s.deep for s in signatures]) @ np.concatenate([deep for _, deep in apiladas]).T
+        similarity = mezcla(similarity, deep)
+    return np.maximum.reduceat(similarity, starts, axis=1).T.astype(np.float32)
+
+
+def _gallery_similarities_sin_cache(signatures, tracks, mezcla):
+    """gallery_similarities sin galerías apiladas (la cuenta original, para un track sin vistas)."""
     if not signatures or not tracks:
         return np.zeros((len(tracks), len(signatures)), dtype=np.float32)
     gallery, starts = [], []

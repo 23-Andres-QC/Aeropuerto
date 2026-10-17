@@ -135,11 +135,13 @@ def caja_de_cuerpo(caja, puntos, confianzas, ancho_frame, alto_frame):
     return np.array([max(0.0, izq), max(0.0, arriba), min(float(ancho_frame), der), min(float(alto_frame), abajo)], np.float32)
 
 
-# Los puntos del cuerpo se calculan para toda persona de ALTO_MIN_POSE px o más, en cada cuadro. Antes solo para quien
-# medía 90 px o más o tenía una caja ancha (los brazos): alguien que camina balancea los brazos y su caja salía un cuadro
-# de los puntos y el siguiente de YOLO, así que su centro saltaba hasta un 19 % de su alto entre cuadros (p90) y el
-# marcador sobre su cabeza temblaba.
-ALTO_MIN_POSE = 40
+# Los puntos del cuerpo se calculan para toda persona de ALTO_MIN_POSE px o más, en todos sus cuadros, sin mirar si su
+# caja es ancha. Antes también para las chicas con caja ancha (los brazos): alguien que camina balancea los brazos y su
+# caja salía un cuadro de los puntos y el siguiente de YOLO, así que su centro saltaba hasta un 19 % de su alto entre
+# cuadros (p90) y el marcador temblaba. Calcularlos para todos desde 40 px lo arreglaba, pero en una multitud (44
+# personas en dos cuadros de un centro comercial) costaba 124 ms por cuadro contra 4 ms y el modelo bajaba a ~3 cuadros
+# por segundo.
+ALTO_MIN_POSE = 90
 MARGEN_RECORTE = 0.12        # el recorte de cada persona para los puntos, con este margen alrededor de su caja
 
 

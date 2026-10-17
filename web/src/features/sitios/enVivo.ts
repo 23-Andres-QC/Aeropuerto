@@ -55,10 +55,15 @@ function leerModo(): boolean {
 }
 /** El sistema está en modo en vivo: En vivo e Insights muestran lo que ven los teléfonos, no una sesión guardada. */
 export const modoVivo = ref(leerModo());
-/** Se acaba de prender En vivo (no es una recarga con el modo ya prendido): la sesión empieza con la memoria vacía. */
+/** Se acaba de prender En vivo a mano (no es una recarga con el modo ya prendido): la memoria empieza vacía. */
 let empezarLimpio = false;
-export function fijarModoVivo(valor: boolean) {
-  if (valor && !modoVivo.value) empezarLimpio = true;
+/**
+ * Prende o apaga En vivo. `limpiar`: al prenderlo a mano, la memoria del modelo se vacía. Cuando se prende solo (un
+ * teléfono empezó a transmitir) no: los teléfonos ya recibieron sus primeros IDs y, con varias pestañas abiertas, cada
+ * una la vaciaba otra vez a mitad de la sesión. Al apagar ya se vacía, así que la sesión siguiente empieza limpia igual.
+ */
+export function fijarModoVivo(valor: boolean, limpiar = true) {
+  if (valor && !modoVivo.value && limpiar) empezarLimpio = true;
   modoVivo.value = valor;
   try {
     localStorage.setItem(CLAVE_MODO, valor ? "1" : "0");
@@ -1029,7 +1034,7 @@ socketPersistente(`${RELEVO_VIVO}/telefonos/detections/watch`, false, (ev) => {
   try {
     const e = JSON.parse(ev.data as string) as EstadoServicio;
     const hay = Object.values(e.telefonos ?? {}).some((t) => t.estado === "procesando");
-    if (hay && !habiaTelefonos && !modoVivo.value && !location.search.includes("sesion=")) fijarModoVivo(true);
+    if (hay && !habiaTelefonos && !modoVivo.value && !location.search.includes("sesion=")) fijarModoVivo(true, false);
     habiaTelefonos = hay;
   } catch {
     /* un mensaje que no es del servicio: se ignora */

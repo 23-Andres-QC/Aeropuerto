@@ -28,6 +28,11 @@ from urllib.parse import urlsplit
 TEST = Path(__file__).resolve().parent
 MODELO = TEST / "Modelo"
 (MODELO / ".runtime" / "ultralytics").mkdir(parents=True, exist_ok=True)
+# NumPy (OpenBLAS) con un solo hilo: sus cuentas son matrices chicas (el seguidor compara cada persona con las galerías
+# de vistas) y con sus 16 hilos peleando la CPU con los de PyTorch (OpenMP) una cuenta de 0,5 ms tardaba ~380 ms: con
+# ~20 personas por cámara el seguidor no bajaba de ~160 ms por cuadro y el modelo iba a ~2 cuadros por segundo.
+# Tiene que fijarse antes de importar numpy.
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ["YOLO_CONFIG_DIR"] = str(MODELO / ".runtime" / "ultralytics")
 os.environ["YOLO_OFFLINE"] = "1"
 os.environ["YOLO_AUTOINSTALL"] = "0"
@@ -180,6 +185,9 @@ VIDEOS_CON_TELEFONOS_S = 0.2
 # confirmar el nuevo (~0,6 s o más) la persona quedaba sin ID aunque el seguidor la siguiera: medido con un teléfono, 45 de
 # 49 cuadros sin ID tras tenerlo fueron eso (no un duplicado). Si se le confirma otro ID, se muestra ese.
 MANTENER_ID_S = 3.0
+# Pausa mínima entre pasadas de los carriles lentos (IDs y género); 0 = sin pausa. Con 0,25 s y mucha gente el carril
+# rápido no fue más rápido (434 -> 554 ms por pasada con video1 y video2) y el ID tardaba más: se deja en 0.
+CARRIL_LENTO_CADA_S = float(os.environ.get("MODELO_CARRIL_LENTO_S") or 0)
 
 
 # Un cuadro que falla (un error raro del modelo) se salta; tantos seguidos indican algo roto (ej. la GPU) y el proceso
@@ -764,6 +772,7 @@ class SesionEnVivo:
                 # se queda sin su turno aunque otro publique más seguido.
                 pendientes = sorted({id(tr): tr for tr in self._trabajos.values()}.values(), key=lambda tr: tr[1])
                 self._trabajos.clear()
+            inicio = time.monotonic()
             for generacion, t, frames, fuente, filas, ocluyentes in pendientes:
                 try:
                     with self.bloqueo:
@@ -773,6 +782,7 @@ class SesionEnVivo:
                         self.asociador.actualizar(t, frames, filas, occluders=ocluyentes)
                 except Exception as error:  # un instante fallido no debe detener el carril
                     print(f"Carril lento: {type(error).__name__}: {error}", flush=True)
+            time.sleep(max(0.0, CARRIL_LENTO_CADA_S - (time.monotonic() - inicio)))
 
     def _posiciones_plano(self, frames, filas):
         """(teléfono, track local) -> (x, y) en metros: el pie de cada persona llevado al plano con la última ubicación
@@ -804,6 +814,7 @@ class SesionEnVivo:
                     return
                 pendientes = sorted({id(tr): tr for tr in self._trabajos_genero.values()}.values(), key=lambda tr: tr[1])
                 self._trabajos_genero.clear()
+            inicio = time.monotonic()
             for generacion, _, frames, fuente, filas in pendientes:
                 try:
                     with self.bloqueo_genero:
@@ -812,6 +823,7 @@ class SesionEnVivo:
                         self._muestrear_genero(frames, fuente, filas)
                 except Exception as error:  # un instante fallido no debe detener el carril
                     print(f"Carril del género: {type(error).__name__}: {error}", flush=True)
+            time.sleep(max(0.0, CARRIL_LENTO_CADA_S - (time.monotonic() - inicio)))
 
     def _falta_genero(self, cid, fila):
         """El track todavía puede pasar un cuadro por CLIP: ni él ni su persona tienen género fijo y le quedan intentos."""
