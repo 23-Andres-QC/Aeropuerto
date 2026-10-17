@@ -129,6 +129,35 @@ GENERO_TELEFONO = {"min_height": 56, "min_detection_confidence": 0.35, "sample_i
 # medido con dos teléfonos, 1 de cada 4 personas no tenía género y otras lo recibían a los 10-28 s.
 INTENTOS_GENERO = 10
 PUERTO_CAMARA = int(os.environ.get("CAMARA_PORT", "8444"))  # el de la página de cámara (compose: camara-web)  # como en camaras.json: alguien puede pasar de un teléfono a otro en hasta 60 s
+# El Re-ID y CLIP (género) ven solo la mitad de arriba de cada persona: cabeza, pelo y torso hasta la cintura. Las
+# piernas se parecen mucho entre la gente (pantalones oscuros) y suelen estar tapadas o cortadas por el borde del cuadro;
+# además el Re-ID estira cada recorte a un cuadrado de 448 px: el cuerpo entero (angosto y alto) llegaba muy deformado y
+# la mitad de arriba llega casi sin deformar y con el doble de detalle. La caja, el seguimiento y la ubicación en el plano
+# (por los pies) siguen usando el cuerpo entero. Medido con los videos del dataset como dos teléfonos (gente de 40-115 px,
+# con las piernas a la vista), la mitad de arriba quedó a la par del cuerpo entero (cambios de ID y personas con género
+# dentro del ruido de una corrida a otra); su ventaja es con el teléfono cerca, donde las piernas salen cortadas.
+# MODELO_PARTE_SUPERIOR=1 vuelve al cuerpo entero (y 0.6, por ejemplo, llega hasta debajo de la cadera).
+MITAD_SUPERIOR = min(1.0, max(0.3, float(os.environ.get("MODELO_PARTE_SUPERIOR") or 0.5)))
+
+
+def mitad_superior(crop):
+    """La parte de arriba del recorte de una persona (MITAD_SUPERIOR de su alto)."""
+    return crop[:max(1, round(crop.shape[0] * MITAD_SUPERIOR))]
+
+
+class ReIDMitadSuperior:
+    """El Re-ID de los teléfonos sobre la mitad de arriba de cada recorte (ver MITAD_SUPERIOR)."""
+
+    def __init__(self, reid):
+        self.reid = reid
+
+    def __call__(self, crops):
+        return self.reid([mitad_superior(c) for c in crops])
+
+    def __getattr__(self, nombre):
+        return getattr(self.reid, nombre)
+
+
 # Un cuadro que falla (un error raro del modelo) se salta; tantos seguidos indican algo roto (ej. la GPU) y el proceso
 # termina con error: scripts/modelo_local.py lo vuelve a levantar.
 FALLOS_SEGUIDOS_MAX = 10
@@ -864,13 +893,18 @@ def main():
         # Cajas de cuerpo sin brazos: puntos del cuerpo sobre el recorte de quien se ve de cerca; MODELO_POSE=ninguno las desactiva.
         motor.detector = DetectorCuerpo(motor.detector, pose, motor.device)
     reid = lap01.crear_asociador(motor, {"mode": "visual_temporal", "units": "m", "cameras": {"x": {}}}).reid
+    if motor.genero.enabled and MITAD_SUPERIOR < 1:
+        # CLIP ve la mitad de arriba (ver MITAD_SUPERIOR); lo usan los teléfonos y la sección Videos.
+        clasificar = motor.genero._clasificar
+        motor.genero._clasificar = lambda crops: clasificar([mitad_superior(c) for c in crops])
     ubicador = Ubicador.cargar(MODELO / "ubicacion" / SITIO_TELEFONOS)
+    print(f"Re-ID y género con {'el cuerpo entero' if MITAD_SUPERIOR >= 1 else f'la parte de arriba del cuerpo ({MITAD_SUPERIOR:.0%})'}.", flush=True)
     print(f"Modelo listo en {motor.device} · detector {type(getattr(motor.detector, 'base', motor.detector)).__name__} a "
           f"{config['detector']['imgsz']} px · ubicación: {SITIO_TELEFONOS if ubicador else 'sin referencias'} · "
           f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no'}", flush=True)
     memoria = MemoriaIdentidades(url_api, asociacion)
     relevo = Relevo(url_api)
-    sesion = SesionEnVivo(motor, reid, asociacion, memoria, ubicador)
+    sesion = SesionEnVivo(motor, ReIDMitadSuperior(reid) if MITAD_SUPERIOR < 1 else reid, asociacion, memoria, ubicador)
     # Los videos subidos van con la asociación del Build, sin los ajustes para teléfonos. Sin GPU tienen su propio Re-ID
     # con todos los núcleos (en el servidor es lo que más tarda por frame): corre en el hilo principal, sin esperar al de
     # los teléfonos, que usa el carril lento.

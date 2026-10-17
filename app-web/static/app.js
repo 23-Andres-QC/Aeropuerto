@@ -598,31 +598,48 @@ function dibujarCajas() {
   }
   g.clearRect(0, 0, capa.width, capa.height);
   const escala = det.frame_w / 640;
-  g.lineWidth = 2 * escala;
-  g.font = `600 ${Math.round(13 * escala)}px system-ui, sans-serif`;
-  for (const persona of det.people || []) {
-    const [x1, y1, x2, y2] = persona.box;
-    // Colores más claros que los de la web: sobre el video oscuro un tono medio no se ve.
-    const color = persona.global_id != null ? colorClaro(persona.global_id) : '#cfe2f7';
-    g.lineWidth = 3 * escala;
-    g.strokeStyle = 'rgba(0, 0, 0, 0.55)';
-    g.strokeRect(x1 - escala, y1 - escala, x2 - x1 + 2 * escala, y2 - y1 + 2 * escala);
-    g.lineWidth = 2 * escala;
-    g.strokeStyle = color;
-    g.strokeRect(x1, y1, x2 - x1, y2 - y1);
-    const genero = persona.gender
-      ? `${persona.gender}${persona.gender_conf ? ` ${Math.round(persona.gender_conf * 100)}%` : ''}`
-      : '';
-    // Solo el ID global (el de la memoria); mientras se confirma la caja va sin número.
-    const texto = [persona.global_id != null ? `G${persona.global_id}` : '', genero].filter(Boolean).join(' · ');
-    if (!texto) continue;
-    const alto = 18 * escala;
-    const y = Math.max(alto, y1);
-    g.fillStyle = color;
-    g.fillRect(x1, y - alto, g.measureText(texto).width + 10 * escala, alto);
-    g.fillStyle = '#0a1428';
-    g.fillText(texto, x1 + 5 * escala, y - 5 * escala);
+  g.font = `600 ${Math.round(12 * escala)}px system-ui, sans-serif`;
+  for (const persona of det.people || []) dibujarMarcador(g, persona, escala, det.frame_w);
+}
+
+// Un palito que sale de la cabeza de la persona (el borde de arriba de su caja), con un punto de su color y, al lado,
+// su ID global y su género; quien aún no tiene ID va con el palito claro, sin etiqueta. Sin caja: no tapa a la gente.
+// (Lo mismo que la web, web/src/shared/personas.ts.)
+function dibujarMarcador(g, persona, s, ancho) {
+  const [x1, y1, x2] = persona.box;
+  // Colores más claros que los de la web: sobre el video oscuro un tono medio no se ve.
+  const color = persona.global_id != null ? colorClaro(persona.global_id) : '#cfe2f7';
+  const cx = (x1 + x2) / 2;
+  const punta = Math.max(8 * s, y1 - 16 * s);
+  g.lineCap = 'round';
+  for (const [grosor, tinta] of [[4.5 * s, 'rgba(0, 0, 0, 0.6)'], [2.5 * s, color]]) {
+    g.beginPath();
+    g.moveTo(cx, y1);
+    g.lineTo(cx, punta);
+    g.lineWidth = grosor;
+    g.strokeStyle = tinta;
+    g.stroke();
   }
+  g.beginPath();
+  g.arc(cx, punta, 4.5 * s, 0, Math.PI * 2);
+  g.fillStyle = color;
+  g.fill();
+  g.lineWidth = 1.5 * s;
+  g.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+  g.stroke();
+  if (persona.global_id == null) return;
+  const genero = persona.gender
+    ? `${persona.gender}${persona.gender_conf ? ` ${Math.round(persona.gender_conf * 100)}%` : ''}`
+    : '';
+  const texto = [`G${persona.global_id}`, genero].filter(Boolean).join(' · ');
+  const largo = g.measureText(texto).width + 10 * s;
+  const alto = 17 * s;
+  const x = cx + 8 * s + largo <= ancho ? cx + 8 * s : cx - 8 * s - largo;
+  const y = Math.max(0, punta - alto / 2);
+  g.fillStyle = color;
+  g.fillRect(x, y, largo, alto);
+  g.fillStyle = '#0a1428';
+  g.fillText(texto, x + 5 * s, y + alto - 5 * s);
 }
 
 // Como colorPersona, pero claro (más luz y saturación) para dibujar sobre el video.

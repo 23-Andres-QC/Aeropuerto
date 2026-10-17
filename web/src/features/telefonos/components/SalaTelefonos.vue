@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { wsUrl } from "../../../core/http";
-import { colorPersona } from "../../../shared/format";
-import type { CuadroDetecciones } from "../../../shared/personas";
+import { dibujarMarcador, type CuadroDetecciones } from "../../../shared/personas";
 import { cajasAl, type Instantanea } from "../../videos/interpolacion";
 import type { Detecciones, EstadoServicio } from "../api";
 
@@ -394,27 +393,10 @@ function dibujarCajas(id: string) {
     capa.height = det.frame_h;
   }
   ctx.clearRect(0, 0, capa.width, capa.height);
+  // Un palito sobre la cabeza de cada persona con su ID y su género (no una caja: no tapa a la gente).
   const escala = det.frame_w / 640;
-  ctx.lineWidth = 2 * escala;
-  ctx.font = `600 ${Math.round(13 * escala)}px system-ui, sans-serif`;
-  for (const persona of det.people) {
-    const [x1, y1, x2, y2] = persona.box;
-    const color = persona.global_id != null ? colorPersona(persona.global_id) : "#8ba4bf";
-    ctx.strokeStyle = color;
-    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-    const genero = persona.gender
-      ? `${persona.gender}${persona.gender_conf ? " " + Math.round(persona.gender_conf * 100) + "%" : ""}`
-      : "";
-    // Solo el ID global (el de la memoria); mientras se confirma (~1 s) la caja va sin número.
-    const texto = [persona.global_id != null ? "G" + persona.global_id : "", genero].filter(Boolean).join(" · ");
-    if (!texto) continue;
-    const alto = 18 * escala;
-    const y = Math.max(alto, y1);
-    ctx.fillStyle = "rgba(10, 20, 35, 0.82)";
-    ctx.fillRect(x1, y - alto, ctx.measureText(texto).width + 10 * escala, alto);
-    ctx.fillStyle = color;
-    ctx.fillText(texto, x1 + 5 * escala, y - 5 * escala);
-  }
+  ctx.font = `600 ${Math.round(12 * escala)}px system-ui, sans-serif`;
+  for (const persona of det.people) dibujarMarcador(ctx, persona, escala, det.frame_w);
 }
 
 function redibujar() {
