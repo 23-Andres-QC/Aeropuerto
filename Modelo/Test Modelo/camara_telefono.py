@@ -85,15 +85,23 @@ ASOCIACION_TELEFONO = {"min_samples": 3, "min_query_samples": 3, "min_identity_d
                        # centro comercial lleno visto desde un balcón el Re-ID confundía a la gente lejana. Umbrales los del
                        # Build (0,60 entre teléfonos, 0,70 en el mismo): con dos teléfonos mirando la misma zona, la misma
                        # persona desde dos ángulos se parece ~0,55-0,75 y con 0,70 entre teléfonos quedaba con un ID en
-                       # cada uno. Quien se ve muy chico conserva su caja y recibe el ID al acercarse.
-                       "min_conf": 0.5, "min_height": 40, "max_occlusion": 0.3,
+                       # cada uno. Quien se ve muy chico conserva su caja y recibe el ID al acercarse. La confianza mínima de
+                       # una vista es 0,35 (era 0,5; MODELO_CONF_REID la cambia): con el cuerpo cortado por el borde (de
+                       # cerca) YOLO da ~0,45 y esa persona no llegaba nunca a tener ID. Con 0,2 también la tendría quien se
+                       # ve desde arriba (~0,2), pero el Re-ID con vistas tan borrosas confundía más a la gente.
+                       "min_conf": float(os.environ.get("MODELO_CONF_REID") or 0.35), "min_height": 40, "max_occlusion": 0.3,
                        "split_threshold": 0.25, "split_strikes": 3,
                        "threshold": 0.60, "same_camera_threshold": 0.70, "tracklet_gap_s": 4.0}
-# El seguidor abre tracks desde 0,25 de confianza (el Build pide 0,6) y acepta personas desde 24 px (el Build, 40): quien
-# se ve de lejos o a medias en un teléfono también recibe su caja. Con pocos cuadros por segundo cada persona se mueve más
+# El seguidor abre tracks desde 0,15 de confianza (el Build pide 0,6) y acepta personas desde 24 px (el Build, 40): quien
+# se ve de lejos o a medias en un teléfono también recibe su caja. Con 0,25 no aparecía quien se ve desde arriba (solo
+# cabeza y hombros: YOLO lo ve con ~0,2) hasta que se le veía el cuerpo entero; lo que no se mueve (un afiche, un maniquí)
+# sigue sin mostrarse (ver ESTATICO_TELEFONO_S) y un track pide 3 detecciones seguidas para confirmarse. Medido con los
+# videos del dataset como dos teléfonos: de 32 a ~40 personas seguidas, a cambio de algo más de cambios de ID (de ~20 a
+# ~30 en 2 min, con mucho ruido de una corrida a otra). MODELO_CONF_TRACK lo cambia. Con pocos cuadros por segundo cada persona se mueve más
 # entre uno y otro, así que las compuertas de movimiento son más amplias y quien se pierde un momento se recupera con menos
 # parecido (0,72).
-SEGUIDOR_TELEFONO = {"new_track_confidence": 0.25, "association_confidence": 0.20, "min_person_height": 24,
+CONF_TRACK = float(os.environ.get("MODELO_CONF_TRACK") or 0.15)
+SEGUIDOR_TELEFONO = {"new_track_confidence": CONF_TRACK, "association_confidence": min(0.10, CONF_TRACK), "min_person_height": 24,
                      "reid_gate": 0.72, "active_motion_gate": 0.80, "distance_gate": 1.20, "active_iou_gate": 0.06}
 # Las ventanas del seguidor se cuentan en cuadros procesados (max_age 120, confirmation_window 5, appearance_interval 5)
 # y se ajustaron con el modelo procesando ~4 cuadros por segundo (en CPU o por el túnel): a quien salía de cuadro o
@@ -121,7 +129,7 @@ ESTATICO_DESPLAZAMIENTO_TELEFONO = 0.5
 # Con esta certeza o más el género de una persona queda fijo y ya no cambia.
 GENERO_FIJO = 0.8
 # Una muestra para CLIP cada 0,3 s por track (el Build, cada 0,6 s).
-GENERO_TELEFONO = {"min_height": 56, "min_detection_confidence": 0.35, "sample_interval_s": 0.3}
+GENERO_TELEFONO = {"min_height": 56, "min_detection_confidence": 0.25, "sample_interval_s": 0.3}
 # Género: cada cuadro de un track que pasa por CLIP suma un voto; en cuanto hay 2 votos con certeza de GENERO_FIJO o
 # más, el género queda fijo para ese track y su persona (su ID en la memoria) y no se vuelve a calcular. Si no llega, se
 # sigue probando hasta INTENTOS_GENERO cuadros; recién ahí el track queda sin género. Solo se muestra un género fijo,
