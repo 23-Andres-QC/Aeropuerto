@@ -793,6 +793,7 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
         </marker>
       </defs>
     </svg>
+    <button v-if="zoom && campus && !enCampus" type="button" class="ver-campus" data-prueba="ver-campus" @click="verTodo">⤢ Alejar: todo el campus</button>
     <div v-if="zoom" class="controles-zoom">
       <button type="button" aria-label="Acercar" title="Acercar (o rueda del ratón)" @click="acercar(0.7)">＋</button>
       <button type="button" aria-label="Alejar" title="Alejar" @click="acercar(1 / 0.7)">－</button>
@@ -1153,6 +1154,15 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
 }
 .persona-g.salio .persona-etiqueta {
   font-size: calc(11px * var(--e));
+}
+.ver-campus {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 7px 13px;
+  font-size: 12.5px;
+  font-weight: 700;
 }
 .controles-zoom {
   position: absolute;

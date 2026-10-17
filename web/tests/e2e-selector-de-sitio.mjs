@@ -173,10 +173,12 @@ try {
   await esperar(1500);
   ev = await vistaEnVivo();
   assert.deepEqual(ev, { videos: 3, elegir: false, sinVideos: false, controles: true, botones: 0 }, "al hacer clic en el patio se ven sus 3 videos");
-  await clic(`document.querySelector('button[aria-label="Ver todo el campus"]')`);
+  assert.ok(await evalua(`!!document.querySelector('[data-prueba=ver-campus]')`), "acercado a una zona hay un botón para alejar a todo el campus");
+  await clic(`document.querySelector('[data-prueba=ver-campus]')`);
   await esperar(1500);
   ev = await vistaEnVivo();
   assert.equal(ev.videos, 0, "al alejarse al campus los videos se van");
+  assert.ok(!(await evalua(`!!document.querySelector('[data-prueba=ver-campus]')`)), "con todo el campus a la vista el botón de alejar se va");
   await clicEnElPlano("g.entrada-vecino[role=button]");
   await esperar(1500);
   ev = await vistaEnVivo();
