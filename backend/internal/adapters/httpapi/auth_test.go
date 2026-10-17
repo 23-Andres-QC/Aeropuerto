@@ -20,8 +20,7 @@ const (
 	testUser     = "admin-prueba"
 	testPassword = "Clave-de-prueba-9183"
 	testKey      = "key-de-prueba-0123456789abcdef"
-	storeID      = 7
-	storeSite    = "esan"
+	testSite     = "esan"
 )
 
 // rig is an API with the auth wired the way the router does it, over the in-memory accounts.
@@ -36,9 +35,6 @@ type rig struct {
 func newRig(t *testing.T) *rig {
 	t.Helper()
 	repo := memory.NewAccountRepository()
-	repo.Locals[storeID] = "Tienda A"
-	repo.Locals[8] = "Tienda B"
-	repo.Site = storeSite
 	svc := services.NewAccountService(repo)
 	rg := &rig{svc: svc, repo: repo, now: time.Now()}
 	svc.SetClock(func() time.Time { return rg.now })
@@ -53,7 +49,7 @@ func newRig(t *testing.T) *rig {
 	m.HandleFunc("POST /api/v1/sites", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusCreated) })
 	m.HandleFunc("DELETE /api/v1/sites/{site}", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	m.HandleFunc("GET /api/v1/usuarios", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`[]`)) })
-	// The questions a store may ask echo the query so the test sees what reached the handler.
+	// The traffic questions echo the query so the test sees what reached the handler.
 	for _, q := range []string{"permanencia", "embudo", "calor", "resumen"} {
 		m.HandleFunc("GET /api/v1/sites/{site}/trafico/"+q, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(r.URL.RawQuery)) })
 	}
@@ -102,10 +98,10 @@ func (rg *rig) loginAs(t *testing.T, user, pass string) *http.Cookie {
 
 func (rg *rig) login(t *testing.T) *http.Cookie { return rg.loginAs(t, testUser, testPassword) }
 
-// newStoreUser makes a store account and gives back its login with the temporary password already changed.
-func (rg *rig) newStoreUser(t *testing.T, name string, local int) (domain.User, *http.Cookie, string) {
+// newUser makes a business account and gives back its login with the temporary password already changed.
+func (rg *rig) newUser(t *testing.T, name string) (domain.User, *http.Cookie, string) {
 	t.Helper()
-	u, temp, err := rg.svc.CreateUser(context.Background(), domain.UserInput{Username: name, Email: name + "@lap.test", Role: domain.RoleStore, LocalID: &local})
+	u, temp, err := rg.svc.CreateUser(context.Background(), domain.UserInput{Username: name, Email: name + "@lap.test", Role: domain.RoleBusiness})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,23 +232,6 @@ func TestAdminSessionLimits(t *testing.T) {
 	}
 }
 
-// A store login lasts 8 h from the start, however much it is used.
-func TestStoreSessionIsFixed(t *testing.T) {
-	rg := newRig(t)
-	_, c, _ := rg.newStoreUser(t, "tienda-a", storeID)
-	start := rg.now
-	for _, d := range []time.Duration{time.Hour, 5 * time.Hour, 7*time.Hour + 50*time.Minute} {
-		rg.now = start.Add(d)
-		if w := call(rg.h, "GET", "/api/v1/auth/me", nil, withCookie(c)); w.Code != 200 {
-			t.Fatalf("store at %v: %d", d, w.Code)
-		}
-	}
-	rg.now = start.Add(8*time.Hour + time.Minute)
-	if w := call(rg.h, "GET", "/api/v1/auth/me", nil, withCookie(c)); w.Code != 401 {
-		t.Errorf("a store login must end 8 h after it started: %d", w.Code)
-	}
-}
-
 func TestAPIKeyCanWriteButNeverDelete(t *testing.T) {
 	rg := newRig(t)
 	h := rg.h
@@ -273,7 +252,7 @@ func TestAPIKeyCanWriteButNeverDelete(t *testing.T) {
 		"clave equivocada":      withKey("key-equivocada-0123456789abcdef"),
 		"sin esquema Bearer":    func(r *http.Request) { r.Header.Set("Authorization", testKey) },
 		"esquema Basic":         func(r *http.Request) { r.Header.Set("Authorization", "Basic "+testKey) },
-		"llave de tienda falsa": withKey("lapk_deadbeef_" + strings.Repeat("0", 40)),
+		"llave con otro formato": withKey("lapk_deadbeef_" + strings.Repeat("0", 40)),
 	} {
 		if w := call(h, "GET", "/api/v1/sites", nil, mod); w.Code != 401 {
 			t.Errorf("%s: %d", name, w.Code)
@@ -445,15 +424,12 @@ func TestLogsHoldNoSecrets(t *testing.T) {
 	call(rg.h, "DELETE", "/api/v1/sites/esan", nil, withCookie(c))
 	call(rg.h, "DELETE", "/api/v1/sites/esan", nil, withKey(testKey))
 	call(rg.h, "GET", "/api/v1/sites", nil, withKey("clave-que-alguien-probo-123"))
-	// A temporary password and a store key are shown once and never written down.
-	u, temp, _ := rg.svc.CreateUser(context.Background(), domain.UserInput{Username: "tienda-log", Email: "tienda-log@lap.test", Role: domain.RoleStore, LocalID: ptr(storeID)})
-	_ = u
-	_, key, _ := rg.svc.CreateStoreKey(context.Background(), domain.Principal{User: "x"}, storeID, "caja")
-	call(rg.h, "GET", "/api/v1/auth/me", nil, withKey(key))
-	rg.loginAs(t, "tienda-log", temp)
+	// A temporary password is shown once and never written down.
+	_, temp, _ := rg.svc.CreateUser(context.Background(), domain.UserInput{Username: "negocio-log", Email: "negocio-log@lap.test", Role: domain.RoleBusiness})
+	rg.loginAs(t, "negocio-log", temp)
 
 	out := buf.String()
-	for _, secret := range []string{testPassword, "ClaveEquivocada-77", testKey, c.Value, "clave-que-alguien-probo-123", "Bearer", temp, key} {
+	for _, secret := range []string{testPassword, "ClaveEquivocada-77", testKey, c.Value, "clave-que-alguien-probo-123", "Bearer", temp} {
 		if strings.Contains(out, secret) {
 			t.Errorf("the log leaks %q:\n%s", secret, out)
 		}
@@ -469,15 +445,13 @@ func TestLogsHoldNoSecrets(t *testing.T) {
 	audit, _ := rg.svc.AuditLog(context.Background(), 100)
 	for _, e := range audit {
 		line := e.Actor + e.Action + e.Target + e.Detail
-		for _, secret := range []string{testPassword, temp, key, c.Value} {
+		for _, secret := range []string{testPassword, temp, c.Value} {
 			if strings.Contains(line, secret) {
 				t.Errorf("the audit log leaks a secret: %+v", e)
 			}
 		}
 	}
 }
-
-func ptr[T any](v T) *T { return &v }
 
 func TestNoAccountsMeansNoLogin(t *testing.T) {
 	h := NewAuth(AuthConfig{})
@@ -490,45 +464,6 @@ func TestNoAccountsMeansNoLogin(t *testing.T) {
 
 // ---- roles ----
 
-// A store sees two questions about its own local and nothing else; what is not its own does not even exist for it.
-func TestStoreSeesOnlyItsOwnLocal(t *testing.T) {
-	rg := newRig(t)
-	_, c, _ := rg.newStoreUser(t, "tienda-a", storeID)
-	// Its profile says whose it is.
-	w := call(rg.h, "GET", "/api/v1/auth/me", nil, withCookie(c))
-	var me map[string]any
-	json.Unmarshal(w.Body.Bytes(), &me)
-	if w.Code != 200 || me["rol"] != RoleStore || me["local_id"] != float64(storeID) {
-		t.Errorf("store profile: %d %s", w.Code, w.Body)
-	}
-	// Everything else of the API is a 404 for it: it must not learn what exists.
-	for _, p := range []struct{ method, path string }{
-		{"GET", "/api/v1/sites"}, {"POST", "/api/v1/sites"}, {"GET", "/api/v1/usuarios"}, {"GET", "/api/v1/auditoria"},
-		{"GET", "/api/v1/sites/esan/trafico/calor"}, {"GET", "/api/v1/sites/esan/trafico/resumen"}, {"GET", "/api/v1/sites/esan/sessions"},
-		{"GET", "/api/v1/sites/esan/ventas/tickets"}, {"GET", "/api/v1/sites/esan/sessions/x/replay"}, {"DELETE", "/api/v1/sites/esan"},
-		{"GET", "/api/v1/sites/otro/trafico/permanencia"}, {"POST", "/api/v1/sites/esan/trafico/permanencia"},
-	} {
-		if w := call(rg.h, p.method, p.path, nil, withCookie(c)); w.Code != http.StatusNotFound {
-			t.Errorf("%s %s as a store: %d %s", p.method, p.path, w.Code, w.Body)
-		}
-	}
-	// The two questions it may ask are forced to its own local, whatever it writes in the query.
-	for _, q := range []string{"permanencia", "embudo"} {
-		w := call(rg.h, "GET", "/api/v1/sites/"+storeSite+"/trafico/"+q+"?local=8&locales=1,2&zonas=5&zona=6&dias=7", nil, withCookie(c))
-		if w.Code != 200 {
-			t.Fatalf("%s as its store: %d %s", q, w.Code, w.Body)
-		}
-		got := w.Body.String()
-		if !strings.Contains(got, "local=7") || strings.Contains(got, "local=8") || strings.Contains(got, "locales") || strings.Contains(got, "zona") || !strings.Contains(got, "dias=7") {
-			t.Errorf("%s: the query was not forced to the store's own local: %q", q, got)
-		}
-	}
-	// The same account is refused the live view in nginx's check.
-	if w := call(rg.h, "GET", "/api/v1/auth/check", nil, withCookie(c)); w.Code != http.StatusForbidden {
-		t.Errorf("a store must not pass the live-view check: %d", w.Code)
-	}
-}
-
 func TestCheckLetsAdminAndScriptsIn(t *testing.T) {
 	rg := newRig(t)
 	if w := call(rg.h, "GET", "/api/v1/auth/check", nil, withCookie(rg.login(t))); w.Code != http.StatusNoContent {
@@ -537,28 +472,23 @@ func TestCheckLetsAdminAndScriptsIn(t *testing.T) {
 	if w := call(rg.h, "GET", "/api/v1/auth/check", nil, withKey(testKey)); w.Code != http.StatusNoContent {
 		t.Errorf("scripts: %d", w.Code)
 	}
-	_, key, _ := rg.svc.CreateStoreKey(context.Background(), domain.Principal{User: "x"}, storeID, "")
-	if w := call(rg.h, "GET", "/api/v1/auth/check", nil, withKey(key)); w.Code != http.StatusForbidden {
-		t.Errorf("a store key must not pass the live-view check: %d", w.Code)
-	}
 }
 
 // The temporary password only lets its owner choose a new one.
 func TestTemporaryPasswordForcesAChange(t *testing.T) {
 	rg := newRig(t)
-	local := storeID
-	u, temp, err := rg.svc.CreateUser(context.Background(), domain.UserInput{Username: "Tienda-Nueva", Email: "tienda-nueva@lap.test", Role: domain.RoleStore, LocalID: &local})
-	if err != nil || u.Username != "tienda-nueva" || len(temp) < domain.MinPassword || !u.MustChange {
+	u, temp, err := rg.svc.CreateUser(context.Background(), domain.UserInput{Username: "Negocio-Nuevo", Email: "negocio-nuevo@lap.test", Role: domain.RoleBusiness})
+	if err != nil || u.Username != "negocio-nuevo" || len(temp) < domain.MinPassword || !u.MustChange {
 		t.Fatalf("new account: %+v %q %v", u, temp, err)
 	}
-	c := rg.loginAs(t, "tienda-nueva", temp)
-	if w := call(rg.h, "GET", "/api/v1/sites/"+storeSite+"/trafico/embudo", nil, withCookie(c)); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "cambiar_clave") {
+	c := rg.loginAs(t, "negocio-nuevo", temp)
+	if w := call(rg.h, "GET", "/api/v1/sites/"+testSite+"/trafico/embudo", nil, withCookie(c)); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "cambiar_clave") {
 		t.Errorf("with a temporary password everything is closed: %d %s", w.Code, w.Body)
 	}
 	if w := call(rg.h, "GET", "/api/v1/auth/me", nil, withCookie(c)); w.Code != 200 || !strings.Contains(w.Body.String(), "debe_cambiar_clave") {
 		t.Errorf("me tells it must change: %d %s", w.Code, w.Body)
 	}
-	for name, pw := range map[string]string{"corta": "Corta-1", "el usuario": "tienda-nueva", "repetida": strings.Repeat("a", 20), "igual": temp} {
+	for name, pw := range map[string]string{"corta": "Corta-1", "el usuario": "negocio-nuevo", "repetida": strings.Repeat("a", 20), "igual": temp} {
 		if w := call(rg.h, "POST", "/api/v1/auth/password", map[string]string{"actual": temp, "nueva": pw}, withCookie(c)); w.Code != http.StatusBadRequest {
 			t.Errorf("password %s must be refused: %d %s", name, w.Code, w.Body)
 		}
@@ -569,21 +499,21 @@ func TestTemporaryPasswordForcesAChange(t *testing.T) {
 	if w := call(rg.h, "POST", "/api/v1/auth/password", map[string]string{"actual": temp, "nueva": "Una-clave-larga-123"}, withCookie(c)); w.Code != http.StatusNoContent {
 		t.Fatalf("a good password: %d %s", w.Code, w.Body)
 	}
-	if w := call(rg.h, "GET", "/api/v1/sites/"+storeSite+"/trafico/embudo", nil, withCookie(c)); w.Code != 200 {
+	if w := call(rg.h, "GET", "/api/v1/sites/"+testSite+"/trafico/embudo", nil, withCookie(c)); w.Code != 200 {
 		t.Errorf("after choosing its own password it works: %d %s", w.Code, w.Body)
 	}
 	// The temporary password no longer opens the account; the new one does.
-	if w := call(rg.h, "POST", "/api/v1/auth/login", map[string]string{"usuario": "tienda-nueva", "clave": temp}, nil); w.Code != 401 {
+	if w := call(rg.h, "POST", "/api/v1/auth/login", map[string]string{"usuario": "negocio-nuevo", "clave": temp}, nil); w.Code != 401 {
 		t.Errorf("the temporary password still works: %d", w.Code)
 	}
-	rg.loginAs(t, "tienda-nueva", "Una-clave-larga-123")
+	rg.loginAs(t, "negocio-nuevo", "Una-clave-larga-123")
 }
 
 // Changing the password ends the other logins of the account but not the one that changed it.
 func TestChangingThePasswordEndsOtherLogins(t *testing.T) {
 	rg := newRig(t)
-	_, mine, pass := rg.newStoreUser(t, "tienda-a", storeID)
-	other := rg.loginAs(t, "tienda-a", pass)
+	_, mine, pass := rg.newUser(t, "negocio-a")
+	other := rg.loginAs(t, "negocio-a", pass)
 	if w := call(rg.h, "POST", "/api/v1/auth/password", map[string]string{"actual": pass, "nueva": "Otra-clave-larga-456"}, withCookie(mine)); w.Code != http.StatusNoContent {
 		t.Fatal(w.Code, w.Body)
 	}
@@ -598,7 +528,7 @@ func TestChangingThePasswordEndsOtherLogins(t *testing.T) {
 // Disabling an account, or resetting its password, closes its logins at once.
 func TestDisablingAndResettingEndLogins(t *testing.T) {
 	rg := newRig(t)
-	u, c, _ := rg.newStoreUser(t, "tienda-a", storeID)
+	u, c, _ := rg.newUser(t, "negocio-a")
 	admin := domain.Principal{UserID: "otro", Role: domain.RoleAdmin}
 	if _, err := rg.svc.SetActive(context.Background(), admin, u.ID, false); err != nil {
 		t.Fatal(err)
@@ -606,13 +536,13 @@ func TestDisablingAndResettingEndLogins(t *testing.T) {
 	if w := call(rg.h, "GET", "/api/v1/auth/me", nil, withCookie(c)); w.Code != 401 {
 		t.Errorf("a disabled account kept its login: %d", w.Code)
 	}
-	if w := call(rg.h, "POST", "/api/v1/auth/login", map[string]string{"usuario": "tienda-a", "clave": "Clave-definitiva-9-tienda-a"}, nil); w.Code != 401 {
+	if w := call(rg.h, "POST", "/api/v1/auth/login", map[string]string{"usuario": "negocio-a", "clave": "Clave-definitiva-9-negocio-a"}, nil); w.Code != 401 {
 		t.Errorf("a disabled account logged in: %d", w.Code)
 	}
 	if _, err := rg.svc.SetActive(context.Background(), admin, u.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	c = rg.loginAs(t, "tienda-a", "Clave-definitiva-9-tienda-a")
+	c = rg.loginAs(t, "negocio-a", "Clave-definitiva-9-negocio-a")
 	if _, temp, err := rg.svc.ResetPassword(context.Background(), u.ID); err != nil || temp == "" {
 		t.Fatal(err)
 	}
@@ -625,7 +555,7 @@ func TestDisablingAndResettingEndLogins(t *testing.T) {
 func TestDeletingAnAccount(t *testing.T) {
 	rg := newRig(t)
 	ctx := context.Background()
-	u, c, _ := rg.newStoreUser(t, "tienda-a", storeID)
+	u, c, _ := rg.newUser(t, "negocio-a")
 	admin := domain.Principal{UserID: "otro", Role: domain.RoleAdmin}
 	if _, err := rg.svc.DeleteUser(ctx, admin, u.ID); err != nil {
 		t.Fatal(err)
@@ -633,7 +563,7 @@ func TestDeletingAnAccount(t *testing.T) {
 	if w := call(rg.h, "GET", "/api/v1/auth/me", nil, withCookie(c)); w.Code != 401 {
 		t.Errorf("a deleted account kept its login: %d", w.Code)
 	}
-	if _, err := rg.repo.UserByName(ctx, "tienda-a"); err == nil {
+	if _, err := rg.repo.UserByName(ctx, "negocio-a"); err == nil {
 		t.Error("the account must be gone")
 	}
 	if _, err := rg.svc.DeleteUser(ctx, admin, u.ID); err == nil {
@@ -662,50 +592,6 @@ func TestLastAdminAndYourselfCannotBeDisabled(t *testing.T) {
 	other := domain.Principal{UserID: "alguien", Role: domain.RoleAdmin}
 	if _, err := rg.svc.SetActive(context.Background(), other, seed.ID, false); err == nil {
 		t.Error("the only active admin cannot be disabled")
-	}
-}
-
-func TestStoreKeys(t *testing.T) {
-	rg := newRig(t)
-	ctx := context.Background()
-	admin := domain.Principal{User: "admin", Role: domain.RoleAdmin}
-	k, key, err := rg.svc.CreateStoreKey(ctx, admin, storeID, "caja 1")
-	if err != nil || !strings.HasPrefix(key, "lapk_") || k.Prefix == "" || strings.Contains(k.Prefix, key) {
-		t.Fatalf("key: %+v %q %v", k, key, err)
-	}
-	// The key identifies one store; it can only ask who it is until ingestion exists.
-	w := call(rg.h, "GET", "/api/v1/auth/me", nil, withKey(key))
-	var me map[string]any
-	json.Unmarshal(w.Body.Bytes(), &me)
-	if w.Code != 200 || me["rol"] != RoleStoreFeed || me["local_id"] != float64(storeID) {
-		t.Errorf("store key profile: %d %s", w.Code, w.Body)
-	}
-	for _, p := range []string{"/api/v1/sites", "/api/v1/sites/esan/trafico/embudo", "/api/v1/usuarios"} {
-		if w := call(rg.h, "GET", p, nil, withKey(key)); w.Code != http.StatusNotFound {
-			t.Errorf("a store key must reach nothing else (%s): %d", p, w.Code)
-		}
-	}
-	if w := call(rg.h, "DELETE", "/api/v1/sites/esan", nil, withKey(key)); w.Code != http.StatusNotFound && w.Code != http.StatusForbidden {
-		t.Errorf("a store key must not delete: %d", w.Code)
-	}
-	// A key of another secret with the same prefix is refused, and so is one revoked.
-	if w := call(rg.h, "GET", "/api/v1/auth/me", nil, withKey(k.Prefix+"_x")); w.Code != 401 {
-		t.Errorf("wrong key: %d", w.Code)
-	}
-	forged := "lapk_" + k.Prefix + "_" + strings.Repeat("0", 40)
-	if w := call(rg.h, "GET", "/api/v1/auth/me", nil, withKey(forged)); w.Code != 401 {
-		t.Errorf("same prefix, another secret: %d", w.Code)
-	}
-	if err = rg.svc.RevokeStoreKey(ctx, storeID, k.ID); err != nil {
-		t.Fatal(err)
-	}
-	if w := call(rg.h, "GET", "/api/v1/auth/me", nil, withKey(key)); w.Code != 401 {
-		t.Errorf("a revoked key still works: %d", w.Code)
-	}
-	// A key of one store cannot be revoked as if it were another store's.
-	k2, _, _ := rg.svc.CreateStoreKey(ctx, admin, storeID, "")
-	if err = rg.svc.RevokeStoreKey(ctx, 8, k2.ID); err == nil {
-		t.Error("revoking a key through another store must fail")
 	}
 }
 

@@ -48,10 +48,8 @@ import { sesion } from "../../../core/auth";
 
       <h2>Quién ve qué</h2>
       <ul>
-        <li><b>Administración LAP:</b> ve todo el análisis; En vivo muestra a cada persona como un número con su estimación, sin guardarse.</li>
-        <li>
-          <b>Cada tienda:</b> ve solo las cifras de su local (cuántos pasan, se detienen y entran; cuánto se quedan). Nunca ve personas ni cámaras, ni el género de nadie.
-        </li>
+        <li><b>Administración LAP (superadmin):</b> ve todo el análisis y administra las cuentas; En vivo muestra a cada persona como un número con su estimación, sin guardarse.</li>
+        <li><b>Seguridad:</b> En vivo, Teléfonos y Videos. Negocio: Insights y Ventas, solo para mirar. Ninguno de los dos administra cuentas ni cambia la configuración.</li>
         <li><b>Cámaras de teléfono:</b> solo se unen con un código de unión que crea el administrador; no vence y se puede revocar.</li>
       </ul>
 

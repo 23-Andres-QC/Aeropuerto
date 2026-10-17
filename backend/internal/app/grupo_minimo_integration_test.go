@@ -11,7 +11,7 @@ import (
 )
 
 // TestMinGroupSize: the minimum group size is a setting of each site (5 by default, 1 at the lowest), only an superadmin changes it,
-// every change is in the audit log, and a store account always gets 5.
+// and every change is in the audit log.
 func TestMinGroupSize(t *testing.T) {
 	c, _ := newClient(t)
 	db, _, do := setup(t)
@@ -68,17 +68,15 @@ func TestMinGroupSize(t *testing.T) {
 		}
 	}
 
-	// A store account always gets 5, whatever the site says (checked on the service the API uses).
+	// Whoever asks gets the site's minimum (checked on the service the API uses).
 	sitesSvc := services.NewSiteService(postgres.NewSiteRepository(db), nil)
 	sessionsSvc := services.NewSessionService(sitesSvc, postgres.NewSessionRepository(db))
-	for role, want := range map[string]int{domain.RoleStore: 5, domain.RoleStoreFeed: 5, domain.RoleAdmin: 2, domain.RoleMachine: 2} {
-		in, err := sessionsSvc.Insights(ctx, slug, id, role)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if in.Summary.GenderMin != want || (want == 5 && (len(in.Summary.Gender) != 0 || in.Summary.GenderHidden != 8)) {
-			t.Errorf("rol %s: mínimo %d, %+v", role, in.Summary.GenderMin, in.Summary)
-		}
+	in, err := sessionsSvc.Insights(ctx, slug, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.Summary.GenderMin != 2 {
+		t.Errorf("mínimo %d, %+v", in.Summary.GenderMin, in.Summary)
 	}
 
 	// The audit log has each change (who, from what to what) and not the unchanged one.
@@ -96,18 +94,17 @@ func TestMinGroupSize(t *testing.T) {
 		t.Errorf("la bitácora debe tener «5 -> 1» y «1 -> 2» (lo más nuevo primero): %v", changes)
 	}
 
-	// A store account cannot change it (404: it does not even exist for it).
+	// A business account cannot change it (403).
 	db.Exec(ctx, "DELETE FROM users WHERE username = 'it-min-grupo'")
 	t.Cleanup(func() { db.Exec(ctx, "DELETE FROM users WHERE username = 'it-min-grupo'") })
-	locale := decodeJSON[domain.Locale](t, c.do("POST", site+"/locales", map[string]string{"name": "Caja", "category": "x"}, cookie(admin)).Body.Bytes())
-	w := c.do("POST", "/api/v1/usuarios", map[string]any{"usuario": "it-min-grupo", "correo": "it-min-grupo@lap.test", "rol": "tienda", "local_id": locale.ID}, cookie(admin))
+	w := c.do("POST", "/api/v1/usuarios", map[string]any{"usuario": "it-min-grupo", "correo": "it-min-grupo@lap.test", "rol": "negocio"}, cookie(admin))
 	temp := decodeJSON[struct {
 		T string `json:"clave_temporal"`
 	}](t, w.Body.Bytes()).T
-	store := c.login("it-min-grupo", temp)
-	c.do("POST", "/api/v1/auth/password", map[string]string{"actual": temp, "nueva": "Clave-de-la-caja-12"}, cookie(store))
-	if w := c.do("PUT", site+"/grupo-minimo", map[string]int{"minimo": 1}, cookie(store)); w.Code != 404 {
-		t.Errorf("una tienda no cambia el mínimo: %d", w.Code)
+	negocio := c.login("it-min-grupo", temp)
+	c.do("POST", "/api/v1/auth/password", map[string]string{"actual": temp, "nueva": "Clave-de-negocio-12"}, cookie(negocio))
+	if w := c.do("PUT", site+"/grupo-minimo", map[string]int{"minimo": 1}, cookie(negocio)); w.Code != http.StatusForbidden {
+		t.Errorf("negocio no cambia el mínimo: %d", w.Code)
 	}
 	if v := insights(); v.Summary.Min != 2 {
 		t.Errorf("el mínimo no debía cambiar: %+v", v.Summary)

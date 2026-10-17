@@ -2,7 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { logout, sesion } from "./core/auth";
-import { esTienda as rolTienda, NOMBRE_ROL, ROL_ADMIN } from "./core/roles";
+import { NOMBRE_ROL, ROL_ADMIN } from "./core/roles";
 import PaletaComandos from "./core/PaletaComandos.vue";
 import SelectorSitio from "./features/sitios/components/SelectorSitio.vue";
 import { fijarModoVivo, modoVivo, usarSitioVivo } from "./features/sitios/enVivo";
@@ -42,8 +42,8 @@ const telefonos = computed(() => route.path === "/telefonos");
 const cuentas = computed(() => route.path === "/cuentas");
 const esAdmin = computed(() => sesion.value?.rol === ROL_ADMIN);
 const rolNombre = computed(() => NOMBRE_ROL[sesion.value?.rol ?? ""] ?? sesion.value?.rol ?? "");
-// Una tienda, el cambio de contraseña y el aviso de privacidad van en una pantalla sencilla, sin el menú del análisis.
-const simple = computed(() => rolTienda(sesion.value?.rol) || route.path === "/cambiar-clave" || route.path === "/privacidad");
+// El cambio de contraseña y el aviso de privacidad van en una pantalla sencilla, sin el menú del análisis.
+const simple = computed(() => route.path === "/cambiar-clave" || route.path === "/privacidad");
 const videos = computed(() => route.path === "/videos");
 const title = computed(() => {
   if (telefonos.value) return "Cámaras de teléfono · modelo final";
@@ -73,8 +73,7 @@ watch(
 watch(
   sesion,
   (s) => {
-    // Una tienda no ve la lista de sitios (la API se la niega): solo tiene su pantalla.
-    if (s && !rolTienda(s.rol)) void recargar();
+    if (s) void recargar();
     else vaciarSitios();
   },
   { immediate: true },

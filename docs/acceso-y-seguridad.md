@@ -7,24 +7,23 @@ Cómo entra la gente a LAP, qué ve cada rol y qué quedó cubierto (y qué no) 
 La matriz vive en un solo lugar (`backend/internal/core/domain/permissions.go`) y la leen la API (cada endpoint, HTTP y WebSocket), nginx
 (`/vivo/`, `/camara-web/`, el panel de personas) y el menú de la web (`/api/v1/auth/me` devuelve `modulos`).
 
-| Módulo | superadmin | seguridad | negocio | tienda | scripts (llave) |
-|---|:-:|:-:|:-:|:-:|:-:|
-| 1. En vivo (y reproducción, panel de personas) | ✔ | ✔ | — | — | ✔ |
-| 2. Insights | ✔ | — | ✔ | — | ✔ |
-| 3. Ventas | ✔ | — | ✔ | — | ✔ |
-| 4. Registros (capturas de En vivo) | ✔ | — | — | — | ✔ |
-| 5. Configuración (y todo lo que cambia el plano o los datos) | ✔ | — | — | — | ✔ |
-| 6. Teléfonos (cámaras) | ✔ | ✔ | — | — | ✔ |
-| 7. Videos (subida y tracking en tiempo real) | ✔ | ✔ | — | — | ✔ |
-| Cuentas, llaves, privacidad, demo, bitácora | ✔ | — | — | — | — |
-| Cifras de **su** tienda (permanencia y embudo) | ✔ | — | — | ✔ | ✔ |
+| Módulo | superadmin | seguridad | negocio | scripts (llave) |
+|---|:-:|:-:|:-:|:-:|
+| 1. En vivo (y reproducción, panel de personas) | ✔ | ✔ | — | ✔ |
+| 2. Insights | ✔ | — | ✔ | ✔ |
+| 3. Ventas | ✔ | — | ✔ | ✔ |
+| 4. Registros (capturas de En vivo) | ✔ | — | — | ✔ |
+| 5. Configuración (y todo lo que cambia el plano o los datos) | ✔ | — | — | ✔ |
+| 6. Teléfonos (cámaras) | ✔ | ✔ | — | ✔ |
+| 7. Videos (subida y tracking en tiempo real) | ✔ | ✔ | — | ✔ |
+| Cuentas, privacidad, demo, bitácora | ✔ | — | — | — |
 
 - **Negocio solo mira:** ve Insights y Ventas (resumen, pronóstico, cuándo se vende), pero cargar tickets, emparejar, generar datos simulados y cambiar umbrales son de Configuración (la web esconde esos botones y la API los niega).
 - **La reproducción de una sesión guardada** (`/sessions/{id}/replay`) la abren seguridad (En vivo) y negocio (Insights dibuja con ella sus mapas de movimiento y calor). **Guardar la captura** al apagar En vivo (`POST /sessions`) es de seguridad.
-- Sin sesión: **401**. Con sesión pero sin permiso: **403** (queda en la bitácora como `acceso_denegado`). Una tienda recibe **404** en lo que no es suyo.
+- Sin sesión: **401**. Con sesión pero sin permiso: **403** (queda en la bitácora como `acceso_denegado`). El rol de tienda **ya no existe** (migración `018_sin_rol_tienda.sql`): no hay cuentas ni llaves de ingesta de tienda.
 - Todo lo que nadie listó (un endpoint nuevo) se cierra a seguridad y negocio hasta que se agregue a la matriz.
 - Solo el superadmin borra, en cualquier módulo.
-- Seguridad y negocio, como el superadmin, tienen sesión de 8 h de inactividad y 3 días como máximo; la tienda, 8 h fijas.
+- Seguridad y negocio, como el superadmin, tienen sesión de 8 h de inactividad y 3 días como máximo.
 
 ## Cuentas
 

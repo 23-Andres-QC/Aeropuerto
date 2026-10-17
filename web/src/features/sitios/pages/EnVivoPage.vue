@@ -54,11 +54,13 @@ async function terminarYRefrescar() {
 }
 const calorVivo = computed(() => (modoVivo.value && verCalor.value ? vivo.calor.value : []));
 const desfases = computed(() => mapa.value?.desfases_s ?? {});
-// Las sesiones y los videos grabados son del patio. Si el plano está acercado a otra zona grabada (el comedor), no se muestran:
-// esa zona tendrá sus propios videos.
-const otraZona = ref<string | null>(null);
+// Las sesiones y los videos grabados son del patio: aparecen solo cuando se hace clic en esa zona del croquis y se acerca a ella. Con
+// todo el campus a la vista no hay videos, y otra zona grabada (el comedor) tendrá los suyos.
+const lugar = ref<string>("sitio");
+const verGrabacion = computed(() => lugar.value === "sitio");
+const otraZona = computed(() => (lugar.value === "campus" || lugar.value === "sitio" ? null : lugar.value));
 const camarasVideo = computed(() =>
-  sesion.value?.kind === "BUILD" && !otraZona.value ? Object.keys(desfases.value).sort() : [],
+  sesion.value?.kind === "BUILD" && verGrabacion.value ? Object.keys(desfases.value).sort() : [],
 );
 const duracion = computed(() => replay.value?.duracion_s ?? 0);
 /** Duración de cada video procesado, leída al cargar sus metadatos. */
@@ -148,12 +150,12 @@ const trazos = computed(() => {
   }
   return { personas, recorridos };
 });
-const personas = computed(() => (modoVivo.value ? vivo.vivas.value.personas : otraZona.value ? [] : trazos.value.personas));
-const recorridos = computed(() => (modoVivo.value ? vivo.vivas.value.recorridos : otraZona.value ? [] : trazos.value.recorridos));
+const personas = computed(() => (modoVivo.value ? vivo.vivas.value.personas : !verGrabacion.value ? [] : trazos.value.personas));
+const recorridos = computed(() => (modoVivo.value ? vivo.vivas.value.recorridos : !verGrabacion.value ? [] : trazos.value.recorridos));
 const enPlano = computed(() => personas.value.filter((p) => p.estado !== "salio"));
 
 const presentes = computed(() => {
-  if (otraZona.value) return [];
+  if (!verGrabacion.value) return [];
   const ids = new Set(enPlano.value.map((p) => p.id));
   return (replay.value?.personas ?? []).filter((p) => ids.has(p.numero));
 });
@@ -349,11 +351,14 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <span v-if="!grabando" class="muted">Pulsa «Iniciar captura» para registrar esta escena; «Terminar y guardar» la deja en Registros.</span>
         <span v-if="mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
       </div>
-      <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :personas="personas" :recorridos="recorridos" :calor="calorVivo" :celda-calor="CELDA_CALOR" :camaras="camarasPlano" :inicio="modoVivo ? 'sitio' : 'campus'" zoom @capa="otraZona = $event" />
-      <p v-if="otraZona && !modoVivo" class="aviso-zona" role="status" data-prueba="zona-sin-videos">
-        <b>{{ otraZona }}</b> todavía no tiene videos ni sesiones grabadas. Los videos y las personas que ves en el patio son de esa zona: vuelve a ella para verlos.
+      <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :personas="personas" :recorridos="recorridos" :calor="calorVivo" :celda-calor="CELDA_CALOR" :camaras="camarasPlano" :inicio="modoVivo ? 'sitio' : 'campus'" zoom :recordar="modoVivo" @lugar="lugar = $event" />
+      <p v-if="lugar === 'campus' && !modoVivo" class="aviso-zona" role="status" data-prueba="elegir-zona">
+        Haz clic en una zona grabada del croquis para ver sus videos.
       </p>
-      <div v-if="replay && !modoVivo && !otraZona" class="controles">
+      <p v-else-if="otraZona && !modoVivo" class="aviso-zona" role="status" data-prueba="zona-sin-videos">
+        <b>{{ otraZona }}</b> todavía no tiene videos ni sesiones grabadas.
+      </p>
+      <div v-if="replay && !modoVivo && verGrabacion" class="controles">
         <button class="primary-button" type="button" @click="reproduciendo ? pausar() : reproducir()">{{ reproduciendo ? "❚❚ Pausa" : "▶ Reproducir" }}</button>
         <button type="button" @click="reiniciar">↺</button>
         <input class="linea-tiempo" type="range" :min="ventana.inicio" :max="ventana.fin" step="0.05" :value="t" @input="buscar" aria-label="Tiempo de la sesión" />
@@ -409,7 +414,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
           <b>G{{ p.numero }}</b>
           <small class="muted">{{ p.camaras.join(", ") }} · {{ segundos(p.fin_s - p.inicio_s) }}</small>
         </li>
-        <li v-if="!presentes.length" class="muted vacio">{{ otraZona ? "Esta zona aún no tiene sesiones." : replay ? "Nadie en el plano en este instante." : "Sin sesión para reproducir." }}</li>
+        <li v-if="!presentes.length" class="muted vacio">{{ !verGrabacion ? "Elige una zona del croquis." : replay ? "Nadie en el plano en este instante." : "Sin sesión para reproducir." }}</li>
       </ul>
     </aside>
   </div>
@@ -431,7 +436,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
       <a class="descarga" :href="api.media(slug, `${cid}_procesado.mp4`)" download>⬇ Descargar</a>
     </article>
   </section>
-  <p v-if="replay && sesion?.kind === 'BUILD' && !otraZona" class="descargas muted">
+  <p v-if="replay && sesion?.kind === 'BUILD' && verGrabacion" class="descargas muted">
     Resultados del build:
     <template v-for="(archivo, i) in ['mapa_2d.mp4', 'mapa_trayectorias.png', 'trajectory_points.csv', 'identidades_genero.csv']" :key="archivo"
       >{{ i ? " · " : "" }}<a :href="api.media(slug, archivo)" download>{{ archivo }}</a></template

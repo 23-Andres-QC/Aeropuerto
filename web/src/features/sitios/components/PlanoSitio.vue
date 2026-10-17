@@ -39,6 +39,8 @@ const props = withDefaults(
     leyenda?: boolean;
     /** Con campus: la vista abre en el campus entero o directamente en el sitio. */
     inicio?: "campus" | "sitio";
+    /** Recordar el zoom y el desplazamiento para la próxima vez que se abra el plano de este sitio. */
+    recordar?: boolean;
   }>(),
   {
     zonas: () => [],
@@ -60,6 +62,7 @@ const props = withDefaults(
     leyenda: true,
     zoom: false,
     inicio: "campus",
+    recordar: true,
   },
 );
 const emit = defineEmits<{
@@ -73,8 +76,8 @@ const emit = defineEmits<{
   pose: [id: string, pose: { position?: Punto; angle_deg?: number }];
   /** Clic en una parte vacía del plano (fuera de zonas y cámaras). */
   fondo: [];
-  /** Cambia la zona grabada que se mira de cerca: su nombre, o null cuando se mira el sitio o el campus. */
-  capa: [nombre: string | null];
+  /** Qué se mira: todo el campus, la zona grabada del sitio, o el nombre de otra zona grabada acercada. */
+  lugar: [lugar: "campus" | "sitio" | string];
 }>();
 const svg = ref<SVGSVGElement>();
 /** Grupo con todo lo que está en px del plano (girado junto con la vista cuando hay campus). */
@@ -217,14 +220,14 @@ function reiniciarVista() {
 const claveVista = computed(() => `${props.mapa.tam_px.join()}|${props.mapa.px_por_metro}|${props.mapa.origen_m.join()}|${campus.value?.url ?? ""}`);
 /** Al abrir el plano: la vista que se dejó la última vez con este sitio (en cualquier sección), o la inicial. */
 function iniciarVista() {
-  const guardada = props.zoom ? vistaRecordada(claveVista.value) : undefined;
+  const guardada = props.zoom && props.recordar ? vistaRecordada(claveVista.value) : undefined;
   if (guardada) vista.value = acotar(guardada);
   else reiniciarVista();
 }
 watch(claveVista, iniciarVista, { immediate: true });
 // Cada cambio de zoom o de desplazamiento se recuerda para la próxima vez que se abra el plano.
 watch(vista, (v) => {
-  if (props.zoom && v.w > 0) recordarVista(claveVista.value, v);
+  if (props.zoom && props.recordar && v.w > 0) recordarVista(claveVista.value, v);
 });
 
 // Acercar al sitio (o alejarse al campus) en un movimiento: el ancho cambia en escala logarítmica
@@ -617,7 +620,7 @@ const idPiso = `piso-${Math.random().toString(36).slice(2, 9)}`;
 
 const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.length, ps.reduce((a, p) => a + p[1], 0) / ps.length];
 // Al final del script, cuando ya existe todo lo que la vista necesita.
-watch(capaEnVista, (n) => emit("capa", n), { immediate: true });
+watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => emit("lugar", l), { immediate: true });
 </script>
 
 <template>
@@ -795,11 +798,6 @@ watch(capaEnVista, (n) => emit("capa", n), { immediate: true });
       <button type="button" aria-label="Alejar" title="Alejar" @click="acercar(1 / 0.7)">－</button>
       <button type="button" :aria-label="campus ? 'Ver todo el campus' : 'Ver todo el plano'" :title="campus ? 'Ver todo el campus' : 'Ver todo el plano'" @click="verTodo">⤢</button>
     </div>
-    <div v-if="campus" class="barra-campus">
-      <button v-if="enCampus || capaEnVista" class="alternar-campus ir-sitio" type="button" @click="entrarAlSitio()">Ir a {{ campus.nombre || "la zona grabada" }}</button>
-      <button v-if="!enCampus" class="alternar-campus" type="button" @click="verTodo()">Ver campus</button>
-      <button v-for="(c, i) in capas" :key="'b' + c.nombre" class="alternar-campus ir-capa" type="button" @click="irACapa(i)">Ir a {{ c.nombre }}</button>
-    </div>
     <ul v-if="leyenda" class="leyenda-plano" aria-label="Leyenda del plano">
       <li v-if="elementos.piso"><span class="muestra m-piso"></span>Piso</li>
       <li v-if="elementos.obstaculos"><span class="muestra m-obstaculo"></span>Obstáculo</li>
@@ -944,19 +942,6 @@ watch(capaEnVista, (n) => emit("capa", n), { immediate: true });
   font-weight: 600;
   fill: #1e3a8a;
   stroke-width: calc(3px * var(--e));
-}
-.barra-campus {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.alternar-campus {
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 650;
 }
 .piso {
   fill: rgba(61, 139, 255, 0.07);

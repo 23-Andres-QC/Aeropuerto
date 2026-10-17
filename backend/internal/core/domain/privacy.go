@@ -17,10 +17,9 @@ func ValidGroupSize(n int) error {
 	return nil
 }
 
-// EffectiveMinGroup is the minimum group size that applies to who asks: a store account always gets the default (5), whatever
-// the site's setting says; everyone else gets the site's.
-func EffectiveMinGroup(role string, site int) int {
-	if role == RoleStore || role == RoleStoreFeed || site < 1 {
+// EffectiveMinGroup is the minimum group size that applies: the site's, or the default (5) when the site has none.
+func EffectiveMinGroup(site int) int {
+	if site < 1 {
 		return MinGenderGroup
 	}
 	return site
