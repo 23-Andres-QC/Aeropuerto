@@ -13,7 +13,7 @@ const submitting = ref(false);
 async function login() {
   error.value = "";
   if (!username.value.trim() || !password.value) {
-    error.value = "Ingresa tu usuario y contraseña.";
+    error.value = "Ingresa tu correo (o usuario) y tu contraseña.";
     return;
   }
 
@@ -54,14 +54,14 @@ async function login() {
         </div>
 
         <form @submit.prevent="login" novalidate>
-          <label for="username">Usuario</label>
+          <label for="username">Correo o usuario</label>
           <input
             id="username"
             v-model="username"
             name="username"
             type="text"
             autocomplete="username"
-            placeholder="Ingresa tu usuario"
+            placeholder="nombre@empresa.com"
             autofocus
           />
 
@@ -84,6 +84,7 @@ async function login() {
           </div>
 
           <p v-if="error" class="login-error" role="alert">{{ error }}</p>
+          <p class="olvide"><RouterLink to="/olvide" data-prueba="ir-olvide">¿Olvidaste tu contraseña?</RouterLink></p>
           <button class="primary-button login-submit" type="submit" :disabled="submitting">
             <span>{{ submitting ? "Validando…" : "Ingresar al sistema" }}</span>
             <span aria-hidden="true">→</span>

@@ -2,8 +2,35 @@
 // El servidor es quien decide de verdad (la API contesta 404 a una tienda en todo lo que no es suyo); esto solo evita que la web
 // le muestre pantallas que no podría usar.
 
-export const ROL_ADMIN = "admin_lap";
+export const ROL_ADMIN = "superadmin";
 export const ROL_TIENDA = "tienda";
+export const ROL_SEGURIDAD = "seguridad";
+export const ROL_NEGOCIO = "negocio";
+
+/** Los módulos del menú. El servidor dice cuáles puede abrir cada rol (en /auth/me, campo `modulos`): esta lista solo los nombra. */
+export const MODULOS = ["en_vivo", "insights", "ventas", "registros", "configuracion", "telefonos", "videos", "usuarios"] as const;
+export type Modulo = (typeof MODULOS)[number];
+
+const SECCION_A_MODULO: Record<string, Modulo> = {
+  "en-vivo": "en_vivo",
+  insights: "insights",
+  ventas: "ventas",
+  registros: "registros",
+  configuracion: "configuracion",
+};
+
+/** El módulo al que pertenece una ruta; null para las que no son de ningún módulo (privacidad, cambio de clave, tienda). */
+export function moduloDeRuta(ruta: string): Modulo | null {
+  const m = /^\/sitios\/[^/]+\/([a-z-]+)\/?$/.exec(ruta);
+  if (m) return SECCION_A_MODULO[m[1]] ?? null;
+  if (ruta === "/telefonos") return "telefonos";
+  if (ruta === "/videos") return "videos";
+  if (ruta === "/cuentas") return "usuarios";
+  return null;
+}
+
+/** La sección de sitio (ruta /sitios/<sitio>/<sección>) de un módulo, para las que viven dentro de un sitio. */
+const MODULO_A_SECCION: Partial<Record<Modulo, string>> = { en_vivo: "en-vivo", insights: "insights", ventas: "ventas", registros: "registros", configuracion: "configuracion" };
 
 /** Rutas que cualquiera con sesión puede ver, sea cual sea su rol. */
 const PARA_TODOS = ["/privacidad", "/cambiar-clave"];
@@ -13,20 +40,33 @@ export function esTienda(rol: string | undefined): boolean {
 }
 
 /** Donde empieza cada rol: la tienda en su pantalla, el resto en el sitio que visitó por última vez. */
-export function inicioPara(rol: string | undefined, sitio: string): string {
-  return esTienda(rol) ? "/tienda" : `/sitios/${sitio}/en-vivo`;
+export function inicioPara(rol: string | undefined, sitio: string, modulos?: readonly string[]): string {
+  if (esTienda(rol)) return "/tienda";
+  if (!modulos || modulos.includes("en_vivo")) return `/sitios/${sitio}/en-vivo`;
+  // Un rol sin En vivo (negocio) empieza en el primer módulo que sí puede abrir.
+  for (const m of MODULOS) {
+    if (!modulos.includes(m)) continue;
+    const seccion = MODULO_A_SECCION[m];
+    if (seccion) return `/sitios/${sitio}/${seccion}`;
+    if (m === "telefonos") return "/telefonos";
+    if (m === "videos") return "/videos";
+  }
+  return "/privacidad";
 }
 
 /** ¿Puede este rol abrir esta ruta? Una tienda solo ve la suya, el aviso de privacidad y el cambio de clave. */
-export function rutaPermitida(rol: string | undefined, ruta: string): boolean {
+export function rutaPermitida(rol: string | undefined, ruta: string, modulos?: readonly string[]): boolean {
   if (PARA_TODOS.includes(ruta)) return true;
   if (esTienda(rol)) return ruta === "/tienda";
   if (ruta === "/tienda") return false;
   if (ruta === "/cuentas") return rol === ROL_ADMIN;
+  // Con la lista de módulos del servidor, cada rol abre solo los suyos (seguridad: En vivo, Teléfonos y Videos; negocio: Ventas e Insights).
+  const m = moduloDeRuta(ruta);
+  if (modulos && m && !modulos.includes(m)) return false;
   return true;
 }
 
-export const NOMBRE_ROL: Record<string, string> = { admin_lap: "Administración LAP", tienda: "Tienda", maquina: "Scripts" };
+export const NOMBRE_ROL: Record<string, string> = { superadmin: "Superadmin (Administración LAP)", seguridad: "Seguridad", negocio: "Negocio", tienda: "Tienda", maquina: "Scripts" };
 
 export const MIN_CLAVE = 12;
 export const MAX_CLAVE = 128;
@@ -38,6 +78,7 @@ export function problemaConClave(clave: string, usuario: string): string | null 
   if (n > MAX_CLAVE) return `Admite hasta ${MAX_CLAVE} caracteres.`;
   if (usuario && clave.trim().toLowerCase() === usuario.trim().toLowerCase()) return "No puede ser tu usuario.";
   if ([...clave].every((c) => c === clave[0])) return "No puede ser un solo carácter repetido.";
+  if (!/\p{Lu}/u.test(clave) || !/\p{Ll}/u.test(clave) || !/\p{Nd}/u.test(clave)) return "Necesita una mayúscula, una minúscula y un número.";
   return null;
 }
 

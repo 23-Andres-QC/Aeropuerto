@@ -32,7 +32,7 @@ try {
     assert.equal(r.estado, 200, "borrar un Demo que quedó de antes");
   }
   const yo = (await t.api("GET", "/api/v1/auth/me")).cuerpo;
-  assert.equal(yo.rol, "admin_lap");
+  assert.equal(yo.rol, "superadmin");
 
   // ---------- Sitio Demo ----------
   await t.ir("/cuentas", 2500);
@@ -51,6 +51,7 @@ try {
   // ---------- Cuentas de tienda ----------
   async function crearUsuario(nombre) {
     await t.poner("[data-prueba=nuevo-usuario]", nombre);
+    await t.poner("[data-prueba=nuevo-correo]", `${nombre}@lap.test`);
     await t.poner("[data-prueba=nuevo-rol]", "tienda");
     await t.poner("[data-prueba=nuevo-sitio]", "demo");
     await t.hasta(`(document.querySelector('[data-prueba=nuevo-local]')?.options?.length ?? 0) >= 3 && Number(document.querySelector('[data-prueba=nuevo-local]').value) > 0`, "las tiendas del Demo en el formulario");
@@ -159,7 +160,7 @@ try {
   // Desactivar.
   await t.clic(`[data-prueba="alternar-${TIENDA_A2}"]`);
   await t.hasta(`document.querySelector('[data-usuario="${TIENDA_A2}"]').innerText.includes('desactivada')`, "desactivar la cuenta");
-  const rechazada = await fetch(`${WEB}/api/v1/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ usuario: TIENDA_A2, clave: temporalA2 }) });
+  const rechazada = await fetch(`${WEB}/api/v1/auth/login`, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "lap" }, body: JSON.stringify({ usuario: TIENDA_A2, clave: temporalA2 }) });
   assert.equal(rechazada.status, 401, "una cuenta desactivada no entra");
   // Uno no se desactiva ni se borra a sí mismo.
   assert.equal(await t.evalua(`document.querySelector('[data-prueba="alternar-lap"]').disabled`), true);
