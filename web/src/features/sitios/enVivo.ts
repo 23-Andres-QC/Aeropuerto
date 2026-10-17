@@ -1,6 +1,6 @@
 // Modo EN VIVO de todo el sistema. Mientras está activo, un único motor (que sigue corriendo al cambiar de sección)
 // toma los teléfonos que procesa el modelo (Teléfonos) como las cámaras del sitio en el orden en que se unen
-// (el primero es cam01, el segundo cam02, el tercero cam03), proyecta cada persona detectada al plano con la
+// (el primero es cam01 y el segundo cam02; cam03 es solo de los videos grabados), proyecta cada persona detectada al plano con la
 // calibración de esa cámara y su pose actual, y va acumulando lo que En vivo e Insights muestran: posiciones,
 // rastros, mapa de calor, tiempo en cada zona, rutas y flujos.
 import { computed, ref, shallowRef, watch } from "vue";
@@ -18,8 +18,12 @@ import { construirSesion, uuid, type CargaSesion, type PersonaGuardable, type Tr
 
 /** Valor de la opción «En vivo» en los desplegables de sesión. */
 export const SESION_VIVO = "__vivo__";
-/** Cámaras del sitio que un teléfono puede tomar, por orden de llegada. */
-const CAMARAS_VIVO = ["cam01", "cam02", "cam03"];
+/**
+ * Cámaras del sitio que un teléfono puede tomar, por orden de llegada. Solo la 1 y la 2: son las que tienen referencias
+ * para ubicar al teléfono en el plano (Modelo/Test Modelo/Modelo/ubicacion/esan: A0-A2 y B0-B2). cam03 es la del video
+ * grabado (dataset) y en vivo no la toma ningún teléfono.
+ */
+export const CAMARAS_VIVO = ["cam01", "cam02"];
 /** Una detección más vieja que esto ya no se dibuja. */
 const VIGENCIA_MS = 2000;
 /** Cuánto se conserva el rastro en pantalla de quien dejó de verse. */
@@ -657,7 +661,7 @@ const ranuras = computed<RanuraVivo[]>(() => {
     };
   });
 });
-/** Teléfonos conectados que no alcanzaron cámara (el sitio tiene tres). */
+/** Teléfonos conectados que no alcanzaron cámara (en vivo hay dos, ver CAMARAS_VIVO). */
 const sobrantes = computed(() => {
   void asignacionVersion.value;
   return telefonos.value.filter((t) => !asignacion.has(t.id));
