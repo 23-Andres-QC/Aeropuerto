@@ -177,14 +177,17 @@ try {
     for (let i = 0; i < 2; i++) { await evalua(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('click', { bubbles: true })); 0`); await esperar(400); }
   };
   const leyenda = () => evalua(`[...document.querySelectorAll('.leyenda-plano li')].map((l) => l.textContent.trim())`);
-  assert.ok(!(await leyenda()).some((l) => /^(Piso|Comedor|Cámara)/.test(l)), "con el campus entero no se listan las cosas de la zona");
+  assert.ok(!(await leyenda()).some((l) => /^(Piso|Ascensores|Comedor|Cámara)/.test(l)), "con el campus entero no se listan las cosas de la zona");
   let ev = await vistaEnVivo();
   assert.deepEqual(ev, { videos: 0, elegir: true, sinVideos: false, controles: false, botones: 0 }, "al abrir En vivo no hay videos ni botones de zona: se elige en el croquis");
   await clicEnElPlano("g.entrada-sitio[role=button]");
   await esperar(1500);
   ev = await vistaEnVivo();
   assert.deepEqual(ev, { videos: 3, elegir: false, sinVideos: false, controles: true, botones: 0 }, "al hacer clic en el patio se ven sus 3 videos");
-  assert.ok((await leyenda()).some((l) => /^Piso/.test(l)) && (await leyenda()).some((l) => /^Comedor/.test(l)), "acercado al patio, la leyenda lista lo que tiene la zona");
+  let ley = await leyenda();
+  assert.ok(ley.some((l) => /^Ascensores/.test(l)) && ley.some((l) => /^Carpa azul/.test(l)), `acercado al patio, la leyenda lista lo que tiene el patio: ${ley}`);
+  assert.ok(!ley.some((l) => /^(Comedor|SS\.HH)/.test(l)), "y no lo del comedor");
+  assert.ok(!ley.some((l) => /^Piso/.test(l)), "el piso no es una zona que mapear");
   assert.ok(await evalua(`!!document.querySelector('[data-prueba=ver-campus]')`), "acercado a una zona hay un botón para alejar a todo el campus");
   await clic(`document.querySelector('[data-prueba=ver-campus]')`);
   await esperar(1500);
@@ -195,7 +198,10 @@ try {
   await esperar(1500);
   ev = await vistaEnVivo();
   assert.deepEqual(ev, { videos: 0, elegir: false, sinVideos: true, controles: false, botones: 0 }, "al hacer clic en el comedor no se ven los videos del patio");
-  console.log("✓ los videos salen solo al hacer clic en la zona del croquis; el comedor no tiene los del patio");
+  ley = await leyenda();
+  assert.ok(ley.some((l) => /^Comedor/.test(l)) && ley.some((l) => /^SS\.HH\. hombres/.test(l)), `acercado al comedor, la leyenda lista lo que tiene el comedor: ${ley}`);
+  assert.ok(!ley.some((l) => /^(Ascensores|Carpa azul|Piso)/.test(l)), "y no lo del patio");
+  console.log("✓ los videos salen solo al hacer clic en la zona del croquis; el comedor no tiene los del patio; cada zona lista lo suyo en la leyenda");
 
   await clic(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Salir')`);
   await paso("Salir lleva al login", (e) => assert.equal(e.url, "/login"));
