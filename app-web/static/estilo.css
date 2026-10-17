@@ -124,14 +124,6 @@ select {
   display: none;
 }
 
-/* Guía de encuadre: como las cajas, cubre exactamente la imagen del video (ver dibujarGuia). */
-.guia {
-  position: absolute;
-  pointer-events: none;
-}
-.guia-aviso { white-space: normal; max-width: 100%; }
-.opcion.activa { border-color: #ffd60a; color: #ffd60a; }
-
 /* Cajas del modelo: cubren exactamente la imagen del video (ver dibujarCajas). */
 .cajas {
   position: absolute;

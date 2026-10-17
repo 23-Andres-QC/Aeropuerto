@@ -61,5 +61,3 @@ El Dockerfile ejecuta `go vet` y `go test` al construir. Las pruebas levantan el
 - la sala con el proceso del modelo y con video directo;
 - que por la red solo se vea la página;
 - el certificado.
-
-**Guía para encuadrar.** `static/guias.json` (lo escribe `Modelo/Test Modelo/generar_guias.py`) trae, para cada referencia de ubicación, dónde quedan el pie de las paredes y los objetos del patio en su imagen; el botón **Guía** de la página los dibuja sobre el video para poner el teléfono como en la referencia de su cámara.

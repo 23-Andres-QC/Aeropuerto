@@ -641,7 +641,6 @@ func TestLaRedSoloVeLaPaginaDeCamara(t *testing.T) {
 	defer publico.Close()
 	// Lo que sirve el puerto que ve la red (el 8444): la página y su WebSocket, y nada de lo que pide sesión en la web.
 	for ruta, esperado := range map[string]int{"/": http.StatusOK, "/app.js": http.StatusOK, "/codificador.js": http.StatusOK,
-		"/guias.json": http.StatusOK,
 		"/personas": http.StatusNotFound, "/ws/sala": http.StatusNotFound, "/estado?token=x": http.StatusNotFound,
 		"/video?token=x": http.StatusNotFound, "/foto.jpg?token=x": http.StatusNotFound} {
 		resp, err := http.Get(publico.URL + ruta)

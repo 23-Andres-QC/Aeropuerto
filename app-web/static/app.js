@@ -89,7 +89,6 @@ const app = {
 const video = $('video');
 const diferido = $('diferido');
 const capa = $('cajas');
-const lienzoGuia = $('guia');
 const lienzo = document.createElement('canvas');
 const ctx = lienzo.getContext('2d');
 
@@ -244,9 +243,7 @@ function conectar() {
       if (enviado !== undefined && m.cuadro) numerar(m.cuadro, captura ?? enviado);
       if (enviado !== undefined) app.idas.push(performance.now() - enviado);
       if (app.idas.length > 15) app.idas.shift();
-      const camaraAntes = app.camara;
       Object.assign(app, { lectores: m.lectores, espectadores: m.espectadores || 0, camara: m.camara || 0 });
-      if (app.camara !== camaraAntes) dibujarGuia(); // ya se sabe qué cámara es: su guía
     } else if (m.tipo === 'det') {
       alDetecciones(m.datos);
       return;
@@ -634,113 +631,6 @@ function colorClaro(numero) {
 }
 
 
-// ---------- Guía de encuadre ----------
-
-// Dónde deben quedar los bordes de las paredes (y los objetos del patio) en la pantalla para que este teléfono vea lo
-// mismo que una referencia de su cámara: así el modelo lo ubica en el plano y la gente se grafica en el mismo lugar.
-// guias.json sale de Modelo/Test Modelo/generar_guias.py (el contorno del plano llevado a los píxeles de cada
-// referencia). El botón Guía pasa por las referencias de esta cámara (por su número: 1 izquierda, 2 derecha) y la
-// apaga; la elección se recuerda.
-const guia = { lista: null, indice: 0, apagada: leer('camara-web.guia') === 'no', clave: '', vista: null, desde: 0 };
-const AVISO_GUIA_MS = 8000; // cuánto se explica la guía al elegirla
-
-async function cargarGuias() {
-  try {
-    const resp = await fetch('guias.json', { cache: 'no-cache' });
-    if (resp.ok) guia.lista = (await resp.json()).referencias || [];
-  } catch {
-    guia.lista = [];
-  }
-  const nombre = leer('camara-web.guia');
-  if (nombre && nombre !== 'no') guia.preferida = nombre;
-  dibujarGuia();
-}
-
-function guiasDeEstaCamara() {
-  return (guia.lista || []).filter((r) => r.camara === app.camara);
-}
-
-function guiaActual() {
-  const propias = guiasDeEstaCamara();
-  if (guia.apagada || !propias.length) return null;
-  if (guia.preferida) {
-    const k = propias.findIndex((r) => r.nombre === guia.preferida);
-    if (k >= 0) guia.indice = k;
-    guia.preferida = null;
-  }
-  return propias[guia.indice % propias.length];
-}
-
-function cambiarGuia() {
-  const propias = guiasDeEstaCamara();
-  if (!propias.length) return;
-  if (guia.apagada) {
-    guia.apagada = false;
-    guia.indice = 0;
-  } else if (guia.indice + 1 < propias.length) {
-    guia.indice++;
-  } else {
-    guia.apagada = true;
-  }
-  const actual = guiaActual();
-  guardar('camara-web.guia', actual ? actual.nombre : 'no');
-  dibujarGuia();
-}
-
-// Las líneas están en píxeles de la referencia (640 de ancho): el cuadro entero llevado a ese ancho, como lo compara el
-// modelo. Se dibujan sobre la imagen (object-fit: contain) con la misma escala en los dos ejes.
-function dibujarGuia() {
-  const boton = $('guia-boton');
-  const propias = guiasDeEstaCamara();
-  boton.hidden = !app.activa || !propias.length;
-  const actual = app.activa ? guiaActual() : null;
-  boton.textContent = actual ? `Guía ${actual.nombre}` : 'Guía';
-  boton.classList.toggle('activa', !!actual);
-  const W = video.clientWidth;
-  const H = video.clientHeight;
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
-  const vertical = actual && actual.alto > actual.ancho;
-  const girado = actual && vw && vh && (vh > vw) !== vertical;
-  if ((actual && actual.nombre) !== guia.vista) Object.assign(guia, { vista: actual && actual.nombre, desde: performance.now() });
-  const aviso = $('guia-aviso');
-  aviso.hidden = !actual || !vw || (!girado && performance.now() - guia.desde > AVISO_GUIA_MS);
-  aviso.textContent = girado
-    ? `Pon el teléfono ${vertical ? 'vertical' : 'horizontal'} para usar la guía.`
-    : 'Mueve el teléfono hasta que las líneas amarillas queden sobre el pie de las paredes.';
-  const clave = [actual && actual.nombre, W, H, vw, vh, girado].join(' ');
-  if (clave === guia.clave) return;
-  guia.clave = clave;
-  const g = lienzoGuia.getContext('2d');
-  if (!actual || !vw || !vh || !W || !H || girado) {
-    g.clearRect(0, 0, lienzoGuia.width, lienzoGuia.height);
-    return;
-  }
-  const k = Math.min(W / vw, H / vh);
-  const w = vw * k;
-  const h = vh * k;
-  Object.assign(lienzoGuia.style, { left: `${(W - w) / 2}px`, top: `${(H - h) / 2}px`, width: `${w}px`, height: `${h}px` });
-  const px = window.devicePixelRatio || 1;
-  lienzoGuia.width = Math.round(w * px);
-  lienzoGuia.height = Math.round(h * px);
-  const escala = lienzoGuia.width / actual.ancho;
-  g.clearRect(0, 0, lienzoGuia.width, lienzoGuia.height);
-  g.lineJoin = 'round';
-  g.lineCap = 'round';
-  for (const linea of actual.lineas) {
-    const pared = linea.tipo === 'pared';
-    g.beginPath();
-    linea.puntos.forEach(([x, y], i) => (i ? g.lineTo(x * escala, y * escala) : g.moveTo(x * escala, y * escala)));
-    g.setLineDash(pared ? [] : [6 * px, 5 * px]);
-    g.lineWidth = (pared ? 5 : 4) * px;
-    g.strokeStyle = 'rgba(0, 0, 0, 0.6)';
-    g.stroke();
-    g.lineWidth = (pared ? 2.5 : 2) * px;
-    g.strokeStyle = pared ? '#ffd60a' : '#5ac8fa';
-    g.stroke();
-  }
-}
-
 // ---------- Personas (memoria de identidades, como la tabla de Teléfonos) ----------
 
 const personas = { abierto: false, sondeo: null };
@@ -857,7 +747,6 @@ async function unirse() {
   $('inicio').hidden = true;
   $('camara').hidden = false;
   mostrarEstado();
-  dibujarGuia();
   conectar();
   bucleEnvio();
   mantenerPantalla();
@@ -881,7 +770,6 @@ function terminar(mensaje) {
   $('camara').hidden = true;
   $('inicio').hidden = false;
   $('unirse').disabled = false;
-  dibujarGuia();
   if (mensaje) mostrarError(mensaje);
 }
 
@@ -902,9 +790,6 @@ function iniciar() {
   $('abrir-personas').addEventListener('click', abrirPersonas);
   $('cerrar-personas').addEventListener('click', cerrarPersonas);
   $('camaras').addEventListener('change', () => cambiarCamara($('camaras').value));
-  $('guia-boton').addEventListener('click', cambiarGuia);
-  video.addEventListener('loadedmetadata', dibujarGuia);
-  video.addEventListener('resize', dibujarGuia);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') mantenerPantalla();
   });
@@ -912,20 +797,15 @@ function iniciar() {
   window.addEventListener('pagehide', () => {
     if (app.ws && app.ws.readyState === WebSocket.OPEN) app.ws.send(JSON.stringify({ tipo: 'salir' }));
   });
-  window.addEventListener('resize', () => {
-    dibujarCajas();
-    dibujarGuia();
-  });
+  window.addEventListener('resize', dibujarCajas);
   setInterval(() => {
     if (app.activa) ajustarLado();
   }, 1000);
   requestAnimationFrame(animar);
-  cargarGuias();
   setInterval(() => {
     if (!app.activa) return;
     mostrarEstado();
     dibujarCajas(); // borra las cajas si el modelo dejó de mandarlas
-    dibujarGuia();
   }, 500);
 }
 
