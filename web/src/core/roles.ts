@@ -1,9 +1,8 @@
 // Roles de la plataforma y a dónde puede ir cada uno. Módulo sin imports: lo prueban `node web/tests/roles.mjs` y la web.
-// El servidor es quien decide de verdad (la API contesta 404 a una tienda en todo lo que no es suyo); esto solo evita que la web
+// El servidor es quien decide de verdad (la API contesta 403 a lo que el rol no puede abrir); esto solo evita que la web
 // le muestre pantallas que no podría usar.
 
 export const ROL_ADMIN = "superadmin";
-export const ROL_TIENDA = "tienda";
 export const ROL_SEGURIDAD = "seguridad";
 export const ROL_NEGOCIO = "negocio";
 
@@ -19,7 +18,7 @@ const SECCION_A_MODULO: Record<string, Modulo> = {
   configuracion: "configuracion",
 };
 
-/** El módulo al que pertenece una ruta; null para las que no son de ningún módulo (privacidad, cambio de clave, tienda). */
+/** El módulo al que pertenece una ruta; null para las que no son de ningún módulo (privacidad, cambio de clave). */
 export function moduloDeRuta(ruta: string): Modulo | null {
   const m = /^\/sitios\/[^/]+\/([a-z-]+)\/?$/.exec(ruta);
   if (m) return SECCION_A_MODULO[m[1]] ?? null;
@@ -35,13 +34,8 @@ const MODULO_A_SECCION: Partial<Record<Modulo, string>> = { en_vivo: "en-vivo", 
 /** Rutas que cualquiera con sesión puede ver, sea cual sea su rol. */
 const PARA_TODOS = ["/privacidad", "/cambiar-clave"];
 
-export function esTienda(rol: string | undefined): boolean {
-  return rol === ROL_TIENDA;
-}
-
-/** Donde empieza cada rol: la tienda en su pantalla, el resto en el sitio que visitó por última vez. */
+/** Donde empieza cada rol: en el sitio que visitó por última vez, en su primer módulo. */
 export function inicioPara(rol: string | undefined, sitio: string, modulos?: readonly string[]): string {
-  if (esTienda(rol)) return "/tienda";
   if (!modulos || modulos.includes("en_vivo")) return `/sitios/${sitio}/en-vivo`;
   // Un rol sin En vivo (negocio) empieza en el primer módulo que sí puede abrir.
   for (const m of MODULOS) {
@@ -54,11 +48,9 @@ export function inicioPara(rol: string | undefined, sitio: string, modulos?: rea
   return "/privacidad";
 }
 
-/** ¿Puede este rol abrir esta ruta? Una tienda solo ve la suya, el aviso de privacidad y el cambio de clave. */
+/** ¿Puede este rol abrir esta ruta? El aviso de privacidad y el cambio de clave son de todos; Cuentas, solo del superadmin. */
 export function rutaPermitida(rol: string | undefined, ruta: string, modulos?: readonly string[]): boolean {
   if (PARA_TODOS.includes(ruta)) return true;
-  if (esTienda(rol)) return ruta === "/tienda";
-  if (ruta === "/tienda") return false;
   if (ruta === "/cuentas") return rol === ROL_ADMIN;
   // Con la lista de módulos del servidor, cada rol abre solo los suyos (seguridad: En vivo, Teléfonos y Videos; negocio: Ventas e Insights).
   const m = moduloDeRuta(ruta);
@@ -66,7 +58,7 @@ export function rutaPermitida(rol: string | undefined, ruta: string, modulos?: r
   return true;
 }
 
-export const NOMBRE_ROL: Record<string, string> = { superadmin: "Superadmin (Administración LAP)", seguridad: "Seguridad", negocio: "Negocio", tienda: "Tienda", maquina: "Scripts" };
+export const NOMBRE_ROL: Record<string, string> = { superadmin: "Superadmin (Administración LAP)", seguridad: "Seguridad", negocio: "Negocio", maquina: "Scripts" };
 
 export const MIN_CLAVE = 12;
 export const MAX_CLAVE = 128;

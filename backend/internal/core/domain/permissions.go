@@ -35,8 +35,7 @@ func set(modules ...string) map[string]bool {
 	return m
 }
 
-// Can reports whether a role may use a module. A role that is not in the matrix (a store, a store key) may use none:
-// stores have their own, narrower scope.
+// Can reports whether a role may use a module. A role that is not in the matrix (one that no longer exists, like tienda) may use none.
 func Can(role, module string) bool { return rolePermissions[role][module] }
 
 // ModulesOf lists the menu modules of a role, in menu order.

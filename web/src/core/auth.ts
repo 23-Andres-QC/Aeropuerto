@@ -8,10 +8,6 @@ export type Sesion = {
   usuario: string;
   nombre?: string;
   rol: string;
-  /** Solo la tienda: su local y el sitio al que pertenece. */
-  local_id?: number;
-  local?: string;
-  sitio?: string;
   debe_cambiar_clave?: boolean;
   vence?: string;
   /** Los módulos que el servidor deja abrir a este rol: el menú muestra exactamente estos. */

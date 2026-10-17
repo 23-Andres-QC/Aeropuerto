@@ -1,6 +1,6 @@
 import { json, request } from "../../core/http";
 
-// Administración de cuentas, llaves de tienda, privacidad y el sitio Demo. Todo esto es solo del rol superadmin: la API
+// Administración de cuentas, privacidad y el sitio Demo. Todo esto es solo del rol superadmin: la API
 // responde 403/404 a cualquier otro.
 
 export type Usuario = {
@@ -8,10 +8,7 @@ export type Usuario = {
   usuario: string;
   correo?: string;
   nombre: string;
-  rol: "superadmin" | "seguridad" | "negocio" | "tienda";
-  local_id: number | null;
-  local?: string;
-  sitio?: string;
+  rol: "superadmin" | "seguridad" | "negocio";
   debe_cambiar_clave: boolean;
   activo: boolean;
   creado: string;
@@ -20,18 +17,6 @@ export type Usuario = {
 
 /** Cuenta nueva o con la clave restablecida: la clave temporal se muestra una sola vez. */
 export type ConClaveTemporal = { usuario: Usuario; clave_temporal: string };
-
-export type LlaveTienda = {
-  key_id: string;
-  local_id: number;
-  local?: string;
-  etiqueta: string;
-  prefijo: string;
-  creada: string;
-  creada_por: string;
-  ultimo_uso: string | null;
-  revocada: string | null;
-};
 
 export type LineaBitacora = { cuando: string; quien: string; rol: string; accion: string; sobre: string; detalle: string; ip: string };
 
@@ -67,7 +52,7 @@ export type Politica = {
 
 export type ResultadoDepurar = { sesiones: number; puntos: number; sesiones_de_login: number; lineas_de_bitacora: number; puntos_anteriores_a: string };
 
-export type DatosUsuario = { usuario: string; correo: string; nombre: string; rol: string; local_id: number | null };
+export type DatosUsuario = { usuario: string; correo: string; nombre: string; rol: string };
 
 /** El sitio de demostración tiene este nombre: para borrarlo se escribe tal cual. */
 export const NOMBRE_DEMO = "Demo (simulado)";
@@ -82,11 +67,6 @@ export const cuentas = {
   resumenAccesos: (dias = 30) => request<ResumenAccesos>(`/api/v1/auditoria/resumen?dias=${dias}`),
   bitacora: (limite = 100) => request<LineaBitacora[]>(`/api/v1/auditoria?limite=${limite}`),
 
-  llaves: (sitio: string, local: number) => request<LlaveTienda[]>(`/api/v1/sites/${sitio}/tiendas/${local}/llaves`),
-  crearLlave: (sitio: string, local: number, etiqueta: string) =>
-    request<{ llave: LlaveTienda; clave: string }>(`/api/v1/sites/${sitio}/tiendas/${local}/llaves`, json("POST", { etiqueta })),
-  revocarLlave: (sitio: string, local: number, id: string) =>
-    request<void>(`/api/v1/sites/${sitio}/tiendas/${local}/llaves/${id}`, { method: "DELETE" }),
 
   politica: () => request<Politica>("/api/v1/privacidad"),
   depurar: () => request<ResultadoDepurar>("/api/v1/privacidad/depurar", { method: "POST" }),

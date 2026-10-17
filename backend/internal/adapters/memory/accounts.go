@@ -18,13 +18,8 @@ type AccountRepository struct {
 	seq      int
 	users    map[string]*domain.UserRecord
 	sessions map[string]*session
-	keys     map[string]*domain.StoreKeyRecord
 	resets   map[string]*resetToken
 	audit    []domain.AuditEntry
-	// Locals maps a local id to its name; CreateUser refuses a local that is not here.
-	Locals map[int]string
-	// Site is the slug every local belongs to in the tests.
-	Site string
 }
 
 type resetToken struct {
@@ -42,7 +37,7 @@ type session struct {
 
 func NewAccountRepository() *AccountRepository {
 	return &AccountRepository{users: map[string]*domain.UserRecord{}, sessions: map[string]*session{},
-		keys: map[string]*domain.StoreKeyRecord{}, resets: map[string]*resetToken{}, Locals: map[int]string{}}
+		resets: map[string]*resetToken{}}
 }
 
 func (r *AccountRepository) Users(context.Context) ([]domain.User, error) {
@@ -84,22 +79,10 @@ func (r *AccountRepository) CreateUser(_ context.Context, in domain.UserInput, h
 			return domain.User{}, domain.Conflict("Ese usuario o correo ya existe")
 		}
 	}
-	local := ""
-	if in.LocalID != nil {
-		name, ok := r.Locals[*in.LocalID]
-		if !ok {
-			return domain.User{}, domain.Invalid("Ese local no existe")
-		}
-		local = name
-	}
-	site := ""
-	if in.LocalID != nil {
-		site = r.Site
-	}
 	r.seq++
 	id := fmt.Sprintf("00000000-0000-0000-0000-%012d", r.seq)
 	rec := &domain.UserRecord{
-		User: domain.User{ID: id, Username: in.Username, Email: in.Email, DisplayName: in.DisplayName, Role: in.Role, LocalID: in.LocalID, Local: local, Site: site,
+		User: domain.User{ID: id, Username: in.Username, Email: in.Email, DisplayName: in.DisplayName, Role: in.Role,
 			MustChange: mustChange, Active: true, CreatedAt: time.Now()},
 		PasswordHash: hash, IsSeed: seed,
 	}
@@ -246,66 +229,6 @@ func (r *AccountRepository) PurgeSessions(_ context.Context, cutoff time.Time) (
 		}
 	}
 	return n, nil
-}
-
-func (r *AccountRepository) StoreKeys(_ context.Context, localID int) ([]domain.StoreKey, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	out := []domain.StoreKey{}
-	for _, k := range r.keys {
-		if k.LocalID == localID {
-			out = append(out, k.StoreKey)
-		}
-	}
-	return out, nil
-}
-
-func (r *AccountRepository) CreateStoreKey(_ context.Context, localID int, label, prefix string, hash []byte, by string) (domain.StoreKey, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if _, ok := r.Locals[localID]; !ok {
-		return domain.StoreKey{}, domain.NotFound("Ese local no existe")
-	}
-	if _, dup := r.keys[prefix]; dup {
-		return domain.StoreKey{}, domain.Conflict("Intenta de nuevo")
-	}
-	r.seq++
-	k := &domain.StoreKeyRecord{StoreKey: domain.StoreKey{ID: fmt.Sprintf("00000000-0000-0000-0001-%012d", r.seq), LocalID: localID, Label: label,
-		Prefix: prefix, CreatedAt: time.Now(), CreatedBy: by}, Hash: hash}
-	r.keys[prefix] = k
-	return k.StoreKey, nil
-}
-
-func (r *AccountRepository) StoreKeyByPrefix(_ context.Context, prefix string) (domain.StoreKeyRecord, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if k, ok := r.keys[prefix]; ok {
-		return *k, nil
-	}
-	return domain.StoreKeyRecord{}, domain.NotFound("Llave desconocida")
-}
-
-func (r *AccountRepository) TouchStoreKey(_ context.Context, id string, now time.Time) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for _, k := range r.keys {
-		if k.ID == id {
-			k.LastUsedAt = &now
-		}
-	}
-	return nil
-}
-
-func (r *AccountRepository) RevokeStoreKey(_ context.Context, localID int, id string, now time.Time) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for _, k := range r.keys {
-		if k.ID == id && k.LocalID == localID && k.RevokedAt == nil {
-			k.RevokedAt = &now
-			return nil
-		}
-	}
-	return domain.NotFound("Esa llave no existe o ya estaba revocada")
 }
 
 func (r *AccountRepository) AddAudit(_ context.Context, e domain.AuditEntry) error {

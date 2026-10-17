@@ -1,9 +1,8 @@
 // Prueba de punta a punta (manual: pide el stack levantado y un navegador): cuentas, roles, privacidad, el sitio Demo y la unión de teléfonos.
 //
-// Todo se hace sobre el sitio Demo (que se crea y se borra aquí mismo), así que no toca los datos de ESAN ni deja cuentas ni llaves:
-//   1. Cuentas: el admin crea dos usuarios de una tienda (clave temporal, una sola vez), la tienda entra, está obligada a elegir una clave propia,
-//      y después ve solo las cifras de su local (sin menú, y la API le niega todo lo demás); el admin restablece, desactiva y borra.
-//   2. Llaves de ingesta de la tienda: se crea (se muestra una vez) y se revoca.
+// Todo se hace sobre el sitio Demo (que se crea y se borra aquí mismo) y cuentas e2e-… que se borran al final, así que no toca los datos de ESAN:
+//   1. Cuentas: el admin crea dos cuentas de negocio (clave temporal, una sola vez), la persona entra, está obligada a elegir una clave propia
+//      y después abre sus pantallas; el admin restablece, desactiva y borra.
 //   3. Teléfonos: un código de unión con QR y cuenta regresiva; un teléfono se une de verdad por el nginx (WebSocket), se revoca y no vuelve;
 //      un código revocado no deja entrar a nadie.
 //   4. Privacidad: el género de una sesión guardada no se desglosa si son menos de 5; el aviso de privacidad; la retención.
@@ -19,11 +18,15 @@ import { abrir, esperar, USUARIO, CLAVE, WEB } from "./lib-navegador.mjs";
 const paso = (texto) => console.log(`✓ ${texto}`);
 const NOMBRE_DEMO = "Demo (simulado)";
 const sufijo = Date.now().toString(36).slice(-5);
-const TIENDA_A = `e2e-caja-${sufijo}`;
-const TIENDA_A2 = `e2e-caja2-${sufijo}`;
+const CUENTA_A = `e2e-negocio-${sufijo}`;
+const CUENTA_B = `e2e-negocio2-${sufijo}`;
 
 const t = await abrir();
 let secretos = [];
+/** Borra las cuentas e2e-… que haya dejado esta prueba (o una anterior cortada a la mitad). */
+async function borrarCuentasDePrueba() {
+  for (const u of (await t.api("GET", "/api/v1/usuarios")).cuerpo ?? []) if (u.usuario.startsWith("e2e-")) await t.api("DELETE", `/api/v1/usuarios/${u.user_id}`);
+}
 try {
   // ---------- Punto de partida limpio ----------
   const antes = await t.api("GET", "/api/v1/sites");
@@ -31,6 +34,7 @@ try {
     const r = await t.api("DELETE", `/api/v1/demo?confirmar=${encodeURIComponent(NOMBRE_DEMO)}`);
     assert.equal(r.estado, 200, "borrar un Demo que quedó de antes");
   }
+  await borrarCuentasDePrueba();
   const yo = (await t.api("GET", "/api/v1/auth/me")).cuerpo;
   assert.equal(yo.rol, "superadmin");
 
@@ -50,7 +54,7 @@ try {
   assert.ok(resumen.fuentes.simulados >= 14 && resumen.fuentes.reales === 0, "todo lo del Demo es SIMULADO");
   paso("el sitio Demo se crea, con su plano, ventas y tráfico, todo SIMULADO");
 
-  // ---------- Cuentas de tienda ----------
+  // ---------- Cuentas de negocio ----------
   async function crearUsuario(nombre) {
     // El formulario se cierra solo al crear la cuenta (con una transición corta): se espera a que se vaya y se vuelve a abrir.
     await t.hasta(`!document.querySelector('[data-prueba=formulario-nueva]')`, "el formulario se cierra");
@@ -58,9 +62,7 @@ try {
     await t.hasta(`!!document.querySelector('[data-prueba=nuevo-usuario]')`, "el formulario de nueva cuenta");
     await t.poner("[data-prueba=nuevo-usuario]", nombre);
     await t.poner("[data-prueba=nuevo-correo]", `${nombre}@lap.test`);
-    await t.poner("[data-prueba=nuevo-rol]", "tienda");
-    await t.poner("[data-prueba=nuevo-sitio]", "demo");
-    await t.hasta(`(document.querySelector('[data-prueba=nuevo-local]')?.options?.length ?? 0) >= 3 && Number(document.querySelector('[data-prueba=nuevo-local]').value) > 0`, "las tiendas del Demo en el formulario");
+    await t.poner("[data-prueba=nuevo-rol]", "negocio");
     await t.clic("[data-prueba=crear-usuario]");
     await t.hasta(`!!document.querySelector('[data-prueba=clave-temporal]')`, `crear la cuenta ${nombre}`);
     const temporal = await t.texto("[data-prueba=clave-temporal]");
@@ -69,16 +71,17 @@ try {
     await t.clic("[data-prueba=cerrar-clave]");
     return temporal;
   }
-  const temporalA = await crearUsuario(TIENDA_A);
-  const temporalA2 = await crearUsuario(TIENDA_A2);
+  const temporalA = await crearUsuario(CUENTA_A);
+  const temporalA2 = await crearUsuario(CUENTA_B);
   const filas = await t.evalua(`[...document.querySelectorAll('[data-prueba=tabla-usuarios] tbody tr')].map((f) => f.innerText.replace(/\\s+/g, ' '))`);
-  assert.ok(filas.some((f) => f.includes(TIENDA_A) && f.includes("Tienda A (demo)") && f.includes("clave temporal")), `cuenta de la tienda en la tabla: ${filas}`);
-  assert.ok(filas.some((f) => f.includes(TIENDA_A2) && f.includes("Tienda A (demo)")), "varios usuarios para una misma tienda");
+  assert.ok(filas.some((f) => f.includes(CUENTA_A) && f.includes("Negocio") && f.includes("clave temporal")), `cuenta de negocio en la tabla: ${filas}`);
+  assert.ok(filas.some((f) => f.includes(CUENTA_B) && f.includes("Negocio")), "varias cuentas con el mismo rol");
+  assert.ok(!(await t.existe("[data-prueba=nuevo-local]")) && !(await t.texto("body")).includes("Tienda (ve solo su local)"), "ya no hay cuentas de tienda");
   assert.ok((await t.texto("body")).includes("lap"), "la cuenta semilla");
   assert.ok(!(await t.texto("body")).includes(temporalA), "la clave temporal ya no queda a la vista tras cerrarla");
-  paso("el admin crea varias cuentas de una tienda; la clave temporal se ve una sola vez");
+  paso("el admin crea varias cuentas; la clave temporal se ve una sola vez");
 
-  // ---------- La tienda entra ----------
+  // ---------- La persona entra ----------
   async function entrarComo(usuario, clave) {
     await t.api("POST", "/api/v1/auth/logout");
     await t.ir("/login", 1500);
@@ -86,7 +89,7 @@ try {
     await t.escribir("#password", clave);
     await t.evalua(`document.querySelector('form').requestSubmit()`);
   }
-  await entrarComo(TIENDA_A, temporalA);
+  await entrarComo(CUENTA_A, temporalA);
   await t.hasta(`location.pathname === '/cambiar-clave'`, "con clave temporal, a elegir una propia");
   assert.ok((await t.texto("h1")).includes("Elige tu contraseña"));
   assert.ok(!(await t.existe(".sidebar")), "sin menú del análisis");
@@ -94,10 +97,10 @@ try {
   const cerrado = await t.api("GET", "/api/v1/sites/demo/trafico/embudo");
   assert.equal(cerrado.estado, 403);
   assert.equal(cerrado.cuerpo.codigo, "cambiar_clave");
-  await t.ir("/tienda", 1500);
+  await t.ir("/sitios/demo/insights", 1500);
   assert.equal(await t.evalua(`location.pathname`), "/cambiar-clave", "no se sale de ahí sin elegir clave");
   // Claves que no sirven.
-  for (const [nueva, esperado] of [["corta", /al menos 12/], ["aaaaaaaaaaaaaaaa", /repetido/], [TIENDA_A, /usuario/]]) {
+  for (const [nueva, esperado] of [["corta", /al menos 12/], ["aaaaaaaaaaaaaaaa", /repetido/], [CUENTA_A, /usuario/]]) {
     await t.poner("#clave-actual", temporalA);
     await t.poner("#clave-nueva", nueva);
     await t.poner("#clave-repetida", nueva);
@@ -114,84 +117,40 @@ try {
   await t.hasta(`document.querySelector('.error')?.innerText.includes('no coinciden')`, "las dos claves deben coincidir");
   await t.poner("#clave-repetida", claveA);
   await t.clic("form button[type=submit]");
-  await t.hasta(`location.pathname === '/tienda'`, "tras elegir su clave, a su pantalla");
+  await t.hasta(`location.pathname.startsWith('/sitios/')`, "tras elegir su clave, a sus pantallas");
   paso("una cuenta con clave temporal solo puede elegir una propia (mínimo 12 caracteres)");
 
-  // ---------- Lo que ve la tienda ----------
-  await t.hasta(`document.body.innerText.includes('Del frente a la compra') || document.body.innerText.includes('Todavía no hay cifras')`, "cifras de la tienda");
-  assert.match(await t.texto("h1"), /Tienda A/);
-  assert.ok(await t.existe("[data-prueba=simulado]"), "avisa que incluye datos SIMULADOS");
-  const embudo = await t.evalua(`[...document.querySelectorAll('[data-paso]')].map((e) => e.dataset.paso)`);
-  assert.deepEqual(embudo, ["pasan", "se_detienen", "entran", "compran"], "el embudo de su local");
-  assert.ok(!(await t.existe(".sidebar")), "una tienda no tiene el menú del análisis");
-  const quien = await t.texto("[data-prueba=quien]");
-  assert.match(quien, /Tienda/);
-  for (const ruta of ["/sitios/demo/insights", "/sitios/esan/en-vivo", "/cuentas", "/telefonos", "/videos", "/"]) {
-    await t.ir(ruta, 1500);
-    assert.equal(await t.evalua(`location.pathname`), "/tienda", `una tienda que abre ${ruta} vuelve a su pantalla`);
-  }
-  // La API: ni la lista de sitios, ni los análisis, ni la administración, ni En vivo ni las cámaras.
-  for (const [metodo, ruta] of [
-    ["GET", "/api/v1/sites"], ["GET", "/api/v1/sites/demo/config"], ["GET", "/api/v1/sites/demo/sessions"], ["GET", "/api/v1/sites/demo/trafico/calor"],
-    ["GET", "/api/v1/sites/demo/ventas/resumen"], ["GET", "/api/v1/usuarios"], ["GET", "/api/v1/auditoria"], ["GET", "/api/v1/privacidad"], ["POST", "/api/v1/demo"],
-    ["GET", "/api/v1/sites/esan/trafico/embudo"],
-  ]) {
-    const r = await t.api(metodo, ruta);
-    assert.equal(r.estado, 404, `${metodo} ${ruta} como tienda`);
-  }
-  for (const ruta of ["/vivo/api/v1/telefonos", "/vivo/api/v1/personas/fichas", "/camara-web/api/codigos"]) {
-    const r = await t.api("GET", ruta);
-    assert.equal(r.estado, 403, `${ruta} (En vivo y cámaras) como tienda`);
-  }
-  // Pide el local que no es suyo y recibe el suyo.
-  const otro = (await t.api("GET", "/api/v1/sites/demo/trafico/embudo?local=999999&locales=1,2,3&dias=30")).cuerpo;
-  assert.equal(otro.locales.length, 1, "el embudo de una tienda es solo el suyo");
-  assert.equal(otro.locales[0].nombre, "Tienda A");
-  paso("la tienda ve solo su local: sin menú, y la API le niega todo lo demás");
+  // ---------- Lo que ve negocio (el detalle por módulo lo prueba e2e-roles) ----------
+  assert.ok(await t.existe(".sidebar"), "negocio tiene el menú, con sus módulos");
+  assert.ok(!(await t.existe("[data-prueba=ir-cuentas]")), "negocio no ve Cuentas");
+  assert.match(await t.texto("[data-prueba=quien], .sidebar, body"), /./);
+  assert.equal((await t.api("GET", "/api/v1/usuarios")).estado, 403, "negocio no administra cuentas");
+  assert.equal((await t.api("GET", "/api/v1/auditoria")).estado, 403, "ni ve la bitácora");
+  paso("negocio abre sus pantallas y la API le niega la administración");
 
   // ---------- Vuelve el admin ----------
   await entrarComo(USUARIO, CLAVE);
   await t.hasta(`location.pathname.startsWith('/sitios/')`, "volver como admin");
   await t.ir("/cuentas", 2500);
-  await t.hasta(`!!document.querySelector('[data-usuario="${TIENDA_A}"]')`, "las cuentas");
+  await t.hasta(`!!document.querySelector('[data-usuario="${CUENTA_A}"]')`, "las cuentas");
 
-  // Restablecer la clave: otra temporal, una sola vez, y la sesión de la tienda se cierra.
-  await t.clic(`[data-prueba="restablecer-${TIENDA_A}"]`);
+  // Restablecer la clave: otra temporal, una sola vez, y la sesión de la cuenta se cierra.
+  await t.clic(`[data-prueba="restablecer-${CUENTA_A}"]`);
   await t.hasta(`!!document.querySelector('[data-prueba=clave-temporal]')`, "restablecer la clave");
   const temporalNueva = await t.texto("[data-prueba=clave-temporal]");
   secretos.push(temporalNueva);
   assert.notEqual(temporalNueva, temporalA);
   await t.clic("[data-prueba=cerrar-clave]");
-  await t.hasta(`document.querySelector('[data-usuario="${TIENDA_A}"]').innerText.includes('clave temporal')`, "vuelve a pedir clave temporal");
+  await t.hasta(`document.querySelector('[data-usuario="${CUENTA_A}"]').innerText.includes('clave temporal')`, "vuelve a pedir clave temporal");
   // Desactivar.
-  await t.clic(`[data-prueba="alternar-${TIENDA_A2}"]`);
-  await t.hasta(`document.querySelector('[data-usuario="${TIENDA_A2}"]').innerText.includes('desactivada')`, "desactivar la cuenta");
-  const rechazada = await fetch(`${WEB}/api/v1/auth/login`, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "lap" }, body: JSON.stringify({ usuario: TIENDA_A2, clave: temporalA2 }) });
+  await t.clic(`[data-prueba="alternar-${CUENTA_B}"]`);
+  await t.hasta(`document.querySelector('[data-usuario="${CUENTA_B}"]').innerText.includes('desactivada')`, "desactivar la cuenta");
+  const rechazada = await fetch(`${WEB}/api/v1/auth/login`, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "lap" }, body: JSON.stringify({ usuario: CUENTA_B, clave: temporalA2 }) });
   assert.equal(rechazada.status, 401, "una cuenta desactivada no entra");
   // Uno no se desactiva ni se borra a sí mismo.
   assert.equal(await t.evalua(`document.querySelector('[data-prueba="alternar-lap"]').disabled`), true);
   assert.equal(await t.evalua(`document.querySelector('[data-prueba="borrar-lap"]').disabled`), true);
   paso("el admin restablece (clave temporal nueva), desactiva y no puede desactivarse ni borrarse a sí mismo");
-
-  // ---------- Llave de ingesta de la tienda (por la API) ----------
-  const localDemo = (await t.api("GET", "/api/v1/sites/demo/config")).cuerpo.locales[0].local_id;
-  const rutaLlaves = `/api/v1/sites/demo/tiendas/${localDemo}/llaves`;
-  const nueva = await t.api("POST", rutaLlaves, { etiqueta: "caja 1" });
-  assert.ok(nueva.estado === 200 || nueva.estado === 201, `crear la llave: ${nueva.estado}`);
-  const llave = nueva.cuerpo.clave;
-  assert.match(llave, /^lapk_[0-9a-f]{8}_[0-9a-f]{40}$/);
-  secretos.push(llave);
-  const comoLlave = await fetch(`${WEB}/api/v1/auth/me`, { headers: { Authorization: `Bearer ${llave}` } });
-  assert.equal(comoLlave.status, 200);
-  assert.equal((await comoLlave.json()).rol, "tienda_ingesta");
-  assert.equal((await fetch(`${WEB}/api/v1/sites/demo/trafico/embudo`, { headers: { Authorization: `Bearer ${llave}` } })).status, 404, "la llave de tienda no lee tráfico");
-  assert.equal((await fetch(`${WEB}/vivo/api/v1/telefonos`, { headers: { Authorization: `Bearer ${llave}` } })).status, 403, "ni abre En vivo");
-  const lista = (await t.api("GET", rutaLlaves)).cuerpo;
-  assert.ok(!JSON.stringify(lista).includes(llave), "la llave completa no vuelve a mostrarse");
-  const revocada = await t.api("DELETE", `${rutaLlaves}/${nueva.cuerpo.llave.key_id}`);
-  assert.ok(revocada.estado === 200 || revocada.estado === 204, `revocar la llave: ${revocada.estado}`);
-  assert.equal((await fetch(`${WEB}/api/v1/auth/me`, { headers: { Authorization: `Bearer ${llave}` } })).status, 401, "la llave revocada ya no sirve");
-  paso("la llave de ingesta de una tienda se entrega una vez, identifica a su tienda y se revoca");
 
   // ---------- Unir teléfonos ----------
   // Sin códigos vigentes de antes (de otra prueba): así el que se ve es el que se crea aquí.
@@ -313,7 +272,6 @@ try {
   assert.match(panel, /Desglose con grupos pequeños: solo para pruebas/);
   assert.match(panel, /6\s*Mujer/);
   assert.match(panel, /1\s*Hombre/);
-  // Una tienda sigue con 5 aunque el sitio esté en 1 (el servidor se lo aplica a su rol).
   const bit = JSON.stringify((await t.api("GET", "/api/v1/auditoria?limite=100")).cuerpo);
   assert.ok(bit.includes("grupo_minimo_cambiado") && bit.includes("5 -> 1"), "el cambio queda en la bitácora");
   paso("el tamaño mínimo de grupo se baja desde Configuración (aviso de pruebas, bitácora) y vuelve el desglose");
@@ -325,14 +283,16 @@ try {
   const despues = (await t.api("GET", "/api/v1/sites")).cuerpo;
   assert.ok(!despues.some((s) => s.slug === "demo"), "el sitio Demo ya no existe");
   await t.ir("/cuentas", 2500);
-  await t.hasta(`!!document.querySelector('[data-prueba=tabla-usuarios]') && !document.querySelector('[data-usuario="${TIENDA_A}"]')`, "las cuentas de sus tiendas se van con él");
+  await borrarCuentasDePrueba();
+  await t.ir("/cuentas", 2500);
+  await t.hasta(`!!document.querySelector('[data-prueba=tabla-usuarios]') && !document.querySelector('[data-usuario="${CUENTA_A}"]')`, "las cuentas de prueba se borran");
   const bitacora = JSON.stringify((await t.api("GET", "/api/v1/auditoria?limite=500")).cuerpo);
-  for (const accion of ["grupo_minimo_cambiado", "demo_creado", "usuario_creado", "clave_restablecida", "usuario_desactivado", "llave_creada", "llave_revocada", "demo_borrado"]) {
+  for (const accion of ["grupo_minimo_cambiado", "demo_creado", "usuario_creado", "clave_restablecida", "usuario_desactivado", "usuario_borrado", "demo_borrado"]) {
     assert.ok(bitacora.includes(accion), `la bitácora tiene «${accion}»`);
   }
   const todo = (await t.texto("body")) + bitacora;
   for (const s of secretos) assert.ok(!todo.includes(s), "un secreto quedó a la vista o en la bitácora");
-  paso("el Demo se borra escribiendo su nombre (con sus cuentas) y la bitácora no guarda ningún secreto");
+  paso("el Demo se borra escribiendo su nombre, las cuentas de prueba se borran y la bitácora no guarda ningún secreto");
 
   // ---------- La página de Cuentas: pestañas, filtros y bitácora de 10 en 10 ----------
   const filasCuentas = `document.querySelectorAll('[data-prueba=tabla-usuarios] tbody tr[data-usuario]').length`;
@@ -373,6 +333,7 @@ try {
     await t.evalua(`document.querySelector('form').requestSubmit()`);
     await esperar(2500);
     await t.api("DELETE", `/api/v1/demo?confirmar=${encodeURIComponent(NOMBRE_DEMO)}`);
+    await borrarCuentasDePrueba();
   } catch {}
   throw e;
 } finally {

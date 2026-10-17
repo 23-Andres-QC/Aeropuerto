@@ -17,17 +17,10 @@ import {
 // Dónde empieza cada rol.
 assert.equal(inicioPara("superadmin", "esan"), "/sitios/esan/en-vivo");
 assert.equal(inicioPara("maquina", "lap"), "/sitios/lap/en-vivo");
-assert.equal(inicioPara("tienda", "esan"), "/tienda");
 
-// Una tienda solo ve lo suyo, el aviso de privacidad y el cambio de clave; el admin ve todo menos la pantalla de tienda.
-for (const ruta of ["/tienda", "/privacidad", "/cambiar-clave"]) assert.equal(rutaPermitida("tienda", ruta), true, `tienda ${ruta}`);
-for (const ruta of ["/sitios/esan/en-vivo", "/sitios/esan/insights", "/telefonos", "/videos", "/cuentas", "/"]) {
-  assert.equal(rutaPermitida("tienda", ruta), false, `tienda no debe abrir ${ruta}`);
-}
 for (const ruta of ["/sitios/esan/ventas", "/telefonos", "/videos", "/cuentas", "/privacidad", "/cambiar-clave"]) {
   assert.equal(rutaPermitida("superadmin", ruta), true, `admin ${ruta}`);
 }
-assert.equal(rutaPermitida("superadmin", "/tienda"), false, "el admin no usa la pantalla de tienda");
 assert.equal(rutaPermitida("maquina", "/cuentas"), false);
 
 // Los módulos que el servidor deja abrir a cada rol (seguridad: En vivo, Teléfonos y Videos; negocio: Ventas e Insights).
