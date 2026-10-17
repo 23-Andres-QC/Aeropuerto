@@ -297,6 +297,26 @@ const vivas = shallowRef<{ personas: PersonaPlano[]; recorridos: RecorridoPlano[
 const calor = shallowRef<[number, number, number][]>([]);
 /** Foto de la historia, renovada una vez por segundo: lo que lee Insights. */
 const historias = shallowRef<HistoriaViva[]>([]);
+/**
+ * Personas con ID que ningún teléfono ubicó en el plano (su cuadro no se parece a las referencias de su cámara): Insights
+ * las cuenta (personas, género, cuánto se vieron) aunque no tengan recorrido, y avisa cuántas son. Sin esto, con un
+ * teléfono que no reconoce el patio Insights quedaba en cero aunque el modelo viera e identificara a la gente.
+ */
+const sinUbicar = ref(0);
+
+/** La historia para Insights: las ubicadas en el plano y, sin recorrido, las memorizadas que no se ubicaron. */
+function fotoHistorias(): HistoriaViva[] {
+  const ubicadas = [...historia.values()].map((h) => ({ ...h, camaras: new Set(h.camaras), zonas: new Map(h.zonas), puntos: [...h.puntos], secuencia: [...h.secuencia] }));
+  const conRecorrido = new Set(historia.keys());
+  const solas: HistoriaViva[] = [];
+  for (const [id, r] of memorizadas) {
+    // Un ID que se unió a otro por posición es la misma persona: no cuenta como otra.
+    if (conRecorrido.has(id) || (idsUnidos.has(id) && conRecorrido.has(idsUnidos.get(id)!))) continue;
+    solas.push({ id, genero: r.genero, conf: r.conf, primera: r.primera, ultima: r.ultima, camaras: new Set(r.camaras), puntos: [], zonas: new Map(), secuencia: [], zonaActual: null, trazas: [] });
+  }
+  sinUbicar.value = solas.length;
+  return [...ubicadas, ...solas];
+}
 let ticks = 0;
 /** Identificador de la captura en vivo actual: guardar otra vez la actualiza; Reiniciar empieza una nueva. */
 let sesionId = uuid();
@@ -436,7 +456,13 @@ function alDetecciones(id: string, ev: MessageEvent) {
     else nuevos.delete(id);
     ubicados.value = nuevos;
   }
-  if (!cid || !plano || !m.frame_w || !m.frame_h) return;
+  if (!cid) return;
+  // Sin ubicación el teléfono sigue transmitiendo: su ranura cuenta como activa y En vivo avisa que no reconoce el patio
+  // (antes se ignoraba el cuadro y la cámara figuraba apagada, sin aviso).
+  if (!plano || !m.frame_w || !m.frame_h) {
+    cuadros.set(id, { llegada: Date.now(), observaciones: [] });
+    return;
+  }
   const observaciones: Observacion[] = [];
   for (const p of m.people ?? []) {
     // Solo quien tiene ID global va al plano: sin él, la misma persona que otra cámara ya identificó saldría dos veces.
@@ -607,7 +633,7 @@ function componer() {
   // El plano y Insights repintan todo lo acumulado: una vez por segundo basta.
   if (++ticks % 4 === 0) {
     calor.value = [...celdas.values()].map((c) => [c.cx, c.cy, c.s]);
-    historias.value = [...historia.values()].map((h) => ({ ...h, camaras: new Set(h.camaras), zonas: new Map(h.zonas), puntos: [...h.puntos], secuencia: [...h.secuencia] }));
+    historias.value = fotoHistorias();
   }
 }
 
@@ -626,6 +652,7 @@ export function reiniciarVivo() {
   unidasAhora.value = 0;
   calor.value = [];
   historias.value = [];
+  sinUbicar.value = 0;
   inicio.value = Date.now();
   sesionId = uuid();
   trazasGuardadas = 0;
@@ -775,13 +802,33 @@ export function reiniciarCaptura() {
   if (p) void enviarCaptura(p, false);
 }
 
-/** Al apagar el modo en vivo: lo que se estaba grabando se guarda por última vez y el motor se detiene. */
+/**
+ * Al apagar el modo en vivo: lo que se estaba grabando se guarda por última vez, el motor se detiene y, una vez
+ * guardado, el modelo olvida a todas las personas (como «Olvidar a todos» en Teléfonos): al volver a prenderlo los IDs
+ * empiezan en 1 y cada persona se identifica como nueva, sin arrastrar las de la captura anterior.
+ */
 function cerrarCaptura() {
   if (!corriendo) return;
   const p = grabando.value ? prepararCaptura() : null;
   grabando.value = false;
   detener();
-  if (p) void enviarCaptura(p, false);
+  const apagado = !modoVivo.value;
+  void (async () => {
+    if (p) await enviarCaptura(p, false);
+    if (apagado) await olvidarAlApagar();
+  })();
+}
+
+/** Vacía la memoria de identidades del modelo (backend-vivo sube la época y el modelo, al notarlo, olvida lo suyo). */
+async function olvidarAlApagar() {
+  try {
+    const { borradas } = await apiVivo.olvidarTodas();
+    const aviso = `El modelo olvidó a ${borradas} persona${borradas === 1 ? "" : "s"}: al volver a prender En vivo, todos son nuevos.`;
+    mensajeGuardado.value = mensajeGuardado.value ? `${mensajeGuardado.value} ${aviso}` : aviso;
+  } catch (e) {
+    const aviso = `El modelo no pudo olvidar a las personas (${(e as Error).message}): usa «Olvidar a todos» en Teléfonos.`;
+    mensajeGuardado.value = mensajeGuardado.value ? `${mensajeGuardado.value} ${aviso}` : aviso;
+  }
 }
 
 /**
@@ -884,4 +931,4 @@ socketPersistente(`${RELEVO_VIVO}/telefonos/detections/watch`, false, (ev) => {
   }
 });
 
-export const motorVivo = { mapa, config, zonas, ranuras, sobrantes, vivas, calor, historias, resumen, servicioActivo, error, inicio, ahora };
+export const motorVivo = { mapa, config, zonas, ranuras, sobrantes, vivas, calor, historias, sinUbicar, resumen, servicioActivo, error, inicio, ahora };

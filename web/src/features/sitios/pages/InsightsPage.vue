@@ -521,7 +521,7 @@ onMounted(async () => {
     <span><small>Desde</small><b>{{ new Date(vivo.inicio.value).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }) }}</b></span>
     <span><small>Duración</small><b>{{ segundos((vivo.ahora.value - vivo.inicio.value) / 1000) }}</b></span>
     <span><small>Personas</small><b>{{ vivo.resumen.value.personas.toLocaleString() }}</b></span>
-    <span><small>Cámaras transmitiendo</small><b>{{ vivo.ranuras.value.filter((r) => r.activa).length }} de 3</b></span>
+    <span><small>Cámaras transmitiendo</small><b>{{ vivo.ranuras.value.filter((r) => r.activa).length }} de {{ vivo.ranuras.value.length }}</b></span>
     <span><small>Alcance</small><b>{{ alcance }}</b></span>
   </div>
   <div v-else-if="sesion && !vistaSinCapturas" class="resumen-sesion" aria-label="Resumen de la sesión">
@@ -533,6 +533,11 @@ onMounted(async () => {
     <span><small>Cámaras</small><b>{{ config?.cameras.length ?? "—" }}</b></span>
     <span><small>Alcance</small><b>{{ alcance }}</b></span>
   </div>
+  <p v-if="modoVivo && vivo.sinUbicar.value" class="aviso-sin-ubicar" role="status">
+    {{ vivo.sinUbicar.value }} de {{ vivo.resumen.value.personas }} persona{{ vivo.resumen.value.personas === 1 ? "" : "s" }} con ID
+    {{ vivo.sinUbicar.value === 1 ? "no se ubicó" : "no se ubicaron" }} en el plano: su teléfono no reconoce el patio. Cuentan aquí, pero sin recorrido, zonas ni mapa de calor;
+    apunta el teléfono como en las fotos de referencia de su cámara (en <RouterLink :to="`/sitios/${slug}/en-vivo`">En vivo</RouterLink> se avisa qué cámara).
+  </p>
   <section v-if="vistaSinCapturas" class="panel vacio-guardado">
     <div class="panel-heading"><h2>Guardado en vivo</h2></div>
     <p>
@@ -974,5 +979,13 @@ onMounted(async () => {
 }
 .empty {
   margin: 12px;
+}
+.aviso-sin-ubicar {
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-s);
+  border: 1px solid color-mix(in srgb, var(--warn, #d97706) 45%, transparent);
+  background: color-mix(in srgb, var(--warn, #d97706) 10%, transparent);
+  font-size: 13px;
 }
 </style>
