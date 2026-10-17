@@ -613,11 +613,31 @@ function dibujarCajas() {
 // Un palito que sale de la cabeza de la persona (el borde de arriba de su caja), con un punto de su color y, al lado,
 // su ID global, su ID local y su género (H o M); quien aún no tiene ID global va con el palito claro y su ID local. Sin caja: no tapa a la gente.
 // (Lo mismo que la web, web/src/shared/personas.ts.)
+// Dónde se dibujó el marcador de cada track: se acerca a la cabeza con una constante de tiempo de SUAVIZADO_MARCADOR_S en
+// vez de saltar con la caja (su borde de arriba salta hasta un 10-20 % de su alto de un cuadro a otro y el marcador temblaba).
+const SUAVIZADO_MARCADOR_S = 0.12;
+const marcadores = new Map();
+function anclaSuave(persona, x, y) {
+  if (persona.local_id == null) return [x, y];
+  const ahora = performance.now();
+  const previo = marcadores.get(persona.local_id);
+  const alto = Math.max(1, persona.box[3] - persona.box[1]);
+  if (!previo || ahora - previo.t > 1000 || Math.hypot(x - previo.x, y - previo.y) > 1.5 * alto) {
+    marcadores.set(persona.local_id, { x, y, t: ahora });
+    return [x, y];
+  }
+  const a = 1 - Math.exp(-Math.max(0, ahora - previo.t) / 1000 / SUAVIZADO_MARCADOR_S);
+  const nuevo = { x: previo.x + a * (x - previo.x), y: previo.y + a * (y - previo.y), t: ahora };
+  marcadores.set(persona.local_id, nuevo);
+  if (marcadores.size > 200) for (const [id, m] of marcadores) if (ahora - m.t > 5000) marcadores.delete(id);
+  return [nuevo.x, nuevo.y];
+}
+
 function dibujarMarcador(g, persona, s, ancho) {
-  const [x1, y1, x2] = persona.box;
+  const [x1, y0, x2] = persona.box;
   // Colores más claros que los de la web: sobre el video oscuro un tono medio no se ve.
   const color = persona.global_id != null ? colorClaro(persona.global_id) : '#cfe2f7';
-  const cx = (x1 + x2) / 2;
+  const [cx, y1] = anclaSuave(persona, (x1 + x2) / 2, y0);
   const punta = Math.max(8 * s, y1 - 16 * s);
   g.lineCap = 'round';
   for (const [grosor, tinta] of [[4.5 * s, 'rgba(0, 0, 0, 0.6)'], [2.5 * s, color]]) {

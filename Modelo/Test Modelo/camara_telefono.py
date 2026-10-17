@@ -172,6 +172,13 @@ class ReIDMitadSuperior:
 VIDEOS_CON_TELEFONOS_S = 0.2
 
 
+# Un track que ya tenía ID global lo conserva hasta MANTENER_ID_S mientras el carril de los IDs no le confirma otro: el
+# Re-ID parte el tramo cuando unas vistas no se parecen a las anteriores (de lejos, de espaldas, medio cuerpo) y hasta
+# confirmar el nuevo (~0,6 s o más) la persona quedaba sin ID aunque el seguidor la siguiera: medido con un teléfono, 45 de
+# 49 cuadros sin ID tras tenerlo fueron eso (no un duplicado). Si se le confirma otro ID, se muestra ese.
+MANTENER_ID_S = 3.0
+
+
 # Un cuadro que falla (un error raro del modelo) se salta; tantos seguidos indican algo roto (ej. la GPU) y el proceso
 # termina con error: scripts/modelo_local.py lo vuelve a levantar.
 FALLOS_SEGUIDOS_MAX = 10
@@ -549,6 +556,7 @@ class SesionEnVivo:
         self.ultimo, self.procesados, self.saltados = {}, {}, {}
         self.latencias, self.tiempos, self.personas = {}, {}, {}
         self.generos = {}
+        self._ultimo_id = {}  # (teléfono, track local) -> (ID global, instante): ver MANTENER_ID_S
         self.quietud = {}  # teléfono -> Quietud: qué tracks no se mueven
         self.fijos = {}  # (teléfono, track local) -> (género, certeza) ya fijado con certeza >= GENERO_FIJO
         self.intentos_genero = {}  # (teléfono, track local) -> cuadros que ya pasaron por CLIP (hasta INTENTOS_GENERO)
@@ -587,6 +595,7 @@ class SesionEnVivo:
         self.motor.trackers.update(siguen)
         self.motor.genero.memory.update(votos)
         self.fijos = {k: v for k, v in self.fijos.items() if k[0] in siguen}
+        self._ultimo_id = {k: v for k, v in self._ultimo_id.items() if k[0] in siguen}
         self.intentos_genero = {k: v for k, v in self.intentos_genero.items() if k[0] in siguen}
         self._ubicado = {cid: t for cid, t in self._ubicado.items() if cid in siguen}
         for cid in [c for c in self.planos if c not in siguen]:
@@ -657,6 +666,8 @@ class SesionEnVivo:
             self._sin_repetidos(filas[cid])
             for fila in filas[cid]:
                 self._genero(cid, fila)
+        if len(self._ultimo_id) > 500:  # tracks que ya no se ven
+            self._ultimo_id = {k: v for k, v in self._ultimo_id.items() if self.t - v[1] <= MANTENER_ID_S}
         return filas
 
     @staticmethod
@@ -730,6 +741,13 @@ class SesionEnVivo:
                 pass
             fila["global_id"] = asociador.confirmadas.get(tramo.global_id)
             fila["_desde"] = getattr(asociador, "_desde", {}).get(tramo.global_id, math.inf)
+        llave = (cid, fila["local_id"])
+        ultimo = getattr(self, "_ultimo_id", {}).get(llave)
+        if fila["global_id"] is not None:
+            if hasattr(self, "_ultimo_id"):
+                self._ultimo_id[llave] = (fila["global_id"], self.t)
+        elif ultimo is not None and self.t - ultimo[1] <= MANTENER_ID_S and ultimo[0] in self.memoria.personas:
+            fila["global_id"] = ultimo[0]  # el mismo track sigue siendo esa persona mientras no se confirme otra
 
     def _lazo_lento(self):
         """Carril de los IDs: Re-ID con memoria de identidades, siempre con el instante más reciente."""

@@ -21,15 +21,42 @@ export function etiquetaPersona(p: PersonaMarcada): string {
 const SIN_ID = "#8ba4bf";
 
 /**
+ * Dónde se dibujó el marcador de cada track (por lienzo): el punto se acerca a la cabeza con una constante de tiempo de
+ * SUAVIZADO_MARCADOR_S en vez de saltar con la caja. El borde de arriba de la caja salta hasta un 10-20 % de su alto de un
+ * cuadro a otro (el modelo la arma unas veces con los puntos del cuerpo y otras con la de YOLO) y el marcador temblaba.
+ */
+const SUAVIZADO_MARCADOR_S = 0.12;
+const marcadores = new WeakMap<CanvasRenderingContext2D, Map<number, { x: number; y: number; t: number }>>();
+
+function anclaSuave(ctx: CanvasRenderingContext2D, p: PersonaMarcada, x: number, y: number): [number, number] {
+  if (p.local_id == null) return [x, y];
+  let tabla = marcadores.get(ctx);
+  if (!tabla) marcadores.set(ctx, (tabla = new Map()));
+  const ahora = performance.now();
+  const previo = tabla.get(p.local_id);
+  const alto = Math.max(1, p.box[3] - p.box[1]);
+  // Recién aparece, hace rato que no se veía o saltó lejos (otra persona con ese número): va directo.
+  if (!previo || ahora - previo.t > 1000 || Math.hypot(x - previo.x, y - previo.y) > 1.5 * alto) {
+    tabla.set(p.local_id, { x, y, t: ahora });
+    return [x, y];
+  }
+  const a = 1 - Math.exp(-Math.max(0, ahora - previo.t) / 1000 / SUAVIZADO_MARCADOR_S);
+  const nuevo = { x: previo.x + a * (x - previo.x), y: previo.y + a * (y - previo.y), t: ahora };
+  tabla.set(p.local_id, nuevo);
+  if (tabla.size > 200) for (const [id, m] of tabla) if (ahora - m.t > 5000) tabla.delete(id);
+  return [nuevo.x, nuevo.y];
+}
+
+/**
  * Marca a una persona sin tapar su cuerpo: un palito que sale de su cabeza (el borde de arriba de su caja), con un punto
  * del color de su ID y, al lado, su etiqueta (ver etiquetaPersona). Quien aún no tiene ID global lleva el palito gris y
  * su ID local. `s`:
  * escala del trazo y del texto (1 en un cuadro de 640 px).
  */
 export function dibujarMarcador(ctx: CanvasRenderingContext2D, p: PersonaMarcada, s: number, ancho: number) {
-  const [x1, y1, x2] = p.box;
+  const [x1, y0, x2] = p.box;
   const color = p.global_id != null ? colorPersona(p.global_id) : SIN_ID;
-  const cx = (x1 + x2) / 2;
+  const [cx, y1] = anclaSuave(ctx, p, (x1 + x2) / 2, y0);
   const punta = Math.max(8 * s, y1 - 16 * s);
   ctx.lineCap = "round";
   for (const [grosor, tinta] of [[4.5 * s, "rgba(0, 0, 0, 0.6)"], [2.5 * s, color]] as const) {

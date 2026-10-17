@@ -29,6 +29,11 @@ def quitar_envolventes(cajas, confianzas):
     """Sin las cajas que no son una persona: fragmentos y las que envuelven a varias.
 
     - Fragmento: una caja ancha y muy chica (menos del 8 % del área) dentro de otra es una mano o un brazo, no alguien.
+    - Duplicado: una caja casi entera (85 % o más de su área) dentro de otra, centrada en ella y con el borde de arriba a
+      la altura del suyo es la parte de arriba de la misma persona (medio cuerpo, cabeza y hombros): queda la más grande.
+      Con dos cajas sobre una persona el seguidor le abría dos tracks, se le veían dos marcadores y el ID le aparecía y
+      desaparecía (el mismo ID no puede estar dos veces en un cuadro). Quien está detrás de otra persona asoma por arriba
+      o por un costado, así que no cumple las tres cosas.
     - Envolvente: una caja que contiene a dos o más personas (cajas de pie, de tamaño de persona) es un grupo o un fondo;
       con una sola, solo si además es casi cuadrada y esa persona ocupa buena parte de ella.
     """
@@ -45,6 +50,14 @@ def quitar_envolventes(cajas, confianzas):
                   & (centro[:, 1] < cajas[i, 3]) & (area < 0.6 * area[i]))
         dentro[i] = False
         mantener[dentro & (area < 0.08 * area[i]) & (ancho / alto >= 0.9)] = False  # fragmentos
+        x1i, y1i, x2i, y2i = cajas[i]
+        cubre = ((np.minimum(cajas[:, 2], x2i) - np.maximum(cajas[:, 0], x1i)).clip(0)
+                 * (np.minimum(cajas[:, 3], y2i) - np.maximum(cajas[:, 1], y1i)).clip(0)) / area
+        centrada = np.abs(centro[:, 0] - (x1i + x2i) / 2) <= 0.25 * ancho[i]
+        arriba = np.abs(cajas[:, 1] - y1i) <= 0.2 * alto[i]
+        duplicado = (cubre >= 0.85) & centrada & arriba & (area < area[i])
+        duplicado[i] = False
+        mantener[duplicado] = False
         personas = dentro & (alto / ancho >= 1.1) & (area >= 0.01 * area[i])
         if personas.sum() >= 2 or (personas.sum() == 1 and ancho[i] / alto[i] > 0.8 and area[personas].max() >= 0.15 * area[i]):
             mantener[i] = False
