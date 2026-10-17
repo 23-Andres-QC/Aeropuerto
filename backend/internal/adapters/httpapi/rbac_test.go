@@ -82,10 +82,10 @@ func TestRolePermissionMatrix(t *testing.T) {
 		{"PUT", "/api/v1/sites/esan/trafico/umbrales", super}, {"POST", "/api/v1/sites/esan/trafico/recalcular", super},
 		{"POST", "/api/v1/sites/esan/trafico/simulados", super}, {"PUT", "/api/v1/sites/esan/sessions/s1/analytics", super},
 		{"PUT", "/api/v1/sites/esan/sessions/s1/inicio", super},
-		// Cuentas, bitácora, privacidad, demo y llaves: solo el superadmin (la llave de scripts tampoco).
+		// Cuentas, bitácora, privacidad, demo y grupo mínimo: solo el superadmin (la llave de scripts tampoco).
 		{"GET", "/api/v1/usuarios", only}, {"POST", "/api/v1/usuarios", only}, {"PUT", "/api/v1/usuarios/u1/correo", only},
 		{"GET", "/api/v1/auditoria", only}, {"GET", "/api/v1/privacidad", only}, {"POST", "/api/v1/demo", only},
-		{"PUT", "/api/v1/sites/esan/grupo-minimo", only}, {"GET", "/api/v1/sites/esan/tiendas/1/llaves", only},
+		{"PUT", "/api/v1/sites/esan/grupo-minimo", only},
 		// Borrar: solo el superadmin, en cualquier módulo.
 		{"DELETE", "/api/v1/sites/esan/zones/1", only}, {"DELETE", "/api/v1/sites/esan/ventas/tickets/1", only}, {"DELETE", "/api/v1/telefonos/x", only},
 		// Algo que nadie listó se cierra a los roles de módulo (por defecto, Configuración).

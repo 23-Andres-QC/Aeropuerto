@@ -7,13 +7,13 @@ import (
 	"aeropuerto/internal/core/domain"
 )
 
-// AccountRepository stores the accounts, their logins, the store keys and the audit log.
+// AccountRepository stores the accounts, their logins and the audit log.
 type AccountRepository interface {
 	Users(ctx context.Context) ([]domain.User, error)
 	// UserByName finds an account by its login name or its e-mail; domain.ErrNotFound when there is none.
 	UserByName(ctx context.Context, username string) (domain.UserRecord, error)
 	UserByID(ctx context.Context, id string) (domain.UserRecord, error)
-	// CreateUser makes an account; domain.ErrConflict when the name is taken and domain.ErrInvalid when the local does not exist.
+	// CreateUser makes an account; domain.ErrConflict when the name is taken.
 	CreateUser(ctx context.Context, in domain.UserInput, hash string, mustChange, seed bool) (domain.User, error)
 	// SetPassword replaces the hash. changedByOwner marks that its owner chose it (the settings stop setting it).
 	SetPassword(ctx context.Context, id, hash string, mustChange, changedByOwner bool) error
@@ -36,12 +36,6 @@ type AccountRepository interface {
 	RevokeUserSessions(ctx context.Context, userID string, keep []byte, now time.Time) (int, error)
 	// PurgeSessions removes the logins that ended before cutoff.
 	PurgeSessions(ctx context.Context, cutoff time.Time) (int, error)
-
-	StoreKeys(ctx context.Context, localID int) ([]domain.StoreKey, error)
-	CreateStoreKey(ctx context.Context, localID int, label, prefix string, hash []byte, by string) (domain.StoreKey, error)
-	StoreKeyByPrefix(ctx context.Context, prefix string) (domain.StoreKeyRecord, error)
-	TouchStoreKey(ctx context.Context, id string, now time.Time) error
-	RevokeStoreKey(ctx context.Context, localID int, id string, now time.Time) error
 
 	// CreateResetToken stores a recovery link (its hash) and cancels the earlier ones of that account.
 	CreateResetToken(ctx context.Context, tokenHash []byte, userID string, expires, now time.Time, ip string) error

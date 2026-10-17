@@ -85,24 +85,21 @@ func TestCheckPassword(t *testing.T) {
 }
 
 func TestUserInput(t *testing.T) {
-	local := 3
 	for name, c := range map[string]struct {
 		in UserInput
 		ok bool
 	}{
-		"tienda":              {UserInput{Username: " Caja.Uno ", Email: "Caja@Lap.pe", Role: RoleStore, LocalID: &local}, true},
+		"con espacios y mayúsculas": {UserInput{Username: " Caja.Uno ", Email: "Caja@Lap.pe", Role: RoleBusiness}, true},
 		"admin":               {UserInput{Username: "ana@lap.pe", Email: "ana@lap.pe", Role: RoleAdmin}, true},
 		"seguridad":           {UserInput{Username: "vigilante", Email: "vigi@lap.pe", Role: RoleSecurity}, true},
 		"negocio":             {UserInput{Username: "gerente", Email: "gerente@lap.pe", Role: RoleBusiness}, true},
 		"solo el correo":      {UserInput{Email: "solo.correo@lap.pe", Role: RoleBusiness}, true},
 		"sin correo":          {UserInput{Username: "ana", Role: RoleAdmin}, false},
 		"correo malo":         {UserInput{Username: "ana", Email: "ana@", Role: RoleAdmin}, false},
-		"admin con local":     {UserInput{Username: "ana", Email: "ana@lap.pe", Role: RoleAdmin, LocalID: &local}, false},
-		"seguridad con local": {UserInput{Username: "vigi", Email: "v@lap.pe", Role: RoleSecurity, LocalID: &local}, false},
-		"tienda sin local":    {UserInput{Username: "caja", Email: "c@lap.pe", Role: RoleStore}, false},
-		"rol":                 {UserInput{Username: "caja", Email: "c@lap.pe", Role: "root", LocalID: &local}, false},
-		"usuario corto":       {UserInput{Username: "ab", Email: "c@lap.pe", Role: RoleStore, LocalID: &local}, false},
-		"usuario con espacio": {UserInput{Username: "caja uno", Email: "c@lap.pe", Role: RoleStore, LocalID: &local}, false},
+		"el rol tienda ya no existe": {UserInput{Username: "caja", Email: "c@lap.pe", Role: "tienda"}, false},
+		"rol":                 {UserInput{Username: "caja", Email: "c@lap.pe", Role: "root"}, false},
+		"usuario corto":       {UserInput{Username: "ab", Email: "c@lap.pe", Role: RoleBusiness}, false},
+		"usuario con espacio": {UserInput{Username: "caja uno", Email: "c@lap.pe", Role: RoleBusiness}, false},
 	} {
 		in := c.in
 		if err := in.Normalize(); (err == nil) != c.ok {

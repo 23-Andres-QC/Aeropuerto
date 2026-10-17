@@ -30,7 +30,6 @@ func TestRoleModules(t *testing.T) {
 		RoleAdmin:    {ModEnVivo, ModInsights, ModVentas, ModRegistro, ModConfig, ModTelefono, ModVideos, ModUsuarios},
 		RoleSecurity: {ModEnVivo, ModTelefono, ModVideos},
 		RoleBusiness: {ModInsights, ModVentas},
-		RoleStore:    {},
 	} {
 		got := ModulesOf(role)
 		if len(got) != len(want) {
@@ -46,7 +45,7 @@ func TestRoleModules(t *testing.T) {
 	if Can(RoleMachine, ModUsuarios) || !Can(RoleMachine, ModConfig) {
 		t.Error("la llave de scripts lee y escribe todo menos las cuentas")
 	}
-	if Can(RoleStore, ModBase) || Can("", ModBase) || Can("desconocido", ModEnVivo) {
-		t.Error("una tienda o un rol desconocido no tiene módulos")
+	if Can("", ModBase) || Can("desconocido", ModEnVivo) {
+		t.Error("un rol desconocido (o uno que ya no existe, como tienda) no tiene módulos")
 	}
 }

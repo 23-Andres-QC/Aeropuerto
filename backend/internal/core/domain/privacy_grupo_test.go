@@ -13,14 +13,10 @@ func TestMinGroupSettings(t *testing.T) {
 			t.Errorf("%d: %v", n, err)
 		}
 	}
-	// A store always gets 5, whatever the site says; the others get the site's (never below 1).
-	for _, c := range []struct {
-		role string
-		site int
-		want int
-	}{{RoleStore, 1, 5}, {RoleStore, 20, 5}, {RoleStoreFeed, 1, 5}, {RoleAdmin, 1, 1}, {RoleAdmin, 3, 3}, {RoleMachine, 2, 2}, {RoleAdmin, 0, 5}} {
-		if got := EffectiveMinGroup(c.role, c.site); got != c.want {
-			t.Errorf("%s with site %d: %d (want %d)", c.role, c.site, got, c.want)
+	// Everyone gets the site's minimum; a site without one gets 5.
+	for _, c := range []struct{ site, want int }{{1, 1}, {3, 3}, {20, 20}, {0, 5}, {-1, 5}} {
+		if got := EffectiveMinGroup(c.site); got != c.want {
+			t.Errorf("site %d: %d (want %d)", c.site, got, c.want)
 		}
 	}
 }

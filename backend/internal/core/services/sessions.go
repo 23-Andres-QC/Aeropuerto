@@ -119,13 +119,13 @@ func (s *SessionService) Replay(ctx context.Context, slug, id string, step float
 
 // Insights aggregates a session: people, gender, dwell, occupancy over time,
 // cameras, flows between cameras, a 1 m heat map and the site's zones.
-// role picks the minimum group size of the gender counts: a store always gets 5.
-func (s *SessionService) Insights(ctx context.Context, slug, id, role string) (domain.Insights, error) {
+// The site's minimum group size picks which gender counts are hidden.
+func (s *SessionService) Insights(ctx context.Context, slug, id string) (domain.Insights, error) {
 	site, session, err := s.session(ctx, slug, id)
 	if err != nil {
 		return domain.Insights{}, err
 	}
-	minGroup := domain.EffectiveMinGroup(role, site.MinGroupSize)
+	minGroup := domain.EffectiveMinGroup(site.MinGroupSize)
 	key := fmt.Sprintf("insights:%s:%d", session.ID, minGroup)
 	if v, ok := s.cache.get(key); ok && session.Finished() {
 		return v.(domain.Insights), nil

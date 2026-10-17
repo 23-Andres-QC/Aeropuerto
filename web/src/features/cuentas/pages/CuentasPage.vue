@@ -3,7 +3,6 @@ import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { sesion } from "../../../core/auth";
 import { NOMBRE_ROL } from "../../../core/roles";
-import { api, type Config, type Sitio } from "../../sitios/api";
 import { cuentas, type ConClaveTemporal, type Politica, type Usuario } from "../api";
 import BitacoraCuentas from "../components/BitacoraCuentas.vue";
 import PanelAccesos from "../components/PanelAccesos.vue";
@@ -25,22 +24,19 @@ const pestana = ref<Pestana>(PESTANAS.find((p) => p.id === route.query.ver)?.id 
 watch(pestana, (p) => void router.replace({ query: { ...route.query, ver: p === "cuentas" ? undefined : p } }));
 
 const usuarios = ref<Usuario[]>([]);
-const sitios = ref<Sitio[]>([]);
-const configs = ref<Record<string, Config>>({});
 const error = ref("");
 
 // ---- Cuentas ----
-const nuevo = ref({ usuario: "", correo: "", nombre: "", rol: "tienda", sitio: "", local: 0 });
+const nuevo = ref({ usuario: "", correo: "", nombre: "", rol: "negocio" });
 const creando = ref(false);
 const entregada = ref<(ConClaveTemporal & { motivo: string }) | null>(null);
 const copiada = ref(false);
 
-const sitiosReales = computed(() => sitios.value.filter((s) => s.slug));
 const mostrarForm = ref(false);
 const busqueda = ref("");
 const filtroRol = ref<string>("todos");
-const ROLES = ["superadmin", "seguridad", "negocio", "tienda"] as const;
-const COLOR_ROL: Record<string, string> = { superadmin: "#7c3aed", seguridad: "#0284c7", negocio: "#16a34a", tienda: "#d97706" };
+const ROLES = ["superadmin", "seguridad", "negocio"] as const;
+const COLOR_ROL: Record<string, string> = { superadmin: "#7c3aed", seguridad: "#0284c7", negocio: "#16a34a" };
 const porRol = computed(() => {
   const c: Record<string, number> = { todos: usuarios.value.length };
   for (const u of usuarios.value) c[u.rol] = (c[u.rol] ?? 0) + 1;
@@ -49,7 +45,7 @@ const porRol = computed(() => {
 const visibles = computed(() => {
   const q = busqueda.value.trim().toLowerCase();
   return usuarios.value.filter(
-    (u) => (filtroRol.value === "todos" || u.rol === filtroRol.value) && (!q || [u.usuario, u.nombre, u.correo, u.local].some((x) => (x ?? "").toLowerCase().includes(q))),
+    (u) => (filtroRol.value === "todos" || u.rol === filtroRol.value) && (!q || [u.usuario, u.nombre, u.correo].some((x) => (x ?? "").toLowerCase().includes(q))),
   );
 });
 const resumen = computed(() => ({
@@ -59,35 +55,13 @@ const resumen = computed(() => ({
   desactivadas: usuarios.value.filter((u) => !u.activo).length,
 }));
 const inicial = (u: Usuario) => (u.nombre || u.usuario).trim().charAt(0).toUpperCase();
-const localesDe = (slug: string) => configs.value[slug]?.locales ?? [];
-
-async function cargarConfig(slug: string) {
-  if (!slug || configs.value[slug]) return;
-  try {
-    configs.value = { ...configs.value, [slug]: await api.config(slug) };
-  } catch (e) {
-    error.value = (e as Error).message;
-  }
-}
-
-watch(
-  () => nuevo.value.sitio,
-  async (slug) => {
-    await cargarConfig(slug);
-    nuevo.value.local = localesDe(slug)[0]?.local_id ?? 0;
-  },
-);
 
 async function crearUsuario() {
   error.value = "";
   const n = nuevo.value;
-  if (n.rol === "tienda" && !n.local) {
-    error.value = "Elige la tienda de esta cuenta (si no hay, créala en Configuración).";
-    return;
-  }
   creando.value = true;
   try {
-    const r = await cuentas.crearUsuario({ usuario: n.usuario || n.correo, correo: n.correo, nombre: n.nombre, rol: n.rol, local_id: n.rol === "tienda" ? n.local : null });
+    const r = await cuentas.crearUsuario({ usuario: n.usuario || n.correo, correo: n.correo, nombre: n.nombre, rol: n.rol });
     entregada.value = { ...r, motivo: "Cuenta creada" };
     nuevo.value = { ...nuevo.value, usuario: "", correo: "", nombre: "" };
     mostrarForm.value = false;
@@ -168,9 +142,8 @@ const fecha = (iso: string | null) => (iso ? new Date(iso).toLocaleString("es-PE
 
 async function cargar() {
   try {
-    [usuarios.value, sitios.value, politica.value] = await Promise.all([cuentas.usuarios(), api.sitios(), cuentas.politica()]);
+    [usuarios.value, politica.value] = await Promise.all([cuentas.usuarios(), cuentas.politica()]);
     error.value = "";
-    if (!nuevo.value.sitio) nuevo.value.sitio = sitios.value.find((s) => !s.demo)?.slug ?? sitios.value[0]?.slug ?? "";
   } catch (e) {
     error.value = (e as Error).message;
   }
@@ -219,7 +192,7 @@ onMounted(cargar);
       <section v-if="pestana === 'cuentas'" key="cuentas" class="panel" aria-label="Cuentas" role="tabpanel" aria-labelledby="pestana-cuentas">
         <div class="panel-heading">
           <h2>Cuentas</h2>
-          <span class="muted">superadmin ve todo · una tienda ve solo su local</span>
+          <span class="muted">superadmin ve y administra todo · seguridad y negocio ven solo sus módulos</span>
         </div>
 
         <div v-if="entregada" class="entrega" role="status" data-prueba="clave-entregada">
@@ -235,7 +208,7 @@ onMounted(cargar);
         </div>
 
         <div class="barra">
-          <input v-model="busqueda" type="search" class="buscar" placeholder="Buscar por usuario, nombre, correo o tienda…" aria-label="Buscar cuentas" data-prueba="buscar-cuenta" />
+          <input v-model="busqueda" type="search" class="buscar" placeholder="Buscar por usuario, nombre o correo…" aria-label="Buscar cuentas" data-prueba="buscar-cuenta" />
           <div class="chips" role="group" aria-label="Filtrar por rol">
             <button type="button" class="chip" :class="{ activo: filtroRol === 'todos' }" data-prueba="rol-todos" @click="filtroRol = 'todos'">Todos <span class="cuenta">{{ porRol.todos }}</span></button>
             <button v-for="r in ROLES" :key="r" type="button" class="chip" :class="{ activo: filtroRol === r }" :data-prueba="`rol-${r}`" @click="filtroRol = r">
@@ -251,41 +224,25 @@ onMounted(cargar);
           <form v-if="mostrarForm" class="formulario" novalidate data-prueba="formulario-nueva" @submit.prevent="crearUsuario">
             <h3>Nueva cuenta</h3>
             <label>Correo (para ingresar y recuperar la clave)<input v-model="nuevo.correo" data-prueba="nuevo-correo" type="email" autocomplete="off" placeholder="nombre@empresa.com" /></label>
-            <label>Usuario (opcional: por defecto, el correo)<input v-model="nuevo.usuario" data-prueba="nuevo-usuario" autocomplete="off" placeholder="caja.tienda-a" /></label>
-            <label>Nombre (opcional)<input v-model="nuevo.nombre" autocomplete="off" placeholder="Caja de la tienda A" /></label>
+            <label>Usuario (opcional: por defecto, el correo)<input v-model="nuevo.usuario" data-prueba="nuevo-usuario" autocomplete="off" placeholder="gerencia.comercial" /></label>
+            <label>Nombre (opcional)<input v-model="nuevo.nombre" autocomplete="off" placeholder="Gerencia comercial" /></label>
             <label>
               Rol
               <select v-model="nuevo.rol" data-prueba="nuevo-rol">
-                <option value="tienda">Tienda (ve solo su local)</option>
+                <option value="negocio">Negocio (Ventas e Insights, solo para mirar)</option>
                 <option value="seguridad">Seguridad (En vivo, Teléfonos y Videos)</option>
-                <option value="negocio">Negocio (Ventas e Insights)</option>
                 <option value="superadmin">Superadmin (ve todo y administra)</option>
               </select>
             </label>
-            <template v-if="nuevo.rol === 'tienda'">
-              <label>
-                Sitio
-                <select v-model="nuevo.sitio" data-prueba="nuevo-sitio">
-                  <option v-for="s in sitiosReales" :key="s.slug" :value="s.slug">{{ s.name }}</option>
-                </select>
-              </label>
-              <label>
-                Tienda
-                <select v-model.number="nuevo.local" data-prueba="nuevo-local">
-                  <option v-for="l in localesDe(nuevo.sitio)" :key="l.local_id" :value="l.local_id">{{ l.name }}</option>
-                  <option v-if="!localesDe(nuevo.sitio).length" :value="0" disabled>Este sitio no tiene tiendas</option>
-                </select>
-              </label>
-            </template>
             <button class="primary-button" type="submit" data-prueba="crear-usuario" :disabled="creando">Crear cuenta</button>
-            <p class="muted">Se genera una contraseña temporal. Puede haber varias cuentas por tienda; no hay registro público.</p>
+            <p class="muted">Se genera una contraseña temporal. No hay registro público: las cuentas las crea el superadmin.</p>
           </form>
         </Transition>
 
         <div class="tabla-envoltura">
           <table class="tabla" data-prueba="tabla-usuarios">
             <thead>
-              <tr><th>Usuario</th><th>Rol</th><th>Tienda</th><th>Estado</th><th>Último ingreso</th><th></th></tr>
+              <tr><th>Usuario</th><th>Rol</th><th>Estado</th><th>Último ingreso</th><th></th></tr>
             </thead>
             <tbody>
               <tr v-for="u in visibles" :key="u.user_id" :data-usuario="u.usuario" :class="{ inactivo: !u.activo }">
@@ -296,7 +253,6 @@ onMounted(cargar);
                   </div>
                 </td>
                 <td><span class="rol" :style="{ '--tono': COLOR_ROL[u.rol] ?? '#64748b' }">{{ NOMBRE_ROL[u.rol] ?? u.rol }}</span></td>
-                <td>{{ u.local ? `${u.local} (${u.sitio})` : "—" }}</td>
                 <td>
                   <span v-if="!u.activo" class="pill">desactivada</span>
                   <span v-else-if="u.debe_cambiar_clave" class="pill">clave temporal</span>
@@ -326,7 +282,7 @@ onMounted(cargar);
                   </button>
                 </td>
               </tr>
-              <tr v-if="!visibles.length"><td colspan="6" class="muted vacio">{{ usuarios.length ? "Ninguna cuenta coincide con lo que buscas." : "Todavía no hay cuentas." }}</td></tr>
+              <tr v-if="!visibles.length"><td colspan="5" class="muted vacio">{{ usuarios.length ? "Ninguna cuenta coincide con lo que buscas." : "Todavía no hay cuentas." }}</td></tr>
             </tbody>
           </table>
         </div>
