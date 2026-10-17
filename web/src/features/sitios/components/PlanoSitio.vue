@@ -605,9 +605,28 @@ const flechasPlano = computed(() =>
 );
 
 // Leyenda: solo lo que este plano está dibujando.
+/** ¿El punto (m) cae dentro del polígono (m)? */
+function dentro([x, y]: Punto, poligono: Punto[]): boolean {
+  let en = false;
+  for (let i = 0, j = poligono.length - 1; i < poligono.length; j = i++) {
+    const [xi, yi] = poligono[i];
+    const [xj, yj] = poligono[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) en = !en;
+  }
+  return en;
+}
+/** A qué zona grabada pertenece una zona del plano: la otra zona grabada (capa) en cuyo piso cae su centro, o el sitio. */
+function lugarDeZona(z: Zona): string {
+  if (!z.points.length) return "sitio";
+  const c: Punto = [z.points.reduce((a, p) => a + p[0], 0) / z.points.length, z.points.reduce((a, p) => a + p[1], 0) / z.points.length];
+  return (props.mapa.capas ?? []).find((q) => q.piso_m.length > 2 && dentro(c, q.piso_m))?.nombre ?? "sitio";
+}
+/** Lo que se ve: todo el campus, el sitio o el nombre de otra zona grabada acercada. */
+const lugarActual = computed(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"));
 const elementos = computed(() => {
+  // La leyenda lista las zonas de la zona grabada que se mira; con todo el campus a la vista, ninguna.
   const zonas = new Map<string, string>();
-  for (const z of props.zonas) if (!zonas.has(z.name)) zonas.set(z.name, z.color || "#3d8bff");
+  if (lugarActual.value !== "campus") for (const z of props.zonas) if (lugarDeZona(z) === lugarActual.value && !zonas.has(z.name)) zonas.set(z.name, z.color || "#3d8bff");
   return {
     zonas: [...zonas].map(([nombre, color]) => ({ nombre, color })),
     piso: !!props.mapa.piso_L_m?.length && !props.mapa.fondo,
@@ -634,7 +653,7 @@ const idPiso = `piso-${Math.random().toString(36).slice(2, 9)}`;
 
 const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.length, ps.reduce((a, p) => a + p[1], 0) / ps.length];
 // Al final del script, cuando ya existe todo lo que la vista necesita.
-watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => emit("lugar", l), { immediate: true });
+watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
 </script>
 
 <template>
@@ -819,9 +838,6 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
       <template v-if="veSitio">
         <li v-if="elementos.piso"><span class="muestra m-piso"></span>Piso</li>
         <li v-if="elementos.obstaculos"><span class="muestra m-obstaculo"></span>Obstáculo</li>
-        <li v-for="z in elementos.zonas" :key="z.nombre">
-          <span class="muestra" :style="{ background: z.color + '33', borderColor: z.color }"></span>{{ z.nombre }}
-        </li>
         <li v-if="elementos.camaras">
           <svg class="muestra-icono" viewBox="-13 -10 27 20" aria-hidden="true">
             <rect x="-12" y="-8" width="18" height="16" rx="3.5" class="m-cuerpo" /><path d="M 5 -4.5 L 13 -9 L 13 9 L 5 4.5 Z" class="m-cuerpo" />
@@ -829,6 +845,9 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
           Cámara
         </li>
       </template>
+      <li v-for="z in elementos.zonas" :key="z.nombre">
+        <span class="muestra" :style="{ background: z.color + '33', borderColor: z.color }"></span>{{ z.nombre }}
+      </li>
       <li v-if="elementos.personas"><span class="muestra m-persona"></span>Persona (G = ID global)</li>
       <li v-if="elementos.estimadas"><span class="muestra m-persona estimada"></span>Sin detección un momento (posición estimada)</li>
       <li v-if="elementos.salieron"><span class="muestra m-persona salio"></span>Ya salió (última posición)</li>
