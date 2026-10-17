@@ -10,7 +10,7 @@ import (
 // AccountRepository stores the accounts, their logins, the store keys and the audit log.
 type AccountRepository interface {
 	Users(ctx context.Context) ([]domain.User, error)
-	// UserByName finds an account by its login name; domain.ErrNotFound when there is none.
+	// UserByName finds an account by its login name or its e-mail; domain.ErrNotFound when there is none.
 	UserByName(ctx context.Context, username string) (domain.UserRecord, error)
 	UserByID(ctx context.Context, id string) (domain.UserRecord, error)
 	// CreateUser makes an account; domain.ErrConflict when the name is taken and domain.ErrInvalid when the local does not exist.
@@ -18,9 +18,11 @@ type AccountRepository interface {
 	// SetPassword replaces the hash. changedByOwner marks that its owner chose it (the settings stop setting it).
 	SetPassword(ctx context.Context, id, hash string, mustChange, changedByOwner bool) error
 	SetActive(ctx context.Context, id string, active bool) error
+	// SetEmail sets the address of an account (empty clears it); domain.ErrConflict when another account has it.
+	SetEmail(ctx context.Context, id, email string) error
 	// DeleteUser removes an account with its logins.
 	DeleteUser(ctx context.Context, id string) error
-	// CountActiveAdmins is how many admin_lap accounts can log in.
+	// CountActiveAdmins is how many superadmin accounts can log in.
 	CountActiveAdmins(ctx context.Context) (int, error)
 	// RecordFailure counts a failed login and locks the account when it reaches max; it returns the new count.
 	RecordFailure(ctx context.Context, id string, max int, lockFor time.Duration, now time.Time) (int, error)
@@ -40,6 +42,14 @@ type AccountRepository interface {
 	StoreKeyByPrefix(ctx context.Context, prefix string) (domain.StoreKeyRecord, error)
 	TouchStoreKey(ctx context.Context, id string, now time.Time) error
 	RevokeStoreKey(ctx context.Context, localID int, id string, now time.Time) error
+
+	// CreateResetToken stores a recovery link (its hash) and cancels the earlier ones of that account.
+	CreateResetToken(ctx context.Context, tokenHash []byte, userID string, expires, now time.Time, ip string) error
+	ResetToken(ctx context.Context, tokenHash []byte) (domain.ResetTokenRecord, error)
+	// UseResetToken spends a link: true only for the one call that finds it unused and not expired.
+	UseResetToken(ctx context.Context, tokenHash []byte, now time.Time) (bool, error)
+	// CountResetTokens is how many links an account asked for since the given moment.
+	CountResetTokens(ctx context.Context, userID string, since time.Time) (int, error)
 
 	AddAudit(ctx context.Context, e domain.AuditEntry) error
 	Audit(ctx context.Context, limit int) ([]domain.AuditEntry, error)

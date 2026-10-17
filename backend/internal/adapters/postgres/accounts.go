@@ -16,14 +16,14 @@ type AccountRepository struct{ db *pgxpool.Pool }
 
 func NewAccountRepository(db *pgxpool.Pool) *AccountRepository { return &AccountRepository{db: db} }
 
-const userColumns = `u.user_id::text, u.username, u.display_name, u.role, u.local_id, COALESCE(l.name, ''), COALESCE(s.slug, ''),
+const userColumns = `u.user_id::text, u.username, COALESCE(u.email, ''), u.display_name, u.role, u.local_id, COALESCE(l.name, ''), COALESCE(s.slug, ''),
 	u.must_change, u.active, u.created_at, u.last_login_at`
 
 const userFrom = ` FROM users u LEFT JOIN locales l ON l.id = u.local_id LEFT JOIN sites s ON s.site_id = l.site_id`
 
 func scanUser(row pgx.Row, extra ...any) (domain.User, error) {
 	var u domain.User
-	dest := append([]any{&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.LocalID, &u.Local, &u.Site, &u.MustChange, &u.Active,
+	dest := append([]any{&u.ID, &u.Username, &u.Email, &u.DisplayName, &u.Role, &u.LocalID, &u.Local, &u.Site, &u.MustChange, &u.Active,
 		&u.CreatedAt, &u.LastLoginAt}, extra...)
 	err := row.Scan(dest...)
 	return u, err
@@ -53,7 +53,7 @@ func (r *AccountRepository) userRecord(ctx context.Context, where string, arg an
 }
 
 func (r *AccountRepository) UserByName(ctx context.Context, username string) (domain.UserRecord, error) {
-	return r.userRecord(ctx, "u.username = $1", username)
+	return r.userRecord(ctx, "(u.username = $1 OR u.email = $1)", username)
 }
 
 func (r *AccountRepository) UserByID(ctx context.Context, id string) (domain.UserRecord, error) {
@@ -65,12 +65,12 @@ func (r *AccountRepository) UserByID(ctx context.Context, id string) (domain.Use
 
 func (r *AccountRepository) CreateUser(ctx context.Context, in domain.UserInput, hash string, mustChange, seed bool) (domain.User, error) {
 	var id string
-	err := r.db.QueryRow(ctx, `INSERT INTO users (username, display_name, role, local_id, password_hash, must_change, is_seed)
-		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING user_id::text`,
-		in.Username, in.DisplayName, in.Role, in.LocalID, hash, mustChange, seed).Scan(&id)
+	err := r.db.QueryRow(ctx, `INSERT INTO users (username, email, display_name, role, local_id, password_hash, must_change, is_seed)
+		VALUES ($1, NULLIF($2, ''), $3, $4, $5, $6, $7, $8) RETURNING user_id::text`,
+		in.Username, in.Email, in.DisplayName, in.Role, in.LocalID, hash, mustChange, seed).Scan(&id)
 	switch pgCode(err) {
 	case "23505":
-		return domain.User{}, domain.Conflict("Ese usuario ya existe")
+		return domain.User{}, domain.Conflict("Ese usuario o correo ya existe")
 	case "23503":
 		return domain.User{}, domain.Invalid("Ese local no existe")
 	}
@@ -88,6 +88,53 @@ func (r *AccountRepository) SetPassword(ctx context.Context, id, hash string, mu
 		return domain.NotFound("Esa cuenta no existe")
 	}
 	return err
+}
+
+func (r *AccountRepository) SetEmail(ctx context.Context, id, email string) error {
+	tag, err := r.db.Exec(ctx, `UPDATE users SET email = NULLIF($2, '') WHERE user_id = $1::text::uuid`, id, email)
+	if pgCode(err) == "23505" {
+		return domain.Conflict("Ese correo ya lo usa otra cuenta")
+	}
+	if err == nil && tag.RowsAffected() == 0 {
+		return domain.NotFound("Esa cuenta no existe")
+	}
+	return err
+}
+
+func (r *AccountRepository) CreateResetToken(ctx context.Context, h []byte, userID string, expires, now time.Time, ip string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `UPDATE password_reset_tokens SET used_at = $2 WHERE user_id = $1::text::uuid AND used_at IS NULL`, userID, now); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO password_reset_tokens (token_hash, user_id, created_at, expires_at, ip) VALUES ($1, $2::text::uuid, $3, $4, $5)`,
+		h, userID, now, expires, ip); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *AccountRepository) ResetToken(ctx context.Context, h []byte) (domain.ResetTokenRecord, error) {
+	var rec domain.ResetTokenRecord
+	err := r.db.QueryRow(ctx, `SELECT user_id::text, expires_at, used_at FROM password_reset_tokens WHERE token_hash = $1`, h).Scan(&rec.UserID, &rec.Expires, &rec.UsedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return rec, domain.NotFound("Enlace no válido")
+	}
+	return rec, err
+}
+
+func (r *AccountRepository) UseResetToken(ctx context.Context, h []byte, now time.Time) (bool, error) {
+	tag, err := r.db.Exec(ctx, `UPDATE password_reset_tokens SET used_at = $2 WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2`, h, now)
+	return err == nil && tag.RowsAffected() == 1, err
+}
+
+func (r *AccountRepository) CountResetTokens(ctx context.Context, userID string, since time.Time) (int, error) {
+	var n int
+	err := r.db.QueryRow(ctx, `SELECT count(*) FROM password_reset_tokens WHERE user_id = $1::text::uuid AND created_at >= $2`, userID, since).Scan(&n)
+	return n, err
 }
 
 func (r *AccountRepository) SetActive(ctx context.Context, id string, active bool) error {
@@ -108,7 +155,7 @@ func (r *AccountRepository) DeleteUser(ctx context.Context, id string) error {
 
 func (r *AccountRepository) CountActiveAdmins(ctx context.Context) (int, error) {
 	var n int
-	err := r.db.QueryRow(ctx, `SELECT count(*) FROM users WHERE role = 'admin_lap' AND active`).Scan(&n)
+	err := r.db.QueryRow(ctx, `SELECT count(*) FROM users WHERE role = 'superadmin' AND active`).Scan(&n)
 	return n, err
 }
 

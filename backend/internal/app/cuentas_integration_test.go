@@ -64,6 +64,13 @@ func TestPrivacyMigrationsUndoAndRedo(t *testing.T) {
 		t.Fatalf("el conteo de género de la sesión: %d %v", n, err)
 	}
 
+	run(migrations.DownFS, "down/017_roles_y_recuperacion.down.sql")
+	if table("password_reset_tokens") || column("users", "email") {
+		t.Error("la tabla de enlaces y el correo deben desaparecer al deshacer la 017")
+	}
+	if !has("SELECT EXISTS (SELECT 1 FROM users WHERE role = 'admin_lap')") {
+		t.Error("al deshacer la 017 el superadmin vuelve a llamarse admin_lap")
+	}
 	run(migrations.DownFS, "down/016_esan_zona_2_en_esan.down.sql")
 	run(migrations.DownFS, "down/015_esan_zona_2.down.sql")
 	if has("SELECT EXISTS (SELECT 1 FROM sites WHERE slug = 'esan-zona-2')") {
@@ -102,6 +109,10 @@ func TestPrivacyMigrationsUndoAndRedo(t *testing.T) {
 	run(migrations.FS, "016_esan_zona_2_en_esan.sql")
 	if has("SELECT EXISTS (SELECT 1 FROM sites WHERE slug = 'esan-zona-2')") {
 		t.Error("la 016 quita el sitio esan-zona-2: la zona 2 es una capa del plano de ESAN")
+	}
+	run(migrations.FS, "017_roles_y_recuperacion.sql")
+	if !table("password_reset_tokens") || !column("users", "email") {
+		t.Error("la 017 debe volver con su tabla de enlaces y el correo")
 	}
 	for _, name := range []string{"users", "auth_sessions", "store_api_keys", "audit_log", "session_gender_counts"} {
 		if !table(name) {
@@ -193,7 +204,7 @@ func TestAccountsInTheDatabase(t *testing.T) {
 	}
 
 	// The admin makes a store account: the temporary password comes once and is stored as argon2id.
-	w := c.do("POST", "/api/v1/usuarios", map[string]any{"usuario": "it-tienda-a", "nombre": "Caja A", "rol": "tienda", "local_id": locA.ID}, cookie(admin))
+	w := c.do("POST", "/api/v1/usuarios", map[string]any{"usuario": "it-tienda-a", "correo": "it-tienda-a@lap.test", "nombre": "Caja A", "rol": "tienda", "local_id": locA.ID}, cookie(admin))
 	if w.Code != 201 {
 		t.Fatalf("crear usuario: %d %s", w.Code, w.Body)
 	}
@@ -209,16 +220,16 @@ func TestAccountsInTheDatabase(t *testing.T) {
 		t.Fatalf("la contraseña se guarda con argon2id: %q %v", hash, err)
 	}
 	// A second user for the same store is allowed; the same name is a conflict; an admin cannot carry a local; a store needs one.
-	if w := c.do("POST", "/api/v1/usuarios", map[string]any{"usuario": "it-tienda-a2", "rol": "tienda", "local_id": locA.ID}, cookie(admin)); w.Code != 201 {
+	if w := c.do("POST", "/api/v1/usuarios", map[string]any{"usuario": "it-tienda-a2", "correo": "it-tienda-a2@lap.test", "rol": "tienda", "local_id": locA.ID}, cookie(admin)); w.Code != 201 {
 		t.Errorf("varios usuarios por tienda: %d %s", w.Code, w.Body)
 	}
 	for name, body := range map[string]map[string]any{
-		"repetido":          {"usuario": "it-tienda-a", "rol": "tienda", "local_id": locA.ID},
-		"admin con local":   {"usuario": "it-adm", "rol": "admin_lap", "local_id": locA.ID},
-		"tienda sin local":  {"usuario": "it-sin", "rol": "tienda"},
-		"local inexistente": {"usuario": "it-fantasma", "rol": "tienda", "local_id": 999999},
-		"rol raro":          {"usuario": "it-raro", "rol": "root"},
-		"nombre corto":      {"usuario": "ab", "rol": "tienda", "local_id": locA.ID},
+		"repetido":          {"usuario": "it-tienda-a", "correo": "it-tienda-a@lap.test", "rol": "tienda", "local_id": locA.ID},
+		"admin con local":   {"usuario": "it-adm", "correo": "it-adm@lap.test", "rol": "superadmin", "local_id": locA.ID},
+		"tienda sin local":  {"usuario": "it-sin", "correo": "it-sin@lap.test", "rol": "tienda"},
+		"local inexistente": {"usuario": "it-fantasma", "correo": "it-fantasma@lap.test", "rol": "tienda", "local_id": 999999},
+		"rol raro":          {"usuario": "it-raro", "correo": "it-raro@lap.test", "rol": "root"},
+		"nombre corto":      {"usuario": "ab", "correo": "ab@lap.test", "rol": "tienda", "local_id": locA.ID},
 	} {
 		if w := c.do("POST", "/api/v1/usuarios", body, cookie(admin)); w.Code != 400 && w.Code != 409 {
 			t.Errorf("usuario %s debe rechazarse: %d %s", name, w.Code, w.Body)

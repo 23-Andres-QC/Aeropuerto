@@ -71,6 +71,7 @@ func call(h http.Handler, method, path string, body any, mod func(*http.Request)
 		r = httptest.NewRequest(method, path, nil)
 	}
 	r.RemoteAddr = "172.18.0.5:44000" // nginx, in the Docker network
+	r.Header.Set(CSRFHeader, "lap")
 	if mod != nil {
 		mod(r)
 	}
@@ -104,12 +105,12 @@ func (rg *rig) login(t *testing.T) *http.Cookie { return rg.loginAs(t, testUser,
 // newStoreUser makes a store account and gives back its login with the temporary password already changed.
 func (rg *rig) newStoreUser(t *testing.T, name string, local int) (domain.User, *http.Cookie, string) {
 	t.Helper()
-	u, temp, err := rg.svc.CreateUser(context.Background(), domain.UserInput{Username: name, Role: domain.RoleStore, LocalID: &local})
+	u, temp, err := rg.svc.CreateUser(context.Background(), domain.UserInput{Username: name, Email: name + "@lap.test", Role: domain.RoleStore, LocalID: &local})
 	if err != nil {
 		t.Fatal(err)
 	}
 	c := rg.loginAs(t, name, temp)
-	final := "Clave-definitiva-" + name
+	final := "Clave-definitiva-9-" + name
 	if w := call(rg.h, "POST", "/api/v1/auth/password", map[string]string{"actual": temp, "nueva": final}, withCookie(c)); w.Code != http.StatusNoContent {
 		t.Fatalf("changing the temporary password: %d %s", w.Code, w.Body)
 	}
@@ -299,7 +300,7 @@ func TestDeleteNeedsAnAdminLogin(t *testing.T) {
 	}
 	c := rg.login(t)
 	if w := call(rg.h, "DELETE", "/api/v1/sites/esan", nil, withCookie(c)); w.Code != http.StatusNoContent {
-		t.Errorf("DELETE as admin_lap: %d", w.Code)
+		t.Errorf("DELETE as superadmin: %d", w.Code)
 	}
 }
 
@@ -445,7 +446,7 @@ func TestLogsHoldNoSecrets(t *testing.T) {
 	call(rg.h, "DELETE", "/api/v1/sites/esan", nil, withKey(testKey))
 	call(rg.h, "GET", "/api/v1/sites", nil, withKey("clave-que-alguien-probo-123"))
 	// A temporary password and a store key are shown once and never written down.
-	u, temp, _ := rg.svc.CreateUser(context.Background(), domain.UserInput{Username: "tienda-log", Role: domain.RoleStore, LocalID: ptr(storeID)})
+	u, temp, _ := rg.svc.CreateUser(context.Background(), domain.UserInput{Username: "tienda-log", Email: "tienda-log@lap.test", Role: domain.RoleStore, LocalID: ptr(storeID)})
 	_ = u
 	_, key, _ := rg.svc.CreateStoreKey(context.Background(), domain.Principal{User: "x"}, storeID, "caja")
 	call(rg.h, "GET", "/api/v1/auth/me", nil, withKey(key))
@@ -546,7 +547,7 @@ func TestCheckLetsAdminAndScriptsIn(t *testing.T) {
 func TestTemporaryPasswordForcesAChange(t *testing.T) {
 	rg := newRig(t)
 	local := storeID
-	u, temp, err := rg.svc.CreateUser(context.Background(), domain.UserInput{Username: "Tienda-Nueva", Role: domain.RoleStore, LocalID: &local})
+	u, temp, err := rg.svc.CreateUser(context.Background(), domain.UserInput{Username: "Tienda-Nueva", Email: "tienda-nueva@lap.test", Role: domain.RoleStore, LocalID: &local})
 	if err != nil || u.Username != "tienda-nueva" || len(temp) < domain.MinPassword || !u.MustChange {
 		t.Fatalf("new account: %+v %q %v", u, temp, err)
 	}
@@ -605,13 +606,13 @@ func TestDisablingAndResettingEndLogins(t *testing.T) {
 	if w := call(rg.h, "GET", "/api/v1/auth/me", nil, withCookie(c)); w.Code != 401 {
 		t.Errorf("a disabled account kept its login: %d", w.Code)
 	}
-	if w := call(rg.h, "POST", "/api/v1/auth/login", map[string]string{"usuario": "tienda-a", "clave": "Clave-definitiva-tienda-a"}, nil); w.Code != 401 {
+	if w := call(rg.h, "POST", "/api/v1/auth/login", map[string]string{"usuario": "tienda-a", "clave": "Clave-definitiva-9-tienda-a"}, nil); w.Code != 401 {
 		t.Errorf("a disabled account logged in: %d", w.Code)
 	}
 	if _, err := rg.svc.SetActive(context.Background(), admin, u.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	c = rg.loginAs(t, "tienda-a", "Clave-definitiva-tienda-a")
+	c = rg.loginAs(t, "tienda-a", "Clave-definitiva-9-tienda-a")
 	if _, temp, err := rg.svc.ResetPassword(context.Background(), u.ID); err != nil || temp == "" {
 		t.Fatal(err)
 	}

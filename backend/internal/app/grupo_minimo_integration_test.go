@@ -10,7 +10,7 @@ import (
 	"aeropuerto/internal/core/services"
 )
 
-// TestMinGroupSize: the minimum group size is a setting of each site (5 by default, 1 at the lowest), only an admin_lap changes it,
+// TestMinGroupSize: the minimum group size is a setting of each site (5 by default, 1 at the lowest), only an superadmin changes it,
 // every change is in the audit log, and a store account always gets 5.
 func TestMinGroupSize(t *testing.T) {
 	c, _ := newClient(t)
@@ -100,7 +100,7 @@ func TestMinGroupSize(t *testing.T) {
 	db.Exec(ctx, "DELETE FROM users WHERE username = 'it-min-grupo'")
 	t.Cleanup(func() { db.Exec(ctx, "DELETE FROM users WHERE username = 'it-min-grupo'") })
 	locale := decodeJSON[domain.Locale](t, c.do("POST", site+"/locales", map[string]string{"name": "Caja", "category": "x"}, cookie(admin)).Body.Bytes())
-	w := c.do("POST", "/api/v1/usuarios", map[string]any{"usuario": "it-min-grupo", "rol": "tienda", "local_id": locale.ID}, cookie(admin))
+	w := c.do("POST", "/api/v1/usuarios", map[string]any{"usuario": "it-min-grupo", "correo": "it-min-grupo@lap.test", "rol": "tienda", "local_id": locale.ID}, cookie(admin))
 	temp := decodeJSON[struct {
 		T string `json:"clave_temporal"`
 	}](t, w.Body.Bytes()).T
