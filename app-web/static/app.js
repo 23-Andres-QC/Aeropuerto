@@ -611,7 +611,7 @@ function dibujarCajas() {
 }
 
 // Un palito que sale de la cabeza de la persona (el borde de arriba de su caja), con un punto de su color y, al lado,
-// su ID global y su género; quien aún no tiene ID va con el palito claro, sin etiqueta. Sin caja: no tapa a la gente.
+// su ID global, su ID local y su género (H o M); quien aún no tiene ID global va con el palito claro y su ID local. Sin caja: no tapa a la gente.
 // (Lo mismo que la web, web/src/shared/personas.ts.)
 function dibujarMarcador(g, persona, s, ancho) {
   const [x1, y1, x2] = persona.box;
@@ -635,11 +635,13 @@ function dibujarMarcador(g, persona, s, ancho) {
   g.lineWidth = 1.5 * s;
   g.strokeStyle = 'rgba(0, 0, 0, 0.6)';
   g.stroke();
-  if (persona.global_id == null) return;
-  const genero = persona.gender
-    ? `${persona.gender}${persona.gender_conf ? ` ${Math.round(persona.gender_conf * 100)}%` : ''}`
+  // «G12 · L5 · H 92%»: ID global, ID local (el del seguidor en esta cámara) y género con su certeza, H o M.
+  const genero = persona.gender === 'Hombre' || persona.gender === 'Mujer'
+    ? `${persona.gender[0]}${persona.gender_conf ? ` ${Math.round(persona.gender_conf * 100)}%` : ''}`
     : '';
-  const texto = [`G${persona.global_id}`, genero].filter(Boolean).join(' · ');
+  const texto = [persona.global_id != null ? `G${persona.global_id}` : '', persona.local_id != null ? `L${persona.local_id}` : '', genero]
+    .filter(Boolean).join(' · ');
+  if (!texto) return;
   const largo = g.measureText(texto).width + 10 * s;
   const alto = 17 * s;
   const x = cx + 8 * s + largo <= ancho ? cx + 8 * s : cx - 8 * s - largo;

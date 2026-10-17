@@ -7,14 +7,23 @@ export type CuadroDetecciones = {
   people: { box: [number, number, number, number]; global_id: number | null; gender: string | null; gender_conf: number | null }[];
 };
 
-type PersonaMarcada = CuadroDetecciones["people"][number];
+type PersonaMarcada = CuadroDetecciones["people"][number] & { local_id?: number | null };
+
+/** «G12 · L5 · H 92%»: ID global, ID local (el del seguidor en esa cámara) y género con su certeza, H o M. */
+export function etiquetaPersona(p: PersonaMarcada): string {
+  const genero = p.gender === "Hombre" || p.gender === "Mujer"
+    ? `${p.gender[0]}${p.gender_conf ? " " + Math.round(p.gender_conf * 100) + "%" : ""}`
+    : "";
+  return [p.global_id != null ? `G${p.global_id}` : "", p.local_id != null ? `L${p.local_id}` : "", genero].filter(Boolean).join(" · ");
+}
 
 /** Color de quien aún no tiene ID global. */
 const SIN_ID = "#8ba4bf";
 
 /**
  * Marca a una persona sin tapar su cuerpo: un palito que sale de su cabeza (el borde de arriba de su caja), con un punto
- * del color de su ID y, al lado, su ID global y su género. Quien aún no tiene ID lleva el palito gris, sin etiqueta. `s`:
+ * del color de su ID y, al lado, su etiqueta (ver etiquetaPersona). Quien aún no tiene ID global lleva el palito gris y
+ * su ID local. `s`:
  * escala del trazo y del texto (1 en un cuadro de 640 px).
  */
 export function dibujarMarcador(ctx: CanvasRenderingContext2D, p: PersonaMarcada, s: number, ancho: number) {
@@ -38,9 +47,7 @@ export function dibujarMarcador(ctx: CanvasRenderingContext2D, p: PersonaMarcada
   ctx.lineWidth = 1.5 * s;
   ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
   ctx.stroke();
-  const genero = p.gender ? `${p.gender}${p.gender_conf ? " " + Math.round(p.gender_conf * 100) + "%" : ""}` : "";
-  // Solo el ID global (el de la memoria); mientras se confirma va sin etiqueta.
-  const texto = [p.global_id != null ? "G" + p.global_id : "", p.global_id != null ? genero : ""].filter(Boolean).join(" · ");
+  const texto = etiquetaPersona(p);
   if (!texto) return;
   const largo = ctx.measureText(texto).width + 10 * s;
   const alto = 17 * s;
