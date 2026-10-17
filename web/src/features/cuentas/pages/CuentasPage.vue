@@ -1,15 +1,29 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { RouterLink } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import { sesion } from "../../../core/auth";
 import { NOMBRE_ROL } from "../../../core/roles";
 import { api, type Config, type Sitio } from "../../sitios/api";
-import { recargarSitios } from "../../sitios/useSitios";
-import { cuentas, NOMBRE_DEMO, type ConClaveTemporal, type LineaBitacora, type LlaveTienda, type Politica, type Usuario } from "../api";
+import { cuentas, type ConClaveTemporal, type Politica, type Usuario } from "../api";
+import BitacoraCuentas from "../components/BitacoraCuentas.vue";
+import PanelAccesos from "../components/PanelAccesos.vue";
 
-// Administración de cuentas y privacidad (solo superadmin): quién entra y con qué rol, las llaves de ingesta de cada tienda, el sitio
-// Demo (todo SIMULADO), la retención de datos y la bitácora de lo que se hizo. Las contraseñas temporales y las llaves se muestran una
-// sola vez y no quedan escritas en ningún lado.
+// Administración de cuentas y privacidad (solo superadmin), en cuatro pestañas: las cuentas (quién entra y con qué rol), cómo van los
+// accesos (ingresos, fallidos, cambios de contraseña…), la bitácora de lo que se hizo y la retención de datos. Las contraseñas temporales
+// se muestran una sola vez y no quedan escritas en ningún lado.
+const route = useRoute();
+const router = useRouter();
+const PESTANAS = [
+  { id: "cuentas", etiqueta: "Cuentas", icono: "👤" },
+  { id: "accesos", etiqueta: "Accesos", icono: "📈" },
+  { id: "bitacora", etiqueta: "Bitácora", icono: "🧾" },
+  { id: "privacidad", etiqueta: "Privacidad", icono: "🛡️" },
+] as const;
+type Pestana = (typeof PESTANAS)[number]["id"];
+const pestana = ref<Pestana>(PESTANAS.find((p) => p.id === route.query.ver)?.id ?? "cuentas");
+// La pestaña queda en la dirección (?ver=accesos), así se puede recargar o compartir.
+watch(pestana, (p) => void router.replace({ query: { ...route.query, ver: p === "cuentas" ? undefined : p } }));
+
 const usuarios = ref<Usuario[]>([]);
 const sitios = ref<Sitio[]>([]);
 const configs = ref<Record<string, Config>>({});
@@ -22,6 +36,29 @@ const entregada = ref<(ConClaveTemporal & { motivo: string }) | null>(null);
 const copiada = ref(false);
 
 const sitiosReales = computed(() => sitios.value.filter((s) => s.slug));
+const mostrarForm = ref(false);
+const busqueda = ref("");
+const filtroRol = ref<string>("todos");
+const ROLES = ["superadmin", "seguridad", "negocio", "tienda"] as const;
+const COLOR_ROL: Record<string, string> = { superadmin: "#7c3aed", seguridad: "#0284c7", negocio: "#16a34a", tienda: "#d97706" };
+const porRol = computed(() => {
+  const c: Record<string, number> = { todos: usuarios.value.length };
+  for (const u of usuarios.value) c[u.rol] = (c[u.rol] ?? 0) + 1;
+  return c;
+});
+const visibles = computed(() => {
+  const q = busqueda.value.trim().toLowerCase();
+  return usuarios.value.filter(
+    (u) => (filtroRol.value === "todos" || u.rol === filtroRol.value) && (!q || [u.usuario, u.nombre, u.correo, u.local].some((x) => (x ?? "").toLowerCase().includes(q))),
+  );
+});
+const resumen = computed(() => ({
+  total: usuarios.value.length,
+  activas: usuarios.value.filter((u) => u.activo).length,
+  temporales: usuarios.value.filter((u) => u.activo && u.debe_cambiar_clave).length,
+  desactivadas: usuarios.value.filter((u) => !u.activo).length,
+}));
+const inicial = (u: Usuario) => (u.nombre || u.usuario).trim().charAt(0).toUpperCase();
 const localesDe = (slug: string) => configs.value[slug]?.locales ?? [];
 
 async function cargarConfig(slug: string) {
@@ -53,6 +90,8 @@ async function crearUsuario() {
     const r = await cuentas.crearUsuario({ usuario: n.usuario || n.correo, correo: n.correo, nombre: n.nombre, rol: n.rol, local_id: n.rol === "tienda" ? n.local : null });
     entregada.value = { ...r, motivo: "Cuenta creada" };
     nuevo.value = { ...nuevo.value, usuario: "", correo: "", nombre: "" };
+    mostrarForm.value = false;
+    creando.value = false;
     await cargar();
   } catch (e) {
     error.value = (e as Error).message;
@@ -104,87 +143,8 @@ async function copiarClave() {
   }
 }
 
-// ---- Llaves de ingesta de una tienda ----
-const llaveSitio = ref("");
-const llaveLocal = ref(0);
-const llaves = ref<LlaveTienda[]>([]);
-const llaveNueva = ref<{ clave: string; llave: LlaveTienda } | null>(null);
-const etiqueta = ref("");
-
-async function cargarLlaves() {
-  llaves.value = [];
-  if (!llaveSitio.value || !llaveLocal.value) return;
-  try {
-    llaves.value = await cuentas.llaves(llaveSitio.value, llaveLocal.value);
-  } catch (e) {
-    error.value = (e as Error).message;
-  }
-}
-watch(llaveSitio, async (slug) => {
-  await cargarConfig(slug);
-  llaveLocal.value = localesDe(slug)[0]?.local_id ?? 0;
-});
-watch(llaveLocal, cargarLlaves);
-
-async function crearLlave() {
-  error.value = "";
-  try {
-    llaveNueva.value = await cuentas.crearLlave(llaveSitio.value, llaveLocal.value, etiqueta.value);
-    etiqueta.value = "";
-    await cargarLlaves();
-  } catch (e) {
-    error.value = (e as Error).message;
-  }
-}
-
-async function revocarLlave(k: LlaveTienda) {
-  if (!window.confirm(`¿Revocar la llave ${k.prefijo}…? Dejará de servir de inmediato.`)) return;
-  try {
-    await cuentas.revocarLlave(llaveSitio.value, llaveLocal.value, k.key_id);
-    await cargarLlaves();
-  } catch (e) {
-    error.value = (e as Error).message;
-  }
-}
-
-// ---- Sitio Demo ----
-const demo = computed(() => sitios.value.find((s) => s.demo));
-const demoBusy = ref(false);
-const confirmacion = ref("");
-const confirmaBorrado = computed(() => confirmacion.value.trim().toLowerCase() === NOMBRE_DEMO.toLowerCase());
-
-async function crearDemo() {
-  demoBusy.value = true;
-  error.value = "";
-  try {
-    await cuentas.crearDemo();
-    await recargarSitios();
-    await cargar();
-  } catch (e) {
-    error.value = (e as Error).message;
-  } finally {
-    demoBusy.value = false;
-  }
-}
-
-async function borrarDemo() {
-  demoBusy.value = true;
-  error.value = "";
-  try {
-    await cuentas.borrarDemo(confirmacion.value.trim());
-    confirmacion.value = "";
-    await recargarSitios();
-    await cargar();
-  } catch (e) {
-    error.value = (e as Error).message;
-  } finally {
-    demoBusy.value = false;
-  }
-}
-
-// ---- Privacidad y bitácora ----
+// ---- Privacidad ----
 const politica = ref<Politica | null>(null);
-const bitacora = ref<LineaBitacora[]>([]);
 const depurado = ref("");
 const depurando = ref(false);
 
@@ -208,15 +168,9 @@ const fecha = (iso: string | null) => (iso ? new Date(iso).toLocaleString("es-PE
 
 async function cargar() {
   try {
-    [usuarios.value, sitios.value, politica.value, bitacora.value] = await Promise.all([
-      cuentas.usuarios(),
-      api.sitios(),
-      cuentas.politica(),
-      cuentas.bitacora(100),
-    ]);
+    [usuarios.value, sitios.value, politica.value] = await Promise.all([cuentas.usuarios(), api.sitios(), cuentas.politica()]);
     error.value = "";
     if (!nuevo.value.sitio) nuevo.value.sitio = sitios.value.find((s) => !s.demo)?.slug ?? sitios.value[0]?.slug ?? "";
-    if (!llaveSitio.value) llaveSitio.value = nuevo.value.sitio;
   } catch (e) {
     error.value = (e as Error).message;
   }
@@ -236,219 +190,181 @@ onMounted(cargar);
     </header>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
 
-    <!-- Cuentas -->
-    <section class="panel" aria-label="Cuentas">
-      <div class="panel-heading">
-        <h2>Cuentas</h2>
-        <span class="muted">superadmin ve todo · una tienda ve solo su local</span>
-      </div>
+    <ul class="resumen" aria-label="Resumen de cuentas">
+      <li><b>{{ resumen.total }}</b><span>cuentas</span></li>
+      <li class="bien"><b>{{ resumen.activas }}</b><span>activas</span></li>
+      <li :class="{ aviso: resumen.temporales }"><b>{{ resumen.temporales }}</b><span>con clave temporal</span></li>
+      <li :class="{ apagada: resumen.desactivadas }"><b>{{ resumen.desactivadas }}</b><span>desactivadas</span></li>
+    </ul>
 
-      <div v-if="entregada" class="entrega" role="status" data-prueba="clave-entregada">
-        <b>{{ entregada.motivo }}: {{ entregada.usuario.usuario }}</b>
-        <p>
-          Contraseña temporal (se muestra <b>una sola vez</b>; la persona deberá elegir una propia al entrar):
-        </p>
-        <p class="clave" data-prueba="clave-temporal">{{ entregada.clave_temporal }}</p>
-        <div class="acciones">
-          <button class="button" type="button" @click="copiarClave">{{ copiada ? "✓ Copiada" : "Copiar" }}</button>
-          <button class="button" type="button" data-prueba="cerrar-clave" @click="entregada = null">Listo, ya la anoté</button>
+    <nav class="pestanas" role="tablist" aria-label="Secciones de cuentas">
+      <button
+        v-for="p in PESTANAS"
+        :id="`pestana-${p.id}`"
+        :key="p.id"
+        type="button"
+        role="tab"
+        class="pestana"
+        :class="{ activa: pestana === p.id }"
+        :aria-selected="pestana === p.id"
+        :data-prueba="`pestana-${p.id}`"
+        @click="pestana = p.id"
+      >
+        <span aria-hidden="true">{{ p.icono }}</span>{{ p.etiqueta }}
+      </button>
+    </nav>
+
+    <Transition name="cambio" mode="out-in">
+      <!-- Cuentas -->
+      <section v-if="pestana === 'cuentas'" key="cuentas" class="panel" aria-label="Cuentas" role="tabpanel" aria-labelledby="pestana-cuentas">
+        <div class="panel-heading">
+          <h2>Cuentas</h2>
+          <span class="muted">superadmin ve todo · una tienda ve solo su local</span>
         </div>
-      </div>
 
-      <div class="tabla-envoltura">
-        <table class="tabla" data-prueba="tabla-usuarios">
-          <thead>
-            <tr><th>Usuario</th><th>Rol</th><th>Tienda</th><th>Estado</th><th>Último ingreso</th><th></th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="u in usuarios" :key="u.user_id" :data-usuario="u.usuario" :class="{ inactivo: !u.activo }">
-              <td><b>{{ u.usuario }}</b><small v-if="u.nombre"> · {{ u.nombre }}</small><small v-if="u.correo" class="correo"><br />{{ u.correo }}</small></td>
-              <td>{{ NOMBRE_ROL[u.rol] ?? u.rol }}</td>
-              <td>{{ u.local ? `${u.local} (${u.sitio})` : "—" }}</td>
-              <td>
-                <span v-if="!u.activo" class="pill">desactivada</span>
-                <span v-else-if="u.debe_cambiar_clave" class="pill">clave temporal</span>
-                <span v-else class="pill ok">activa</span>
-              </td>
-              <td>{{ fecha(u.ultimo_ingreso) }}</td>
-              <td class="acciones">
-                <button class="button" type="button" :data-prueba="`restablecer-${u.usuario}`" @click="restablecer(u)">Restablecer clave</button>
-                <button
-                  :class="u.activo ? 'danger-button' : 'button'"
-                  type="button"
-                  :data-prueba="`alternar-${u.usuario}`"
-                  :disabled="u.usuario === sesion?.usuario"
-                  :title="u.usuario === sesion?.usuario ? 'No puedes desactivar tu propia cuenta' : ''"
-                  @click="alternar(u)"
-                >
-                  {{ u.activo ? "Desactivar" : "Activar" }}
-                </button>
-                <button
-                  class="danger-button"
-                  type="button"
-                  :data-prueba="`borrar-${u.usuario}`"
-                  :disabled="u.usuario === sesion?.usuario"
-                  @click="borrar(u)"
-                >
-                  Borrar
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+        <div v-if="entregada" class="entrega" role="status" data-prueba="clave-entregada">
+          <b>{{ entregada.motivo }}: {{ entregada.usuario.usuario }}</b>
+          <p>
+            Contraseña temporal (se muestra <b>una sola vez</b>; la persona deberá elegir una propia al entrar):
+          </p>
+          <p class="clave" data-prueba="clave-temporal">{{ entregada.clave_temporal }}</p>
+          <div class="acciones">
+            <button class="button" type="button" @click="copiarClave">{{ copiada ? "✓ Copiada" : "Copiar" }}</button>
+            <button class="button" type="button" data-prueba="cerrar-clave" @click="entregada = null">Listo, ya la anoté</button>
+          </div>
+        </div>
 
-      <form class="formulario" novalidate @submit.prevent="crearUsuario">
-        <h3>Nueva cuenta</h3>
-        <label>Correo (para ingresar y recuperar la clave)<input v-model="nuevo.correo" data-prueba="nuevo-correo" type="email" autocomplete="off" placeholder="nombre@empresa.com" /></label>
-        <label>Usuario (opcional: por defecto, el correo)<input v-model="nuevo.usuario" data-prueba="nuevo-usuario" autocomplete="off" placeholder="caja.tienda-a" /></label>
-        <label>Nombre (opcional)<input v-model="nuevo.nombre" autocomplete="off" placeholder="Caja de la tienda A" /></label>
-        <label>
-          Rol
-          <select v-model="nuevo.rol" data-prueba="nuevo-rol">
-            <option value="tienda">Tienda (ve solo su local)</option>
-            <option value="seguridad">Seguridad (En vivo, Teléfonos y Videos)</option>
-            <option value="negocio">Negocio (Ventas e Insights)</option>
-            <option value="superadmin">Superadmin (ve todo y administra)</option>
-          </select>
-        </label>
-        <template v-if="nuevo.rol === 'tienda'">
-          <label>
-            Sitio
-            <select v-model="nuevo.sitio" data-prueba="nuevo-sitio">
-              <option v-for="s in sitiosReales" :key="s.slug" :value="s.slug">{{ s.name }}</option>
-            </select>
-          </label>
-          <label>
-            Tienda
-            <select v-model.number="nuevo.local" data-prueba="nuevo-local">
-              <option v-for="l in localesDe(nuevo.sitio)" :key="l.local_id" :value="l.local_id">{{ l.name }}</option>
-              <option v-if="!localesDe(nuevo.sitio).length" :value="0" disabled>Este sitio no tiene tiendas</option>
-            </select>
-          </label>
-        </template>
-        <button class="primary-button" type="submit" data-prueba="crear-usuario" :disabled="creando">Crear cuenta</button>
-        <p class="muted">Se genera una contraseña temporal. Puede haber varias cuentas por tienda; no hay registro público.</p>
-      </form>
-    </section>
-
-    <!-- Llaves de tienda -->
-    <section class="panel" aria-label="Llaves de ingesta de tienda">
-      <div class="panel-heading">
-        <h2>Llaves de ingesta de cada tienda</h2>
-        <span class="muted">solo identifican a su tienda; la ingesta de datos llega en el siguiente paso</span>
-      </div>
-      <div class="fila">
-        <label>
-          Sitio
-          <select v-model="llaveSitio" data-prueba="llave-sitio">
-            <option v-for="s in sitiosReales" :key="s.slug" :value="s.slug">{{ s.name }}</option>
-          </select>
-        </label>
-        <label>
-          Tienda
-          <select v-model.number="llaveLocal" data-prueba="llave-local">
-            <option v-for="l in localesDe(llaveSitio)" :key="l.local_id" :value="l.local_id">{{ l.name }}</option>
-          </select>
-        </label>
-        <label>Etiqueta<input v-model="etiqueta" maxlength="60" placeholder="caja 1" /></label>
-        <button class="primary-button" type="button" data-prueba="crear-llave" :disabled="!llaveLocal" @click="crearLlave">Crear llave</button>
-      </div>
-      <div v-if="llaveNueva" class="entrega" role="status" data-prueba="llave-entregada">
-        <b>Llave creada ({{ llaveNueva.llave.prefijo }}…)</b>
-        <p>Cópiala ahora: <b>no se vuelve a mostrar</b>. Va en el encabezado <code>Authorization: Bearer …</code>.</p>
-        <p class="clave" data-prueba="llave-completa">{{ llaveNueva.clave }}</p>
-        <button class="button" type="button" @click="llaveNueva = null">Listo, ya la guardé</button>
-      </div>
-      <table v-if="llaves.length" class="tabla">
-        <thead><tr><th>Llave</th><th>Etiqueta</th><th>Creada</th><th>Último uso</th><th></th></tr></thead>
-        <tbody>
-          <tr v-for="k in llaves" :key="k.key_id" :class="{ inactivo: k.revocada }">
-            <td><code>{{ k.prefijo }}…</code></td>
-            <td>{{ k.etiqueta || "—" }}</td>
-            <td>{{ fecha(k.creada) }}</td>
-            <td>{{ fecha(k.ultimo_uso) }}</td>
-            <td class="acciones">
-              <span v-if="k.revocada" class="pill">revocada</span>
-              <button v-else class="danger-button" type="button" @click="revocarLlave(k)">Revocar</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else class="muted">Esta tienda no tiene llaves.</p>
-    </section>
-
-    <!-- Sitio Demo -->
-    <section class="panel" aria-label="Sitio Demo">
-      <div class="panel-heading">
-        <h2>Sitio Demo</h2>
-        <span class="pill simulado">todo SIMULADO</span>
-      </div>
-      <template v-if="demo">
-        <p>
-          «{{ demo.name }}» existe: {{ demo.zones }} zonas, ventas y tráfico simulados. Úsalo para demostraciones sin tocar los datos de un sitio real.
-          <RouterLink :to="`/sitios/${demo.slug}/insights`">Abrir</RouterLink>
-        </p>
-        <div class="fila">
-          <label>
-            Para borrarlo entero, escribe su nombre: <b>{{ NOMBRE_DEMO }}</b>
-            <input v-model="confirmacion" data-prueba="confirmar-demo" autocomplete="off" :placeholder="NOMBRE_DEMO" />
-          </label>
-          <button class="danger-button" type="button" data-prueba="borrar-demo" :disabled="!confirmaBorrado || demoBusy" @click="borrarDemo">
-            Borrar el sitio Demo
+        <div class="barra">
+          <input v-model="busqueda" type="search" class="buscar" placeholder="Buscar por usuario, nombre, correo o tienda…" aria-label="Buscar cuentas" data-prueba="buscar-cuenta" />
+          <div class="chips" role="group" aria-label="Filtrar por rol">
+            <button type="button" class="chip" :class="{ activo: filtroRol === 'todos' }" data-prueba="rol-todos" @click="filtroRol = 'todos'">Todos <span class="cuenta">{{ porRol.todos }}</span></button>
+            <button v-for="r in ROLES" :key="r" type="button" class="chip" :class="{ activo: filtroRol === r }" :data-prueba="`rol-${r}`" @click="filtroRol = r">
+              <i :style="{ background: COLOR_ROL[r] }"></i>{{ NOMBRE_ROL[r].replace(' (Administración LAP)', '') }} <span class="cuenta">{{ porRol[r] ?? 0 }}</span>
+            </button>
+          </div>
+          <button type="button" class="primary-button nueva" :aria-expanded="mostrarForm" data-prueba="abrir-nueva" @click="mostrarForm = !mostrarForm">
+            {{ mostrarForm ? "✕ Cerrar" : "＋ Nueva cuenta" }}
           </button>
         </div>
-      </template>
-      <template v-else>
-        <p class="muted">No hay sitio Demo. Crearlo arma un plano pequeño con tres tiendas y semanas de ventas y tráfico simulados.</p>
-        <button class="primary-button" type="button" data-prueba="crear-demo" :disabled="demoBusy" @click="crearDemo">
-          {{ demoBusy ? "Creando…" : "Crear el sitio Demo" }}
-        </button>
-      </template>
-    </section>
 
-    <!-- Privacidad -->
-    <section v-if="politica" class="panel" aria-label="Retención de datos">
-      <div class="panel-heading">
-        <h2>Retención de datos</h2>
-        <RouterLink to="/privacidad">Aviso de privacidad</RouterLink>
-      </div>
-      <ul class="plazos">
-        <li><b>{{ politica.vectores_horas }} horas</b> la descripción de apariencia de cada persona (se borra sola en el servicio de cámaras).</li>
-        <li><b>{{ politica.puntos_dias }} días</b> las posiciones por persona; los conteos y promedios, {{ politica.agregados }}.</li>
-        <li><b>{{ politica.bitacora_dias }} días</b> esta bitácora.</li>
-        <li>El género de una persona no se guarda: solo conteos por sesión, en grupos de 5 o más.</li>
-      </ul>
-      <p class="muted" data-prueba="estado-retencion">
-        Ahora hay {{ politica.estado.puntos.toLocaleString("es-PE") }} posiciones guardadas
-        <template v-if="politica.estado.sesion_mas_antigua"> (la sesión más antigua con ellas es del {{ fecha(politica.estado.sesion_mas_antigua) }})</template>;
-        {{ politica.estado.sesiones_depuradas }} sesiones ya depuradas<template v-if="politica.estado.pendientes_de_agregar">
-          · {{ politica.estado.pendientes_de_agregar }} pasan de 90 días pero su tráfico aún no se contó, así que se conservan</template>.
-        La depuración corre sola una vez al día.
-      </p>
-      <button class="button" type="button" data-prueba="depurar" :disabled="depurando" @click="depurar">Depurar ahora</button>
-      <p v-if="depurado" class="ok" role="status" data-prueba="depurado">{{ depurado }}</p>
-    </section>
+        <Transition name="desplegar">
+          <form v-if="mostrarForm" class="formulario" novalidate data-prueba="formulario-nueva" @submit.prevent="crearUsuario">
+            <h3>Nueva cuenta</h3>
+            <label>Correo (para ingresar y recuperar la clave)<input v-model="nuevo.correo" data-prueba="nuevo-correo" type="email" autocomplete="off" placeholder="nombre@empresa.com" /></label>
+            <label>Usuario (opcional: por defecto, el correo)<input v-model="nuevo.usuario" data-prueba="nuevo-usuario" autocomplete="off" placeholder="caja.tienda-a" /></label>
+            <label>Nombre (opcional)<input v-model="nuevo.nombre" autocomplete="off" placeholder="Caja de la tienda A" /></label>
+            <label>
+              Rol
+              <select v-model="nuevo.rol" data-prueba="nuevo-rol">
+                <option value="tienda">Tienda (ve solo su local)</option>
+                <option value="seguridad">Seguridad (En vivo, Teléfonos y Videos)</option>
+                <option value="negocio">Negocio (Ventas e Insights)</option>
+                <option value="superadmin">Superadmin (ve todo y administra)</option>
+              </select>
+            </label>
+            <template v-if="nuevo.rol === 'tienda'">
+              <label>
+                Sitio
+                <select v-model="nuevo.sitio" data-prueba="nuevo-sitio">
+                  <option v-for="s in sitiosReales" :key="s.slug" :value="s.slug">{{ s.name }}</option>
+                </select>
+              </label>
+              <label>
+                Tienda
+                <select v-model.number="nuevo.local" data-prueba="nuevo-local">
+                  <option v-for="l in localesDe(nuevo.sitio)" :key="l.local_id" :value="l.local_id">{{ l.name }}</option>
+                  <option v-if="!localesDe(nuevo.sitio).length" :value="0" disabled>Este sitio no tiene tiendas</option>
+                </select>
+              </label>
+            </template>
+            <button class="primary-button" type="submit" data-prueba="crear-usuario" :disabled="creando">Crear cuenta</button>
+            <p class="muted">Se genera una contraseña temporal. Puede haber varias cuentas por tienda; no hay registro público.</p>
+          </form>
+        </Transition>
 
-    <!-- Bitácora -->
-    <section class="panel" aria-label="Bitácora">
-      <div class="panel-heading"><h2>Bitácora</h2><span class="muted">últimas 100 acciones · nunca lleva contraseñas ni llaves</span></div>
-      <div class="tabla-envoltura">
-        <table class="tabla" data-prueba="bitacora">
-          <thead><tr><th>Cuándo</th><th>Quién</th><th>Acción</th><th>Sobre</th><th>Detalle</th></tr></thead>
-          <tbody>
-            <tr v-for="(l, i) in bitacora" :key="i">
-              <td class="nowrap">{{ fecha(l.cuando) }}</td>
-              <td>{{ l.quien }}</td>
-              <td>{{ l.accion }}</td>
-              <td>{{ l.sobre }}</td>
-              <td>{{ l.detalle }}</td>
-            </tr>
-            <tr v-if="!bitacora.length"><td colspan="5" class="muted">Sin acciones registradas.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+        <div class="tabla-envoltura">
+          <table class="tabla" data-prueba="tabla-usuarios">
+            <thead>
+              <tr><th>Usuario</th><th>Rol</th><th>Tienda</th><th>Estado</th><th>Último ingreso</th><th></th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="u in visibles" :key="u.user_id" :data-usuario="u.usuario" :class="{ inactivo: !u.activo }">
+                <td>
+                  <div class="persona">
+                    <span class="avatar" :style="{ background: COLOR_ROL[u.rol] ?? '#64748b' }" aria-hidden="true">{{ inicial(u) }}</span>
+                    <span><b>{{ u.usuario }}</b><small v-if="u.nombre"> · {{ u.nombre }}</small><small v-if="u.correo" class="correo"><br />{{ u.correo }}</small></span>
+                  </div>
+                </td>
+                <td><span class="rol" :style="{ '--tono': COLOR_ROL[u.rol] ?? '#64748b' }">{{ NOMBRE_ROL[u.rol] ?? u.rol }}</span></td>
+                <td>{{ u.local ? `${u.local} (${u.sitio})` : "—" }}</td>
+                <td>
+                  <span v-if="!u.activo" class="pill">desactivada</span>
+                  <span v-else-if="u.debe_cambiar_clave" class="pill">clave temporal</span>
+                  <span v-else class="pill ok">activa</span>
+                </td>
+                <td>{{ fecha(u.ultimo_ingreso) }}</td>
+                <td class="acciones">
+                  <button class="button" type="button" :data-prueba="`restablecer-${u.usuario}`" @click="restablecer(u)">Restablecer clave</button>
+                  <button
+                    :class="u.activo ? 'danger-button' : 'button'"
+                    type="button"
+                    :data-prueba="`alternar-${u.usuario}`"
+                    :disabled="u.usuario === sesion?.usuario"
+                    :title="u.usuario === sesion?.usuario ? 'No puedes desactivar tu propia cuenta' : ''"
+                    @click="alternar(u)"
+                  >
+                    {{ u.activo ? "Desactivar" : "Activar" }}
+                  </button>
+                  <button
+                    class="danger-button"
+                    type="button"
+                    :data-prueba="`borrar-${u.usuario}`"
+                    :disabled="u.usuario === sesion?.usuario"
+                    @click="borrar(u)"
+                  >
+                    Borrar
+                  </button>
+                </td>
+              </tr>
+              <tr v-if="!visibles.length"><td colspan="6" class="muted vacio">{{ usuarios.length ? "Ninguna cuenta coincide con lo que buscas." : "Todavía no hay cuentas." }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Accesos -->
+      <section v-else-if="pestana === 'accesos'" key="accesos" class="panel" role="tabpanel" aria-labelledby="pestana-accesos">
+        <PanelAccesos />
+      </section>
+
+      <!-- Bitácora -->
+      <section v-else-if="pestana === 'bitacora'" key="bitacora" class="panel" role="tabpanel" aria-labelledby="pestana-bitacora">
+        <BitacoraCuentas />
+      </section>
+
+      <!-- Privacidad -->
+      <section v-else-if="politica" key="privacidad" class="panel" aria-label="Retención de datos" role="tabpanel" aria-labelledby="pestana-privacidad">
+        <div class="panel-heading">
+          <h2>Retención de datos</h2>
+          <RouterLink to="/privacidad">Aviso de privacidad</RouterLink>
+        </div>
+        <ul class="plazos">
+          <li><b>{{ politica.vectores_horas }} horas</b> la descripción de apariencia de cada persona (se borra sola en el servicio de cámaras).</li>
+          <li><b>{{ politica.puntos_dias }} días</b> las posiciones por persona; los conteos y promedios, {{ politica.agregados }}.</li>
+          <li><b>{{ politica.bitacora_dias }} días</b> la bitácora.</li>
+          <li>El género de una persona no se guarda: solo conteos por sesión, en grupos de 5 o más.</li>
+        </ul>
+        <p class="muted" data-prueba="estado-retencion">
+          Ahora hay {{ politica.estado.puntos.toLocaleString("es-PE") }} posiciones guardadas
+          <template v-if="politica.estado.sesion_mas_antigua"> (la sesión más antigua con ellas es del {{ fecha(politica.estado.sesion_mas_antigua) }})</template>;
+          {{ politica.estado.sesiones_depuradas }} sesiones ya depuradas<template v-if="politica.estado.pendientes_de_agregar">
+            · {{ politica.estado.pendientes_de_agregar }} pasan de 90 días pero su tráfico aún no se contó, así que se conservan</template>.
+          La depuración corre sola una vez al día.
+        </p>
+        <button class="button" type="button" data-prueba="depurar" :disabled="depurando" @click="depurar">Depurar ahora</button>
+        <p v-if="depurado" class="ok" role="status" data-prueba="depurado">{{ depurado }}</p>
+      </section>
+    </Transition>
   </main>
 </template>
 
@@ -456,7 +372,7 @@ onMounted(cargar);
 .cuentas {
   display: grid;
   gap: 14px;
-  max-width: 1100px;
+  max-width: 1180px;
 }
 .cabecera {
   display: flex;
@@ -542,9 +458,6 @@ label {
 .pill.ok {
   color: #1c7c54;
 }
-.pill.simulado {
-  color: #8a5a00;
-}
 .plazos {
   margin: 0 0 8px;
   padding-left: 18px;
@@ -553,5 +466,187 @@ label {
 .ok {
   color: #1c7c54;
   font-weight: 600;
+}
+.resumen {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+.resumen li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius-s, 10px);
+  background: var(--glass-strong);
+}
+.resumen b {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.resumen span {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink-soft);
+}
+.resumen .bien b {
+  color: var(--good);
+}
+.resumen .aviso b {
+  color: var(--warn);
+}
+.resumen .apagada b {
+  color: var(--ink-faint);
+}
+.pestanas {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--glass-line);
+}
+.pestana {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.2s, background 0.15s;
+}
+.pestana:hover {
+  color: var(--ink);
+  background: rgba(37, 99, 235, 0.06);
+}
+.pestana.activa {
+  color: var(--accent-color, #2563eb);
+  border-bottom-color: var(--accent-color, #2563eb);
+}
+.cambio-enter-active,
+.cambio-leave-active {
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.cambio-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.cambio-leave-to {
+  opacity: 0;
+}
+.desplegar-enter-active,
+.desplegar-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.desplegar-enter-from,
+.desplegar-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+.barra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-bottom: 10px;
+}
+.buscar {
+  flex: 1 1 260px;
+  max-width: 360px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 auto;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-line);
+  background: var(--glass);
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+.chip:hover {
+  transform: translateY(-1px);
+}
+.chip i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.chip.activo {
+  background: var(--accent-color, #2563eb);
+  border-color: var(--accent-color, #2563eb);
+  color: #fff;
+}
+.chip .cuenta {
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.18);
+  font-variant-numeric: tabular-nums;
+}
+.chip.activo .cuenta {
+  background: rgba(255, 255, 255, 0.28);
+}
+.persona {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.avatar {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+}
+.rol {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--tono) 14%, transparent);
+  color: var(--tono);
+}
+.tabla tbody tr {
+  transition: background 0.12s;
+}
+.tabla tbody tr:hover {
+  background: rgba(37, 99, 235, 0.05);
+}
+.vacio {
+  text-align: center !important;
+  padding: 22px 10px !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cambio-enter-active,
+  .cambio-leave-active,
+  .desplegar-enter-active,
+  .desplegar-leave-active,
+  .pestana,
+  .chip {
+    transition: none;
+  }
 }
 </style>

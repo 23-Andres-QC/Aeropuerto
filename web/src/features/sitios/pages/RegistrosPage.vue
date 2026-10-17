@@ -4,9 +4,6 @@ import { segundos } from "../../../shared/format";
 import { api, type Sesion } from "../api";
 import { trafico } from "../traficoApi";
 import { capturasVersion, modoVivo } from "../enVivo";
-import { sesion } from "../../../core/auth";
-import BitacoraAcceso from "../components/BitacoraAcceso.vue";
-import PanelAccesos from "../components/PanelAccesos.vue";
 import { useSitios } from "../useSitios";
 
 const { slug, actual } = useSitios();
@@ -192,10 +189,6 @@ watch(capturasVersion, cargar);
       </p>
     </div>
   </section>
-  <template v-if="sesion?.rol === 'superadmin'">
-    <PanelAccesos />
-    <BitacoraAcceso />
-  </template>
 </template>
 
 <style scoped>

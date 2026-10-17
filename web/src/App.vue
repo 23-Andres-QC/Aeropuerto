@@ -104,7 +104,7 @@ function elegirSitio(s: Sitio) {
       <div v-if="telefonos || videos || cuentas" class="airport-switch">
         <span class="airport-symbol">⌖</span>
         <div v-if="telefonos"><b>Teléfonos</b><small>Modelo final en vivo · IDs estables</small></div>
-        <div v-else-if="cuentas"><b>Cuentas</b><small>Roles, privacidad y sitio Demo</small></div>
+        <div v-else-if="cuentas"><b>Cuentas</b><small>Cuentas, accesos y privacidad</small></div>
         <div v-else><b>Videos</b><small>Modelo final sobre un archivo · nada se guarda</small></div>
       </div>
       <SelectorSitio v-else :sitios="sitios" :slug="slug" :actual="actual" @elegir="elegirSitio" />
