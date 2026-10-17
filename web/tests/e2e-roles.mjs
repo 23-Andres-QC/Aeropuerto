@@ -70,6 +70,8 @@ try {
   assert.equal(await pideLista("/api/v1/telefonos"), 200);
   assert.equal(await pideLista("/vivo/api/v1/videos"), 200, "Videos (nginx → backend-vivo)");
   assert.equal(await pideLista("/camara-web/api/codigos"), 200, "Teléfonos: los códigos de unión");
+  assert.equal(await pideLista(`/api/v1/sites/esan/sessions/${(await t.api("GET", "/api/v1/sites/esan/sessions")).cuerpo[0]?.session_id}/replay`), 200, "seguridad reproduce sesiones");
+  assert.notEqual((await t.api("POST", "/api/v1/sites/esan/sessions", {})).estado, 403, "seguridad guarda la captura al apagar En vivo (llega a validar el cuerpo)");
   assert.equal((await t.api("POST", "/api/v1/sites/esan/zones", { name: "x", zone_type: "OTRO", points: [[0, 0], [1, 0], [1, 1]] })).estado, 403, "seguridad no cambia la configuración");
   paso("seguridad: menú, rutas y API solo de En vivo, Teléfonos y Videos");
 
@@ -87,6 +89,21 @@ try {
   assert.ok(!(await t.evalua(`location.pathname`)).includes("telefonos"));
   assert.equal(await pideLista("/api/v1/sites/esan/ventas/resumen"), 200);
   assert.equal(await pideLista("/api/v1/sites/esan/trafico/resumen"), 200);
+  // Lo que Insights necesita de verdad: la reproducción de la sesión (con ella dibuja el movimiento y el calor). Sin avisos de «sin acceso».
+  const ses = (await t.api("GET", "/api/v1/sites/esan/sessions")).cuerpo.find((x) => x.points > 0);
+  assert.ok(ses, "ESAN tiene una sesión con puntos");
+  assert.equal(await pideLista(`/api/v1/sites/esan/sessions/${ses.session_id}/replay`), 200, "negocio abre la reproducción (Insights)");
+  assert.equal(await pideLista(`/api/v1/sites/esan/sessions/${ses.session_id}/insights`), 200);
+  await t.ir(`/sitios/esan/insights?sesion=${ses.session_id}`, 4500);
+  const cuerpoInsights = await t.evalua(`document.body.innerText`);
+  assert.ok(!cuerpoInsights.includes("Tu rol no tiene acceso"), "Insights no muestra el aviso de acceso denegado a negocio");
+  assert.ok(!(await t.existe(".umbrales-caja")) && !cuerpoInsights.includes("Generar tráfico simulado"), "Insights no ofrece cambiar umbrales ni generar datos a quien solo mira");
+  await t.ir("/sitios/esan/ventas", 3000);
+  const tabs = await t.evalua(`[...document.querySelectorAll('.pestanas button')].map((b) => b.innerText.trim())`);
+  assert.deepEqual(tabs, ["Resumen", "Pronóstico", "Cuándo se vende"], "Ventas solo muestra lo que negocio puede ver");
+  assert.ok(!(await t.evalua(`document.body.innerText.includes('Tu rol no tiene acceso')`)), "Ventas sin avisos de acceso denegado");
+  assert.equal((await t.api("POST", "/api/v1/sites/esan/ventas/tickets", { tickets: [] })).estado, 403, "negocio no carga tickets");
+  assert.equal((await t.api("POST", "/api/v1/sites/esan/sessions", {})).estado, 403, "negocio no guarda capturas");
   assert.equal(await pideLista("/api/v1/telefonos"), 403);
   assert.equal(await pideLista("/vivo/api/v1/videos"), 403, "Videos le cierra nginx");
   assert.equal(await pideLista("/camara-web/api/codigos"), 403);
@@ -94,15 +111,33 @@ try {
   assert.equal((await t.api("DELETE", "/api/v1/sites/esan/zones/1")).estado, 403);
   paso("negocio: menú, rutas y API solo de Insights y Ventas; nginx le cierra Videos y Teléfonos");
 
-  // ---------- Registros y bitácora (superadmin) ----------
+  // ---------- Registros: panel de accesos y bitácora (superadmin) ----------
+  // Un intento fallido a propósito (contraseña equivocada) para ver que el panel lo cuenta.
+  const mala = await fetch(`${WEB}/api/v1/auth/login`, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "lap" }, body: JSON.stringify({ usuario: CUENTAS.negocio.correo, clave: "clave-equivocada-xyz" }) });
+  assert.equal(mala.status, 401);
   await entrar(USUARIO, CLAVE);
   await t.ir("/sitios/esan/registros", 2500);
   await t.hasta(`!!document.querySelector('[data-prueba=bitacora-acceso]')`, "la bitácora en Registros");
+  await t.hasta(`!!document.querySelector('[data-prueba=panel-accesos] [data-prueba=kpi-ingresos]')`, "el panel de accesos");
+  const kpi = async (id) => Number((await t.texto(`[data-prueba=kpi-${id}]`)).replace(/[^0-9 ]/g, " ").trim().split(/\s+/).find((x) => /^\d+$/.test(x)) ?? "NaN");
+  assert.ok((await kpi("ingresos")) >= 3, "ingresos de este día (el superadmin, seguridad y negocio)");
+  assert.ok((await kpi("fallidos")) >= 1, "el intento fallido a propósito");
+  assert.ok((await kpi("cambios")) >= 2, "las dos claves temporales que se cambiaron");
+  assert.ok((await kpi("denegados")) >= 2, "los accesos denegados a seguridad y a negocio");
+  assert.ok((await kpi("recuperaciones")) >= 0 && (await kpi("sesiones")) >= 1);
+  const porUsuario = await t.texto("[data-prueba=accesos-por-usuario]");
+  assert.ok(porUsuario.includes(CUENTAS.seguridad.usuario) && porUsuario.includes(CUENTAS.negocio.usuario), "la tabla por cuenta trae a las dos cuentas");
+  assert.ok(await t.existe("[data-prueba=accesos-por-ip]"), "las direcciones con fallos");
+  assert.ok((await t.evalua(`document.querySelectorAll('[data-prueba=panel-accesos] svg rect').length`)) >= 2, "el gráfico de ingresos por día tiene barras");
+  await t.clic("[data-prueba=rango-7]");
+  await t.hasta(`document.querySelector('[data-prueba=rango-7]').classList.contains('activo') && document.querySelectorAll('[data-prueba=panel-accesos] svg g title').length === 7`, "el panel a 7 días");
+  await t.clic("[data-prueba=rango-90]");
+  await t.hasta(`document.querySelectorAll('[data-prueba=panel-accesos] svg g title').length === 90`, "el panel a 90 días");
   const bit = await t.texto("[data-prueba=bitacora-acceso]");
   assert.ok(bit.includes("acceso_denegado") && bit.includes(CUENTAS.negocio.usuario) && bit.includes(CUENTAS.seguridad.usuario), "la bitácora registra los accesos denegados de ambos roles");
-  assert.ok(bit.includes("login") && bit.includes("cambio_clave"), "e ingresos y cambios de clave");
+  assert.ok(bit.includes("login") && bit.includes("cambio_clave") && bit.includes("login_fallido"), "e ingresos, fallidos y cambios de clave");
   for (const c of Object.values(CUENTAS)) assert.ok(!bit.includes(c.clave), "la bitácora no guarda contraseñas");
-  paso("Registros muestra la bitácora (accesos denegados, ingresos, cambios de clave) al superadmin");
+  paso("Registros muestra el panel de accesos (ingresos, fallidos, cambios de clave, denegados, por día y por cuenta) y la bitácora al superadmin");
 
   // ---------- Recuperación de contraseña ----------
   await t.api("POST", "/api/v1/auth/logout");

@@ -19,6 +19,8 @@ La matriz vive en un solo lugar (`backend/internal/core/domain/permissions.go`) 
 | Cuentas, llaves, privacidad, demo, bitácora | ✔ | — | — | — | — |
 | Cifras de **su** tienda (permanencia y embudo) | ✔ | — | — | ✔ | ✔ |
 
+- **Negocio solo mira:** ve Insights y Ventas (resumen, pronóstico, cuándo se vende), pero cargar tickets, emparejar, generar datos simulados y cambiar umbrales son de Configuración (la web esconde esos botones y la API los niega).
+- **La reproducción de una sesión guardada** (`/sessions/{id}/replay`) la abren seguridad (En vivo) y negocio (Insights dibuja con ella sus mapas de movimiento y calor). **Guardar la captura** al apagar En vivo (`POST /sessions`) es de seguridad.
 - Sin sesión: **401**. Con sesión pero sin permiso: **403** (queda en la bitácora como `acceso_denegado`). Una tienda recibe **404** en lo que no es suyo.
 - Todo lo que nadie listó (un endpoint nuevo) se cierra a seguridad y negocio hasta que se agregue a la matriz.
 - Solo el superadmin borra, en cualquier módulo.
@@ -79,6 +81,19 @@ Para probarlo: crea una cuenta con tu correo (Cuentas → Crear cuenta) y usa «
   de seguridad o superadmin; los archivos se sirven solo a quien tiene sesión (no hay estáticos públicos).
 - **Auditoría** (`audit_log`, se ve en 4. Registros solo para el superadmin): ingresos, cuentas bloqueadas, cambios y restablecimientos de contraseña, solicitudes de
   recuperación, cuentas creadas/desactivadas/borradas, cambios de correo y de rol, accesos denegados (403). Cada línea lleva quién, qué, IP y cuándo; nunca contraseñas, tokens ni cuerpos.
+
+## Panel de accesos (dónde ver ingresos y cambios de contraseña)
+
+**4. Registros → «Accesos y contraseñas»** (solo superadmin; también `GET /api/v1/auditoria/resumen?dias=7|30|90`). Con selector de 7, 30 o 90 días muestra:
+
+- Tarjetas: **ingresos**, **ingresos fallidos**, **cambios de contraseña**, **recuperaciones por correo** (pedidas y completadas), **claves restablecidas por el admin**,
+  **accesos denegados**, **cuentas bloqueadas**, **sesiones activas ahora** y cuentas con clave temporal.
+- Gráfico de **ingresos y fallidos por día** (hora de Lima; los días sin movimiento también salen).
+- Tabla **por cuenta**: ingresos, fallidos, cambios de clave y último ingreso. Y las **direcciones con más fallos**.
+- Debajo, la bitácora completa («Accesos y cambios de cuentas», últimas 200 acciones).
+
+Sale de la bitácora (`audit_log`) y de las cuentas. Ahora también se registran los ingresos fallidos (`login_fallido`, con el usuario que se intentó y la dirección,
+nunca la contraseña) y las salidas (`logout`). Nunca lleva contraseñas, enlaces ni tokens. La bitácora se conserva el tiempo de la política de retención.
 
 ## Checklist de seguridad
 

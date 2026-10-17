@@ -27,6 +27,7 @@ func (h accountHandler) routes(m *http.ServeMux) {
 	m.HandleFunc("PUT /api/v1/usuarios/{id}/correo", h.setEmail)
 	m.HandleFunc("DELETE /api/v1/usuarios/{id}", h.deleteUser)
 	m.HandleFunc("GET /api/v1/auditoria", h.audit)
+	m.HandleFunc("GET /api/v1/auditoria/resumen", h.accessSummary)
 	m.HandleFunc("GET /api/v1/sites/{site}/tiendas/{local}/llaves", h.keys)
 	m.HandleFunc("POST /api/v1/sites/{site}/tiendas/{local}/llaves", h.createKey)
 	m.HandleFunc("DELETE /api/v1/sites/{site}/tiendas/{local}/llaves/{key}", h.revokeKey)
@@ -155,6 +156,20 @@ func (h accountHandler) audit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err, dbError)
 		return
 	}
+	ok(w, v)
+}
+
+// accessSummary is the dashboard of logins, failures, password changes, recoveries and refusals of the last days.
+func (h accountHandler) accessSummary(w http.ResponseWriter, r *http.Request) {
+	days, _ := strconv.Atoi(r.URL.Query().Get("dias"))
+	ctx, cancel := withTimeout(r, 8*time.Second)
+	defer cancel()
+	v, err := h.accounts.AccessSummary(ctx, days)
+	if err != nil {
+		writeError(w, r, err, dbError)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
 	ok(w, v)
 }
 

@@ -42,6 +42,26 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.tabla th,
+.tabla td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--glass-line);
+}
+.tabla th {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.tabla-envoltura {
+  overflow-x: auto;
+}
 .bitacora-acceso {
   margin-top: 16px;
 }

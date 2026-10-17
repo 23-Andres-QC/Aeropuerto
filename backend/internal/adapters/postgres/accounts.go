@@ -288,3 +288,77 @@ func (r *AccountRepository) PurgeAudit(ctx context.Context, cutoff time.Time) (i
 	tag, err := r.db.Exec(ctx, `DELETE FROM audit_log WHERE at < $1`, cutoff)
 	return int(tag.RowsAffected()), err
 }
+
+func (r *AccountRepository) AccessSummary(ctx context.Context, since, now time.Time) (domain.AccessSummary, error) {
+	sum := domain.AccessSummary{PerDay: []domain.AccessDay{}, PerUser: []domain.AccessUser{}, Noisy: []domain.AccessIP{}, Now: domain.AccessNow{ByRole: map[string]int{}}}
+	t := &sum.Totals
+	err := r.db.QueryRow(ctx, `SELECT
+		count(*) FILTER (WHERE action = $2),
+		count(*) FILTER (WHERE action = $3),
+		count(*) FILTER (WHERE action = $4),
+		count(*) FILTER (WHERE action = $5),
+		count(*) FILTER (WHERE action = $6),
+		count(*) FILTER (WHERE action = $7 AND detail = $11),
+		count(*) FILTER (WHERE action = $7 AND detail <> $11),
+		count(*) FILTER (WHERE action = $8),
+		count(*) FILTER (WHERE action = $9),
+		count(*) FILTER (WHERE action = $10)
+		FROM audit_log WHERE at >= $1`, since, domain.ActLogin, domain.ActLoginFailed, domain.ActLogout, domain.ActPasswordChange, domain.ActResetRequested,
+		domain.ActPasswordReset, domain.ActLockout, domain.ActDenied, domain.ActAccountCreated, domain.DetailResetByEmail).
+		Scan(&t.Logins, &t.FailedLogins, &t.Logouts, &t.PasswordChanges, &t.ResetsRequested, &t.ResetsByMail, &t.ResetsByAdmin, &t.Lockouts, &t.Denied, &t.AccountsCreated)
+	if err != nil {
+		return sum, err
+	}
+	if err = collect(ctx, r.db, `SELECT (at AT TIME ZONE 'America/Lima')::date::text,
+		count(*) FILTER (WHERE action = $2), count(*) FILTER (WHERE action = $3), count(*) FILTER (WHERE action = $4), count(*) FILTER (WHERE action = $5)
+		FROM audit_log WHERE at >= $1 AND action IN ($2, $3, $4, $5) GROUP BY 1 ORDER BY 1`,
+		[]any{since, domain.ActLogin, domain.ActLoginFailed, domain.ActPasswordChange, domain.ActDenied}, func(row pgx.Rows) error {
+			var d domain.AccessDay
+			err := row.Scan(&d.Day, &d.Logins, &d.FailedLogins, &d.PasswordChanges, &d.Denied)
+			sum.PerDay = append(sum.PerDay, d)
+			return err
+		}); err != nil {
+		return sum, err
+	}
+	if err = collect(ctx, r.db, `SELECT u.username, u.role, u.active, u.last_login_at,
+		count(a.audit_id) FILTER (WHERE a.action = $2 AND a.actor = u.username),
+		count(a.audit_id) FILTER (WHERE a.action = $3 AND (a.target = u.username OR a.target = u.email)),
+		count(a.audit_id) FILTER (WHERE (a.action = $4 AND a.actor = u.username) OR (a.action = $5 AND a.target = u.username))
+		FROM users u LEFT JOIN audit_log a ON a.at >= $1 AND (a.actor = u.username OR a.target = u.username OR a.target = u.email)
+		GROUP BY u.user_id ORDER BY 5 DESC, 6 DESC, u.username`,
+		[]any{since, domain.ActLogin, domain.ActLoginFailed, domain.ActPasswordChange, domain.ActPasswordReset}, func(row pgx.Rows) error {
+			var u domain.AccessUser
+			err := row.Scan(&u.User, &u.Role, &u.Active, &u.LastLogin, &u.Logins, &u.FailedLogins, &u.PasswordChanges)
+			sum.PerUser = append(sum.PerUser, u)
+			return err
+		}); err != nil {
+		return sum, err
+	}
+	if err = collect(ctx, r.db, `SELECT ip, count(*) FILTER (WHERE action = $2), count(*) FILTER (WHERE action = $3)
+		FROM audit_log WHERE at >= $1 AND ip <> '' AND action IN ($2, $3) GROUP BY ip ORDER BY 2 DESC, 3 DESC, ip LIMIT 5`,
+		[]any{since, domain.ActLoginFailed, domain.ActDenied}, func(row pgx.Rows) error {
+			var i domain.AccessIP
+			err := row.Scan(&i.IP, &i.FailedLogins, &i.Denied)
+			sum.Noisy = append(sum.Noisy, i)
+			return err
+		}); err != nil {
+		return sum, err
+	}
+	n := &sum.Now
+	if err = r.db.QueryRow(ctx, `SELECT count(*) FROM auth_sessions WHERE revoked_at IS NULL AND expires_at > $1 AND idle_until > $1`, now).Scan(&n.ActiveSessions); err != nil {
+		return sum, err
+	}
+	err = r.db.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE active), count(*) FILTER (WHERE locked_until > $1), count(*) FILTER (WHERE must_change) FROM users`, now).
+		Scan(&n.Accounts, &n.ActiveAccounts, &n.Locked, &n.TempPassword)
+	if err != nil {
+		return sum, err
+	}
+	err = collect(ctx, r.db, `SELECT role, count(*) FROM users WHERE active GROUP BY role`, nil, func(row pgx.Rows) error {
+		var role string
+		var c int
+		err := row.Scan(&role, &c)
+		n.ByRole[role] = c
+		return err
+	})
+	return sum, err
+}
