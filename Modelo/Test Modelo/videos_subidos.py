@@ -1,8 +1,11 @@
 """Sección Videos de la web: el modelo final sobre un video subido, sin guardar nada.
 
 backend-vivo guarda cada archivo solo mientras se procesa (disco temporal, nunca una base); se pueden subir varios y se
-procesan al mismo tiempo, turnándose un frame de cada uno (en tiempo real, cada video salta los frames que el modelo no
-alcanza, así que con más videos a la vez cada uno se actualiza menos seguido). Aquí se descarga y se lee con
+procesan al mismo tiempo: en cada pasada se toma el frame que toca de cada video y todos van juntos por el detector (una
+sola pasada de YOLO, como los teléfonos), en un hilo propio que ya lee y detecta la pasada siguiente mientras el lazo
+principal sigue, re-identifica y publica la anterior (cuesta lo que la más lenta de las dos, no la suma); cada video
+sigue con su seguidor, su género y su asociador en su propio hilo, todos a la vez. Antes se turnaban, un frame de un
+solo video por pasada, y con tres videos de 15 fps cada uno recibía ~10 fps (detectar los tres a 1280 px toma ~60 ms). Aquí se descarga y se lee con
 OpenCV tal cual: cada frame a su resolución original, sin recomprimir ni redimensionar antes del modelo. Se publica como
 un teléfono (el frame procesado y sus detecciones por el relevo) y el avance va en el canal «videos». Usa un motor (con
 los mismos pesos) y un asociador propios, más sensibles que los del Build (ver AJUSTES): no toca la sesión de los
@@ -17,8 +20,10 @@ import shutil
 import tempfile
 import threading
 import time
+import queue
 import urllib.request
 from collections import Counter, deque
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
@@ -293,20 +298,25 @@ class VideoEnProceso:
         self.inicio = time.perf_counter()
         self.terminado = False
 
-    def paso(self):
-        """(frame, filas) del frame que toca, o None si todavía no toca o el video terminó (`terminado`)."""
+    def leer(self):
+        """(frame, t) del frame que toca, o None si todavía no toca o el video terminó (`terminado`)."""
         objetivo = self.ritmo.siguiente(time.perf_counter())
         if objetivo is None:
             return None
-        inicio = time.perf_counter()
         frame, saltados = leer_hasta(self.cap, self.ritmo, objetivo)
         self.saltados += saltados
         if frame is None:
             self.terminado = True
             return None
+        return frame, self.ritmo.indice / self.fps
+
+    def procesar(self, frame, t, detecciones=None, extra_s=0.0):
+        """Las filas del frame leído: seguidor, género y Re-ID de este video. `detecciones`: las de este frame si ya se
+        detectaron junto con los de los otros videos (si no, se detecta aquí); `extra_s`: lo que tardó esa pasada."""
+        inicio = time.perf_counter() - extra_s
         self.procesados += 1
-        t = self.ritmo.indice / self.fps
-        filas = lap01.procesar_instante(self.motor, self.asociador, t, {self.id: frame}, {self.id: self.procesados})[self.id]
+        filas = lap01.procesar_instante(self.motor, self.asociador, t, {self.id: frame}, {self.id: self.procesados},
+                                        detecciones)[self.id]
         self.quietud.actualizar(t, filas, frame)
         # Lo que no se mueve sigue en el seguidor (si no, volvería como alguien nuevo) pero no se muestra ni cuenta.
         filas = [f for f in filas if not self.quietud.estatico(f["local_id"], t)]
@@ -319,7 +329,7 @@ class VideoEnProceso:
         self.ms.append(fin - inicio)
         self.tiempos.append(fin)
         self.personas_ahora = len(filas)
-        return frame, filas
+        return filas
 
     def _votos(self, locales):
         """Votos de CLIP de unos tracks locales."""
@@ -383,8 +393,8 @@ class VideoEnProceso:
 
 
 class VideosSubidos:
-    """Sigue los videos subidos a backend-vivo y los procesa al mismo tiempo: descarga cada uno, lo procesa turnándose
-    un frame de cada video, lo publica y al terminar deja su resumen."""
+    """Sigue los videos subidos a backend-vivo y los procesa al mismo tiempo: descarga cada uno, en cada pasada detecta
+    juntos el frame que toca de cada video, los publica y al terminar cada uno deja su resumen."""
 
     def __init__(self, url_api, motor, reid, asociacion, relevo, personas_para_web):
         self.url_api, self.motor, self.reid, self.asociacion = url_api, motor, reid, asociacion
@@ -394,7 +404,14 @@ class VideosSubidos:
         self.descargas = {}          # id -> (info, Event para cancelarla) en curso
         self.descargados = deque()   # (info, ruta o None, error) que dejan los hilos de descarga
         self.hechos = set()          # ids ya procesados, quitados o fallidos: no se repiten
-        self.turno = 0               # a qué video le toca el próximo frame
+        # Un hilo por video: el seguidor, el género y el Re-ID de cada uno corren a la vez (cada video tiene los suyos).
+        self.hilos = ThreadPoolExecutor(max_workers=SIMULTANEOS, thread_name_prefix="video")
+        # El hilo que lee y detecta la próxima pasada (ver el módulo): deja a lo más una lista para el lazo principal.
+        # `bloqueo` cuida `activos`: el lector no lee un video mientras el lazo lo abre, lo cierra o lo suelta.
+        self.bloqueo, self.parar = threading.Lock(), threading.Event()
+        self.cola = queue.Queue(maxsize=1)
+        self.lector = threading.Thread(target=self._producir, daemon=True, name="videos-lector")
+        self.lector.start()
 
     def revisar(self, lista):
         """Ajusta lo que se hace a la lista de backend-vivo: todos los videos sin resumen se procesan a la vez."""
@@ -433,37 +450,113 @@ class VideosSubidos:
             if not cancelar.is_set():
                 self.descargados.append((info, None, f"No se pudo descargar el video: {getattr(error, 'reason', None) or error}"))
 
+    def _leer_y_detectar(self):
+        """(lote, detecciones, extra, fines): el frame que toca de cada video, todos detectados en una pasada; `fines`
+        son (id, estado, mensaje) de los que terminaron o fallaron al leerse."""
+        lote, fines = [], []
+        with self.bloqueo:
+            for vid, (video, _) in list(self.activos.items()):
+                try:
+                    leido = video.leer()
+                except Exception as error:
+                    fines.append((vid, "error", f"El modelo falló con este video: {error}"))
+                    continue
+                if leido is None:
+                    if video.terminado:
+                        fines.append((vid, "terminado", None))
+                    continue
+                lote.append((video, *leido))
+        inicio = time.perf_counter()
+        detecciones = self._detectar(lote)
+        extra = (time.perf_counter() - inicio) / len(lote) if detecciones is not None and lote else 0.0
+        return lote, detecciones, extra, fines
+
+    def _producir(self):
+        """Hilo lector: prepara la próxima pasada (leer y detectar) mientras el lazo principal procesa la anterior."""
+        while not self.parar.is_set():
+            if not self.activos:
+                self.parar.wait(0.02)
+                continue
+            try:
+                entrega = self._leer_y_detectar()
+            except Exception as error:  # el hilo no debe morir: sin él no se procesa ningún video
+                print(f"Videos: falló la lectura ({type(error).__name__}: {error})", flush=True)
+                self.parar.wait(0.1)
+                continue
+            if not entrega[0] and not entrega[3]:
+                self.parar.wait(0.003)  # a ningún video le toca todavía
+                continue
+            while not self.parar.is_set():
+                try:
+                    self.cola.put(entrega, timeout=0.1)
+                    break
+                except queue.Full:
+                    pass
+
     def paso(self):
-        """Procesa y publica el frame que toca de uno de los videos, por turnos; True si procesó uno."""
+        """Procesa y publica el frame que toca de cada video, todos en la misma pasada del detector; True si procesó alguno."""
         while self.descargados:
             info, ruta, error = self.descargados.popleft()
             if self.descargas.pop(info["id"], None) is not None:
                 self._abrir(info, ruta, error)
             elif ruta is not None:
                 ruta.unlink(missing_ok=True)
-        ids = list(self.activos)
-        for k in range(len(ids)):
-            vid = ids[(self.turno + k) % len(ids)]
-            video = self.activos[vid][0]
+        if getattr(self, "lector", None) is None:
+            lote, detecciones, extra, fines = self._leer_y_detectar()  # sin hilo lector (pruebas): todo aquí
+        else:
             try:
-                resultado = video.paso()
-            except Exception as error:
-                self._terminar(vid, "error", f"El modelo falló con este video: {error}")
-                continue
-            if resultado is None:
-                if video.terminado:
-                    self._terminar(vid, "terminado", None)
-                continue
-            self.turno = (self.turno + k + 1) % len(ids)
-            self._publicar(video, *resultado)
-            return True
-        return False
+                lote, detecciones, extra, fines = self.cola.get_nowait()
+            except queue.Empty:
+                return False
+        for vid, estado, mensaje in fines:
+            self._terminar(vid, estado, mensaje)
+        # Uno que se quitó o terminó mientras se preparaba esta pasada ya no se procesa.
+        lote = [(video, frame, t) for video, frame, t in lote if self.activos.get(video.id, (None,))[0] is video]
+        if not lote:
+            return bool(fines)
+        procesar = lambda video, frame, t: video.procesar(  # noqa: E731
+            frame, t, None if detecciones is None else {video.id: detecciones[video.id]}, extra)
+        if len(lote) > 1 and getattr(self, "hilos", None) is not None:
+            futuros = [(video, frame, self.hilos.submit(procesar, video, frame, t)) for video, frame, t in lote]
+            resultados = []
+            for video, frame, futuro in futuros:
+                try:
+                    resultados.append((video, frame, futuro.result(), None))
+                except Exception as error:
+                    resultados.append((video, frame, None, error))
+        else:
+            resultados = []
+            for video, frame, t in lote:
+                try:
+                    resultados.append((video, frame, procesar(video, frame, t), None))
+                except Exception as error:
+                    resultados.append((video, frame, None, error))
+        for (video, frame, filas, error), (_, _, t) in zip(resultados, lote):
+            if error is not None:
+                self._terminar(video.id, "error", f"El modelo falló con este video: {error}")
+            else:
+                self._publicar(video, frame, filas, t)
+        return True
 
-    def _publicar(self, video, frame, filas):
+    @staticmethod
+    def _detectar(lote):
+        """Las detecciones de los frames de todos los videos del lote en una sola pasada del detector (todos los videos
+        usan los mismos pesos y ajustes), o None si no hay lote o falla (entonces cada uno detecta el suyo)."""
+        if not lote:
+            return None
+        try:
+            return lote[0][0].motor.detectar({video.id: frame for video, frame, _ in lote})
+        except Exception as error:
+            print(f"Videos: la detección en lote falló ({type(error).__name__}: {error}); cada video detecta el suyo.", flush=True)
+            return None
+
+    def _publicar(self, video, frame, filas, t=None):
         ancho_web = min(frame.shape[1], ANCHO_WEB)
         self.relevo.video(video.id, frame, ancho=ancho_web, calidad=80)
-        # t: segundo del video de este frame; la web reproduce el video original y dibuja las cajas sobre él.
-        self.relevo.detecciones(video.id, {"ts": time.time(), "t": round(video.ritmo.indice / video.fps, 3),
+        # t: segundo del video de este frame (el lector ya puede ir por el siguiente); la web reproduce el video original
+        # y dibuja las cajas sobre él.
+        t = video.ritmo.indice / video.fps if t is None else t
+        self.relevo.detecciones(video.id, {"ts": time.time(), "t": round(t, 3),
                                            "frame_w": ancho_web,
                                            "frame_h": round(frame.shape[0] * ancho_web / frame.shape[1]),
                                            "people": self.personas_para_web(filas, frame.shape[1], ancho_web)})
@@ -473,7 +566,8 @@ class VideosSubidos:
         if error is None:
             try:
                 video = VideoEnProceso(info, ruta, self.motor, self.reid, self.asociacion)
-                self.activos[info["id"]] = (video, ruta)
+                with self.bloqueo:
+                    self.activos[info["id"]] = (video, ruta)
                 print(f"Procesando el video {info['nombre']}: {video.ancho}x{video.alto}, {video.fps:g} FPS, "
                       f"modo {info['modo']} ({len(self.activos)} a la vez)", flush=True)
                 return
@@ -487,9 +581,12 @@ class VideosSubidos:
                                            "nombre": info["nombre"], "modo": info["modo"]})
 
     def _cerrar(self, vid):
-        """Suelta un video y su copia local; devuelve el VideoEnProceso."""
-        video, ruta = self.activos.pop(vid)
-        video.cerrar()
+        """Suelta un video y su copia local; devuelve el VideoEnProceso (None si ya se había soltado)."""
+        with self.bloqueo:
+            if vid not in self.activos:
+                return None
+            video, ruta = self.activos.pop(vid)
+            video.cerrar()
         ruta.unlink(missing_ok=True)
         self.hechos.add(vid)
         return video
@@ -497,6 +594,8 @@ class VideosSubidos:
     def _terminar(self, vid, estado, mensaje):
         """El video terminó (o falló): su resumen queda en backend-vivo, que borra el archivo."""
         video = self._cerrar(vid)
+        if video is None:
+            return
         resumen = {**video.resumen(), "estado": estado, "mensaje": mensaje, "dispositivo": self.motor.device}
         print(f"Video {video.nombre}: {estado} · {resumen['procesados']} frames procesados, "
               f"{resumen['saltados']} saltados, {resumen['personas_total']} personas", flush=True)
@@ -505,7 +604,8 @@ class VideosSubidos:
     def _soltar(self, vid):
         """Se quitó el video en la web mientras se procesaba: se detiene sin resumen."""
         video = self._cerrar(vid)
-        print(f"Video {video.nombre}: quitado en la web tras {video.procesados} frames", flush=True)
+        if video is not None:
+            print(f"Video {video.nombre}: quitado en la web tras {video.procesados} frames", flush=True)
 
     def _guardar_resumen(self, vid, resumen):
         """Entrega el resumen a backend-vivo (que borra el archivo); se ve en la web hasta que se quite el video."""
@@ -525,8 +625,13 @@ class VideosSubidos:
 
     def cerrar(self):
         """Suelta los videos y borra la carpeta temporal."""
+        if getattr(self, "lector", None) is not None:
+            self.parar.set()
+            self.lector.join(timeout=2)
         for _, cancelar in self.descargas.values():
             cancelar.set()
         for video, _ in self.activos.values():
             video.cerrar()
+        if getattr(self, "hilos", None) is not None:
+            self.hilos.shutdown(wait=False)
         shutil.rmtree(self.carpeta, ignore_errors=True)

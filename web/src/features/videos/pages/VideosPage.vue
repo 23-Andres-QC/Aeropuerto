@@ -6,9 +6,14 @@ import { api, MAX_VIDEOS, subirVideo, type EstadoVideos, type VideoActivo, type 
 import VistaVideo, { type RelojComun } from "../components/VistaVideo.vue";
 
 const entrada = ref<HTMLInputElement>();
-// Subida en curso: los archivos elegidos se suben de a uno, en orden.
-const subida = ref<{ nombre: string; indice: number; total: number; fraccion: number; cancelar: () => void }>();
-let cancelada = false;
+// Subidas en curso: los archivos elegidos se suben todos a la vez (antes, de a uno), cada uno con su avance.
+type Subida = { id: number; nombre: string; fraccion: number; cancelar: () => void };
+let siguienteSubida = 0;
+const subidas = ref<Subida[]>([]);
+const subiendo = computed(() => subidas.value.length > 0);
+const fraccionTotal = computed(() =>
+  subidas.value.length ? subidas.value.reduce((a, s) => a + s.fraccion, 0) / subidas.value.length : 0,
+);
 // Los videos subidos, en el orden en que se subieron, cada uno con su resumen cuando el modelo termina; viven en
 // backend-vivo. Se muestran todos a la vez, uno al lado del otro.
 const videos = ref<VideoSubido[]>([]);
@@ -73,7 +78,7 @@ function avanzar(ahoraMs: number) {
   const lista = videos.value;
   const limites = lista.map(disponible);
   if (comun.t == null) {
-    if (lista.length && !subida.value && limites.every((l) => l != null && l > 0)) comun.t = 0;
+    if (lista.length && !subiendo.value && limites.every((l) => l != null && l > 0)) comun.t = 0;
   } else {
     const t = comun.t;
     const tope = Math.min(...lista.map((v, i) => (t >= duracionDe(v) ? Infinity : (limites[i] ?? t))));
@@ -150,35 +155,40 @@ async function cargar() {
   }
 }
 
+/** Sube todos los archivos elegidos a la vez; cada uno entra a la lista (y el modelo lo empieza) apenas termina de subir. */
 async function elegidos() {
   const archivos = Array.from(entrada.value?.files ?? []);
   if (entrada.value) entrada.value.value = "";
   if (!archivos.length) return;
   error.value = "";
-  cancelada = false;
-  const libres = MAX_VIDEOS - videos.value.length;
+  const libres = Math.max(0, MAX_VIDEOS - videos.value.length);
   if (archivos.length > libres) {
-    error.value = `Caben ${libres} video(s) más en la lista (máximo ${MAX_VIDEOS}): se suben los primeros ${Math.max(libres, 0)}.`;
+    error.value = `Caben ${libres} video(s) más en la lista (máximo ${MAX_VIDEOS}): se suben los primeros ${libres}.`;
   }
-  for (const [i, archivo] of archivos.slice(0, Math.max(libres, 0)).entries()) {
-    if (cancelada) break;
-    const { promesa, cancelar } = subirVideo(archivo, "tiempo_real", (f) => subida.value && (subida.value.fraccion = f));
-    subida.value = { nombre: archivo.name, indice: i + 1, total: Math.min(archivos.length, libres), fraccion: 0, cancelar };
-    try {
-      const subido = await promesa;
-      locales.set(subido.id, URL.createObjectURL(archivo));
-      videos.value = [...videos.value, subido];
-    } catch (e) {
-      error.value = (e as Error).message;
-      break;
-    }
-  }
-  subida.value = undefined;
+  const fallas: string[] = [];
+  await Promise.all(
+    archivos.slice(0, libres).map(async (archivo) => {
+      const id = ++siguienteSubida;
+      const { promesa, cancelar } = subirVideo(archivo, "tiempo_real", (f) => {
+        subidas.value = subidas.value.map((x) => (x.id === id ? { ...x, fraccion: f } : x));
+      });
+      subidas.value = [...subidas.value, { id, nombre: archivo.name, fraccion: 0, cancelar }];
+      try {
+        const subido = await promesa;
+        locales.set(subido.id, URL.createObjectURL(archivo));
+        videos.value = [...videos.value, subido];
+      } catch (e) {
+        fallas.push(`${archivo.name}: ${(e as Error).message}`);
+      } finally {
+        subidas.value = subidas.value.filter((x) => x.id !== id);
+      }
+    }),
+  );
+  if (fallas.length) error.value = [error.value, ...fallas].filter(Boolean).join(" · ");
 }
 
-function cancelarSubida() {
-  cancelada = true;
-  subida.value?.cancelar();
+function cancelarSubidas() {
+  for (const s of subidas.value) s.cancelar();
 }
 
 async function quitar(id: string) {
@@ -230,11 +240,11 @@ onUnmounted(() => {
 <template>
   <section class="panel subir">
     <input ref="entrada" type="file" accept="video/*" multiple hidden @change="elegidos" />
-    <button class="primary-button" type="button" :disabled="!!subida || lleno" @click="entrada?.click()">Elegir videos…</button>
+    <button class="primary-button" type="button" :disabled="subiendo || lleno" @click="entrada?.click()">Elegir videos…</button>
     <p class="muted detalle">
-      Puedes elegir varios a la vez: el modelo los procesa todos al mismo tiempo y se ven uno al lado del otro, cada uno con
-      sus detecciones encima (con más videos a la vez, las cajas de cada uno se actualizan menos seguido). Los videos no se
-      guardan: se borran al terminar y su resumen, al quitarlo.
+      Elige varios a la vez (desde un teléfono, de tu galería): se suben todos juntos y el modelo los procesa al mismo
+      tiempo, el cuadro de cada uno en la misma pasada del detector, y se ven uno al lado del otro con sus detecciones encima.
+      Los videos no se guardan: se borran al terminar y su resumen, al quitarlo.
       <span v-if="lleno"><b>La lista está llena ({{ MAX_VIDEOS }}): quita alguno para subir otro.</b></span>
     </p>
     <span v-if="videos.length" class="heading-meta">
@@ -268,13 +278,17 @@ onUnmounted(() => {
         </template>
       </span>
     </div>
-    <div v-if="subida" class="subida">
-      <div class="barra"><span :style="{ width: `${subida.fraccion * 100}%` }"></span></div>
-      <small>
-        Subiendo {{ subida.total > 1 ? `${subida.indice} de ${subida.total} · ` : "" }}{{ subida.nombre }} ·
-        {{ Math.round(subida.fraccion * 100) }} %
-      </small>
-      <button class="icon-button" type="button" @click="cancelarSubida">Cancelar</button>
+    <div v-if="subiendo" class="subida">
+      <div class="subida-total">
+        <div class="barra"><span :style="{ width: `${fraccionTotal * 100}%` }"></span></div>
+        <small>Subiendo {{ subidas.length }} video{{ subidas.length === 1 ? "" : "s" }} a la vez · {{ Math.round(fraccionTotal * 100) }} %</small>
+        <button class="icon-button" type="button" @click="cancelarSubidas">Cancelar</button>
+      </div>
+      <div v-for="s in subidas" :key="s.id" class="subida-uno">
+        <small class="nombre">{{ s.nombre }}</small>
+        <div class="barra"><span :style="{ width: `${s.fraccion * 100}%` }"></span></div>
+        <small>{{ Math.round(s.fraccion * 100) }} %</small>
+      </div>
     </div>
   </section>
   <p v-if="error" class="error" role="alert">{{ error }}</p>
@@ -341,10 +355,21 @@ onUnmounted(() => {
   font-variant-numeric: tabular-nums;
 }
 .subida {
+  display: grid;
+  gap: 6px;
+  flex-basis: 100%;
+}
+.subida-total,
+.subida-uno {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-basis: 100%;
+}
+.subida-uno .nombre {
+  flex: 0 1 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .barra {
   flex: 1;
