@@ -111,14 +111,18 @@ try {
   assert.equal((await t.api("DELETE", "/api/v1/sites/esan/zones/1")).estado, 403);
   paso("negocio: menú, rutas y API solo de Insights y Ventas; nginx le cierra Videos y Teléfonos");
 
-  // ---------- Registros: panel de accesos y bitácora (superadmin) ----------
+  // ---------- Cuentas: panel de accesos y bitácora (superadmin) ----------
   // Un intento fallido a propósito (contraseña equivocada) para ver que el panel lo cuenta.
   const mala = await fetch(`${WEB}/api/v1/auth/login`, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "lap" }, body: JSON.stringify({ usuario: CUENTAS.negocio.correo, clave: "clave-equivocada-xyz" }) });
   assert.equal(mala.status, 401);
   await entrar(USUARIO, CLAVE);
+  // Registros vuelve a ser solo de capturas: el panel y la bitácora de accesos viven en Cuentas.
   await t.ir("/sitios/esan/registros", 2500);
-  await t.hasta(`!!document.querySelector('[data-prueba=bitacora-acceso]')`, "la bitácora en Registros");
+  assert.ok(!(await t.existe("[data-prueba=panel-accesos]")) && !(await t.existe("[data-prueba=bitacora]")), "Registros no lleva el panel ni la bitácora de accesos");
+  await t.ir("/cuentas?ver=accesos", 2500);
   await t.hasta(`!!document.querySelector('[data-prueba=panel-accesos] [data-prueba=kpi-ingresos]')`, "el panel de accesos");
+  // Las cifras suben desde 0 en menos de un segundo: se espera a que terminen.
+  await esperar(900);
   const kpi = async (id) => Number((await t.texto(`[data-prueba=kpi-${id}]`)).replace(/[^0-9 ]/g, " ").trim().split(/\s+/).find((x) => /^\d+$/.test(x)) ?? "NaN");
   assert.ok((await kpi("ingresos")) >= 3, "ingresos de este día (el superadmin, seguridad y negocio)");
   assert.ok((await kpi("fallidos")) >= 1, "el intento fallido a propósito");
@@ -129,15 +133,24 @@ try {
   assert.ok(porUsuario.includes(CUENTAS.seguridad.usuario) && porUsuario.includes(CUENTAS.negocio.usuario), "la tabla por cuenta trae a las dos cuentas");
   assert.ok(await t.existe("[data-prueba=accesos-por-ip]"), "las direcciones con fallos");
   assert.ok((await t.evalua(`document.querySelectorAll('[data-prueba=panel-accesos] svg rect').length`)) >= 2, "el gráfico de ingresos por día tiene barras");
+  // El gráfico cambia de medida (ingresos, fallidos, cambios de clave, denegados) y sigue con una barra por día.
+  await t.clic("[data-prueba=medida-ingresos_fallidos]");
+  await t.hasta(`document.querySelector('[data-prueba=medida-ingresos_fallidos]').classList.contains('activa')`, "el gráfico de fallidos");
+  assert.match(await t.texto("[data-prueba=panel-accesos] .lectura"), /fallidos/i);
+  await t.clic("[data-prueba=kpi-denegados] button");
+  await t.hasta(`document.querySelector('[data-prueba=medida-accesos_denegados]').classList.contains('activa')`, "elegir la medida desde la tarjeta");
   await t.clic("[data-prueba=rango-7]");
   await t.hasta(`document.querySelector('[data-prueba=rango-7]').classList.contains('activo') && document.querySelectorAll('[data-prueba=panel-accesos] svg g title').length === 7`, "el panel a 7 días");
   await t.clic("[data-prueba=rango-90]");
   await t.hasta(`document.querySelectorAll('[data-prueba=panel-accesos] svg g title').length === 90`, "el panel a 90 días");
-  const bit = await t.texto("[data-prueba=bitacora-acceso]");
+  // La bitácora (de 10 en 10, en su pestaña) trae lo mismo que la API: se revisa entera por la API y la página con sus filas.
+  await t.clic("[data-prueba=pestana-bitacora]");
+  await t.hasta(`document.querySelectorAll('[data-prueba=bitacora] tbody tr[data-accion]').length === 10`, "la bitácora en Cuentas, de 10 en 10");
+  const bit = JSON.stringify((await t.api("GET", "/api/v1/auditoria?limite=500")).cuerpo);
   assert.ok(bit.includes("acceso_denegado") && bit.includes(CUENTAS.negocio.usuario) && bit.includes(CUENTAS.seguridad.usuario), "la bitácora registra los accesos denegados de ambos roles");
   assert.ok(bit.includes("login") && bit.includes("cambio_clave") && bit.includes("login_fallido"), "e ingresos, fallidos y cambios de clave");
   for (const c of Object.values(CUENTAS)) assert.ok(!bit.includes(c.clave), "la bitácora no guarda contraseñas");
-  paso("Registros muestra el panel de accesos (ingresos, fallidos, cambios de clave, denegados, por día y por cuenta) y la bitácora al superadmin");
+  paso("Cuentas muestra el panel de accesos (ingresos, fallidos, cambios de clave, denegados, por día y por cuenta, con gráfico por medida) y la bitácora de 10 en 10; Registros ya no los lleva");
 
   // ---------- Recuperación de contraseña ----------
   await t.api("POST", "/api/v1/auth/logout");

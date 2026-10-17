@@ -12,7 +12,7 @@ La matriz vive en un solo lugar (`backend/internal/core/domain/permissions.go`) 
 | 1. En vivo (y reproducción, panel de personas) | ✔ | ✔ | — | — | ✔ |
 | 2. Insights | ✔ | — | ✔ | — | ✔ |
 | 3. Ventas | ✔ | — | ✔ | — | ✔ |
-| 4. Registros (y la bitácora de accesos) | ✔ | — | — | — | ✔ (sin bitácora) |
+| 4. Registros (capturas de En vivo) | ✔ | — | — | — | ✔ |
 | 5. Configuración (y todo lo que cambia el plano o los datos) | ✔ | — | — | — | ✔ |
 | 6. Teléfonos (cámaras) | ✔ | ✔ | — | — | ✔ |
 | 7. Videos (subida y tracking en tiempo real) | ✔ | ✔ | — | — | ✔ |
@@ -79,18 +79,20 @@ Para probarlo: crea una cuenta con tu correo (Cuentas → Crear cuenta) y usa «
 - **CORS:** no se habilita en ningún lado: la API solo atiende a su propio origen. Los WebSocket de la API y de las cámaras comprueban el `Origin`.
 - **Videos:** la subida exige extensión de video **y** que los primeros bytes sean los de un MP4/MOV, AVI o MKV/WebM; tamaño máximo `VIDEO_MAX_MB`; solo con sesión
   de seguridad o superadmin; los archivos se sirven solo a quien tiene sesión (no hay estáticos públicos).
-- **Auditoría** (`audit_log`, se ve en 4. Registros solo para el superadmin): ingresos, cuentas bloqueadas, cambios y restablecimientos de contraseña, solicitudes de
+- **Auditoría** (`audit_log`, se ve en 8. Cuentas → Bitácora, solo para el superadmin): ingresos, cuentas bloqueadas, cambios y restablecimientos de contraseña, solicitudes de
   recuperación, cuentas creadas/desactivadas/borradas, cambios de correo y de rol, accesos denegados (403). Cada línea lleva quién, qué, IP y cuándo; nunca contraseñas, tokens ni cuerpos.
 
 ## Panel de accesos (dónde ver ingresos y cambios de contraseña)
 
-**4. Registros → «Accesos y contraseñas»** (solo superadmin; también `GET /api/v1/auditoria/resumen?dias=7|30|90`). Con selector de 7, 30 o 90 días muestra:
+**8. Cuentas → pestaña «Accesos»** (solo superadmin; también `GET /api/v1/auditoria/resumen?dias=7|30|90`). Con selector de 7, 30 o 90 días muestra:
 
 - Tarjetas: **ingresos**, **ingresos fallidos**, **cambios de contraseña**, **recuperaciones por correo** (pedidas y completadas), **claves restablecidas por el admin**,
   **accesos denegados**, **cuentas bloqueadas**, **sesiones activas ahora** y cuentas con clave temporal.
-- Gráfico de **ingresos y fallidos por día** (hora de Lima; los días sin movimiento también salen).
+- Gráfico **por día** (hora de Lima; los días sin movimiento también salen) de una medida a la vez —ingresos, fallidos, cambios de clave o denegados—, que se elige
+  con los botones o haciendo clic en la tarjeta; debajo, el total, el promedio por día, el día más alto y cómo va frente a la primera mitad del periodo.
 - Tabla **por cuenta**: ingresos, fallidos, cambios de clave y último ingreso. Y las **direcciones con más fallos**.
-- Debajo, la bitácora completa («Accesos y cambios de cuentas», últimas 200 acciones).
+- La pestaña **«Bitácora»**: las últimas 500 acciones, **de 10 en 10** con páginas, búsqueda y filtros (ingresos y salidas, contraseñas, cuentas, accesos denegados, sistema).
+- «Registros» vuelve a ser solo de las capturas de En vivo.
 
 Sale de la bitácora (`audit_log`) y de las cuentas. Ahora también se registran los ingresos fallidos (`login_fallido`, con el usuario que se intentó y la dirección,
 nunca la contraseña) y las salidas (`logout`). Nunca lleva contraseñas, enlaces ni tokens. La bitácora se conserva el tiempo de la política de retención.
