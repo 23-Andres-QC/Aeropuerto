@@ -181,7 +181,7 @@ class PruebasPrimerSegundo(unittest.TestCase):
         escena = Escena(asociador(memoria_ram()))
         segundos, pid = escena.cuando_tiene_id(3, {"tel-a": [(1, A, 300)]}, ("tel-a", 1))
         self.assertIsNotNone(pid)
-        self.assertLessEqual(segundos, 0.8, "antes tardaba 2 s como mínimo, y después ~1,1 s")
+        self.assertLessEqual(segundos, 1.2, "antes tardaba 2 s como mínimo")
 
     def test_quien_ya_se_vio_se_reconoce_en_menos_de_un_segundo(self):
         memoria = memoria_ram()

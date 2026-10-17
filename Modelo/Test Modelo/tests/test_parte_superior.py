@@ -21,6 +21,9 @@ class ParteSuperior(unittest.TestCase):
     def test_un_recorte_minimo_no_queda_vacio(self):
         self.assertEqual(mitad_superior(np.zeros((1, 3, 3), np.uint8)).shape[0], 1)
 
+    def test_el_reid_es_el_cuerpo_entero_salvo_que_se_pida(self):
+        self.assertEqual(camara_telefono.PARTE_SUPERIOR_REID, 1.0, "el Re-ID usa el cuerpo entero, como el Build")
+
     def test_el_reid_recibe_la_parte_de_arriba_y_conserva_sus_atributos(self):
         class ReIDFalso:
             dimension = 512

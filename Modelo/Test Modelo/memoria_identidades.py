@@ -40,11 +40,10 @@ REVISAR_NUEVAS_S = 60.0  # durante este tiempo un ID nuevo se sigue comparando c
 REVISAR_CADA_S = 2.0
 MUESTREO_INICIAL_S = 0.1  # una vista Re-ID cada 0,1 s mientras la persona no tiene ID (el Re-ID corre en GPU)
 # Visible este tiempo sin parecerse a nadie: recibe un ID nuevo. Si se parece a alguien ya visto, se espera hasta
-# ESPERA_DUDA_S antes de darle uno nuevo. Con 1 s y 3 s casi toda persona nueva esperaba ~1,1 s su ID y 1 de cada 10,
-# ~3 s (medido con dos teléfonos); un ID nuevo se sigue comparando con los antiguos REVISAR_NUEVAS_S, así que si era
-# alguien ya visto vuelve a su ID antiguo igual.
-DURACION_NUEVA_S = 0.6
-ESPERA_DUDA_S = 2.0
+# ESPERA_DUDA_S antes de darle uno nuevo. Con 0,6 s y 2 s el ID salía antes, pero quien ya tenía ID (sobre todo visto
+# desde otro teléfono) recibía uno nuevo antes de reunir las vistas para reconocerlo: se volvió a 1 s y 3 s.
+DURACION_NUEVA_S = 1.0
+ESPERA_DUDA_S = 3.0
 OCUPADA_S = 1.5           # una persona está «ocupada» (ya es otra identidad visible) si se vio hace menos de esto
 CONTINUIDAD_S = 8.0       # un track nuevo que empieza así de pronto después de otro, en el mismo lugar, es la misma persona
 CONTINUIDAD_ALTURAS = 1.3 # y a menos de esta distancia (en alturas de caja) de donde terminó el anterior
