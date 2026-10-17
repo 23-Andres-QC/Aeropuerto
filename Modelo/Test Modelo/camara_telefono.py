@@ -166,6 +166,12 @@ class ReIDMitadSuperior:
         return getattr(self.reid, nombre)
 
 
+# Con teléfonos en vivo, los videos subidos (sección Videos) avanzan a lo más una pasada cada VIDEOS_CON_TELEFONOS_S: cada
+# pasada detecta todos los videos a 1280 px y les quitaba GPU y turnos del lazo a los teléfonos, que se atrasaban y se
+# cortaban mientras se procesaba un video. Sin teléfonos, los videos van a toda velocidad.
+VIDEOS_CON_TELEFONOS_S = 0.2
+
+
 # Un cuadro que falla (un error raro del modelo) se salta; tantos seguidos indican algo roto (ej. la GPU) y el proceso
 # termina con error: scripts/modelo_local.py lo vuelve a levantar.
 FALLOS_SEGUIDOS_MAX = 10
@@ -925,7 +931,7 @@ def main():
     videos = VideosSubidos(url_api, motor, reid_videos, asociacion_build, relevo, personas_para_web)
     lectores, nombres, calentado = {}, {}, False
     relevado = {}  # último video de cada teléfono por el relevo (con FPS_RELEVO)
-    publicado, fallos = 0.0, 0
+    publicado, fallos, ultimo_video = 0.0, 0, -math.inf
     enlace, enlace_visto = None, -math.inf
     sondeo = Sondeo(url_api)
     try:
@@ -947,7 +953,12 @@ def main():
                 if lista_videos is not None:
                     videos.revisar(lista_videos)
 
-            hubo_video = videos.paso()
+            con_telefonos = any(lectores[c].conectado for c in sesion.telefonos if c in lectores)
+            hubo_video = False
+            if not con_telefonos or time.monotonic() - ultimo_video >= VIDEOS_CON_TELEFONOS_S:
+                hubo_video = videos.paso()
+                if hubo_video:
+                    ultimo_video = time.monotonic()
             # Todos los teléfonos con un cuadro nuevo van juntos, en una sola pasada del detector (y de los puntos del
             # cuerpo): así se procesan en el mismo instante, sus cajas salen sincronizadas entre sí y el mapa une a la
             # misma persona con lo que vio cada cámara a la vez. Por turnos (uno por pasada) cada teléfono esperaba a

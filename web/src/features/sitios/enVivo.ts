@@ -31,8 +31,16 @@ const RASTRO_MS = 8000;
 const PUNTOS_RASTRO = 80;
 /** Puntos que se guardan de la historia de cada persona (para su recorrido en Insights). */
 const PUNTOS_HISTORIA = 600;
-/** Cada tick del motor dura esto: es el tiempo que se suma a la celda y a la zona de cada persona presente. */
-const TICK_S = 0.25;
+/**
+ * Cada cuánto el motor vuelve a ubicar a la gente en el plano. Era cada 250 ms y cada vez el punto se movía solo la mitad
+ * de lo que faltaba: iba ~0,4 s detrás de lo que mostraba la cámara. A la celda del calor y a la zona de cada persona se
+ * les suma el tiempo real que pasó entre dos vueltas.
+ */
+const REFRESCO_MS = 100;
+/** Suavizado del punto (constante de tiempo): solo quita el temblor de la caja, casi sin atrasarlo. */
+const SUAVIZADO_S = 0.08;
+/** Lo acumulado (calor, historia, conteo) se repinta una vez por segundo. */
+const REPINTAR_MS = 1000;
 /** Tope de posiciones guardadas por persona (a una por segundo, más de cinco horas). */
 const MAX_TRAZAS = 20000;
 
@@ -378,7 +386,8 @@ function fotoHistorias(): HistoriaViva[] {
   sinUbicar.value = solas.length;
   return [...ubicadas, ...solas];
 }
-let ticks = 0;
+let ultimaVuelta = 0;
+let ultimoRepintado = 0;
 /** Identificador de la captura en vivo actual: guardar otra vez la actualiza; Reiniciar empieza una nueva. */
 let sesionId = uuid();
 /** Posiciones que ya estaban guardadas en el último guardado: sin posiciones nuevas no se vuelve a guardar. */
@@ -593,6 +602,10 @@ async function cargarConfig() {
 function componer() {
   const t = Date.now();
   ahora.value = t;
+  // Tiempo real desde la vuelta anterior (con tope: una pestaña en segundo plano no suma de golpe minutos).
+  const dt = ultimaVuelta ? Math.min(1, Math.max(0, (t - ultimaVuelta) / 1000)) : REFRESCO_MS / 1000;
+  ultimaVuelta = t;
+  const alfa = 1 - Math.exp(-dt / SUAVIZADO_S);
   type Acum = { x: number; y: number; peso: number; id: number | null; genero: string | null; conf: number | null; mejor: number; camaras: Set<string>; altoMax: number; camMejor: string };
   const vistas = new Map<string, { tel: string; cid: string | undefined; o: Observacion }[]>();
   for (const [tel, cuadro] of cuadros) {
@@ -625,7 +638,7 @@ function componer() {
   for (const [clave, a] of acumulado) {
     const bruto: Punto = [a.x / a.peso, a.y / a.peso];
     const previo = suavizadas.get(clave);
-    const punto: Punto = previo ? [previo[0] + 0.5 * (bruto[0] - previo[0]), previo[1] + 0.5 * (bruto[1] - previo[1])] : bruto;
+    const punto: Punto = previo ? [previo[0] + alfa * (bruto[0] - previo[0]), previo[1] + alfa * (bruto[1] - previo[1])] : bruto;
     suavizadas.set(clave, punto);
     const color = a.id != null ? colorPersona(a.id) : "#8ba4bf";
 
@@ -639,7 +652,7 @@ function componer() {
     if (grabando.value) {
       const [ci, cj] = [Math.floor(punto[0] / CELDA_CALOR), Math.floor(punto[1] / CELDA_CALOR)];
       const celda = celdas.get(`${ci},${cj}`) ?? { cx: ci * CELDA_CALOR, cy: cj * CELDA_CALOR, s: 0 };
-      celda.s += TICK_S;
+      celda.s += dt;
       celdas.set(`${ci},${cj}`, celda);
     }
 
@@ -663,7 +676,7 @@ function componer() {
       }
       const contenidas = zonas.value.filter((z) => dentro(punto, z.points));
       for (const z of contenidas) {
-        h.zonas.set(z.zone_id, (h.zonas.get(z.zone_id) ?? 0) + TICK_S);
+        h.zonas.set(z.zone_id, (h.zonas.get(z.zone_id) ?? 0) + dt);
         porZona.set(z.zone_id, (porZona.get(z.zone_id) ?? 0) + 1);
       }
       const zona = contenidas[0]?.zone_id ?? null;
@@ -693,7 +706,8 @@ function componer() {
   lista.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9));
   vivas.value = { personas, recorridos, lista };
   // El plano y Insights repintan todo lo acumulado: una vez por segundo basta.
-  if (++ticks % 4 === 0) {
+  if (t - ultimoRepintado >= REPINTAR_MS) {
+    ultimoRepintado = t;
     calor.value = [...celdas.values()].map((c) => [c.cx, c.cy, c.s]);
     historias.value = fotoHistorias();
     conteo.value = resumirConteo();
@@ -934,7 +948,8 @@ function arrancar() {
   cargarConfig();
   sondeo = setInterval(sondear, 3000);
   sondeoConfig = setInterval(cargarConfig, 5000);
-  reloj = setInterval(componer, TICK_S * 1000);
+  ultimaVuelta = 0;
+  reloj = setInterval(componer, REFRESCO_MS);
   cierraServicio = socketPersistente(`${RELEVO_VIVO}/telefonos/detections/watch`, false, (ev) => {
     try {
       servicio.value = JSON.parse(ev.data as string) as EstadoServicio;
