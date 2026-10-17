@@ -68,7 +68,7 @@ try {
     titulo: (document.querySelector('main h1, main h2')?.textContent ?? '').trim(),
     plano: (document.querySelector('main')?.innerText ?? '').match(/Plano · [\\d.]+ × [\\d.]+ m/)?.[0] ?? null,
     capasDelPlano: document.querySelectorAll('main svg *').length,
-    zonasGrabadas: [...document.querySelectorAll('button.ir-capa')].map((b) => b.textContent.trim()),
+    botonesDeZona: document.querySelectorAll('.barra-campus, .alternar-campus').length,
     marcasEnCampus: document.querySelectorAll('g.entrada-vecino[role=button]').length,
     panelZonas: [...document.querySelectorAll('main h2, main h3')].some((h) => h.textContent.trim() === 'Zonas'),
   }))()`);
@@ -150,9 +150,9 @@ try {
   // ESAN tiene dos zonas grabadas (el patio y el comedor del Edificio D) en UN solo mapa: el campus las muestra juntas y se puede ir a cada una.
   await cdp("Page.navigate", { url: `${WEB}/sitios/esan/configuracion` });
   await esperar(3000);
-  await clic(`(() => { const b = document.querySelector('button.alternar-campus'); return /Ver campus/.test(b.textContent) ? b : document.body; })()`);
-  await paso("el campus de ESAN marca las dos zonas grabadas y ofrece ir a la segunda", (e) => {
-    assert.deepEqual(e.zonasGrabadas, ["Ir a Zona grabada 2 · comedor"]);
+  await clic(`document.querySelector('button[aria-label="Ver todo el campus"]')`);
+  await paso("el campus de ESAN marca la segunda zona grabada sobre el croquis, sin botones de zona", (e) => {
+    assert.equal(e.botonesDeZona, 0, "no hay botones «Ir a…» sobre el plano");
     assert.equal(e.marcasEnCampus, 1, "la segunda zona se marca sobre el campus");
     assert.equal(e.pestanas.length, 2, "no hay un sitio aparte para la zona 2");
   });
@@ -162,23 +162,28 @@ try {
     assert.equal(e.marcasEnCampus, 0, "de cerca ya no es campus");
   });
 
-  // En vivo: los videos y las personas grabados son del patio; con el comedor a la vista no se muestran.
+  // En vivo: no hay videos hasta que se hace clic en una zona del croquis; los grabados son del patio y el comedor no los tiene.
   await cdp("Page.navigate", { url: `${WEB}/sitios/esan/en-vivo` });
   await esperar(3500);
-  const vistaEnVivo = () => evalua(`({ videos: document.querySelectorAll('.videos-esan video').length, aviso: !!document.querySelector('[data-prueba=zona-sin-videos]'), controles: !!document.querySelector('.controles') })`);
-  await clic(`[...document.querySelectorAll('.barra-campus button')].find((b) => /Ir a Patio/.test(b.textContent))`);
-  await esperar(1200);
+  const vistaEnVivo = () => evalua(`({ videos: document.querySelectorAll('.videos-esan video').length, elegir: !!document.querySelector('[data-prueba=elegir-zona]'), sinVideos: !!document.querySelector('[data-prueba=zona-sin-videos]'), controles: !!document.querySelector('.controles'), botones: document.querySelectorAll('.barra-campus, .alternar-campus').length })`);
+  const clicEnElPlano = (selector) => evalua(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('click', { bubbles: true })); 0`); // un <g> de SVG no tiene click()
   let ev = await vistaEnVivo();
-  assert.deepEqual(ev, { videos: 3, aviso: false, controles: true }, "mirando el patio se ven sus 3 videos");
-  await clic(`[...document.querySelectorAll('.barra-campus button')].find((b) => /Zona grabada 2/.test(b.textContent))`);
-  await esperar(1200);
+  assert.deepEqual(ev, { videos: 0, elegir: true, sinVideos: false, controles: false, botones: 0 }, "al abrir En vivo no hay videos ni botones de zona: se elige en el croquis");
+  await clicEnElPlano("g.entrada-sitio[role=button]");
+  await esperar(1500);
   ev = await vistaEnVivo();
-  assert.deepEqual(ev, { videos: 0, aviso: true, controles: false }, "mirando el comedor no se ven los videos del patio");
-  await clic(`[...document.querySelectorAll('.barra-campus button')].find((b) => /Ir a Patio/.test(b.textContent))`);
-  await esperar(1200);
+  assert.deepEqual(ev, { videos: 3, elegir: false, sinVideos: false, controles: true, botones: 0 }, "al hacer clic en el patio se ven sus 3 videos");
+  assert.ok(await evalua(`!!document.querySelector('[data-prueba=ver-campus]')`), "acercado a una zona hay un botón para alejar a todo el campus");
+  await clic(`document.querySelector('[data-prueba=ver-campus]')`);
+  await esperar(1500);
   ev = await vistaEnVivo();
-  assert.deepEqual(ev, { videos: 3, aviso: false, controles: true }, "al volver al patio vuelven sus videos");
-  console.log("✓ los videos son del patio; con el comedor a la vista se ocultan y vuelven al regresar");
+  assert.equal(ev.videos, 0, "al alejarse al campus los videos se van");
+  assert.ok(!(await evalua(`!!document.querySelector('[data-prueba=ver-campus]')`)), "con todo el campus a la vista el botón de alejar se va");
+  await clicEnElPlano("g.entrada-vecino[role=button]");
+  await esperar(1500);
+  ev = await vistaEnVivo();
+  assert.deepEqual(ev, { videos: 0, elegir: false, sinVideos: true, controles: false, botones: 0 }, "al hacer clic en el comedor no se ven los videos del patio");
+  console.log("✓ los videos salen solo al hacer clic en la zona del croquis; el comedor no tiene los del patio");
 
   await clic(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Salir')`);
   await paso("Salir lleva al login", (e) => assert.equal(e.url, "/login"));

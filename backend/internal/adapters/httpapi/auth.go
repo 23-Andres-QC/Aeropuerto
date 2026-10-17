@@ -19,14 +19,11 @@ import (
 	"aeropuerto/internal/core/services"
 )
 
-// Roles of the access control (see domain). An superadmin account does everything; a tienda account sees the figures
-// of its own local and nothing else; the key of the scripts (role maquina) reads and writes but never deletes and
-// never manages accounts; the key of a store (tienda_ingesta) is for its ingestion, which arrives later.
+// Roles of the access control (see domain). A superadmin account does everything; seguridad and negocio see their modules;
+// the key of the scripts (role maquina) reads and writes but never deletes and never manages accounts.
 const (
-	RoleAdmin     = domain.RoleAdmin
-	RoleStore     = domain.RoleStore
-	RoleMachine   = domain.RoleMachine
-	RoleStoreFeed = domain.RoleStoreFeed
+	RoleAdmin   = domain.RoleAdmin
+	RoleMachine = domain.RoleMachine
 )
 
 // CookieName is the session cookie: an unguessable secret, HttpOnly and SameSite=Strict, so a script of the page
@@ -38,7 +35,7 @@ type Principal = domain.Principal
 
 // AuthConfig is what Auth needs from the settings.
 type AuthConfig struct {
-	// Accounts holds the accounts, their logins and the store keys.
+	// Accounts holds the accounts and their logins.
 	Accounts *services.AccountService
 	// APIKey is the key of the scripts; empty disables it.
 	APIKey string
@@ -87,10 +84,6 @@ func (a *Auth) authenticate(r *http.Request) (Principal, bool, error) {
 		}
 		if a.hasKey && equal(digest(key), a.key) {
 			return Principal{User: "script", Role: RoleMachine}, true, nil
-		}
-		if a.accounts != nil && strings.HasPrefix(key, "lapk_") {
-			p, err := a.accounts.AuthenticateKey(r.Context(), key)
-			return p, err == nil, nonAuth(err)
 		}
 		return Principal{}, false, nil
 	}
@@ -151,10 +144,8 @@ func isPublic(r *http.Request) bool {
 }
 
 var (
-	// A store account may read these two questions about its own local, and nothing else of the platform.
-	storeAllowed = regexp.MustCompile(`^/api/v1/sites/([a-z0-9-]+)/trafico/(permanencia|embudo)$`)
-	// What only an superadmin login may touch: accounts, keys, the audit log, the demo site and the retention.
-	adminOnly = regexp.MustCompile(`^/api/v1/(usuarios|auditoria|demo|privacidad)(/|$)|/llaves(/|$)|/grupo-minimo$`)
+	// What only a superadmin login may touch: accounts, the audit log, the demo site, the retention and the minimum group size.
+	adminOnly = regexp.MustCompile(`^/api/v1/(usuarios|auditoria|demo|privacidad)(/|$)|/grupo-minimo$`)
 )
 
 // scope applies what each role may reach. It returns false after answering when the request is out of reach. A store
@@ -188,26 +179,6 @@ func (a *Auth) scope(w http.ResponseWriter, r *http.Request, p Principal) bool {
 			return false
 		}
 		return true
-	case RoleStore:
-		if r.Method == http.MethodGet && (path == "/api/v1/auth/me") || r.Method == http.MethodPost && path == "/api/v1/auth/password" {
-			return true
-		}
-		m := storeAllowed.FindStringSubmatch(path)
-		if r.Method != http.MethodGet || m == nil || p.LocalID == nil || m[1] != p.Site {
-			http.NotFound(w, r)
-			return false
-		}
-		q := r.URL.Query()
-		q.Set("local", strconv.Itoa(*p.LocalID))
-		for _, k := range []string{"locales", "zona", "zonas"} {
-			q.Del(k)
-		}
-		r.URL.RawQuery = q.Encode()
-		return true
-	case RoleStoreFeed:
-		if r.Method == http.MethodGet && path == "/api/v1/auth/me" {
-			return true
-		}
 	}
 	http.NotFound(w, r)
 	return false
@@ -302,9 +273,6 @@ type profile struct {
 	User       string     `json:"usuario"`
 	Name       string     `json:"nombre,omitempty"`
 	Role       string     `json:"rol"`
-	LocalID    *int       `json:"local_id,omitempty"`
-	Local      string     `json:"local,omitempty"`
-	Site       string     `json:"sitio,omitempty"`
 	MustChange bool       `json:"debe_cambiar_clave,omitempty"`
 	Expires    *time.Time `json:"vence,omitempty"`
 	// Modules are the parts of the web this role may open: the menu shows exactly these.
@@ -312,7 +280,7 @@ type profile struct {
 }
 
 func profileOf(p Principal) profile {
-	out := profile{User: p.User, Name: p.DisplayName, Role: p.Role, LocalID: p.LocalID, Local: p.Local, Site: p.Site, MustChange: p.MustChange, Modules: domain.ModulesOf(p.Role)}
+	out := profile{User: p.User, Name: p.DisplayName, Role: p.Role, MustChange: p.MustChange, Modules: domain.ModulesOf(p.Role)}
 	if !p.Expires.IsZero() {
 		out.Expires = &p.Expires
 	}
@@ -430,7 +398,7 @@ func (a *Auth) changePassword(w http.ResponseWriter, r *http.Request) {
 
 // check is what nginx asks (auth_request) before it lets a request into the parts it serves apart from this API (the
 // live backend, the camera room and the people panel): 204 for an superadmin login or the key of the scripts, 401 without
-// a login and 403 for any other role — a store never reaches the live view, where each person is seen one by one.
+// a login and 403 for a role without the module.
 func (a *Auth) check(w http.ResponseWriter, r *http.Request) {
 	p, _ := PrincipalOf(r)
 	w.Header().Set("Cache-Control", "no-store")

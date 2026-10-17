@@ -64,6 +64,10 @@ func TestPrivacyMigrationsUndoAndRedo(t *testing.T) {
 		t.Fatalf("el conteo de género de la sesión: %d %v", n, err)
 	}
 
+	run(migrations.DownFS, "down/018_sin_rol_tienda.down.sql")
+	if !table("store_api_keys") || !column("users", "local_id") {
+		t.Error("la tabla de llaves de tienda y local_id deben volver al deshacer la 018")
+	}
 	run(migrations.DownFS, "down/017_roles_y_recuperacion.down.sql")
 	if table("password_reset_tokens") || column("users", "email") {
 		t.Error("la tabla de enlaces y el correo deben desaparecer al deshacer la 017")
@@ -114,7 +118,11 @@ func TestPrivacyMigrationsUndoAndRedo(t *testing.T) {
 	if !table("password_reset_tokens") || !column("users", "email") {
 		t.Error("la 017 debe volver con su tabla de enlaces y el correo")
 	}
-	for _, name := range []string{"users", "auth_sessions", "store_api_keys", "audit_log", "session_gender_counts"} {
+	run(migrations.FS, "018_sin_rol_tienda.sql")
+	if table("store_api_keys") || column("users", "local_id") {
+		t.Error("la 018 quita las llaves de tienda y local_id de las cuentas")
+	}
+	for _, name := range []string{"users", "auth_sessions", "audit_log", "session_gender_counts"} {
 		if !table(name) {
 			t.Errorf("%s debe volver al aplicar otra vez", name)
 		}
@@ -165,46 +173,19 @@ func bearer(k string) func(*http.Request) {
 	return func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+k) }
 }
 
-// TestAccountsInTheDatabase: the accounts the admin makes live in PostgreSQL with argon2id hashes, a store account sees only
-// its own store, the logins are revoked in the database (and the revocation survives a restart of the API), the key of
-// a store identifies it, and the audit log keeps no secret.
+// TestAccountsInTheDatabase: the accounts the admin makes live in PostgreSQL with argon2id hashes, a business account sees only
+// its modules, the logins are revoked in the database (and the revocation survives a restart of the API), and the audit log keeps
+// no secret.
 func TestAccountsInTheDatabase(t *testing.T) {
 	c, _ := newClient(t)
 	db, _, _ := setup(t)
 	ctx := context.Background()
-	const slug = "prueba-cuentas"
-	db.Exec(ctx, "DELETE FROM sites WHERE slug = $1", slug)
 	db.Exec(ctx, "DELETE FROM users WHERE username LIKE 'it-%'")
-	t.Cleanup(func() {
-		db.Exec(ctx, "DELETE FROM users WHERE username LIKE 'it-%'")
-		db.Exec(ctx, "DELETE FROM sites WHERE slug = $1", slug)
-	})
+	t.Cleanup(func() { db.Exec(ctx, "DELETE FROM users WHERE username LIKE 'it-%'") })
 	admin := c.login(testAdminUser, testAdminPassword)
-	site := "/api/v1/sites/" + slug
-	if w := c.do("POST", "/api/v1/sites", map[string]string{"slug": slug, "name": "Cuentas"}, cookie(admin)); w.Code != 201 {
-		t.Fatalf("crear sitio: %d %s", w.Code, w.Body)
-	}
-	locA := decodeJSON[domain.Locale](t, c.do("POST", site+"/locales", map[string]string{"name": "Tienda A", "category": "Ropa"}, cookie(admin)).Body.Bytes())
-	locB := decodeJSON[domain.Locale](t, c.do("POST", site+"/locales", map[string]string{"name": "Tienda B", "category": "Comida"}, cookie(admin)).Body.Bytes())
-	for i, l := range []domain.Locale{locA, locB} {
-		x := float64(i * 10)
-		for _, z := range []struct {
-			name, kind string
-			y0, y1     float64
-		}{{"Frente " + l.Name, "FRONTAGE", 0, 2}, {"Interior " + l.Name, "INTERIOR", 2, 6}} {
-			w := c.do("POST", site+"/zones", map[string]any{"local_id": l.ID, "name": z.name, "zone_type": z.kind,
-				"points": [][2]float64{{x + 1, z.y0}, {x + 8, z.y0}, {x + 8, z.y1}, {x + 1, z.y1}}}, cookie(admin))
-			if w.Code != 201 {
-				t.Fatalf("zona: %d %s", w.Code, w.Body)
-			}
-		}
-	}
-	if w := c.do("POST", site+"/trafico/simulados?semanas=2", nil, cookie(admin)); w.Code != 200 {
-		t.Fatalf("tráfico simulado: %d %s", w.Code, w.Body)
-	}
 
-	// The admin makes a store account: the temporary password comes once and is stored as argon2id.
-	w := c.do("POST", "/api/v1/usuarios", map[string]any{"usuario": "it-tienda-a", "correo": "it-tienda-a@lap.test", "nombre": "Caja A", "rol": "tienda", "local_id": locA.ID}, cookie(admin))
+	// The admin makes an account: the temporary password comes once and is stored as argon2id.
+	w := c.do("POST", "/api/v1/usuarios", map[string]any{"usuario": "it-negocio-a", "correo": "it-negocio-a@lap.test", "nombre": "Gerencia A", "rol": "negocio"}, cookie(admin))
 	if w.Code != 201 {
 		t.Fatalf("crear usuario: %d %s", w.Code, w.Body)
 	}
@@ -212,61 +193,51 @@ func TestAccountsInTheDatabase(t *testing.T) {
 		User      domain.User `json:"usuario"`
 		Temporary string      `json:"clave_temporal"`
 	}](t, w.Body.Bytes())
-	if created.Temporary == "" || !created.User.MustChange || created.User.Role != "tienda" || created.User.LocalID == nil || *created.User.LocalID != locA.ID || created.User.Site != slug {
+	if created.Temporary == "" || !created.User.MustChange || created.User.Role != "negocio" {
 		t.Fatalf("usuario creado: %+v", created)
 	}
 	var hash string
-	if err := db.QueryRow(ctx, "SELECT password_hash FROM users WHERE username = 'it-tienda-a'").Scan(&hash); err != nil || !strings.HasPrefix(hash, "$argon2id$") || strings.Contains(hash, created.Temporary) {
+	if err := db.QueryRow(ctx, "SELECT password_hash FROM users WHERE username = 'it-negocio-a'").Scan(&hash); err != nil || !strings.HasPrefix(hash, "$argon2id$") || strings.Contains(hash, created.Temporary) {
 		t.Fatalf("la contraseña se guarda con argon2id: %q %v", hash, err)
 	}
-	// A second user for the same store is allowed; the same name is a conflict; an admin cannot carry a local; a store needs one.
-	if w := c.do("POST", "/api/v1/usuarios", map[string]any{"usuario": "it-tienda-a2", "correo": "it-tienda-a2@lap.test", "rol": "tienda", "local_id": locA.ID}, cookie(admin)); w.Code != 201 {
-		t.Errorf("varios usuarios por tienda: %d %s", w.Code, w.Body)
+	// A second account with another role is allowed; the same name, a role that does not exist (tienda included) and a short name are refused.
+	if w := c.do("POST", "/api/v1/usuarios", map[string]any{"usuario": "it-seguridad-a", "correo": "it-seguridad-a@lap.test", "rol": "seguridad"}, cookie(admin)); w.Code != 201 {
+		t.Errorf("otra cuenta: %d %s", w.Code, w.Body)
 	}
 	for name, body := range map[string]map[string]any{
-		"repetido":          {"usuario": "it-tienda-a", "correo": "it-tienda-a@lap.test", "rol": "tienda", "local_id": locA.ID},
-		"admin con local":   {"usuario": "it-adm", "correo": "it-adm@lap.test", "rol": "superadmin", "local_id": locA.ID},
-		"tienda sin local":  {"usuario": "it-sin", "correo": "it-sin@lap.test", "rol": "tienda"},
-		"local inexistente": {"usuario": "it-fantasma", "correo": "it-fantasma@lap.test", "rol": "tienda", "local_id": 999999},
-		"rol raro":          {"usuario": "it-raro", "correo": "it-raro@lap.test", "rol": "root"},
-		"nombre corto":      {"usuario": "ab", "correo": "ab@lap.test", "rol": "tienda", "local_id": locA.ID},
+		"repetido":     {"usuario": "it-negocio-a", "correo": "it-negocio-a@lap.test", "rol": "negocio"},
+		"rol tienda":   {"usuario": "it-tienda", "correo": "it-tienda@lap.test", "rol": "tienda"},
+		"rol raro":     {"usuario": "it-raro", "correo": "it-raro@lap.test", "rol": "root"},
+		"nombre corto": {"usuario": "ab", "correo": "ab@lap.test", "rol": "negocio"},
 	} {
 		if w := c.do("POST", "/api/v1/usuarios", body, cookie(admin)); w.Code != 400 && w.Code != 409 {
 			t.Errorf("usuario %s debe rechazarse: %d %s", name, w.Code, w.Body)
 		}
 	}
 
-	// First login: only the change of password is allowed. Then it works, scoped to its store.
-	store := c.login("it-tienda-a", created.Temporary)
-	if w := c.do("GET", site+"/trafico/embudo", nil, cookie(store)); w.Code != 403 || !strings.Contains(w.Body.String(), "cambiar_clave") {
+	// First login: only the change of password is allowed. Then it works, with the modules of its role.
+	negocio := c.login("it-negocio-a", created.Temporary)
+	if w := c.do("GET", "/api/v1/sites", nil, cookie(negocio)); w.Code != 403 || !strings.Contains(w.Body.String(), "cambiar_clave") {
 		t.Fatalf("con la clave temporal todo está cerrado: %d %s", w.Code, w.Body)
 	}
-	if w := c.do("POST", "/api/v1/auth/password", map[string]string{"actual": created.Temporary, "nueva": "Clave-propia-de-la-tienda-1"}, cookie(store)); w.Code != http.StatusNoContent {
+	if w := c.do("POST", "/api/v1/auth/password", map[string]string{"actual": created.Temporary, "nueva": "Clave-propia-de-negocio-1"}, cookie(negocio)); w.Code != http.StatusNoContent {
 		t.Fatalf("cambiar la clave: %d %s", w.Code, w.Body)
 	}
-	fun := decodeJSON[domain.TrafficFunnel](t, c.do("GET", site+"/trafico/embudo?dias=60", nil, cookie(store)).Body.Bytes())
-	if len(fun.Locals) != 1 || fun.Locals[0].LocalID != locA.ID {
-		t.Fatalf("el embudo de una tienda es solo el suyo: %+v", fun.Locals)
+	if w := c.do("GET", "/api/v1/sites", nil, cookie(negocio)); w.Code != 200 {
+		t.Errorf("con su clave propia entra: %d %s", w.Code, w.Body)
 	}
-	// Whatever local it asks for, it gets its own figures (the same ones the admin gets for that store).
-	mine := c.do("GET", site+"/trafico/permanencia?dias=60&local="+strconv.Itoa(locB.ID), nil, cookie(store)).Body.String()
-	want := c.do("GET", site+"/trafico/permanencia?dias=60&local="+strconv.Itoa(locA.ID), nil, cookie(admin)).Body.String()
-	other := c.do("GET", site+"/trafico/permanencia?dias=60&local="+strconv.Itoa(locB.ID), nil, cookie(admin)).Body.String()
-	if mine != want || mine == other {
-		t.Errorf("la tienda A pidió la B y debe recibir la A:\n got %s\nwant %s\nB    %s", mine, want, other)
-	}
-	for _, p := range []string{"/api/v1/sites", site + "/config", site + "/sessions", site + "/trafico/calor", site + "/ventas/resumen", "/api/v1/usuarios", "/api/v1/auditoria", "/api/v1/telefonos", "/api/v1/privacidad"} {
-		if w := c.do("GET", p, nil, cookie(store)); w.Code != 404 {
-			t.Errorf("GET %s como tienda: %d (debe ser 404)", p, w.Code)
+	for _, p := range []string{"/api/v1/usuarios", "/api/v1/auditoria", "/api/v1/telefonos", "/api/v1/privacidad"} {
+		if w := c.do("GET", p, nil, cookie(negocio)); w.Code != http.StatusForbidden {
+			t.Errorf("GET %s como negocio: %d (debe ser 403)", p, w.Code)
 		}
 	}
-	if w := c.do("GET", "/api/v1/auth/check", nil, cookie(store)); w.Code != http.StatusForbidden {
-		t.Errorf("una tienda no entra a En vivo: %d", w.Code)
+	if w := c.do("GET", "/api/v1/auth/check", nil, cookie(negocio)); w.Code != http.StatusForbidden {
+		t.Errorf("negocio no entra a En vivo: %d", w.Code)
 	}
 
 	// Restart of the API: a new handler over the same database. The open login stays open.
 	again, _ := newClient(t)
-	if w := again.do("GET", "/api/v1/auth/me", nil, cookie(store)); w.Code != 200 {
+	if w := again.do("GET", "/api/v1/auth/me", nil, cookie(negocio)); w.Code != 200 {
 		t.Errorf("el login abierto debe sobrevivir a un reinicio: %d", w.Code)
 	}
 	// Disabling the account closes it at once, in the database.
@@ -274,7 +245,7 @@ func TestAccountsInTheDatabase(t *testing.T) {
 		t.Fatalf("desactivar: %d %s", w.Code, w.Body)
 	}
 	for name, h := range map[string]*client{"mismo": c, "reiniciado": again} {
-		if w := h.do("GET", "/api/v1/auth/me", nil, cookie(store)); w.Code != 401 {
+		if w := h.do("GET", "/api/v1/auth/me", nil, cookie(negocio)); w.Code != 401 {
 			t.Errorf("(%s) una cuenta desactivada conservó el login: %d", name, w.Code)
 		}
 	}
@@ -283,53 +254,23 @@ func TestAccountsInTheDatabase(t *testing.T) {
 		t.Fatalf("borrar la cuenta: %d %s", w.Code, w.Body)
 	}
 	var left int
-	db.QueryRow(ctx, "SELECT count(*) FROM users WHERE username = 'it-tienda-a'").Scan(&left)
+	db.QueryRow(ctx, "SELECT count(*) FROM users WHERE username = 'it-negocio-a'").Scan(&left)
 	if left != 0 {
 		t.Error("la cuenta borrada sigue en la base")
 	}
-	// A store cannot manage anything; a store key identifies the store and nothing else.
-	if w := c.do("POST", site+"/tiendas/"+strconv.Itoa(locA.ID)+"/llaves", map[string]string{"etiqueta": "caja"}, bearer(testAPIKey)); w.Code != http.StatusForbidden {
-		t.Errorf("la llave de los scripts no crea llaves de tienda: %d", w.Code)
-	}
-	w = c.do("POST", site+"/tiendas/"+strconv.Itoa(locA.ID)+"/llaves", map[string]string{"etiqueta": "caja"}, cookie(admin))
-	if w.Code != 201 {
-		t.Fatalf("crear llave: %d %s", w.Code, w.Body)
-	}
-	k := decodeJSON[struct {
-		Key   domain.StoreKey `json:"llave"`
-		Clave string          `json:"clave"`
-	}](t, w.Body.Bytes())
-	if !strings.HasPrefix(k.Clave, "lapk_") || k.Key.LocalID != locA.ID {
-		t.Fatalf("llave: %+v", k)
-	}
-	if strings.Contains(c.do("GET", site+"/tiendas/"+strconv.Itoa(locA.ID)+"/llaves", nil, cookie(admin)).Body.String(), k.Clave) {
-		t.Error("la lista de llaves no debe mostrar la llave completa")
-	}
-	me := c.do("GET", "/api/v1/auth/me", nil, bearer(k.Clave))
-	if me.Code != 200 || !strings.Contains(me.Body.String(), "tienda_ingesta") {
-		t.Errorf("la llave de tienda: %d %s", me.Code, me.Body)
-	}
-	if w := c.do("GET", site+"/trafico/embudo", nil, bearer(k.Clave)); w.Code != 404 {
-		t.Errorf("la llave de tienda no lee tráfico: %d", w.Code)
-	}
-	if w := c.do("DELETE", site+"/tiendas/"+strconv.Itoa(locB.ID)+"/llaves/"+k.Key.ID, nil, cookie(admin)); w.Code != 404 {
-		t.Errorf("revocar una llave por otra tienda: %d", w.Code)
-	}
-	if w := c.do("DELETE", site+"/tiendas/"+strconv.Itoa(locA.ID)+"/llaves/"+k.Key.ID, nil, cookie(admin)); w.Code != http.StatusNoContent {
-		t.Errorf("revocar: %d %s", w.Code, w.Body)
-	}
-	if w := c.do("GET", "/api/v1/auth/me", nil, bearer(k.Clave)); w.Code != 401 {
-		t.Errorf("una llave revocada sigue sirviendo: %d", w.Code)
+	// The old routes of the store keys are gone.
+	if w := c.do("POST", "/api/v1/sites/esan/tiendas/1/llaves", map[string]string{"etiqueta": "caja"}, cookie(admin)); w.Code != http.StatusNotFound && w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("las llaves de tienda ya no existen: %d", w.Code)
 	}
 
 	// The audit log says who did what and holds no secret.
 	log := c.do("GET", "/api/v1/auditoria?limite=200", nil, cookie(admin)).Body.String()
-	for _, want := range []string{"usuario_creado", "usuario_desactivado", "llave_creada", "llave_revocada", "it-tienda-a"} {
+	for _, want := range []string{"usuario_creado", "usuario_desactivado", "it-negocio-a"} {
 		if !strings.Contains(log, want) {
 			t.Errorf("la bitácora no tiene %q", want)
 		}
 	}
-	for _, secret := range []string{created.Temporary, k.Clave, "Clave-propia-de-la-tienda-1", testAdminPassword} {
+	for _, secret := range []string{created.Temporary, "Clave-propia-de-negocio-1", testAdminPassword} {
 		if strings.Contains(log, secret) {
 			t.Errorf("la bitácora filtra un secreto")
 		}

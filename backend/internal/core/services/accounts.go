@@ -4,14 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	"aeropuerto/internal/core/domain"
@@ -29,14 +26,12 @@ type LockedError struct{ Until time.Time }
 
 func (e *LockedError) Error() string { return "cuenta bloqueada por intentos fallidos" }
 
-// AccountService owns the accounts, their logins, the store keys and the audit log.
+// AccountService owns the accounts, their logins and the audit log.
 type AccountService struct {
 	repo ports.AccountRepository
 	now  func() time.Time
 	// dummy is verified when the user does not exist, so the answer takes as long as for one that does.
 	dummy string
-
-	touchMu sync.Mutex
 
 	mailer  ports.Mailer
 	baseURL string
@@ -161,8 +156,8 @@ func (s *AccountService) Login(ctx context.Context, username, password string) (
 }
 
 func principalOf(rec domain.UserRecord, expires, idle time.Time) domain.Principal {
-	return domain.Principal{UserID: rec.ID, User: rec.Username, DisplayName: rec.DisplayName, Role: rec.Role, LocalID: rec.LocalID,
-		Local: rec.Local, Site: rec.Site, Expires: expires, IdleEnds: idle, MustChange: rec.MustChange}
+	return domain.Principal{UserID: rec.ID, User: rec.Username, DisplayName: rec.DisplayName, Role: rec.Role,
+		Expires: expires, IdleEnds: idle, MustChange: rec.MustChange}
 }
 
 // Authenticate finds who a session secret belongs to. A session that ended, was revoked or belongs to a disabled
@@ -184,7 +179,7 @@ func (s *AccountService) Authenticate(ctx context.Context, token string) (domain
 		return domain.Principal{}, ErrUnauthenticated
 	}
 	idle := rec.IdleEnds
-	if rec.User.Role != domain.RoleStore && now.Sub(rec.LastSeen) > time.Minute {
+	if now.Sub(rec.LastSeen) > time.Minute {
 		idle = now.Add(domain.AdminIdle)
 		if idle.After(rec.Expires) {
 			idle = rec.Expires
@@ -327,73 +322,6 @@ func (s *AccountService) DeleteUser(ctx context.Context, actor domain.Principal,
 		}
 	}
 	return rec.User, s.repo.DeleteUser(ctx, id)
-}
-
-// ---- store keys ----
-
-const storeKeyPrefix = "lapk"
-
-func randomHex(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", errRandom
-	}
-	return hex.EncodeToString(b), nil
-}
-
-// CreateStoreKey makes the ingestion key of a store. The full key (lapk_<prefix>_<secret>) is returned once.
-func (s *AccountService) CreateStoreKey(ctx context.Context, actor domain.Principal, localID int, label string) (domain.StoreKey, string, error) {
-	label = strings.TrimSpace(label)
-	if len([]rune(label)) > 60 {
-		return domain.StoreKey{}, "", domain.Invalid("La etiqueta admite hasta 60 caracteres")
-	}
-	prefix, err := randomHex(4)
-	if err != nil {
-		return domain.StoreKey{}, "", err
-	}
-	secret, err := randomHex(20)
-	if err != nil {
-		return domain.StoreKey{}, "", err
-	}
-	full := storeKeyPrefix + "_" + prefix + "_" + secret
-	h := sha256.Sum256([]byte(full))
-	k, err := s.repo.CreateStoreKey(ctx, localID, label, prefix, h[:], actor.User)
-	return k, full, err
-}
-
-func (s *AccountService) StoreKeys(ctx context.Context, localID int) ([]domain.StoreKey, error) {
-	return s.repo.StoreKeys(ctx, localID)
-}
-
-func (s *AccountService) RevokeStoreKey(ctx context.Context, localID int, id string) error {
-	return s.repo.RevokeStoreKey(ctx, localID, id, s.now())
-}
-
-// AuthenticateKey recognises a store key. The comparison uses the SHA-256 of the whole key in constant time.
-func (s *AccountService) AuthenticateKey(ctx context.Context, key string) (domain.Principal, error) {
-	parts := strings.Split(strings.TrimSpace(key), "_")
-	if len(parts) != 3 || parts[0] != storeKeyPrefix || len(parts[1]) != 8 {
-		return domain.Principal{}, ErrUnauthenticated
-	}
-	rec, err := s.repo.StoreKeyByPrefix(ctx, parts[1])
-	if errors.Is(err, domain.ErrNotFound) {
-		return domain.Principal{}, ErrUnauthenticated
-	}
-	if err != nil {
-		return domain.Principal{}, err
-	}
-	h := sha256.Sum256([]byte(strings.TrimSpace(key)))
-	if subtle.ConstantTimeCompare(h[:], rec.Hash) != 1 || rec.RevokedAt != nil {
-		return domain.Principal{}, ErrUnauthenticated
-	}
-	now := s.now()
-	if rec.LastUsedAt == nil || now.Sub(*rec.LastUsedAt) > time.Minute {
-		s.touchMu.Lock()
-		_ = s.repo.TouchStoreKey(ctx, rec.ID, now)
-		s.touchMu.Unlock()
-	}
-	local := rec.LocalID
-	return domain.Principal{User: "llave:" + rec.Prefix, Role: domain.RoleStoreFeed, LocalID: &local}, nil
 }
 
 func (s *AccountService) AuditLog(ctx context.Context, limit int) ([]domain.AuditEntry, error) {
