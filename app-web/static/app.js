@@ -13,8 +13,11 @@ const CALIDAD = 0.6;
 // Cuadros enviados sin acuse todavía: los que caben en una ida y vuelta al ritmo
 // pedido, más uno. Con el servidor lejos (ida y vuelta de ~400 ms desde un
 // celular), esperar cada acuse deja la cámara en ~3 fps; así llega a 15 fps.
-// Entre 2 y 6: la cola nunca pasa de eso aunque la red se ponga lenta.
-const EN_VUELO_MIN = 2;
+// Entre 4 y 6: la cola nunca pasa de eso aunque la red se ponga lenta. Con 2, en
+// la misma Wi-Fi bastaba que retuviera los cuadros ~150 ms (lo hace a menudo) para
+// que la cámara dejara de tomarlos y el video tuviera un corte; con 4 sigue
+// tomándolos y la web los muestra a su ritmo con la hora en que se tomaron.
+const EN_VUELO_MIN = 4;
 const EN_VUELO_MAX = 6;
 // Cajas y estado del modelo: pasado este tiempo sin novedades ya no se muestran.
 const DET_VIGENTE_MS = 2500;
@@ -22,20 +25,26 @@ const DET_VIGENTE_MS = 2500;
 // velocidad que traía entre sus dos últimos cuadros procesados, hasta este tiempo después del último (ver cajasAl).
 const PREDICCION_MAX_MS = 1500;
 // Mientras el modelo procesa, la pantalla muestra los cuadros enviados atrasados lo que tardan en volver sus cajas
-// (percentil RETRASO_PERCENTIL, más un margen, hasta RETRASO_MAX_MS): cada uno va con las suyas o interpoladas entre
-// los dos procesados que lo rodean, así las cajas van sincronizadas y desaparecen cuando la persona se va. Al cuadro
-// cuyas cajas tardan más que eso (1 de cada 4) se le llevan las del anterior con su velocidad (hasta
-// HORIZONTE_SINCRONIZADO_MS, unas decenas de ms): con el percentil 90 y 60 ms de margen la pantalla iba ~0,1 s más
-// atrasada para cubrir los pocos cuadros más lentos. Sin modelo, en vivo.
+// (percentil RETRASO_PERCENTIL de las últimas MUESTRAS_RETRASO, más un margen, hasta RETRASO_MAX_MS): cada uno va con
+// las suyas o interpoladas entre los dos procesados que lo rodean, así las cajas van sincronizadas y desaparecen cuando
+// la persona se va. Al cuadro cuyas cajas tardan más que eso (1 de cada 10) se le llevan las del anterior con su
+// velocidad (hasta HORIZONTE_SINCRONIZADO_MS). Las primeras DESCARTE_INICIAL no cuentan (el modelo recién toma la
+// cámara y tardan más). Sin modelo, en vivo. Lo mismo que Teléfonos de la web (SalaTelefonos.vue).
 const RETRASO_MAX_MS = 2000;
-const RETRASO_PERCENTIL = 0.75;
-const MARGEN_RETRASO_MS = 30;
+const RETRASO_PERCENTIL = 0.9;
+const MARGEN_RETRASO_MS = 20;
+const MUESTRAS_RETRASO = 90;
+const DESCARTE_INICIAL = 3;
 const HORIZONTE_SINCRONIZADO_MS = 150;
 const BUFER_MAX = 45; // cuadros guardados para mostrarlos atrasados (2 s a 15 fps, con holgura)
-// El atraso de la pantalla cambia de a poco (como en Teléfonos de la web): al subir, el video va al 70 % de su velocidad;
-// al bajar, al 110 %. Recalcularlo de golpe en cada cuadro de pantalla saltaba cuadros o congelaba la imagen.
-const ATRASO_SUBE_POR_S = 0.3;
+// El atraso de la pantalla cambia de a poco (como en Teléfonos de la web): al subir, el video va al 80 % de su velocidad;
+// al bajar, al 110 %, y solo si el necesario se aleja más que la banda (faltan BANDA_SUBE_MS o sobran BANDA_BAJA_MS):
+// siguiéndolo en cada cuadro alternaba entre lento y rápido. Si sobra más que SALTO_ATRASO_MS, salta de una vez.
+const ATRASO_SUBE_POR_S = 0.2;
 const ATRASO_BAJA_POR_S = 0.1;
+const BANDA_SUBE_MS = 15;
+const BANDA_BAJA_MS = 40;
+const SALTO_ATRASO_MS = 400;
 
 const $ = (id) => document.getElementById(id);
 
@@ -70,6 +79,7 @@ const app = {
   instantaneas: [],
   cajasMostradas: null,
   retrasos: [], // ms entre tomar un cuadro y recibir sus cajas (los últimos)
+  dets: 0, // cajas numeradas recibidas (las primeras DESCARTE_INICIAL no cuentan para el atraso)
   bufer: [], // cuadros enviados { t: hora de captura, imagen }, para mostrarlos atrasados
   mostrado: null, // el cuadro del búfer que está en pantalla
   atraso: 0, // ms con que se muestra la pantalla ahora (va de a poco hacia retrasoActual)
@@ -79,6 +89,7 @@ const app = {
 const video = $('video');
 const diferido = $('diferido');
 const capa = $('cajas');
+const lienzoGuia = $('guia');
 const lienzo = document.createElement('canvas');
 const ctx = lienzo.getContext('2d');
 
@@ -233,7 +244,9 @@ function conectar() {
       if (enviado !== undefined && m.cuadro) numerar(m.cuadro, captura ?? enviado);
       if (enviado !== undefined) app.idas.push(performance.now() - enviado);
       if (app.idas.length > 15) app.idas.shift();
+      const camaraAntes = app.camara;
       Object.assign(app, { lectores: m.lectores, espectadores: m.espectadores || 0, camara: m.camara || 0 });
+      if (app.camara !== camaraAntes) dibujarGuia(); // ya se sabe qué cámara es: su guía
     } else if (m.tipo === 'det') {
       alDetecciones(m.datos);
       return;
@@ -316,7 +329,7 @@ function bucleEnvio() {
   comprimir().then((blob) => {
     app.codificando = false;
     if (!blob || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(blob);
+    ws.send(new Blob([cabeceraCaptura(captura), blob]));
     const enviado = performance.now();
     if (ws === app.ws) {
       app.enVuelo.push(enviado);
@@ -324,6 +337,15 @@ function bucleEnvio() {
     }
     app.envios.push(enviado);
   });
+}
+
+// Cada cuadro viaja como [0x01][hora de captura: float64 big-endian, ms de performance.now()][JPEG]: la web lo muestra
+// a esa hora y no a la de su llegada (la Wi-Fi entrega los cuadros a ráfagas y el video se veía a saltos).
+function cabeceraCaptura(captura) {
+  const cabecera = new DataView(new ArrayBuffer(9));
+  cabecera.setUint8(0, 0x01);
+  cabecera.setFloat64(1, captura);
+  return cabecera.buffer;
 }
 
 // El JPEG del cuadro que está en el lienzo. canvas.toBlob comprime en los ratos libres del hilo principal, que con la
@@ -395,6 +417,8 @@ function numerar(seq, enviado) {
   if (ultimo !== undefined && seq < ultimo) {
     app.horas.clear(); // otra numeración (el servicio se reinició)
     app.instantaneas = [];
+    app.retrasos = [];
+    app.dets = 0;
   }
   app.horas.set(seq, enviado);
   while (app.horas.size > 200) app.horas.delete(app.horas.keys().next().value);
@@ -412,8 +436,8 @@ function alDetecciones(det) {
     return;
   }
   app.det = null;
-  app.retrasos.push(ahora - hora);
-  if (app.retrasos.length > 30) app.retrasos.shift();
+  if (++app.dets > DESCARTE_INICIAL) app.retrasos.push(ahora - hora);
+  if (app.retrasos.length > MUESTRAS_RETRASO) app.retrasos.shift();
   app.instantaneas.push({ ...det, t: hora });
   app.instantaneas.sort((a, b) => a.t - b.t);
   while (app.instantaneas.length > 2 && app.instantaneas[0].t < ahora - 5000) app.instantaneas.shift();
@@ -504,9 +528,9 @@ function retrasoActual() {
 function atrasoSuave(objetivo, ahora) {
   const dt = Math.min(0.25, Math.max(0, (ahora - app.horaAtraso) / 1000));
   app.horaAtraso = ahora;
-  if (!objetivo || !app.atraso) app.atraso = objetivo;
-  else if (objetivo > app.atraso) app.atraso = Math.min(objetivo, app.atraso + 1000 * ATRASO_SUBE_POR_S * dt);
-  else app.atraso = Math.max(objetivo, app.atraso - 1000 * ATRASO_BAJA_POR_S * dt);
+  if (!objetivo || !app.atraso || objetivo < app.atraso - SALTO_ATRASO_MS) app.atraso = objetivo;
+  else if (objetivo > app.atraso + BANDA_SUBE_MS) app.atraso = Math.min(objetivo, app.atraso + 1000 * ATRASO_SUBE_POR_S * dt);
+  else if (objetivo < app.atraso - BANDA_BAJA_MS) app.atraso = Math.max(objetivo, app.atraso - 1000 * ATRASO_BAJA_POR_S * dt);
   return app.atraso;
 }
 
@@ -609,6 +633,113 @@ function colorClaro(numero) {
   return `hsl(${Math.round(((numero * 0.618034) % 1) * 360)}, 90%, 64%)`;
 }
 
+
+// ---------- Guía de encuadre ----------
+
+// Dónde deben quedar los bordes de las paredes (y los objetos del patio) en la pantalla para que este teléfono vea lo
+// mismo que una referencia de su cámara: así el modelo lo ubica en el plano y la gente se grafica en el mismo lugar.
+// guias.json sale de Modelo/Test Modelo/generar_guias.py (el contorno del plano llevado a los píxeles de cada
+// referencia). El botón Guía pasa por las referencias de esta cámara (por su número: 1 izquierda, 2 derecha) y la
+// apaga; la elección se recuerda.
+const guia = { lista: null, indice: 0, apagada: leer('camara-web.guia') === 'no', clave: '', vista: null, desde: 0 };
+const AVISO_GUIA_MS = 8000; // cuánto se explica la guía al elegirla
+
+async function cargarGuias() {
+  try {
+    const resp = await fetch('guias.json', { cache: 'no-cache' });
+    if (resp.ok) guia.lista = (await resp.json()).referencias || [];
+  } catch {
+    guia.lista = [];
+  }
+  const nombre = leer('camara-web.guia');
+  if (nombre && nombre !== 'no') guia.preferida = nombre;
+  dibujarGuia();
+}
+
+function guiasDeEstaCamara() {
+  return (guia.lista || []).filter((r) => r.camara === app.camara);
+}
+
+function guiaActual() {
+  const propias = guiasDeEstaCamara();
+  if (guia.apagada || !propias.length) return null;
+  if (guia.preferida) {
+    const k = propias.findIndex((r) => r.nombre === guia.preferida);
+    if (k >= 0) guia.indice = k;
+    guia.preferida = null;
+  }
+  return propias[guia.indice % propias.length];
+}
+
+function cambiarGuia() {
+  const propias = guiasDeEstaCamara();
+  if (!propias.length) return;
+  if (guia.apagada) {
+    guia.apagada = false;
+    guia.indice = 0;
+  } else if (guia.indice + 1 < propias.length) {
+    guia.indice++;
+  } else {
+    guia.apagada = true;
+  }
+  const actual = guiaActual();
+  guardar('camara-web.guia', actual ? actual.nombre : 'no');
+  dibujarGuia();
+}
+
+// Las líneas están en píxeles de la referencia (640 de ancho): el cuadro entero llevado a ese ancho, como lo compara el
+// modelo. Se dibujan sobre la imagen (object-fit: contain) con la misma escala en los dos ejes.
+function dibujarGuia() {
+  const boton = $('guia-boton');
+  const propias = guiasDeEstaCamara();
+  boton.hidden = !app.activa || !propias.length;
+  const actual = app.activa ? guiaActual() : null;
+  boton.textContent = actual ? `Guía ${actual.nombre}` : 'Guía';
+  boton.classList.toggle('activa', !!actual);
+  const W = video.clientWidth;
+  const H = video.clientHeight;
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  const vertical = actual && actual.alto > actual.ancho;
+  const girado = actual && vw && vh && (vh > vw) !== vertical;
+  if ((actual && actual.nombre) !== guia.vista) Object.assign(guia, { vista: actual && actual.nombre, desde: performance.now() });
+  const aviso = $('guia-aviso');
+  aviso.hidden = !actual || !vw || (!girado && performance.now() - guia.desde > AVISO_GUIA_MS);
+  aviso.textContent = girado
+    ? `Pon el teléfono ${vertical ? 'vertical' : 'horizontal'} para usar la guía.`
+    : 'Mueve el teléfono hasta que las líneas amarillas queden sobre el pie de las paredes.';
+  const clave = [actual && actual.nombre, W, H, vw, vh, girado].join(' ');
+  if (clave === guia.clave) return;
+  guia.clave = clave;
+  const g = lienzoGuia.getContext('2d');
+  if (!actual || !vw || !vh || !W || !H || girado) {
+    g.clearRect(0, 0, lienzoGuia.width, lienzoGuia.height);
+    return;
+  }
+  const k = Math.min(W / vw, H / vh);
+  const w = vw * k;
+  const h = vh * k;
+  Object.assign(lienzoGuia.style, { left: `${(W - w) / 2}px`, top: `${(H - h) / 2}px`, width: `${w}px`, height: `${h}px` });
+  const px = window.devicePixelRatio || 1;
+  lienzoGuia.width = Math.round(w * px);
+  lienzoGuia.height = Math.round(h * px);
+  const escala = lienzoGuia.width / actual.ancho;
+  g.clearRect(0, 0, lienzoGuia.width, lienzoGuia.height);
+  g.lineJoin = 'round';
+  g.lineCap = 'round';
+  for (const linea of actual.lineas) {
+    const pared = linea.tipo === 'pared';
+    g.beginPath();
+    linea.puntos.forEach(([x, y], i) => (i ? g.lineTo(x * escala, y * escala) : g.moveTo(x * escala, y * escala)));
+    g.setLineDash(pared ? [] : [6 * px, 5 * px]);
+    g.lineWidth = (pared ? 5 : 4) * px;
+    g.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+    g.stroke();
+    g.lineWidth = (pared ? 2.5 : 2) * px;
+    g.strokeStyle = pared ? '#ffd60a' : '#5ac8fa';
+    g.stroke();
+  }
+}
 
 // ---------- Personas (memoria de identidades, como la tabla de Teléfonos) ----------
 
@@ -726,6 +857,7 @@ async function unirse() {
   $('inicio').hidden = true;
   $('camara').hidden = false;
   mostrarEstado();
+  dibujarGuia();
   conectar();
   bucleEnvio();
   mantenerPantalla();
@@ -749,6 +881,7 @@ function terminar(mensaje) {
   $('camara').hidden = true;
   $('inicio').hidden = false;
   $('unirse').disabled = false;
+  dibujarGuia();
   if (mensaje) mostrarError(mensaje);
 }
 
@@ -769,6 +902,9 @@ function iniciar() {
   $('abrir-personas').addEventListener('click', abrirPersonas);
   $('cerrar-personas').addEventListener('click', cerrarPersonas);
   $('camaras').addEventListener('change', () => cambiarCamara($('camaras').value));
+  $('guia-boton').addEventListener('click', cambiarGuia);
+  video.addEventListener('loadedmetadata', dibujarGuia);
+  video.addEventListener('resize', dibujarGuia);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') mantenerPantalla();
   });
@@ -776,15 +912,20 @@ function iniciar() {
   window.addEventListener('pagehide', () => {
     if (app.ws && app.ws.readyState === WebSocket.OPEN) app.ws.send(JSON.stringify({ tipo: 'salir' }));
   });
-  window.addEventListener('resize', dibujarCajas);
+  window.addEventListener('resize', () => {
+    dibujarCajas();
+    dibujarGuia();
+  });
   setInterval(() => {
     if (app.activa) ajustarLado();
   }, 1000);
   requestAnimationFrame(animar);
+  cargarGuias();
   setInterval(() => {
     if (!app.activa) return;
     mostrarEstado();
     dibujarCajas(); // borra las cajas si el modelo dejó de mandarlas
+    dibujarGuia();
   }, 500);
 }
 

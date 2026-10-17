@@ -43,8 +43,8 @@ Se cambian con `CAMARA_PORT`, `CAMARA_MJPEG_PORT` y `CAMARA_BIND_ADDR` en `.env`
 
 | Ruta | Qué |
 |---|---|
-| `GET /ws?id=…&nombre=…` | WebSocket de la cámara. Recibe JPEG binarios. Responde `{"tipo":"unido"}`, un acuse por cuadro `{"tipo":"ok","lectores":n,"espectadores":n}` o `{"tipo":"error","mensaje":…,"reintentar":bool}`. `{"tipo":"salir"}` la quita de la lista |
-| `GET /ws/sala` (8092) | Sala para Teléfonos: `{"tipo":"sala"}`, `{"tipo":"estado"}`, `{"tipo":"det"}` y cuadros binarios `[largo del id][id][m\|d][JPEG]` |
+| `GET /ws?id=…&nombre=…` | WebSocket de la cámara. Recibe cuadros binarios `[0x01][hora de captura: float64 big-endian, ms del reloj de la página][JPEG]` (o el JPEG solo, de una página anterior); el MJPEG del modelo recibe el JPEG solo. Responde `{"tipo":"unido"}`, un acuse por cuadro `{"tipo":"ok","lectores":n,"espectadores":n}` o `{"tipo":"error","mensaje":…,"reintentar":bool}`. `{"tipo":"salir"}` la quita de la lista |
+| `GET /ws/sala` (8092) | Sala para Teléfonos: `{"tipo":"sala"}`, `{"tipo":"estado"}`, `{"tipo":"det"}` y cuadros binarios `[largo del id][id][m\|d][número: uint32][hora de captura: float64, 0 si no se sabe][JPEG]`: Teléfonos muestra cada cuadro a la hora en que se tomó, no a la de su llegada (la Wi-Fi los entrega a ráfagas) |
 | `GET /video?token=…` (8092) | MJPEG `multipart/x-mixed-replace; boundary=frameesan`, el que lee `camara_telefono.py` |
 
 ## Pruebas
@@ -61,3 +61,5 @@ El Dockerfile ejecuta `go vet` y `go test` al construir. Las pruebas levantan el
 - la sala con el proceso del modelo y con video directo;
 - que por la red solo se vea la página;
 - el certificado.
+
+**Guía para encuadrar.** `static/guias.json` (lo escribe `Modelo/Test Modelo/generar_guias.py`) trae, para cada referencia de ubicación, dónde quedan el pie de las paredes y los objetos del patio en su imagen; el botón **Guía** de la página los dibuja sobre el video para poner el teléfono como en la referencia de su cámara.

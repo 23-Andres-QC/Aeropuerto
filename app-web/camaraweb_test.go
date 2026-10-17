@@ -5,10 +5,12 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -336,7 +338,13 @@ type mensajeSala struct {
 
 func cuadroDeSala(datos []byte) (id string, fuente byte, jpeg []byte) {
 	n := int(datos[0])
-	return string(datos[1 : 1+n]), datos[1+n], datos[6+n:]
+	return string(datos[1 : 1+n]), datos[1+n], datos[14+n:]
+}
+
+// capturaDeSala es la hora de captura que la sala manda con un cuadro (ms del reloj de la página; 0 si no se sabe).
+func capturaDeSala(datos []byte) float64 {
+	n := int(datos[0])
+	return math.Float64frombits(binary.BigEndian.Uint64(datos[6+n : 14+n]))
 }
 
 func TestSalaReparteElProcesoDelModelo(t *testing.T) {
@@ -441,6 +449,64 @@ func TestSalaMuestraLaCamaraWebSinProcesar(t *testing.T) {
 			t.Fatalf("cuadro = %s %c %v", id, fuente, jpeg)
 		}
 		return
+	}
+}
+
+// La página manda con cada cuadro la hora en que lo tomó: la sala la pasa a la web (para mostrarlo a ese ritmo y no al
+// de su llegada, que la Wi-Fi entrega a ráfagas) y el MJPEG del modelo recibe el JPEG solo.
+func TestSalaPasaLaHoraDeCapturaDeCadaCuadro(t *testing.T) {
+	e := nuevoEntorno(t, time.Minute, "")
+	camara := unirseComo(t, e, idPrueba, "Laptop")
+	lista, err := e.camaras.Sincronizar(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.sala.Actualizar(lista)
+	espectador := conectarWS(t, e.srv.URL+"/ws/sala")
+	esperar(t, "que cuente al espectador", func() bool { return e.sala.Espectadores() == 1 })
+
+	const captura = 123456.789
+	mensaje := binary.BigEndian.AppendUint64([]byte{0x01}, math.Float64bits(captura))
+	if err := camara.WriteMessage(websocket.BinaryMessage, append(mensaje, jpegDePrueba...)); err != nil {
+		t.Fatal(err)
+	}
+	if m := leerMensaje(t, camara); m.Tipo != "ok" || m.Cuadro != 1 {
+		t.Fatalf("acuse = %+v", m)
+	}
+	if frame, _, _ := e.camaras.PorTelefono(lista[0].ID).Ultimo(); !bytes.Equal(frame, jpegDePrueba) {
+		t.Fatalf("el MJPEG recibiría %q, no el JPEG solo", frame)
+	}
+	for {
+		_ = espectador.SetReadDeadline(time.Now().Add(3 * time.Second))
+		tipo, datos, err := espectador.ReadMessage()
+		if err != nil {
+			t.Fatalf("no llegó el video de la cámara web: %v", err)
+		}
+		if tipo != websocket.BinaryMessage {
+			continue
+		}
+		if _, _, jpeg := cuadroDeSala(datos); !bytes.Equal(jpeg, jpegDePrueba) {
+			t.Fatalf("cuadro = %q", jpeg)
+		}
+		if c := capturaDeSala(datos); c != captura {
+			t.Fatalf("captura = %v, se esperaba %v", c, captura)
+		}
+		return
+	}
+}
+
+func TestSepararCaptura(t *testing.T) {
+	con := append(binary.BigEndian.AppendUint64([]byte{0x01}, math.Float64bits(42.5)), jpegDePrueba...)
+	if jpeg, c := separarCaptura(con); !bytes.Equal(jpeg, jpegDePrueba) || c != 42.5 {
+		t.Fatalf("con hora: %q %v", jpeg, c)
+	}
+	// Una página anterior manda el JPEG solo: sin hora.
+	if jpeg, c := separarCaptura(jpegDePrueba); !bytes.Equal(jpeg, jpegDePrueba) || c != 0 {
+		t.Fatalf("sin hora: %q %v", jpeg, c)
+	}
+	raro := append(binary.BigEndian.AppendUint64([]byte{0x01}, math.Float64bits(math.NaN())), jpegDePrueba...)
+	if _, c := separarCaptura(raro); c != 0 {
+		t.Fatalf("una hora inválida queda en 0, no %v", c)
 	}
 }
 
@@ -575,6 +641,7 @@ func TestLaRedSoloVeLaPaginaDeCamara(t *testing.T) {
 	defer publico.Close()
 	// Lo que sirve el puerto que ve la red (el 8444): la página y su WebSocket, y nada de lo que pide sesión en la web.
 	for ruta, esperado := range map[string]int{"/": http.StatusOK, "/app.js": http.StatusOK, "/codificador.js": http.StatusOK,
+		"/guias.json": http.StatusOK,
 		"/personas": http.StatusNotFound, "/ws/sala": http.StatusNotFound, "/estado?token=x": http.StatusNotFound,
 		"/video?token=x": http.StatusNotFound, "/foto.jpg?token=x": http.StatusNotFound} {
 		resp, err := http.Get(publico.URL + ruta)
