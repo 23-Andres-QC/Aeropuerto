@@ -104,6 +104,9 @@ func (r *Registro) Subir(nombre, modo string, cuerpo io.Reader) (Video, error) {
 	if len([]rune(nombre)) > 120 {
 		return Video{}, fmt.Errorf("%w: el nombre admite hasta 120 caracteres", ErrInvalido)
 	}
+	if !extensionPermitida(nombre) {
+		return Video{}, fmt.Errorf("%w: solo se aceptan archivos de video (%s)", ErrInvalido, strings.Join(extensiones, ", "))
+	}
 	if modo == "" {
 		modo = TiempoReal
 	}
@@ -127,6 +130,8 @@ func (r *Registro) Subir(nombre, modo string, cuerpo io.Reader) (Video, error) {
 		err = fmt.Errorf("%w (%d MB)", ErrMuyGrande, r.maximo>>20)
 	case n == 0:
 		err = fmt.Errorf("%w: el video está vacío", ErrInvalido)
+	default:
+		err = firmaDeVideo(f.Name())
 	}
 	if err != nil {
 		_ = os.Remove(f.Name())
@@ -233,4 +238,37 @@ func (r *Registro) Purgar(antes time.Time) int {
 		}
 	}
 	return n
+}
+
+// extensiones son los contenedores de video que se aceptan.
+var extensiones = []string{".mp4", ".m4v", ".mov", ".avi", ".mkv", ".webm"}
+
+func extensionPermitida(nombre string) bool {
+	ext := strings.ToLower(filepath.Ext(nombre))
+	for _, e := range extensiones {
+		if ext == e {
+			return true
+		}
+	}
+	return false
+}
+
+// firmaDeVideo mira los primeros bytes del archivo: la extensión la escribe quien sube, el contenido no miente. Acepta MP4/MOV
+// (ISO BMFF: "ftyp" a partir del byte 4), AVI (RIFF....AVI ) y Matroska/WebM (EBML).
+func firmaDeVideo(ruta string) error {
+	f, err := os.Open(ruta)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	b := make([]byte, 12)
+	n, _ := io.ReadFull(f, b)
+	b = b[:n]
+	switch {
+	case n >= 8 && string(b[4:8]) == "ftyp",
+		n >= 12 && string(b[0:4]) == "RIFF" && string(b[8:12]) == "AVI ",
+		n >= 4 && b[0] == 0x1A && b[1] == 0x45 && b[2] == 0xDF && b[3] == 0xA3:
+		return nil
+	}
+	return fmt.Errorf("%w: el contenido no es un video (MP4, MOV, AVI, MKV o WebM)", ErrInvalido)
 }
