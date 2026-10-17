@@ -156,7 +156,13 @@ try {
     assert.equal(e.marcasEnCampus, 1, "la segunda zona se marca sobre el campus");
     assert.equal(e.pestanas.length, 2, "no hay un sitio aparte para la zona 2");
   });
-  await evalua(`document.querySelector('g.entrada-vecino[role=button]').dispatchEvent(new MouseEvent('click', { bubbles: true })); 0`); // un <g> de SVG no tiene click()
+  const tocarZona = (selector) => evalua(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('click', { bubbles: true })); 0`); // un <g> de SVG no tiene click()
+  assert.equal(await evalua(`document.querySelectorAll('[data-prueba=etiqueta-zona]').length`), 0, "desde el campus las zonas se marcan sin nombres: no se pisan");
+  await tocarZona("g.entrada-vecino[role=button]");
+  await esperar(400);
+  assert.equal(await evalua(`document.querySelector('[data-prueba=etiqueta-zona]')?.textContent.includes('Zona grabada 2')`), true, "el primer clic muestra el nombre de la zona");
+  assert.equal(await evalua(`document.querySelectorAll('[data-prueba=etiqueta-zona]').length`), 1, "solo el de la zona elegida");
+  await tocarZona("g.entrada-vecino[role=button]");
   await paso("un clic en la zona 2 acerca a ella sin cambiar de sitio", (e) => {
     assert.equal(e.url, "/sitios/esan/configuracion");
     assert.equal(e.marcasEnCampus, 0, "de cerca ya no es campus");
@@ -166,7 +172,10 @@ try {
   await cdp("Page.navigate", { url: `${WEB}/sitios/esan/en-vivo` });
   await esperar(3500);
   const vistaEnVivo = () => evalua(`({ videos: document.querySelectorAll('.videos-esan video').length, elegir: !!document.querySelector('[data-prueba=elegir-zona]'), sinVideos: !!document.querySelector('[data-prueba=zona-sin-videos]'), controles: !!document.querySelector('.controles'), botones: document.querySelectorAll('.barra-campus, .alternar-campus').length })`);
-  const clicEnElPlano = (selector) => evalua(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('click', { bubbles: true })); 0`); // un <g> de SVG no tiene click()
+  // Un clic en una zona del croquis muestra su nombre y el segundo la acerca. (Un <g> de SVG no tiene click().)
+  const clicEnElPlano = async (selector) => {
+    for (let i = 0; i < 2; i++) { await evalua(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('click', { bubbles: true })); 0`); await esperar(400); }
+  };
   let ev = await vistaEnVivo();
   assert.deepEqual(ev, { videos: 0, elegir: true, sinVideos: false, controles: false, botones: 0 }, "al abrir En vivo no hay videos ni botones de zona: se elige en el croquis");
   await clicEnElPlano("g.entrada-sitio[role=button]");
