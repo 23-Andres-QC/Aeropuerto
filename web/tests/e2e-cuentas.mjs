@@ -38,18 +38,24 @@ try {
   await t.ir("/cuentas", 2500);
   await t.hasta(`document.body.innerText.includes('Cuentas y privacidad')`, "la página de cuentas");
   assert.ok(await t.existe("[data-prueba=tabla-usuarios]"), "tabla de usuarios");
-  assert.ok(await t.existe("[data-prueba=crear-demo]"), "sin Demo, el botón para crearlo");
-  await t.clic("[data-prueba=crear-demo]");
-  await t.hasta(`document.body.innerText.includes('«${NOMBRE_DEMO}» existe')`, "crear el sitio Demo", 90000);
+  // La página ya no ofrece Demo ni llaves de ingesta (se quitaron de Cuentas): el Demo se crea y se borra por la API, que sigue igual.
+  assert.ok(!(await t.existe("[data-prueba=crear-demo]")) && !(await t.texto("body")).includes("Llaves de ingesta"), "Cuentas ya no tiene las secciones de Demo ni de llaves");
+  const creado = await t.api("POST", "/api/v1/demo");
+  assert.ok(creado.estado === 200 || creado.estado === 201, `crear el sitio Demo: ${creado.estado}`);
+  await t.ir("/cuentas", 2500);
   const sitios = (await t.api("GET", "/api/v1/sites")).cuerpo;
   const demo = sitios.find((s) => s.slug === "demo");
   assert.ok(demo?.demo === true && demo.zones === 6, `el sitio Demo y sus 6 zonas: ${JSON.stringify(demo)}`);
   const resumen = (await t.api("GET", "/api/v1/sites/demo/trafico/resumen?dias=90")).cuerpo;
   assert.ok(resumen.fuentes.simulados >= 14 && resumen.fuentes.reales === 0, "todo lo del Demo es SIMULADO");
-  paso("el sitio Demo se crea desde la web, con su plano, ventas y tráfico, todo SIMULADO");
+  paso("el sitio Demo se crea, con su plano, ventas y tráfico, todo SIMULADO");
 
   // ---------- Cuentas de tienda ----------
   async function crearUsuario(nombre) {
+    // El formulario se cierra solo al crear la cuenta (con una transición corta): se espera a que se vaya y se vuelve a abrir.
+    await t.hasta(`!document.querySelector('[data-prueba=formulario-nueva]')`, "el formulario se cierra");
+    await t.clic("[data-prueba=abrir-nueva]");
+    await t.hasta(`!!document.querySelector('[data-prueba=nuevo-usuario]')`, "el formulario de nueva cuenta");
     await t.poner("[data-prueba=nuevo-usuario]", nombre);
     await t.poner("[data-prueba=nuevo-correo]", `${nombre}@lap.test`);
     await t.poner("[data-prueba=nuevo-rol]", "tienda");
@@ -167,12 +173,12 @@ try {
   assert.equal(await t.evalua(`document.querySelector('[data-prueba="borrar-lap"]').disabled`), true);
   paso("el admin restablece (clave temporal nueva), desactiva y no puede desactivarse ni borrarse a sí mismo");
 
-  // ---------- Llave de ingesta de la tienda ----------
-  await t.poner("[data-prueba=llave-sitio]", "demo");
-  await t.hasta(`Number(document.querySelector('[data-prueba=llave-local]')?.value) > 0`, "las tiendas del Demo en las llaves");
-  await t.clic("[data-prueba=crear-llave]");
-  await t.hasta(`!!document.querySelector('[data-prueba=llave-completa]')`, "crear la llave");
-  const llave = await t.texto("[data-prueba=llave-completa]");
+  // ---------- Llave de ingesta de la tienda (por la API) ----------
+  const localDemo = (await t.api("GET", "/api/v1/sites/demo/config")).cuerpo.locales[0].local_id;
+  const rutaLlaves = `/api/v1/sites/demo/tiendas/${localDemo}/llaves`;
+  const nueva = await t.api("POST", rutaLlaves, { etiqueta: "caja 1" });
+  assert.ok(nueva.estado === 200 || nueva.estado === 201, `crear la llave: ${nueva.estado}`);
+  const llave = nueva.cuerpo.clave;
   assert.match(llave, /^lapk_[0-9a-f]{8}_[0-9a-f]{40}$/);
   secretos.push(llave);
   const comoLlave = await fetch(`${WEB}/api/v1/auth/me`, { headers: { Authorization: `Bearer ${llave}` } });
@@ -180,12 +186,12 @@ try {
   assert.equal((await comoLlave.json()).rol, "tienda_ingesta");
   assert.equal((await fetch(`${WEB}/api/v1/sites/demo/trafico/embudo`, { headers: { Authorization: `Bearer ${llave}` } })).status, 404, "la llave de tienda no lee tráfico");
   assert.equal((await fetch(`${WEB}/vivo/api/v1/telefonos`, { headers: { Authorization: `Bearer ${llave}` } })).status, 403, "ni abre En vivo");
-  await t.clicTexto("button", /^Listo, ya la guardé/);
-  assert.ok(!(await t.texto("body")).includes(llave), "la llave completa ya no se muestra");
-  await t.clicTexto("button", /^Revocar$/);
-  await t.hasta(`[...document.querySelectorAll('table.tabla .pill')].some((p) => p.innerText.trim() === 'revocada')`, "revocar la llave");
+  const lista = (await t.api("GET", rutaLlaves)).cuerpo;
+  assert.ok(!JSON.stringify(lista).includes(llave), "la llave completa no vuelve a mostrarse");
+  const revocada = await t.api("DELETE", `${rutaLlaves}/${nueva.cuerpo.llave.key_id}`);
+  assert.ok(revocada.estado === 200 || revocada.estado === 204, `revocar la llave: ${revocada.estado}`);
   assert.equal((await fetch(`${WEB}/api/v1/auth/me`, { headers: { Authorization: `Bearer ${llave}` } })).status, 401, "la llave revocada ya no sirve");
-  paso("la llave de ingesta de una tienda se muestra una vez, identifica a su tienda y se revoca");
+  paso("la llave de ingesta de una tienda se entrega una vez, identifica a su tienda y se revoca");
 
   // ---------- Unir teléfonos ----------
   // Sin códigos vigentes de antes (de otra prueba): así el que se ve es el que se crea aquí.
@@ -262,7 +268,7 @@ try {
   const generoPanel = await t.texto(".panel-genero");
   assert.match(generoPanel, /grupos de menos de 5/, `el género de ESAN no se desglosa: ${generoPanel}`);
   assert.ok(!/\b3\b/.test(generoPanel.replace(/ESAN.*$/, "")) || generoPanel.includes("oculto"), "la categoría pequeña no muestra su cifra");
-  await t.ir("/cuentas", 2500);
+  await t.ir("/cuentas?ver=privacidad", 2500);
   await t.hasta(`!!document.querySelector('[data-prueba=estado-retencion]')`, "el estado de la retención");
   const retencion = await t.texto("[aria-label='Retención de datos']");
   assert.ok(retencion.includes("24 horas") && retencion.includes("90 días"), "la retención dice 24 horas y 90 días");
@@ -313,25 +319,47 @@ try {
   paso("el tamaño mínimo de grupo se baja desde Configuración (aviso de pruebas, bitácora) y vuelve el desglose");
 
   // ---------- Borrar el Demo y la bitácora ----------
-  await t.ir("/cuentas", 2500);
-  await t.hasta(`!!document.querySelector('[data-prueba=borrar-demo]')`, "el borrado del Demo");
-  assert.equal(await t.evalua(`document.querySelector('[data-prueba=borrar-demo]').disabled`), true, "sin escribir el nombre no se puede borrar");
-  await t.poner("[data-prueba=confirmar-demo]", "demo");
-  assert.equal(await t.evalua(`document.querySelector('[data-prueba=borrar-demo]').disabled`), true, "el identificador no es el nombre");
-  await t.poner("[data-prueba=confirmar-demo]", NOMBRE_DEMO);
-  assert.equal(await t.evalua(`document.querySelector('[data-prueba=borrar-demo]').disabled`), false);
-  await t.clic("[data-prueba=borrar-demo]");
-  await t.hasta(`!!document.querySelector('[data-prueba=crear-demo]')`, "borrar el sitio Demo", 60000);
+  assert.ok((await t.api("DELETE", "/api/v1/demo")).estado >= 400, "sin escribir el nombre no se puede borrar");
+  assert.ok((await t.api("DELETE", "/api/v1/demo?confirmar=demo")).estado >= 400, "el identificador no es el nombre");
+  assert.equal((await t.api("DELETE", `/api/v1/demo?confirmar=${encodeURIComponent(NOMBRE_DEMO)}`)).estado, 200, "borrar el sitio Demo");
   const despues = (await t.api("GET", "/api/v1/sites")).cuerpo;
   assert.ok(!despues.some((s) => s.slug === "demo"), "el sitio Demo ya no existe");
-  await t.hasta(`!document.querySelector('[data-usuario="${TIENDA_A}"]')`, "las cuentas de sus tiendas se van con él");
-  const bitacora = await t.texto("[data-prueba=bitacora]");
+  await t.ir("/cuentas", 2500);
+  await t.hasta(`!!document.querySelector('[data-prueba=tabla-usuarios]') && !document.querySelector('[data-usuario="${TIENDA_A}"]')`, "las cuentas de sus tiendas se van con él");
+  const bitacora = JSON.stringify((await t.api("GET", "/api/v1/auditoria?limite=500")).cuerpo);
   for (const accion of ["grupo_minimo_cambiado", "demo_creado", "usuario_creado", "clave_restablecida", "usuario_desactivado", "llave_creada", "llave_revocada", "demo_borrado"]) {
     assert.ok(bitacora.includes(accion), `la bitácora tiene «${accion}»`);
   }
-  const todo = (await t.texto("body")) + bitacora + JSON.stringify((await t.api("GET", "/api/v1/auditoria?limite=500")).cuerpo);
+  const todo = (await t.texto("body")) + bitacora;
   for (const s of secretos) assert.ok(!todo.includes(s), "un secreto quedó a la vista o en la bitácora");
   paso("el Demo se borra escribiendo su nombre (con sus cuentas) y la bitácora no guarda ningún secreto");
+
+  // ---------- La página de Cuentas: pestañas, filtros y bitácora de 10 en 10 ----------
+  const filasCuentas = `document.querySelectorAll('[data-prueba=tabla-usuarios] tbody tr[data-usuario]').length`;
+  await t.ir("/cuentas", 2500);
+  await t.hasta(`!!document.querySelector('[data-prueba=tabla-usuarios]')`, "la página de cuentas");
+  const filasTodas = await t.evalua(filasCuentas);
+  await t.poner("[data-prueba=buscar-cuenta]", "lap");
+  await t.hasta(`${filasCuentas} >= 1 && ${filasCuentas} <= ${filasTodas}`, "buscar una cuenta");
+  await t.poner("[data-prueba=buscar-cuenta]", "no-existe-" + Date.now());
+  await t.hasta(`${filasCuentas} === 0 && document.body.innerText.includes('Ninguna cuenta coincide')`, "búsqueda sin resultados");
+  await t.poner("[data-prueba=buscar-cuenta]", "");
+  await t.clic("[data-prueba=rol-superadmin]");
+  await t.hasta(`[...document.querySelectorAll('[data-prueba=tabla-usuarios] tbody tr[data-usuario]')].every((f) => /Superadmin/.test(f.innerText))`, "filtrar por rol");
+  await t.clic("[data-prueba=rol-todos]");
+  await t.clic("[data-prueba=pestana-bitacora]");
+  await t.hasta(`document.querySelectorAll('[data-prueba=bitacora] tbody tr[data-accion]').length === 10`, "la bitácora muestra 10 filas");
+  assert.equal(await t.existe("[data-prueba=pagina-2]"), true, "hay más de una página");
+  const primera = await t.evalua(`document.querySelector('[data-prueba=bitacora] tbody tr').innerText`);
+  await t.clic("[data-prueba=pagina-2]");
+  await t.hasta(`document.querySelector('[data-prueba=bitacora] tbody tr').innerText !== ${JSON.stringify(primera)}`, "la página 2 muestra otras acciones");
+  assert.equal(await t.evalua(`document.querySelector('[data-prueba=pagina-anterior]').disabled`), false);
+  await t.clic("[data-prueba=tipo-ingresos]");
+  await t.hasta(`[...document.querySelectorAll('[data-prueba=bitacora] tbody tr[data-accion]')].every((f) => /^(login|logout|login_fallido)$/.test(f.dataset.accion))`, "filtrar por ingresos y salidas");
+  assert.equal(await t.evalua(`location.search`), "?ver=bitacora", "la pestaña queda en la dirección");
+  await t.clic("[data-prueba=pestana-accesos]");
+  await t.hasta(`!!document.querySelector('[data-prueba=panel-accesos] [data-prueba=kpi-ingresos]')`, "la pestaña de accesos");
+  paso("Cuentas se ordena en pestañas (Cuentas, Accesos, Bitácora, Privacidad): búsqueda, filtro por rol y bitácora de 10 en 10 con páginas y filtros");
 
   assert.deepEqual(t.consola.filter((l) => !/status of 40[134]|status of 404|Failed to load resource/.test(l)), [], "errores en la consola del navegador");
   console.log("cuentas, roles, privacidad y unión de teléfonos: todo bien");
