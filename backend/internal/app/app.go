@@ -11,6 +11,7 @@ import (
 
 	"aeropuerto/internal/adapters/httpapi"
 	"aeropuerto/internal/adapters/memory"
+	"aeropuerto/internal/adapters/mailer"
 	"aeropuerto/internal/adapters/postgres"
 	"aeropuerto/internal/adapters/relay"
 	"aeropuerto/internal/config"
@@ -50,6 +51,11 @@ func New(db *pgxpool.Pool, cfg config.Config, opts ...Option) http.Handler {
 	// What was stored before this version (or while it was off) gets its traffic computed in the background.
 	traffic.Schedule()
 	accounts := services.NewAccountService(postgres.NewAccountRepository(db))
+	if mc := (mailer.Config{Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Pass: cfg.SMTPPass, From: cfg.SMTPFrom}); mc.Enabled() && cfg.AppBaseURL != "" {
+		accounts.SetMailer(mailer.NewSMTP(mc), cfg.AppBaseURL)
+	} else {
+		slog.Warn("recuperación de contraseña por correo desactivada: faltan SMTP_HOST, SMTP_FROM o APP_BASE_URL")
+	}
 	// The first admin comes from ADMIN_USER / ADMIN_PASSWORD; without it nobody could log in to make the others.
 	if err := accounts.EnsureSeed(context.Background(), cfg.AdminUser, cfg.AdminPassword); err != nil {
 		slog.Error("no se pudo preparar la cuenta semilla", "error", err)

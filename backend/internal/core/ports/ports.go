@@ -147,3 +147,8 @@ type PhoneRepository interface {
 	Add(p domain.Phone)
 	Remove(id string) bool
 }
+
+// Mailer sends an e-mail (the password-recovery link). Implementations never log the body.
+type Mailer interface {
+	Send(ctx context.Context, to, subject, html, text string) error
+}

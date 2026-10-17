@@ -247,8 +247,8 @@ func TestVideosPorHTTP(t *testing.T) {
 		return resp, salida
 	}
 
-	resp, cuerpo := subir("nombre=pasillo.mp4&modo=todos", strings.NewReader("datos del video"))
-	if resp.StatusCode != http.StatusCreated || cuerpo["nombre"] != "pasillo.mp4" || cuerpo["modo"] != "todos" || cuerpo["bytes"].(float64) != 15 {
+	resp, cuerpo := subir("nombre=pasillo.mp4&modo=todos", strings.NewReader("\x00\x00\x00\x08ftypdatos del video"))
+	if resp.StatusCode != http.StatusCreated || cuerpo["nombre"] != "pasillo.mp4" || cuerpo["modo"] != "todos" || cuerpo["bytes"].(float64) != 23 {
 		t.Fatalf("POST = %d %v", resp.StatusCode, cuerpo)
 	}
 	id := cuerpo["id"].(string)
@@ -269,7 +269,7 @@ func TestVideosPorHTTP(t *testing.T) {
 	}
 	contenido, _ := io.ReadAll(archivo.Body)
 	_ = archivo.Body.Close()
-	if archivo.StatusCode != http.StatusOK || string(contenido) != "datos del video" {
+	if archivo.StatusCode != http.StatusOK || string(contenido) != "\x00\x00\x00\x08ftypdatos del video" {
 		t.Fatalf("archivo = %d %q", archivo.StatusCode, contenido)
 	}
 
@@ -277,6 +277,12 @@ func TestVideosPorHTTP(t *testing.T) {
 	if resp, cuerpo = subir("nombre=x.mp4", struct{ io.Reader }{bytes.NewReader(make([]byte, 1<<20+1))}); resp.StatusCode != http.StatusRequestEntityTooLarge ||
 		!strings.Contains(cuerpo["error"].(string), "1 MB") {
 		t.Fatalf("grande = %d %v", resp.StatusCode, cuerpo)
+	}
+	if resp, _ = subir("nombre=falso.mp4", strings.NewReader("esto no es un video")); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("contenido que no es video = %d", resp.StatusCode)
+	}
+	if resp, _ = subir("nombre=script.sh", strings.NewReader("\x00\x00\x00\x08ftypx")); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("extensión que no es de video = %d", resp.StatusCode)
 	}
 	if resp, _ = subir("modo=rapido", strings.NewReader("x")); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("modo inválido = %d", resp.StatusCode)
@@ -313,7 +319,7 @@ func TestVideosPorHTTP(t *testing.T) {
 
 	// Varios videos a la vez, hasta videos.MaxVideos; con la lista llena, 409.
 	for i := 0; i < videos.MaxVideos; i++ {
-		if resp, cuerpo = subir("nombre=v.mp4", strings.NewReader("x")); resp.StatusCode != http.StatusCreated {
+		if resp, cuerpo = subir("nombre=v.mp4", strings.NewReader("\x00\x00\x00\x08ftypx")); resp.StatusCode != http.StatusCreated {
 			t.Fatalf("video %d = %d %v", i, resp.StatusCode, cuerpo)
 		}
 	}

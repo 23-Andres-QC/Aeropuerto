@@ -15,12 +15,15 @@ const router = useRouter();
 const { sitios, slug, actual, recargar } = useSitios();
 
 const SECCIONES = [
-  { id: "en-vivo", nombre: "En vivo", icono: "⌖" },
-  { id: "insights", nombre: "Insights", icono: "▥" },
-  { id: "ventas", nombre: "Ventas", icono: "S/" },
-  { id: "registros", nombre: "Registros", icono: "☰" },
-  { id: "configuracion", nombre: "Configuración", icono: "◇" },
+  { id: "en-vivo", n: 1, modulo: "en_vivo", nombre: "En vivo", icono: "⌖" },
+  { id: "insights", n: 2, modulo: "insights", nombre: "Insights", icono: "▥" },
+  { id: "ventas", n: 3, modulo: "ventas", nombre: "Ventas", icono: "S/" },
+  { id: "registros", n: 4, modulo: "registros", nombre: "Registros", icono: "☰" },
+  { id: "configuracion", n: 5, modulo: "configuracion", nombre: "Configuración", icono: "◇" },
 ];
+// El menú muestra solo los módulos que el servidor deja abrir a este rol (la API vuelve a comprobarlo en cada pregunta).
+const puede = (modulo: string) => sesion.value?.modulos?.includes(modulo) ?? true;
+const seccionesVisibles = computed(() => SECCIONES.filter((s) => puede(s.modulo)));
 
 const theme = ref<"light" | "dark">((document.documentElement.getAttribute("data-theme") as "light" | "dark") || "light");
 function toggleTheme() {
@@ -38,6 +41,7 @@ const sitioNav = computed(() => slug.value || ultimoSitio());
 const telefonos = computed(() => route.path === "/telefonos");
 const cuentas = computed(() => route.path === "/cuentas");
 const esAdmin = computed(() => sesion.value?.rol === ROL_ADMIN);
+const rolNombre = computed(() => NOMBRE_ROL[sesion.value?.rol ?? ""] ?? sesion.value?.rol ?? "");
 // Una tienda, el cambio de contraseña y el aviso de privacidad van en una pantalla sencilla, sin el menú del análisis.
 const simple = computed(() => rolTienda(sesion.value?.rol) || route.path === "/cambiar-clave" || route.path === "/privacidad");
 const videos = computed(() => route.path === "/videos");
@@ -107,14 +111,14 @@ function elegirSitio(s: Sitio) {
       <p class="nav-caption">ESPACIO DE TRABAJO</p>
       <nav aria-label="Navegación principal">
         <RouterLink
-          v-for="(s, i) in SECCIONES"
+          v-for="s in seccionesVisibles"
           :key="s.id"
           :to="`/sitios/${sitioNav}/${s.id}`"
           :class="{ 'router-link-active': seccion === s.id }"
-          ><span>{{ s.icono }}</span><span class="nav-label"><b class="nav-step">{{ i + 1 }}.</b>{{ s.nombre }}</span></RouterLink
-        ><RouterLink to="/telefonos"
+          ><span>{{ s.icono }}</span><span class="nav-label"><b class="nav-step">{{ s.n }}.</b>{{ s.nombre }}</span></RouterLink
+        ><RouterLink v-if="puede('telefonos')" to="/telefonos"
           ><span>📱</span><span class="nav-label"><b class="nav-step">6.</b>Teléfonos</span></RouterLink
-        ><RouterLink to="/videos"
+        ><RouterLink v-if="puede('videos')" to="/videos"
           ><span>🎞</span><span class="nav-label"><b class="nav-step">7.</b>Videos</span></RouterLink
         ><RouterLink v-if="esAdmin" to="/cuentas" data-prueba="ir-cuentas"
           ><span>🔐</span><span class="nav-label"><b class="nav-step">8.</b>Cuentas</span></RouterLink

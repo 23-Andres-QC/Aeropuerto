@@ -5,6 +5,7 @@ import {
   enlaceConCodigo,
   inicioPara,
   minutosRestantes,
+  moduloDeRuta,
   normalizarCodigo,
   problemaConClave,
   resumenGenero,
@@ -14,7 +15,7 @@ import {
 } from "../src/core/roles.ts";
 
 // Dónde empieza cada rol.
-assert.equal(inicioPara("admin_lap", "esan"), "/sitios/esan/en-vivo");
+assert.equal(inicioPara("superadmin", "esan"), "/sitios/esan/en-vivo");
 assert.equal(inicioPara("maquina", "lap"), "/sitios/lap/en-vivo");
 assert.equal(inicioPara("tienda", "esan"), "/tienda");
 
@@ -24,10 +25,32 @@ for (const ruta of ["/sitios/esan/en-vivo", "/sitios/esan/insights", "/telefonos
   assert.equal(rutaPermitida("tienda", ruta), false, `tienda no debe abrir ${ruta}`);
 }
 for (const ruta of ["/sitios/esan/ventas", "/telefonos", "/videos", "/cuentas", "/privacidad", "/cambiar-clave"]) {
-  assert.equal(rutaPermitida("admin_lap", ruta), true, `admin ${ruta}`);
+  assert.equal(rutaPermitida("superadmin", ruta), true, `admin ${ruta}`);
 }
-assert.equal(rutaPermitida("admin_lap", "/tienda"), false, "el admin no usa la pantalla de tienda");
+assert.equal(rutaPermitida("superadmin", "/tienda"), false, "el admin no usa la pantalla de tienda");
 assert.equal(rutaPermitida("maquina", "/cuentas"), false);
+
+// Los módulos que el servidor deja abrir a cada rol (seguridad: En vivo, Teléfonos y Videos; negocio: Ventas e Insights).
+const seguridad = ["en_vivo", "telefonos", "videos"];
+const negocio = ["insights", "ventas"];
+assert.equal(moduloDeRuta("/sitios/esan/en-vivo"), "en_vivo");
+assert.equal(moduloDeRuta("/sitios/esan/ventas"), "ventas");
+assert.equal(moduloDeRuta("/sitios/esan/configuracion"), "configuracion");
+assert.equal(moduloDeRuta("/telefonos"), "telefonos");
+assert.equal(moduloDeRuta("/cuentas"), "usuarios");
+assert.equal(moduloDeRuta("/privacidad"), null);
+for (const ruta of ["/sitios/esan/en-vivo", "/telefonos", "/videos"]) assert.equal(rutaPermitida("seguridad", ruta, seguridad), true, `seguridad ${ruta}`);
+for (const ruta of ["/sitios/esan/ventas", "/sitios/esan/insights", "/sitios/esan/registros", "/sitios/esan/configuracion", "/cuentas"]) {
+  assert.equal(rutaPermitida("seguridad", ruta, seguridad), false, `seguridad no debe abrir ${ruta}`);
+}
+for (const ruta of ["/sitios/esan/ventas", "/sitios/esan/insights"]) assert.equal(rutaPermitida("negocio", ruta, negocio), true, `negocio ${ruta}`);
+for (const ruta of ["/sitios/esan/en-vivo", "/telefonos", "/videos", "/sitios/esan/configuracion", "/sitios/esan/registros", "/cuentas"]) {
+  assert.equal(rutaPermitida("negocio", ruta, negocio), false, `negocio no debe abrir ${ruta}`);
+}
+assert.equal(rutaPermitida("negocio", "/privacidad", negocio), true);
+assert.equal(inicioPara("seguridad", "esan", seguridad), "/sitios/esan/en-vivo");
+assert.equal(inicioPara("negocio", "esan", negocio), "/sitios/esan/insights", "negocio empieza en su primer módulo");
+assert.equal(inicioPara("negocio", "esan", ["ventas"]), "/sitios/esan/ventas");
 
 // La contraseña, igual que la exige el servidor.
 assert.equal(problemaConClave("Una-clave-larga-1", "ana"), null);
@@ -35,7 +58,10 @@ assert.match(problemaConClave("corta", "ana"), /al menos 12/);
 assert.match(problemaConClave("ana-es-mi-usuario", "ANA-ES-MI-USUARIO"), /usuario/);
 assert.match(problemaConClave("aaaaaaaaaaaaaa", "ana"), /repetido/);
 assert.match(problemaConClave("x".repeat(129).replace(/x/g, (_, i) => String.fromCharCode(97 + (i % 20))), "ana"), /128/);
-assert.equal(problemaConClave("ñandúñandúñandú", ""), null, "los caracteres con tilde cuentan uno");
+assert.equal(problemaConClave("Ñandúñandúñandú1", ""), null, "los caracteres con tilde cuentan uno");
+assert.match(problemaConClave("todominusculas1234", ""), /mayúscula/, "exige mayúscula");
+assert.match(problemaConClave("TODOMAYUSCULAS1234", ""), /minúscula/, "exige minúscula");
+assert.match(problemaConClave("SinNumeroEnLaClave", ""), /número/, "exige número");
 
 // El código de unión.
 assert.equal(normalizarCodigo(" k7qm-2xpa "), "K7QM2XPA");

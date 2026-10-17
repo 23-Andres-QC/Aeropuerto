@@ -19,7 +19,7 @@ import (
 	"aeropuerto/internal/core/services"
 )
 
-// Roles of the access control (see domain). An admin_lap account does everything; a tienda account sees the figures
+// Roles of the access control (see domain). An superadmin account does everything; a tienda account sees the figures
 // of its own local and nothing else; the key of the scripts (role maquina) reads and writes but never deletes and
 // never manages accounts; the key of a store (tienda_ingesta) is for its ingestion, which arrives later.
 const (
@@ -51,6 +51,8 @@ type Auth struct {
 	key      [sha256.Size]byte
 	hasKey   bool
 	limiter  *loginLimiter
+	// resets limits the recovery endpoints by address (they answer the same for any e-mail, so this is the brake).
+	resets *loginLimiter
 }
 
 func digest(s string) [sha256.Size]byte { return sha256.Sum256([]byte(s)) }
@@ -58,7 +60,8 @@ func digest(s string) [sha256.Size]byte { return sha256.Sum256([]byte(s)) }
 func equal(a, b [sha256.Size]byte) bool { return subtle.ConstantTimeCompare(a[:], b[:]) == 1 }
 
 func NewAuth(c AuthConfig) *Auth {
-	a := &Auth{accounts: c.Accounts, hasKey: c.APIKey != "", limiter: newLoginLimiter(5, 15*time.Minute, 15*time.Minute)}
+	a := &Auth{accounts: c.Accounts, hasKey: c.APIKey != "", limiter: newLoginLimiter(5, 15*time.Minute, 15*time.Minute),
+		resets: newLoginLimiter(5, 15*time.Minute, 15*time.Minute)}
 	if c.APIKey != "" {
 		a.key = digest(c.APIKey)
 	}
@@ -107,12 +110,41 @@ func nonAuth(err error) error {
 	return err
 }
 
+// CSRFHeader must travel on every request that changes something and does not carry an API key: a form or a script of
+// another site cannot add a custom header without a CORS preflight, which this API never allows. Together with the
+// SameSite=Strict cookie and the Origin check it closes cross-site forgery.
+const CSRFHeader = "X-Requested-With"
+
+const csrfValue = "lap"
+
+func csrfOK(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	}
+	if r.Header.Get("Authorization") != "" {
+		return true // an API key is not sent by the browser on its own
+	}
+	return r.Header.Get(CSRFHeader) == csrfValue
+}
+
+// csrfPass answers 403 when a request that changes something lacks the anti-CSRF header.
+func (a *Auth) csrfPass(w http.ResponseWriter, r *http.Request) bool {
+	if csrfOK(r) {
+		return true
+	}
+	slog.Warn("pedido rechazado: falta la cabecera anti-CSRF", "metodo", r.Method, "ruta", r.URL.Path, "ip", clientIP(r))
+	fail(w, http.StatusForbidden, "Pedido no permitido.")
+	return false
+}
+
 // isPublic lists what answers without a login: the health probes and the login itself.
 func isPublic(r *http.Request) bool {
 	switch {
 	case r.Method == http.MethodGet && (r.URL.Path == "/health/live" || r.URL.Path == "/health/ready"):
 		return true
-	case r.Method == http.MethodPost && (r.URL.Path == "/api/v1/auth/login" || r.URL.Path == "/api/v1/auth/logout"):
+	case r.Method == http.MethodPost && (r.URL.Path == "/api/v1/auth/login" || r.URL.Path == "/api/v1/auth/logout" ||
+		r.URL.Path == "/api/v1/auth/olvide" || r.URL.Path == "/api/v1/auth/restablecer/validar" || r.URL.Path == "/api/v1/auth/restablecer"):
 		return true
 	}
 	return false
@@ -121,13 +153,13 @@ func isPublic(r *http.Request) bool {
 var (
 	// A store account may read these two questions about its own local, and nothing else of the platform.
 	storeAllowed = regexp.MustCompile(`^/api/v1/sites/([a-z0-9-]+)/trafico/(permanencia|embudo)$`)
-	// What only an admin_lap login may touch: accounts, keys, the audit log, the demo site and the retention.
+	// What only an superadmin login may touch: accounts, keys, the audit log, the demo site and the retention.
 	adminOnly = regexp.MustCompile(`^/api/v1/(usuarios|auditoria|demo|privacidad)(/|$)|/llaves(/|$)|/grupo-minimo$`)
 )
 
 // scope applies what each role may reach. It returns false after answering when the request is out of reach. A store
 // account gets 404 for what is not its own (it should not even learn that it exists), with the local forced to its own.
-func scope(w http.ResponseWriter, r *http.Request, p Principal) bool {
+func (a *Auth) scope(w http.ResponseWriter, r *http.Request, p Principal) bool {
 	path := r.URL.Path
 	// nginx asks this for every role: check itself says which ones may pass.
 	if r.Method == http.MethodGet && path == "/api/v1/auth/check" {
@@ -136,6 +168,20 @@ func scope(w http.ResponseWriter, r *http.Request, p Principal) bool {
 	switch p.Role {
 	case RoleAdmin:
 		return true
+	case domain.RoleSecurity, domain.RoleBusiness:
+		if (r.Method == http.MethodGet && path == "/api/v1/auth/me") || (r.Method == http.MethodPost && path == "/api/v1/auth/password") {
+			return true
+		}
+		if m := domain.ModuleOf(r.Method, path); domain.Can(p.Role, m) {
+			return true
+		}
+		m := domain.ModuleOf(r.Method, path)
+		slog.Warn("acceso denegado por rol", "usuario", forLog(p.User), "rol", p.Role, "ruta", path, "modulo", m, "ip", clientIP(r))
+		if a.accounts != nil {
+			a.accounts.Audit(r.Context(), p, clientIP(r), "acceso_denegado", r.Method+" "+path, "módulo "+m)
+		}
+		fail(w, http.StatusForbidden, "Tu rol no tiene acceso a esto.")
+		return false
 	case RoleMachine:
 		if adminOnly.MatchString(path) {
 			fail(w, http.StatusForbidden, "Esta cuenta no puede hacer eso.")
@@ -180,11 +226,14 @@ func mustChangeAllowed(r *http.Request) bool {
 }
 
 // Require rejects, with 401, everything that is not public and carries no valid login or key, applies what each role
-// may reach and, with 403, every deletion that does not come from an admin_lap account. Each deletion is logged with who,
+// may reach and, with 403, every deletion that does not come from an superadmin account. Each deletion is logged with who,
 // where from and how it ended.
 func (a *Auth) Require(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isPublic(r) {
+			if !a.csrfPass(w, r) {
+				return
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -199,11 +248,14 @@ func (a *Auth) Require(next http.Handler) http.Handler {
 			fail(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
 			return
 		}
+		if !a.csrfPass(w, r) {
+			return
+		}
 		if p.MustChange && !mustChangeAllowed(r) {
 			failCode(w, http.StatusForbidden, "Cambia tu contraseña temporal para continuar.", "cambiar_clave")
 			return
 		}
-		if !scope(w, r, p) {
+		if !a.scope(w, r, p) {
 			return
 		}
 		r = r.WithContext(context.WithValue(r.Context(), principalKey{}, p))
@@ -241,6 +293,9 @@ func (a *Auth) routes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/v1/auth/me", a.me)
 	m.HandleFunc("GET /api/v1/auth/check", a.check)
 	m.HandleFunc("POST /api/v1/auth/password", a.changePassword)
+	m.HandleFunc("POST /api/v1/auth/olvide", a.forgot)
+	m.HandleFunc("POST /api/v1/auth/restablecer/validar", a.validateReset)
+	m.HandleFunc("POST /api/v1/auth/restablecer", a.resetPassword)
 }
 
 type profile struct {
@@ -252,10 +307,12 @@ type profile struct {
 	Site       string     `json:"sitio,omitempty"`
 	MustChange bool       `json:"debe_cambiar_clave,omitempty"`
 	Expires    *time.Time `json:"vence,omitempty"`
+	// Modules are the parts of the web this role may open: the menu shows exactly these.
+	Modules []string `json:"modulos"`
 }
 
 func profileOf(p Principal) profile {
-	out := profile{User: p.User, Name: p.DisplayName, Role: p.Role, LocalID: p.LocalID, Local: p.Local, Site: p.Site, MustChange: p.MustChange}
+	out := profile{User: p.User, Name: p.DisplayName, Role: p.Role, LocalID: p.LocalID, Local: p.Local, Site: p.Site, MustChange: p.MustChange, Modules: domain.ModulesOf(p.Role)}
 	if !p.Expires.IsZero() {
 		out.Expires = &p.Expires
 	}
@@ -368,12 +425,17 @@ func (a *Auth) changePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 // check is what nginx asks (auth_request) before it lets a request into the parts it serves apart from this API (the
-// live backend, the camera room and the people panel): 204 for an admin_lap login or the key of the scripts, 401 without
+// live backend, the camera room and the people panel): 204 for an superadmin login or the key of the scripts, 401 without
 // a login and 403 for any other role — a store never reaches the live view, where each person is seen one by one.
 func (a *Auth) check(w http.ResponseWriter, r *http.Request) {
 	p, _ := PrincipalOf(r)
 	w.Header().Set("Cache-Control", "no-store")
-	if p.Role != RoleAdmin && p.Role != RoleMachine {
+	module := r.URL.Query().Get("modulo")
+	if module == "" {
+		module = domain.ModEnVivo
+	}
+	if !domain.Can(p.Role, module) {
+		slog.Warn("acceso denegado por rol (nginx)", "usuario", forLog(p.User), "rol", p.Role, "modulo", forLog(module), "ruta", forLog(r.Header.Get("X-Original-URI")), "ip", clientIP(r))
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
@@ -480,4 +542,79 @@ func (l *loginLimiter) reset(ip string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	delete(l.m, ip)
+}
+
+// forgot starts a password recovery. It always answers the same (202), whether the address has an account or not, and it
+// takes the same time: what changes is only whether a mail leaves.
+func (a *Auth) forgot(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Email string `json:"correo"`
+	}
+	if err := decode(w, r, 1024, &in); err != nil {
+		fail(w, http.StatusBadRequest, "Pedido inválido.")
+		return
+	}
+	ip, now := clientIP(r), time.Now()
+	if wait, blocked := a.resets.blocked(ip, now); blocked {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		fail(w, http.StatusTooManyRequests, "Demasiados intentos. Espera unos minutos y vuelve a probar.")
+		return
+	}
+	a.resets.fail(ip, now) // every request counts: five per quarter of an hour from one address
+	if a.accounts != nil {
+		if err := a.accounts.RequestReset(r.Context(), in.Email, ip); err != nil {
+			slog.Error("recuperación: error interno", "error", err)
+		}
+	}
+	time.Sleep(400 * time.Millisecond)
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusAccepted, map[string]string{"mensaje": "Si el correo pertenece a una cuenta, te enviamos un enlace para restablecer la contraseña."})
+}
+
+// validateReset tells the page whether a recovery link can still be used.
+func (a *Auth) validateReset(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Token string `json:"token"`
+	}
+	if err := decode(w, r, 1024, &in); err != nil || a.accounts == nil {
+		fail(w, http.StatusBadRequest, "Pedido inválido.")
+		return
+	}
+	ip, now := clientIP(r), time.Now()
+	if _, blocked := a.resets.blocked(ip, now); blocked {
+		fail(w, http.StatusTooManyRequests, "Demasiados intentos. Espera unos minutos y vuelve a probar.")
+		return
+	}
+	if err := a.accounts.ValidateReset(r.Context(), in.Token); err != nil {
+		a.resets.fail(ip, now)
+		writeError(w, r, err, "No se pudo comprobar el enlace")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// resetPassword sets the new password with a recovery link.
+func (a *Auth) resetPassword(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Token string `json:"token"`
+		New   string `json:"nueva"`
+	}
+	if err := decode(w, r, 2048, &in); err != nil || a.accounts == nil {
+		fail(w, http.StatusBadRequest, "Pedido inválido.")
+		return
+	}
+	ip, now := clientIP(r), time.Now()
+	if _, blocked := a.resets.blocked(ip, now); blocked {
+		fail(w, http.StatusTooManyRequests, "Demasiados intentos. Espera unos minutos y vuelve a probar.")
+		return
+	}
+	if err := a.accounts.ResetWithToken(r.Context(), in.Token, in.New, ip); err != nil {
+		a.resets.fail(ip, now)
+		writeError(w, r, err, "No se pudo restablecer la contraseña")
+		return
+	}
+	slog.Info("contraseña restablecida por correo", "ip", ip)
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
 }

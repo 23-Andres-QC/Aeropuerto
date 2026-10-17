@@ -5,7 +5,7 @@ import type { Sitio } from "../api";
 import { recargarSitios } from "../useSitios";
 
 // Tamaño mínimo de grupo del género de este sitio: una categoría con menos personas no se muestra (5 por defecto). Bajarlo solo sirve
-// para verificar la detección en un sitio de prueba; la cuenta de una tienda siempre usa 5. Solo admin_lap; cada cambio queda en la bitácora.
+// para verificar la detección en un sitio de prueba; la cuenta de una tienda siempre usa 5. Solo superadmin; cada cambio queda en la bitácora.
 const props = defineProps<{ sitio: string; actual: number }>();
 const emit = defineEmits<{ guardado: [n: number] }>();
 

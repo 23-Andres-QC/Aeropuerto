@@ -7,7 +7,7 @@ import { api, type Config, type Sitio } from "../../sitios/api";
 import { recargarSitios } from "../../sitios/useSitios";
 import { cuentas, NOMBRE_DEMO, type ConClaveTemporal, type LineaBitacora, type LlaveTienda, type Politica, type Usuario } from "../api";
 
-// Administración de cuentas y privacidad (solo admin_lap): quién entra y con qué rol, las llaves de ingesta de cada tienda, el sitio
+// Administración de cuentas y privacidad (solo superadmin): quién entra y con qué rol, las llaves de ingesta de cada tienda, el sitio
 // Demo (todo SIMULADO), la retención de datos y la bitácora de lo que se hizo. Las contraseñas temporales y las llaves se muestran una
 // sola vez y no quedan escritas en ningún lado.
 const usuarios = ref<Usuario[]>([]);
@@ -16,7 +16,7 @@ const configs = ref<Record<string, Config>>({});
 const error = ref("");
 
 // ---- Cuentas ----
-const nuevo = ref({ usuario: "", nombre: "", rol: "tienda", sitio: "", local: 0 });
+const nuevo = ref({ usuario: "", correo: "", nombre: "", rol: "tienda", sitio: "", local: 0 });
 const creando = ref(false);
 const entregada = ref<(ConClaveTemporal & { motivo: string }) | null>(null);
 const copiada = ref(false);
@@ -50,9 +50,9 @@ async function crearUsuario() {
   }
   creando.value = true;
   try {
-    const r = await cuentas.crearUsuario({ usuario: n.usuario, nombre: n.nombre, rol: n.rol, local_id: n.rol === "tienda" ? n.local : null });
+    const r = await cuentas.crearUsuario({ usuario: n.usuario || n.correo, correo: n.correo, nombre: n.nombre, rol: n.rol, local_id: n.rol === "tienda" ? n.local : null });
     entregada.value = { ...r, motivo: "Cuenta creada" };
-    nuevo.value = { ...nuevo.value, usuario: "", nombre: "" };
+    nuevo.value = { ...nuevo.value, usuario: "", correo: "", nombre: "" };
     await cargar();
   } catch (e) {
     error.value = (e as Error).message;
@@ -240,7 +240,7 @@ onMounted(cargar);
     <section class="panel" aria-label="Cuentas">
       <div class="panel-heading">
         <h2>Cuentas</h2>
-        <span class="muted">admin_lap ve todo · una tienda ve solo su local</span>
+        <span class="muted">superadmin ve todo · una tienda ve solo su local</span>
       </div>
 
       <div v-if="entregada" class="entrega" role="status" data-prueba="clave-entregada">
@@ -262,7 +262,7 @@ onMounted(cargar);
           </thead>
           <tbody>
             <tr v-for="u in usuarios" :key="u.user_id" :data-usuario="u.usuario" :class="{ inactivo: !u.activo }">
-              <td><b>{{ u.usuario }}</b><small v-if="u.nombre"> · {{ u.nombre }}</small></td>
+              <td><b>{{ u.usuario }}</b><small v-if="u.nombre"> · {{ u.nombre }}</small><small v-if="u.correo" class="correo"><br />{{ u.correo }}</small></td>
               <td>{{ NOMBRE_ROL[u.rol] ?? u.rol }}</td>
               <td>{{ u.local ? `${u.local} (${u.sitio})` : "—" }}</td>
               <td>
@@ -300,13 +300,16 @@ onMounted(cargar);
 
       <form class="formulario" novalidate @submit.prevent="crearUsuario">
         <h3>Nueva cuenta</h3>
-        <label>Usuario<input v-model="nuevo.usuario" data-prueba="nuevo-usuario" autocomplete="off" placeholder="caja.tienda-a" /></label>
+        <label>Correo (para ingresar y recuperar la clave)<input v-model="nuevo.correo" data-prueba="nuevo-correo" type="email" autocomplete="off" placeholder="nombre@empresa.com" /></label>
+        <label>Usuario (opcional: por defecto, el correo)<input v-model="nuevo.usuario" data-prueba="nuevo-usuario" autocomplete="off" placeholder="caja.tienda-a" /></label>
         <label>Nombre (opcional)<input v-model="nuevo.nombre" autocomplete="off" placeholder="Caja de la tienda A" /></label>
         <label>
           Rol
           <select v-model="nuevo.rol" data-prueba="nuevo-rol">
             <option value="tienda">Tienda (ve solo su local)</option>
-            <option value="admin_lap">Administración LAP (ve todo)</option>
+            <option value="seguridad">Seguridad (En vivo, Teléfonos y Videos)</option>
+            <option value="negocio">Negocio (Ventas e Insights)</option>
+            <option value="superadmin">Superadmin (ve todo y administra)</option>
           </select>
         </label>
         <template v-if="nuevo.rol === 'tienda'">

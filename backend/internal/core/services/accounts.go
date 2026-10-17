@@ -37,6 +37,9 @@ type AccountService struct {
 	dummy string
 
 	touchMu sync.Mutex
+
+	mailer  ports.Mailer
+	baseURL string
 }
 
 func NewAccountService(repo ports.AccountRepository) *AccountService {
@@ -86,6 +89,9 @@ func (s *AccountService) EnsureSeed(ctx context.Context, username, password stri
 			return err
 		}
 		in := domain.UserInput{Username: username, DisplayName: "Administración LAP", Role: domain.RoleAdmin}
+		if domain.ValidEmail(username) {
+			in.Email = username
+		}
 		if _, err = s.repo.CreateUser(ctx, in, hash, false, true); err != nil {
 			return err
 		}
@@ -94,6 +100,11 @@ func (s *AccountService) EnsureSeed(ctx context.Context, username, password stri
 	}
 	if err != nil {
 		return err
+	}
+	if rec.IsSeed && rec.Email == "" && domain.ValidEmail(username) {
+		if err = s.repo.SetEmail(ctx, rec.ID, username); err != nil {
+			slog.Warn("no se pudo anotar el correo de la cuenta semilla", "error", err)
+		}
 	}
 	if !rec.IsSeed || rec.PasswordChanged || VerifyPassword(password, rec.PasswordHash) {
 		return nil
@@ -173,7 +184,7 @@ func (s *AccountService) Authenticate(ctx context.Context, token string) (domain
 		return domain.Principal{}, ErrUnauthenticated
 	}
 	idle := rec.IdleEnds
-	if rec.User.Role == domain.RoleAdmin && now.Sub(rec.LastSeen) > time.Minute {
+	if rec.User.Role != domain.RoleStore && now.Sub(rec.LastSeen) > time.Minute {
 		idle = now.Add(domain.AdminIdle)
 		if idle.After(rec.Expires) {
 			idle = rec.Expires
@@ -280,7 +291,7 @@ func (s *AccountService) SetActive(ctx context.Context, actor domain.Principal, 
 				return domain.User{}, err
 			}
 			if n <= 1 {
-				return domain.User{}, domain.Conflict("Es la única cuenta admin_lap activa")
+				return domain.User{}, domain.Conflict("Es la única cuenta superadmin activa")
 			}
 		}
 	}
@@ -312,7 +323,7 @@ func (s *AccountService) DeleteUser(ctx context.Context, actor domain.Principal,
 			return domain.User{}, err
 		}
 		if n <= 1 {
-			return domain.User{}, domain.Conflict("Es la única cuenta admin_lap activa")
+			return domain.User{}, domain.Conflict("Es la única cuenta superadmin activa")
 		}
 	}
 	return rec.User, s.repo.DeleteUser(ctx, id)
@@ -390,4 +401,143 @@ func (s *AccountService) AuditLog(ctx context.Context, limit int) ([]domain.Audi
 		limit = 100
 	}
 	return s.repo.Audit(ctx, limit)
+}
+
+// SetMailer gives the service the way to send the recovery links and the address of the web they point to.
+func (s *AccountService) SetMailer(m ports.Mailer, baseURL string) {
+	s.mailer, s.baseURL = m, strings.TrimRight(baseURL, "/")
+}
+
+// MailConfigured tells whether a recovery link can be sent at all.
+func (s *AccountService) MailConfigured() bool { return s.mailer != nil && s.baseURL != "" }
+
+const (
+	// ResetTTL is how long a recovery link lives; it works once.
+	ResetTTL = 30 * time.Minute
+	// ResetPerHour is how many links one account may ask for in an hour.
+	ResetPerHour = 3
+)
+
+var errResetLink = domain.Invalid("El enlace no es válido o ya venció. Pide uno nuevo.")
+
+// RequestReset starts a recovery: when the address belongs to an active account it makes a one-use link (30 minutes) and
+// sends it by mail. It says nothing about whether the address exists; the caller answers the same either way. The mail
+// goes out apart, so the answer does not take longer for an account that exists.
+func (s *AccountService) RequestReset(ctx context.Context, email, ip string) error {
+	email = domain.NormalizeEmail(email)
+	if !domain.ValidEmail(email) {
+		return nil
+	}
+	rec, err := s.repo.UserByName(ctx, email)
+	if errors.Is(err, domain.ErrNotFound) || (err == nil && (!rec.Active || rec.Email != email)) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	now := s.now()
+	if n, err := s.repo.CountResetTokens(ctx, rec.ID, now.Add(-time.Hour)); err != nil {
+		return err
+	} else if n >= ResetPerHour {
+		s.Audit(ctx, domain.Principal{User: rec.Username, Role: rec.Role}, ip, "recuperacion_limitada", rec.Username, "demasiadas solicitudes")
+		return nil
+	}
+	token, err := newToken()
+	if err != nil {
+		return err
+	}
+	if err = s.repo.CreateResetToken(ctx, tokenHash(token), rec.ID, now.Add(ResetTTL), now, ip); err != nil {
+		return err
+	}
+	s.Audit(ctx, domain.Principal{User: rec.Username, Role: rec.Role}, ip, "recuperacion_solicitada", rec.Username, "")
+	if !s.MailConfigured() {
+		slog.Warn("recuperación pedida pero el correo no está configurado (SMTP_* y APP_BASE_URL)", "usuario", rec.Username)
+		return nil
+	}
+	link := s.baseURL + "/restablecer?token=" + token
+	name := rec.DisplayName
+	if name == "" {
+		name = rec.Username
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		html, text := ResetMail(name, link, int(ResetTTL.Minutes()))
+		if err := s.mailer.Send(ctx, email, "Restablece tu contraseña · LAP", html, text); err != nil {
+			slog.Error("no se pudo enviar el correo de recuperación", "usuario", rec.Username, "error", err)
+		}
+	}()
+	return nil
+}
+
+// resetUser finds the account a live recovery link belongs to; any failure is the same invalid-link error.
+func (s *AccountService) resetUser(ctx context.Context, token string) (domain.UserRecord, error) {
+	if token == "" || len(token) > 200 {
+		return domain.UserRecord{}, errResetLink
+	}
+	t, err := s.repo.ResetToken(ctx, tokenHash(token))
+	if errors.Is(err, domain.ErrNotFound) {
+		return domain.UserRecord{}, errResetLink
+	}
+	if err != nil {
+		return domain.UserRecord{}, err
+	}
+	if t.UsedAt != nil || !s.now().Before(t.Expires) {
+		return domain.UserRecord{}, errResetLink
+	}
+	rec, err := s.repo.UserByID(ctx, t.UserID)
+	if err != nil || !rec.Active {
+		return domain.UserRecord{}, errResetLink
+	}
+	return rec, nil
+}
+
+// ValidateReset says whether a recovery link can still be used (the page asks before it shows the form).
+func (s *AccountService) ValidateReset(ctx context.Context, token string) error {
+	_, err := s.resetUser(ctx, token)
+	return err
+}
+
+// ResetWithToken sets the new password with a recovery link: the link is spent, the password must follow the policy and
+// every login of the account ends. A weak password does not spend the link.
+func (s *AccountService) ResetWithToken(ctx context.Context, token, next, ip string) error {
+	rec, err := s.resetUser(ctx, token)
+	if err != nil {
+		return err
+	}
+	if err = domain.CheckPassword(next, rec.Username); err != nil {
+		return err
+	}
+	hash, err := HashPassword(next)
+	if err != nil {
+		return err
+	}
+	used, err := s.repo.UseResetToken(ctx, tokenHash(token), s.now())
+	if err != nil {
+		return err
+	}
+	if !used {
+		return errResetLink
+	}
+	if err = s.repo.SetPassword(ctx, rec.ID, hash, false, true); err != nil {
+		return err
+	}
+	if _, err = s.repo.RevokeUserSessions(ctx, rec.ID, nil, s.now()); err != nil {
+		return err
+	}
+	s.Audit(ctx, domain.Principal{User: rec.Username, Role: rec.Role}, ip, "clave_restablecida", rec.Username, "por correo")
+	return nil
+}
+
+// SetEmail changes the address of an account.
+func (s *AccountService) SetEmail(ctx context.Context, id, email string) (domain.User, error) {
+	email = domain.NormalizeEmail(email)
+	if email != "" && !domain.ValidEmail(email) {
+		return domain.User{}, domain.Invalid("Correo inválido")
+	}
+	if err := s.repo.SetEmail(ctx, id, email); err != nil {
+		return domain.User{}, err
+	}
+	rec, err := s.repo.UserByID(ctx, id)
+	return rec.User, err
 }
