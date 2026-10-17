@@ -766,9 +766,29 @@ class SesionEnVivo:
                     with self.bloqueo:
                         if generacion != self.generacion or self.asociador is None:
                             continue
+                        self.asociador.posiciones_plano = self._posiciones_plano(frames, filas)
                         self.asociador.actualizar(t, frames, filas, occluders=ocluyentes)
                 except Exception as error:  # un instante fallido no debe detener el carril
                     print(f"Carril lento: {type(error).__name__}: {error}", flush=True)
+
+    def _posiciones_plano(self, frames, filas):
+        """(teléfono, track local) -> (x, y) en metros: el pie de cada persona llevado al plano con la última ubicación
+        de su teléfono (ubicacion.py). Sin ubicación, o con los pies fuera del cuadro, no hay posición."""
+        posiciones = {}
+        for cid, fs in filas.items():
+            plano = self.planos.get(cid)
+            if not plano or cid not in frames:
+                continue
+            H = np.asarray(plano["H"], float).reshape(3, 3)
+            alto, ancho = frames[cid].shape[:2]
+            k = plano["ancho"] / ancho
+            for f in fs:
+                if f["y2"] >= alto - 3:
+                    continue
+                p = H @ np.array([(f["x1"] + f["x2"]) / 2 * k, f["y2"] * k, 1.0])
+                if abs(p[2]) > 1e-9 and np.all(np.isfinite(p)):
+                    posiciones[(cid, f["local_id"])] = (float(p[0] / p[2]), float(p[1] / p[2]))
+        return posiciones
 
     def _lazo_genero(self):
         """Carril del género: CLIP para los tracks a los que les falta, en paralelo con el de los IDs y siempre con el

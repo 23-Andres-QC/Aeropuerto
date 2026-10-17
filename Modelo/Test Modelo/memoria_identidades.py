@@ -50,6 +50,14 @@ CONTINUIDAD_S = 8.0       # un track nuevo que empieza así de pronto después d
 CONTINUIDAD_ALTURAS = 1.3 # y a menos de esta distancia (en alturas de caja) de donde terminó el anterior
 GENERO_FIJO = 0.8         # con esta certeza o más el género de una persona queda fijo
 DUDA = 0.1                # a menos de esto del umbral, una persona ya vista es «parecida»
+# Misma persona por posición: dos IDs que dos teléfonos distintos ubican en el plano a menos de POSICION_RADIO_M, en
+# POSICION_INSTANTES instantes seguidos, son la misma persona y quedan con el ID más antiguo. Desde dos ángulos una
+# persona se parece poco para el Re-ID (de frente y de espaldas, sin las piernas) y cada teléfono le daba otro ID
+# global; el lugar donde está no cambia con el ángulo. Se pide un parecido mínimo (POSICION_PARECIDO) para no juntar a
+# dos personas que se cruzan, y nunca a dos que una misma cámara ve a la vez.
+POSICION_RADIO_M = 1.2
+POSICION_INSTANTES = 5
+POSICION_PARECIDO = 0.3
 
 
 def _b64(vector):
@@ -394,6 +402,8 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
 
     def __init__(self, reid, config, memoria):
         self.memoria = memoria
+        self.posiciones_plano = {}  # (cámara, track local) -> (x, y) en metros en el instante que se procesa
+        self._juntos = {}           # par de personas -> instantes seguidos en el mismo lugar visto por dos cámaras
         super().__init__(reid, config)
 
     def reiniciar(self, session_uuid=None):
@@ -425,8 +435,16 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
         return (np.sum([t.suma for t in grupo], axis=0), np.stack([t.prototipo() for t in grupo]),
                 {t.camera_id for t in grupo})
 
-    def _ocupadas(self, excepto=None):
-        """Personas que otra identidad visible ahora (hace menos de OCUPADA_S) ya tiene asignadas.
+    def _camaras_de(self, gid):
+        return {t.camera_id for t in self._miembros(gid)}
+
+    def _ocupadas(self, excepto=None, camaras=None):
+        """Personas que otra identidad visible ahora (hace menos de OCUPADA_S) ya tiene asignadas; con `camaras`, solo las
+        que esa identidad tiene en alguna de esas cámaras.
+
+        Una persona puede estar a la vez en dos teléfonos: que la vea ahora otra cámara no la hace «ocupada» para un track
+        de esta. Antes sí: quien entraba al cuadro del segundo teléfono se parecía a la persona que ya veía el primero,
+        quedaba en duda, esperaba sin ID y recibía otro ID global (en un teléfono era G5 y en el otro G9).
 
         No se usa tracklet_gap_s: si el seguidor pierde a una persona y la retoma con otro track, el anterior terminó
         hace un instante y la persona seguiría «ocupada», así que recibía un ID nuevo que unos segundos después se
@@ -434,7 +452,8 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
         pueden ser personas distintas por estar «ocupada» la misma."""
         limite = self.last_timestamp - OCUPADA_S
         return {pid for gid, pid in self.confirmadas.items()
-                if gid != excepto and gid in self.globales and self._fin(gid) >= limite}
+                if gid != excepto and gid in self.globales and self._fin(gid) >= limite
+                and (camaras is None or self._camaras_de(gid) & camaras)}
 
     def _confirmar(self, gids):
         """Da a cada identidad el ID de la persona que ya se vio o, si no coincide con nadie, uno nuevo."""
@@ -442,7 +461,6 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
             self.reiniciar_numeracion()
         ahora = time.time()
         self._quitar_duplicados(gids)
-        ocupadas = None
         for gid in sorted(gids):
             if gid not in self.globales:
                 continue
@@ -451,14 +469,48 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
                 del self.confirmadas[gid]
                 pid = None
             if pid is None:
-                if ocupadas is None:
-                    ocupadas = self._ocupadas()
-                pid = self._identificar(gid, ocupadas, ahora)
+                # Solo cuenta como ocupada la persona que otra identidad tiene en una cámara de esta (ver _ocupadas).
+                pid = self._identificar(gid, self._ocupadas(excepto=gid, camaras=self._camaras_de(gid)), ahora)
                 if pid is None:
                     continue
-                ocupadas.add(pid)
             self._reforzar(gid, pid, ahora)
             self._revisar(gid, ahora)
+        self._unir_por_posicion()
+
+    def _unir_por_posicion(self):
+        """Junta a las personas que dos cámaras distintas ven en el mismo lugar del plano (ver POSICION_RADIO_M)."""
+        vistas = {}  # persona -> [(cámara, x, y)] en este instante
+        for (cid, lid), (x, y) in self.posiciones_plano.items():
+            tramo = self.locales.get((cid, lid))
+            if tramo is None:
+                continue
+            try:
+                tramo = self.resolver(tramo.uid, self.last_timestamp)
+            except KeyError:
+                pass
+            pid = self.confirmadas.get(tramo.global_id)
+            if pid is not None:
+                vistas.setdefault(pid, []).append((cid, x, y))
+        cerca = {}
+        for a in vistas:
+            for b in vistas:
+                if a >= b or any(ca == cb for ca, _, _ in vistas[a] for cb, _, _ in vistas[b]):
+                    continue  # la misma persona, o las ve a la vez una misma cámara: son dos
+                if any(math.hypot(xa - xb, ya - yb) <= POSICION_RADIO_M
+                       for ca, xa, ya in vistas[a] for cb, xb, yb in vistas[b]):
+                    cerca.setdefault(a, set()).add(b)
+                    cerca.setdefault(b, set()).add(a)
+        # Solo pares sin ambigüedad: cada una tiene una sola persona cerca vista por la otra cámara.
+        juntos = {(a, b) for a, otras in cerca.items() for b in otras if a < b and len(otras) == 1 and len(cerca[b]) == 1}
+        self._juntos = {par: self._juntos.get(par, 0) + 1 for par in juntos}
+        for (a, b), n in list(self._juntos.items()):
+            if n < POSICION_INSTANTES or a not in self.memoria.personas or b not in self.memoria.personas:
+                continue
+            pa, pb = self.memoria.personas[a], self.memoria.personas[b]
+            if float(_normal(pa.suma) @ _normal(pb.suma)) < POSICION_PARECIDO:
+                continue
+            if self._unir_personas(a, b):  # queda el ID más antiguo (a < b)
+                del self._juntos[(a, b)]
 
     def _debe_muestrear(self, track, row, timestamp):
         """Mientras la persona no tiene ID, una vista Re-ID cada 0,1 s para reconocerla en el primer segundo."""
@@ -539,7 +591,8 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
         self._revisado[gid] = self.last_timestamp
         suma, prototipos, camaras = self._grupo(gid)
         antigua, _ = self.memoria.reconocer(suma, prototipos, camaras,
-                                            ocupadas=self._ocupadas(excepto=gid) | self._coinciden(gid), ignorar={pid})
+                                            ocupadas=self._ocupadas(excepto=gid, camaras=self._camaras_de(gid))
+                                            | self._coinciden(gid), ignorar={pid})
         if antigua is None or antigua > pid:
             return
         regreso = ahora - self.memoria.personas[antigua].ultima_vez > REGRESO_S
