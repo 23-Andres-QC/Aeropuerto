@@ -5,6 +5,7 @@ import {
   FECHA_VALIDA, FRANJAS, PERIODOS, barrasPermanencia, describirFranja, franjaDe, hoyLima, maximoDeCalor, pasosEmbudo, rangoDe,
   type CalorTrafico, type DatosTrafico, type EmbudoTrafico, type FuentesTrafico, type PermanenciaTrafico,
 } from "../trafico";
+import { sesion } from "../../../core/auth";
 import { trafico } from "../traficoApi";
 import PlanoSitio from "./PlanoSitio.vue";
 import UmbralesTrafico from "./UmbralesTrafico.vue";
@@ -138,6 +139,8 @@ const sinCalor = computed(() => !!calorSel.value && !calorSel.value.celdas.lengt
 
 // --- Fuentes -------------------------------------------------------------------------------------------------------------------------------
 const fuentes = computed<FuentesTrafico | undefined>(() => calorSel.value?.fuentes ?? permanencia.value?.fuentes);
+// Quien solo mira (el rol negocio) no genera datos simulados ni cambia umbrales: eso es de Configuración y la API se lo niega.
+const puedeEditar = sesion.value?.modulos?.includes("configuracion") ?? true;
 const hayDatos = computed(() => !!fuentes.value && (fuentes.value.reales > 0 || fuentes.value.simulados > 0));
 
 async function generarSimulado() {
@@ -245,7 +248,7 @@ const fechaHora = (iso: string | null | undefined) => (iso ? new Date(iso).toLoc
         <b>No hay tráfico {{ datos === "real" ? "real" : datos === "simulado" ? "simulado" : "" }} en {{ desde === hasta ? desde : `${desde} a ${hasta}` }}, {{ describirFranja("franja" in franja ? franja.franja : "") }}.</b>
         {{ datos === "simulado" || datos === "todos" ? "Prueba con «Todo» en el período, o genera semanas de tráfico simulado para ver cómo se ve." : "Prueba con «Todo» en el período o con «Todos» los datos." }}
       </p>
-      <p class="acciones-vacio">
+      <p v-if="puedeEditar" class="acciones-vacio">
         <button type="button" class="primary-button" :disabled="simulando" @click="generarSimulado">{{ simulando ? "Generando…" : "Generar tráfico simulado (6 semanas)" }}</button>
         <span v-if="avisoSimulado" class="listo" role="status">✓ {{ avisoSimulado }}</span>
       </p>
@@ -315,9 +318,9 @@ const fechaHora = (iso: string | null | undefined) => (iso ? new Date(iso).toLoc
             <p v-if="umbralDentro" class="nota">Un umbral cae dentro de un tramo: el color cambia en el tramo siguiente; los porcentajes de arriba usan el valor exacto.</p>
           </template>
           <p v-else-if="permanencia" class="muted centrado">Nadie se quedó en «{{ nombreDonde }}» en este período y franja.</p>
-          <details class="umbrales-caja">
+          <details v-if="puedeEditar" class="umbrales-caja">
             <summary>Cambiar los umbrales «se detiene» e «interesado»</summary>
-            <UmbralesTrafico :sitio="sitio" compacto @guardado="cargar" />
+            <UmbralesTrafico v-if="puedeEditar" :sitio="sitio" compacto @guardado="cargar" />
           </details>
         </div>
       </article>

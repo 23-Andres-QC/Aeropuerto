@@ -59,7 +59,8 @@ func TestRolePermissionMatrix(t *testing.T) {
 		// Lo que toda pantalla necesita: sitios, su plano y sus sesiones.
 		{"GET", "/api/v1/sites", all}, {"GET", "/api/v1/sites/esan/config", all}, {"GET", "/api/v1/sites/esan/sessions", all},
 		// 1. En vivo, 6. Teléfonos y 7. Videos.
-		{"GET", "/api/v1/sites/esan/sessions/s1/replay", live}, {"GET", "/api/v1/sites/esan/media/cam01.mp4", live},
+		{"GET", "/api/v1/sites/esan/sessions/s1/replay", all}, // En vivo la reproduce e Insights dibuja sus mapas con ella
+		{"GET", "/api/v1/sites/esan/media/cam01.mp4", live}, {"POST", "/api/v1/sites/esan/sessions", live}, // guardar la captura al apagar En vivo
 		{"GET", "/api/v1/telefonos", live}, {"POST", "/api/v1/telefonos", live}, {"GET", "/api/v1/cameras/cam01/watch", live},
 		{"GET", "/api/v1/cameras/cam01/publish", live},
 		// 2. Insights y 3. Ventas.
@@ -70,11 +71,14 @@ func TestRolePermissionMatrix(t *testing.T) {
 		{"GET", "/api/v1/sites/esan/trafico/embudo", biz}, {"GET", "/api/v1/sites/esan/trafico/umbrales", biz},
 		{"GET", "/api/v1/sites/esan/ventas/resumen", biz}, {"GET", "/api/v1/sites/esan/ventas/pronostico", biz},
 		{"GET", "/api/v1/sites/esan/ventas/patrones", biz}, {"GET", "/api/v1/sites/esan/ventas/tickets", biz},
-		{"POST", "/api/v1/sites/esan/ventas/tickets", biz}, {"GET", "/api/v1/sites/esan/sessions/s1/ventas", biz},
+		{"GET", "/api/v1/sites/esan/sessions/s1/ventas", biz},
+		// Negocio mira, no carga datos: tickets, simulados y emparejamientos son de Configuración.
+		{"POST", "/api/v1/sites/esan/ventas/tickets", super}, {"POST", "/api/v1/sites/esan/ventas/simulados", super},
+		{"POST", "/api/v1/sites/esan/sessions/s1/ventas/emparejar", super},
 		// 5. Configuración y todo lo que cambia el plano o los datos.
 		{"POST", "/api/v1/sites", super}, {"PUT", "/api/v1/sites/esan", super}, {"PUT", "/api/v1/sites/esan/plano", super},
 		{"POST", "/api/v1/sites/esan/zones", super}, {"PUT", "/api/v1/sites/esan/zones/1", super}, {"POST", "/api/v1/sites/esan/locales", super},
-		{"POST", "/api/v1/sites/esan/cameras", super}, {"POST", "/api/v1/sites/esan/sessions", super},
+		{"POST", "/api/v1/sites/esan/cameras", super},
 		{"PUT", "/api/v1/sites/esan/trafico/umbrales", super}, {"POST", "/api/v1/sites/esan/trafico/recalcular", super},
 		{"POST", "/api/v1/sites/esan/trafico/simulados", super}, {"PUT", "/api/v1/sites/esan/sessions/s1/analytics", super},
 		{"PUT", "/api/v1/sites/esan/sessions/s1/inicio", super},

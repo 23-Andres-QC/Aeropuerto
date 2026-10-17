@@ -88,7 +88,10 @@ func TestRolesInTheDatabase(t *testing.T) {
 		{"negocio abre Ventas", bizCookie, "GET", "/api/v1/sites/esan/ventas/resumen", 200},
 		{"negocio abre Insights", bizCookie, "GET", "/api/v1/sites/esan/trafico/resumen", 200},
 		{"negocio no abre Teléfonos", bizCookie, "GET", "/api/v1/telefonos", 403},
-		{"negocio no abre la reproducción", bizCookie, "GET", "/api/v1/sites/esan/sessions/00000000-0000-0000-0000-000000000000/replay", 403},
+		{"negocio sí abre la reproducción (Insights dibuja sus mapas con ella)", bizCookie, "GET", "/api/v1/sites/esan/sessions/00000000-0000-0000-0000-000000000000/replay", 404},
+		{"seguridad abre la reproducción", secCookie, "GET", "/api/v1/sites/esan/sessions/00000000-0000-0000-0000-000000000000/replay", 404},
+		{"negocio no carga tickets", bizCookie, "POST", "/api/v1/sites/esan/ventas/tickets", 403},
+		{"negocio no guarda capturas", bizCookie, "POST", "/api/v1/sites/esan/sessions", 403},
 		{"negocio no ve la bitácora", bizCookie, "GET", "/api/v1/auditoria", 403},
 		{"negocio no borra", bizCookie, "DELETE", "/api/v1/sites/esan/ventas/tickets/1", 403},
 	} {

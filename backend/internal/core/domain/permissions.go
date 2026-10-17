@@ -57,7 +57,11 @@ var (
 	reSales     = regexp.MustCompile(`^/api/v1/sites/[^/]+/(ventas(/|$)|sessions/[^/]+/ventas(/|$))`)
 	reTraffic   = regexp.MustCompile(`^/api/v1/sites/[^/]+/trafico/(resumen|serie|calor|permanencia|embudo|umbrales)$`)
 	reInsights  = regexp.MustCompile(`^/api/v1/sites/[^/]+/sessions/[^/]+/(insights|analytics|points)$`)
-	reReplay    = regexp.MustCompile(`^/api/v1/sites/[^/]+/(sessions/[^/]+/replay|media/.+)$`)
+	reMedia     = regexp.MustCompile(`^/api/v1/sites/[^/]+/media/.+$`)
+	// The positions of a saved session: En vivo plays them back and Insights draws its movement and heat maps from them.
+	reReplay = regexp.MustCompile(`^/api/v1/sites/[^/]+/sessions/[^/]+/replay$`)
+	// Saving a capture is what En vivo does when the live mode is turned off.
+	reSave = regexp.MustCompile(`^/api/v1/sites/[^/]+/sessions$`)
 	reBase      = regexp.MustCompile(`^/api/v1/sites(/[^/]+/(config|sessions))?$`)
 )
 
@@ -73,10 +77,18 @@ func ModuleOf(method, path string) string {
 	case reCameras.MatchString(path):
 		return ModEnVivo
 	case reSales.MatchString(path):
-		return ModVentas
+		// Sales and insights are for looking: loading tickets, matching and simulating data belong to Configuración.
+		if read {
+			return ModVentas
+		}
+		return ModConfig
 	case read && reTraffic.MatchString(path), read && reInsights.MatchString(path):
 		return ModInsights
 	case read && reReplay.MatchString(path):
+		return ModBase
+	case read && reMedia.MatchString(path):
+		return ModEnVivo
+	case method == "POST" && reSave.MatchString(path):
 		return ModEnVivo
 	case read && reBase.MatchString(path):
 		return ModBase

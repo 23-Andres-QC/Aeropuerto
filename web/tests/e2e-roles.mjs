@@ -70,6 +70,8 @@ try {
   assert.equal(await pideLista("/api/v1/telefonos"), 200);
   assert.equal(await pideLista("/vivo/api/v1/videos"), 200, "Videos (nginx → backend-vivo)");
   assert.equal(await pideLista("/camara-web/api/codigos"), 200, "Teléfonos: los códigos de unión");
+  assert.equal(await pideLista(`/api/v1/sites/esan/sessions/${(await t.api("GET", "/api/v1/sites/esan/sessions")).cuerpo[0]?.session_id}/replay`), 200, "seguridad reproduce sesiones");
+  assert.notEqual((await t.api("POST", "/api/v1/sites/esan/sessions", {})).estado, 403, "seguridad guarda la captura al apagar En vivo (llega a validar el cuerpo)");
   assert.equal((await t.api("POST", "/api/v1/sites/esan/zones", { name: "x", zone_type: "OTRO", points: [[0, 0], [1, 0], [1, 1]] })).estado, 403, "seguridad no cambia la configuración");
   paso("seguridad: menú, rutas y API solo de En vivo, Teléfonos y Videos");
 
@@ -87,6 +89,21 @@ try {
   assert.ok(!(await t.evalua(`location.pathname`)).includes("telefonos"));
   assert.equal(await pideLista("/api/v1/sites/esan/ventas/resumen"), 200);
   assert.equal(await pideLista("/api/v1/sites/esan/trafico/resumen"), 200);
+  // Lo que Insights necesita de verdad: la reproducción de la sesión (con ella dibuja el movimiento y el calor). Sin avisos de «sin acceso».
+  const ses = (await t.api("GET", "/api/v1/sites/esan/sessions")).cuerpo.find((x) => x.points > 0);
+  assert.ok(ses, "ESAN tiene una sesión con puntos");
+  assert.equal(await pideLista(`/api/v1/sites/esan/sessions/${ses.session_id}/replay`), 200, "negocio abre la reproducción (Insights)");
+  assert.equal(await pideLista(`/api/v1/sites/esan/sessions/${ses.session_id}/insights`), 200);
+  await t.ir(`/sitios/esan/insights?sesion=${ses.session_id}`, 4500);
+  const cuerpoInsights = await t.evalua(`document.body.innerText`);
+  assert.ok(!cuerpoInsights.includes("Tu rol no tiene acceso"), "Insights no muestra el aviso de acceso denegado a negocio");
+  assert.ok(!(await t.existe(".umbrales-caja")) && !cuerpoInsights.includes("Generar tráfico simulado"), "Insights no ofrece cambiar umbrales ni generar datos a quien solo mira");
+  await t.ir("/sitios/esan/ventas", 3000);
+  const tabs = await t.evalua(`[...document.querySelectorAll('.pestanas button')].map((b) => b.innerText.trim())`);
+  assert.deepEqual(tabs, ["Resumen", "Pronóstico", "Cuándo se vende"], "Ventas solo muestra lo que negocio puede ver");
+  assert.ok(!(await t.evalua(`document.body.innerText.includes('Tu rol no tiene acceso')`)), "Ventas sin avisos de acceso denegado");
+  assert.equal((await t.api("POST", "/api/v1/sites/esan/ventas/tickets", { tickets: [] })).estado, 403, "negocio no carga tickets");
+  assert.equal((await t.api("POST", "/api/v1/sites/esan/sessions", {})).estado, 403, "negocio no guarda capturas");
   assert.equal(await pideLista("/api/v1/telefonos"), 403);
   assert.equal(await pideLista("/vivo/api/v1/videos"), 403, "Videos le cierra nginx");
   assert.equal(await pideLista("/camara-web/api/codigos"), 403);

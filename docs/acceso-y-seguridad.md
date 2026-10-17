@@ -19,6 +19,8 @@ La matriz vive en un solo lugar (`backend/internal/core/domain/permissions.go`) 
 | Cuentas, llaves, privacidad, demo, bitácora | ✔ | — | — | — | — |
 | Cifras de **su** tienda (permanencia y embudo) | ✔ | — | — | ✔ | ✔ |
 
+- **Negocio solo mira:** ve Insights y Ventas (resumen, pronóstico, cuándo se vende), pero cargar tickets, emparejar, generar datos simulados y cambiar umbrales son de Configuración (la web esconde esos botones y la API los niega).
+- **La reproducción de una sesión guardada** (`/sessions/{id}/replay`) la abren seguridad (En vivo) y negocio (Insights dibuja con ella sus mapas de movimiento y calor). **Guardar la captura** al apagar En vivo (`POST /sessions`) es de seguridad.
 - Sin sesión: **401**. Con sesión pero sin permiso: **403** (queda en la bitácora como `acceso_denegado`). Una tienda recibe **404** en lo que no es suyo.
 - Todo lo que nadie listó (un endpoint nuevo) se cierra a seguridad y negocio hasta que se agregue a la matriz.
 - Solo el superadmin borra, en cualquier módulo.
