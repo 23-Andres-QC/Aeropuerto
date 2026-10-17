@@ -4,13 +4,16 @@ import { inicioPara, rutaPermitida } from "./roles";
 import { ultimoSitio } from "../features/sitios/useSitios";
 
 // Cada sección funciona igual para cualquier sitio: /sitios/<sitio>/<sección>.
-const inicio = () => inicioPara(sesion.value?.rol, ultimoSitio());
+const inicio = () => inicioPara(sesion.value?.rol, ultimoSitio(), sesion.value?.modulos);
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: "/", redirect: inicio },
     { path: "/login", component: () => import("../features/acceso/LoginPage.vue"), meta: { public: true } },
+    { path: "/olvide", component: () => import("../features/acceso/OlvidePage.vue"), meta: { public: true } },
+    // El enlace del correo se abre con o sin sesión (quien olvidó su clave no la tiene).
+    { path: "/restablecer", component: () => import("../features/acceso/RestablecerPage.vue"), meta: { abierta: true } },
     { path: "/sitios/:sitio/en-vivo", component: () => import("../features/sitios/pages/EnVivoPage.vue"), meta: { seccion: "en-vivo" } },
     { path: "/sitios/:sitio/insights", component: () => import("../features/sitios/pages/InsightsPage.vue"), meta: { seccion: "insights" } },
     { path: "/sitios/:sitio/ventas", component: () => import("../features/ventas/pages/VentasPage.vue"), meta: { seccion: "ventas" } },
@@ -55,6 +58,6 @@ router.beforeEach(async (to) => {
   // Con una contraseña temporal solo se puede elegir una propia.
   if (s.debe_cambiar_clave) return to.path === "/cambiar-clave" ? true : "/cambiar-clave";
   // Cada rol abre solo lo suyo (el servidor lo vuelve a comprobar en cada pregunta).
-  if (!rutaPermitida(s.rol, to.path)) return inicio();
+  if (!rutaPermitida(s.rol, to.path, s.modulos)) return inicio();
   return true;
 });

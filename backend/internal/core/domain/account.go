@@ -4,13 +4,18 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
 // Roles of the access control.
 const (
-	// RoleAdmin (admin_lap) sees and does everything.
-	RoleAdmin = "admin_lap"
+	// RoleAdmin (superadmin) sees and does everything, including the accounts, the audit log and the settings.
+	RoleAdmin = "superadmin"
+	// RoleSecurity (seguridad) works the live view, the phones (cameras) and the video upload and tracking.
+	RoleSecurity = "seguridad"
+	// RoleBusiness (negocio) reads the sales and the insights.
+	RoleBusiness = "negocio"
 	// RoleStore (tienda) sees only the figures of its own local; never a person, a camera or the live view.
 	RoleStore = "tienda"
 	// RoleMachine is the API key of the scripts (Build, Part III): reads and writes, never deletes.
@@ -53,6 +58,7 @@ func (p Principal) IsAdmin() bool { return p.Role == RoleAdmin }
 type User struct {
 	ID          string     `json:"user_id"`
 	Username    string     `json:"usuario"`
+	Email       string     `json:"correo,omitempty"`
 	DisplayName string     `json:"nombre"`
 	Role        string     `json:"rol"`
 	LocalID     *int       `json:"local_id"`
@@ -77,6 +83,7 @@ type UserRecord struct {
 
 type UserInput struct {
 	Username    string `json:"usuario"`
+	Email       string `json:"correo"`
 	DisplayName string `json:"nombre"`
 	Role        string `json:"rol"`
 	LocalID     *int   `json:"local_id"`
@@ -84,12 +91,30 @@ type UserInput struct {
 
 var usernamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._@+-]{2,59}$`)
 
+// emailPattern is deliberately plain: one @, a dot in the domain, no spaces. The mail server is the real check.
+var emailPattern = regexp.MustCompile(`^[a-z0-9._%+'-]{1,64}@[a-z0-9-]+(\.[a-z0-9-]+)+$`)
+
+// NormalizeEmail lowercases and trims an address.
+func NormalizeEmail(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+
+// ValidEmail reports whether s (already normalized) can be the address of an account.
+func ValidEmail(s string) bool { return len(s) >= 5 && len(s) <= 254 && emailPattern.MatchString(s) }
+
 // NormalizeUsername lowercases and trims a login name.
 func NormalizeUsername(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 
 // Normalize validates a new account. A store account needs its local; an admin one cannot have it.
 func (in *UserInput) Normalize() error {
-	in.Username, in.DisplayName = NormalizeUsername(in.Username), strings.TrimSpace(in.DisplayName)
+	in.Username, in.DisplayName, in.Email = NormalizeUsername(in.Username), strings.TrimSpace(in.DisplayName), NormalizeEmail(in.Email)
+	if in.Email == "" {
+		return Invalid("El correo es obligatorio: con él se ingresa y se recupera la contraseña")
+	}
+	if !ValidEmail(in.Email) {
+		return Invalid("Correo inválido")
+	}
+	if in.Username == "" && in.Email != "" {
+		in.Username = in.Email
+	}
 	if !usernamePattern.MatchString(in.Username) {
 		return Invalid("Usuario inválido: 3 a 60 caracteres (minúsculas, números, . _ - @ +)")
 	}
@@ -97,21 +122,22 @@ func (in *UserInput) Normalize() error {
 		return Invalid("El nombre admite hasta 100 caracteres")
 	}
 	switch in.Role {
-	case RoleAdmin:
+	case RoleAdmin, RoleSecurity, RoleBusiness:
 		if in.LocalID != nil {
-			return Invalid("Una cuenta admin_lap no tiene local")
+			return Invalid("Solo una cuenta de tienda tiene local")
 		}
 	case RoleStore:
 		if in.LocalID == nil {
 			return Invalid("Una cuenta de tienda necesita su local")
 		}
 	default:
-		return Invalid("Rol inválido: admin_lap o tienda")
+		return Invalid("Rol inválido: superadmin, seguridad, negocio o tienda")
 	}
 	return nil
 }
 
-// CheckPassword applies the password policy: 12 characters at least, not the user name and not one repeated character.
+// CheckPassword applies the password policy: 12 characters at least with a capital letter, a small letter and a digit, not the
+// user name and not one repeated character.
 func CheckPassword(password, username string) error {
 	n := utf8.RuneCountInString(password)
 	if n < MinPassword {
@@ -123,6 +149,13 @@ func CheckPassword(password, username string) error {
 	if username != "" && strings.EqualFold(strings.TrimSpace(password), username) {
 		return Invalid("La contraseña no puede ser el usuario")
 	}
+	var upper, lower, digit bool
+	for _, r := range password {
+		upper, lower, digit = upper || unicode.IsUpper(r), lower || unicode.IsLower(r), digit || unicode.IsDigit(r)
+	}
+	if !upper || !lower || !digit {
+		return Invalid("La contraseña necesita una mayúscula, una minúscula y un número")
+	}
 	first, _ := utf8.DecodeRuneInString(password)
 	if strings.Count(password, string(first)) == n {
 		return Invalid("La contraseña no puede ser un solo carácter repetido")
@@ -132,7 +165,7 @@ func CheckPassword(password, username string) error {
 
 // SessionLimits are when a login that starts at now ends: the hard limit and the idle one.
 func SessionLimits(role string, now time.Time) (expires, idle time.Time) {
-	if role == RoleAdmin {
+	if role == RoleAdmin || role == RoleSecurity || role == RoleBusiness {
 		return now.Add(AdminMax), now.Add(AdminIdle)
 	}
 	return now.Add(StoreMax), now.Add(StoreMax)
@@ -192,4 +225,11 @@ type PointsState struct {
 	SessionsPurged int        `json:"sesiones_depuradas"`
 	// Pending are the sessions older than the retention whose traffic is not aggregated yet, so they are kept.
 	Pending int `json:"pendientes_de_agregar"`
+}
+
+// ResetTokenRecord is what the database knows of a password-recovery link (never the secret itself, only its hash).
+type ResetTokenRecord struct {
+	UserID  string
+	Expires time.Time
+	UsedAt  *time.Time
 }

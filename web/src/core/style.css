@@ -1238,3 +1238,6 @@ footer {
     margin-bottom: 12px;
   }
 }
+
+.olvide { margin: 10px 0 0; font-size: 12px; text-align: right; }
+.olvide a { color: var(--accent, #2563eb); font-weight: 600; }

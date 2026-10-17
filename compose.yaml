@@ -29,6 +29,15 @@ services:
       ADMIN_USER: ${ADMIN_USER:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       API_KEY: ${API_KEY:-}
+      # Recuperación de contraseña por correo (todo vacío = el enlace se crea pero no se envía). Los valores van en .env, nunca aquí.
+      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-}
+      SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      APP_BASE_URL: ${APP_BASE_URL:-}
     volumes:
       # Archivos que exportó el Build de cada sitio (videos procesados, mapa,
       # CSV), servidos en /api/v1/sites/<sitio>/media/. No van dentro de la

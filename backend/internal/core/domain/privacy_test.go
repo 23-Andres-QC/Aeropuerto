@@ -65,8 +65,10 @@ func TestPrivateGenderNeverLeaksASmallGroup(t *testing.T) {
 
 func TestCheckPassword(t *testing.T) {
 	for pw, ok := range map[string]bool{
-		"Una-clave-larga-1": true, "doce caracteres": true, "corta": false, "": false, "aaaaaaaaaaaaaaaa": false, "11111111111111": false,
-		"mi-usuario-largo": false, "x" + string(make([]byte, 0)) + "yyyyyyyyyyy": true,
+		"Una-clave-larga-1": true, "Doce caracteres 1": true, "corta": false, "": false, "aaaaaaaaaaaaaaaa": false, "11111111111111": false,
+		"mi-usuario-largo": false, "Xyyyyyyyyyyy1": true,
+		// la política: mayúscula, minúscula y número
+		"sin mayuscula 123456": false, "SIN MINUSCULA 123456": false, "Sin numero en la clave": false,
 	} {
 		err := CheckPassword(pw, "mi-usuario-largo")
 		if (err == nil) != ok {
@@ -88,19 +90,25 @@ func TestUserInput(t *testing.T) {
 		in UserInput
 		ok bool
 	}{
-		"tienda":              {UserInput{Username: " Caja.Uno ", Role: RoleStore, LocalID: &local}, true},
-		"admin":               {UserInput{Username: "ana@lap.pe", Role: RoleAdmin}, true},
-		"admin con local":     {UserInput{Username: "ana", Role: RoleAdmin, LocalID: &local}, false},
-		"tienda sin local":    {UserInput{Username: "caja", Role: RoleStore}, false},
-		"rol":                 {UserInput{Username: "caja", Role: "root", LocalID: &local}, false},
-		"usuario corto":       {UserInput{Username: "ab", Role: RoleStore, LocalID: &local}, false},
-		"usuario con espacio": {UserInput{Username: "caja uno", Role: RoleStore, LocalID: &local}, false},
+		"tienda":              {UserInput{Username: " Caja.Uno ", Email: "Caja@Lap.pe", Role: RoleStore, LocalID: &local}, true},
+		"admin":               {UserInput{Username: "ana@lap.pe", Email: "ana@lap.pe", Role: RoleAdmin}, true},
+		"seguridad":           {UserInput{Username: "vigilante", Email: "vigi@lap.pe", Role: RoleSecurity}, true},
+		"negocio":             {UserInput{Username: "gerente", Email: "gerente@lap.pe", Role: RoleBusiness}, true},
+		"solo el correo":      {UserInput{Email: "solo.correo@lap.pe", Role: RoleBusiness}, true},
+		"sin correo":          {UserInput{Username: "ana", Role: RoleAdmin}, false},
+		"correo malo":         {UserInput{Username: "ana", Email: "ana@", Role: RoleAdmin}, false},
+		"admin con local":     {UserInput{Username: "ana", Email: "ana@lap.pe", Role: RoleAdmin, LocalID: &local}, false},
+		"seguridad con local": {UserInput{Username: "vigi", Email: "v@lap.pe", Role: RoleSecurity, LocalID: &local}, false},
+		"tienda sin local":    {UserInput{Username: "caja", Email: "c@lap.pe", Role: RoleStore}, false},
+		"rol":                 {UserInput{Username: "caja", Email: "c@lap.pe", Role: "root", LocalID: &local}, false},
+		"usuario corto":       {UserInput{Username: "ab", Email: "c@lap.pe", Role: RoleStore, LocalID: &local}, false},
+		"usuario con espacio": {UserInput{Username: "caja uno", Email: "c@lap.pe", Role: RoleStore, LocalID: &local}, false},
 	} {
 		in := c.in
 		if err := in.Normalize(); (err == nil) != c.ok {
 			t.Errorf("%s: %v", name, err)
 		}
-		if c.ok && in.Username != NormalizeUsername(c.in.Username) {
+		if c.ok && c.in.Username != "" && in.Username != NormalizeUsername(c.in.Username) {
 			t.Errorf("%s: el usuario no se normalizó: %q", name, in.Username)
 		}
 	}

@@ -19,11 +19,19 @@ type AccountRepository struct {
 	users    map[string]*domain.UserRecord
 	sessions map[string]*session
 	keys     map[string]*domain.StoreKeyRecord
+	resets   map[string]*resetToken
 	audit    []domain.AuditEntry
 	// Locals maps a local id to its name; CreateUser refuses a local that is not here.
 	Locals map[int]string
 	// Site is the slug every local belongs to in the tests.
 	Site string
+}
+
+type resetToken struct {
+	userID  string
+	created time.Time
+	expires time.Time
+	usedAt  *time.Time
 }
 
 type session struct {
@@ -34,7 +42,7 @@ type session struct {
 
 func NewAccountRepository() *AccountRepository {
 	return &AccountRepository{users: map[string]*domain.UserRecord{}, sessions: map[string]*session{},
-		keys: map[string]*domain.StoreKeyRecord{}, Locals: map[int]string{}}
+		keys: map[string]*domain.StoreKeyRecord{}, resets: map[string]*resetToken{}, Locals: map[int]string{}}
 }
 
 func (r *AccountRepository) Users(context.Context) ([]domain.User, error) {
@@ -52,7 +60,7 @@ func (r *AccountRepository) UserByName(_ context.Context, username string) (doma
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, u := range r.users {
-		if u.Username == username {
+		if u.Username == username || (u.Email != "" && u.Email == username) {
 			return *u, nil
 		}
 	}
@@ -72,8 +80,8 @@ func (r *AccountRepository) CreateUser(_ context.Context, in domain.UserInput, h
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, u := range r.users {
-		if u.Username == in.Username {
-			return domain.User{}, domain.Conflict("Ese usuario ya existe")
+		if u.Username == in.Username || (in.Email != "" && u.Email == in.Email) {
+			return domain.User{}, domain.Conflict("Ese usuario o correo ya existe")
 		}
 	}
 	local := ""
@@ -91,7 +99,7 @@ func (r *AccountRepository) CreateUser(_ context.Context, in domain.UserInput, h
 	r.seq++
 	id := fmt.Sprintf("00000000-0000-0000-0000-%012d", r.seq)
 	rec := &domain.UserRecord{
-		User: domain.User{ID: id, Username: in.Username, DisplayName: in.DisplayName, Role: in.Role, LocalID: in.LocalID, Local: local, Site: site,
+		User: domain.User{ID: id, Username: in.Username, Email: in.Email, DisplayName: in.DisplayName, Role: in.Role, LocalID: in.LocalID, Local: local, Site: site,
 			MustChange: mustChange, Active: true, CreatedAt: time.Now()},
 		PasswordHash: hash, IsSeed: seed,
 	}
@@ -329,5 +337,68 @@ func (r *AccountRepository) PurgeAudit(_ context.Context, cutoff time.Time) (int
 		}
 	}
 	r.audit = keep
+	return n, nil
+}
+
+func (r *AccountRepository) SetEmail(_ context.Context, id, email string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	u, ok := r.users[id]
+	if !ok {
+		return domain.NotFound("Esa cuenta no existe")
+	}
+	for _, o := range r.users {
+		if o.ID != id && email != "" && o.Email == email {
+			return domain.Conflict("Ese correo ya lo usa otra cuenta")
+		}
+	}
+	u.Email = email
+	return nil
+}
+
+func hex32(h []byte) string { return fmt.Sprintf("%x", h) }
+
+func (r *AccountRepository) CreateResetToken(_ context.Context, h []byte, userID string, expires, now time.Time, _ string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, t := range r.resets {
+		if t.userID == userID && t.usedAt == nil {
+			t.usedAt = &now
+		}
+	}
+	r.resets[hex32(h)] = &resetToken{userID: userID, created: now, expires: expires}
+	return nil
+}
+
+func (r *AccountRepository) ResetToken(_ context.Context, h []byte) (domain.ResetTokenRecord, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t, ok := r.resets[hex32(h)]
+	if !ok {
+		return domain.ResetTokenRecord{}, domain.NotFound("Enlace no válido")
+	}
+	return domain.ResetTokenRecord{UserID: t.userID, Expires: t.expires, UsedAt: t.usedAt}, nil
+}
+
+func (r *AccountRepository) UseResetToken(_ context.Context, h []byte, now time.Time) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t, ok := r.resets[hex32(h)]
+	if !ok || t.usedAt != nil || !now.Before(t.expires) {
+		return false, nil
+	}
+	t.usedAt = &now
+	return true, nil
+}
+
+func (r *AccountRepository) CountResetTokens(_ context.Context, userID string, since time.Time) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, t := range r.resets {
+		if t.userID == userID && !t.created.Before(since) {
+			n++
+		}
+	}
 	return n, nil
 }

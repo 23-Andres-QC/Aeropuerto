@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // Environments the API runs in. In "servidor" (a machine reachable from the
@@ -34,12 +35,18 @@ type Config struct {
 	// Env is EnvLocal or EnvServidor.
 	Env string
 	// AdminUser and AdminPassword are the login of the administration account
-	// (role admin_lap) until accounts live in the database.
+	// (role superadmin) until accounts live in the database.
 	AdminUser     string
 	AdminPassword string
 	// APIKey lets the scripts (Build, Part III) call the API without a login. It
 	// can read and write but never delete.
 	APIKey string
+
+	// SMTP sends the password-recovery e-mail (for example Gmail on port 587 with an app password). Only from the
+	// environment, never in code. Without them the recovery link is made but not sent.
+	SMTPHost, SMTPPort, SMTPUser, SMTPPass, SMTPFrom string
+	// AppBaseURL is the address of the web the recovery link points to (https://host or http://localhost:8080).
+	AppBaseURL string
 }
 
 func Load() (Config, error) {
@@ -48,9 +55,15 @@ func Load() (Config, error) {
 		Addr:          env("HTTP_ADDR", ":8080"),
 		MediaDir:      env("MEDIA_DIR", "media"),
 		Env:           env("APP_ENV", EnvLocal),
-		AdminUser:     os.Getenv("ADMIN_USER"),
-		AdminPassword: os.Getenv("ADMIN_PASSWORD"),
+		AdminUser:     first(os.Getenv("SUPERADMIN_EMAIL"), os.Getenv("ADMIN_USER")),
+		AdminPassword: first(os.Getenv("SUPERADMIN_PASSWORD"), os.Getenv("ADMIN_PASSWORD")),
 		APIKey:        os.Getenv("API_KEY"),
+		SMTPHost:      os.Getenv("SMTP_HOST"),
+		SMTPPort:      env("SMTP_PORT", "587"),
+		SMTPUser:      os.Getenv("SMTP_USER"),
+		SMTPPass:      os.Getenv("SMTP_PASS"),
+		SMTPFrom:      first(os.Getenv("SMTP_FROM"), os.Getenv("SMTP_USER")),
+		AppBaseURL:    strings.TrimRight(os.Getenv("APP_BASE_URL"), "/"),
 	}
 	if c.DatabaseURL == "" {
 		return c, errors.New("falta DATABASE_URL")
@@ -102,4 +115,14 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// first is the first value that is not empty.
+func first(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

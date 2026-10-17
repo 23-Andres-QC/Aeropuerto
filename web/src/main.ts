@@ -1,3 +1,4 @@
+import "./core/csrf";
 import { createApp } from "vue";
 import App from "./App.vue";
 import { sesionTerminada } from "./core/auth";

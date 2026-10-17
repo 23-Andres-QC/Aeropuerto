@@ -1,13 +1,14 @@
 import { json, request } from "../../core/http";
 
-// Administración de cuentas, llaves de tienda, privacidad y el sitio Demo. Todo esto es solo del rol admin_lap: la API
+// Administración de cuentas, llaves de tienda, privacidad y el sitio Demo. Todo esto es solo del rol superadmin: la API
 // responde 403/404 a cualquier otro.
 
 export type Usuario = {
   user_id: string;
   usuario: string;
+  correo?: string;
   nombre: string;
-  rol: "admin_lap" | "tienda";
+  rol: "superadmin" | "seguridad" | "negocio" | "tienda";
   local_id: number | null;
   local?: string;
   sitio?: string;
@@ -44,7 +45,7 @@ export type Politica = {
 
 export type ResultadoDepurar = { sesiones: number; puntos: number; sesiones_de_login: number; lineas_de_bitacora: number; puntos_anteriores_a: string };
 
-export type DatosUsuario = { usuario: string; nombre: string; rol: string; local_id: number | null };
+export type DatosUsuario = { usuario: string; correo: string; nombre: string; rol: string; local_id: number | null };
 
 /** El sitio de demostración tiene este nombre: para borrarlo se escribe tal cual. */
 export const NOMBRE_DEMO = "Demo (simulado)";
@@ -53,6 +54,7 @@ export const cuentas = {
   usuarios: () => request<Usuario[]>("/api/v1/usuarios"),
   crearUsuario: (d: DatosUsuario) => request<ConClaveTemporal>("/api/v1/usuarios", json("POST", d)),
   restablecer: (id: string) => request<ConClaveTemporal>(`/api/v1/usuarios/${id}/clave`, { method: "POST" }),
+  cambiarCorreo: (id: string, correo: string) => request<Usuario>(`/api/v1/usuarios/${id}/correo`, json("PUT", { correo })),
   activar: (id: string, activo: boolean) => request<Usuario>(`/api/v1/usuarios/${id}/activo`, json("PUT", { activo })),
   borrarUsuario: (id: string) => request<void>(`/api/v1/usuarios/${id}`, { method: "DELETE" }),
   bitacora: (limite = 100) => request<LineaBitacora[]>(`/api/v1/auditoria?limite=${limite}`),

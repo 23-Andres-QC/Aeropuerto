@@ -11,7 +11,7 @@ import (
 )
 
 // accountHandler manages the accounts, the keys of the stores, the audit log, the retention and the demo site. Every
-// route here is for an admin_lap login only (Auth.scope).
+// route here is for an superadmin login only (Auth.scope).
 type accountHandler struct {
 	accounts *services.AccountService
 	sites    *services.SiteService
@@ -24,6 +24,7 @@ func (h accountHandler) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/v1/usuarios", h.createUser)
 	m.HandleFunc("POST /api/v1/usuarios/{id}/clave", h.resetPassword)
 	m.HandleFunc("PUT /api/v1/usuarios/{id}/activo", h.setActive)
+	m.HandleFunc("PUT /api/v1/usuarios/{id}/correo", h.setEmail)
 	m.HandleFunc("DELETE /api/v1/usuarios/{id}", h.deleteUser)
 	m.HandleFunc("GET /api/v1/auditoria", h.audit)
 	m.HandleFunc("GET /api/v1/sites/{site}/tiendas/{local}/llaves", h.keys)
@@ -71,6 +72,27 @@ func (h accountHandler) createUser(w http.ResponseWriter, r *http.Request) {
 	slog.Info("cuenta creada", "usuario", u.Username, "rol", u.Role, "por", actor.User)
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusCreated, withTemp{User: u, Temporary: temp})
+}
+
+// setEmail changes the address of an account (where its recovery link goes).
+func (h accountHandler) setEmail(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Email string `json:"correo"`
+	}
+	if decode(w, r, 1024, &in) != nil {
+		fail(w, http.StatusBadRequest, "JSON inválido")
+		return
+	}
+	actor, _ := PrincipalOf(r)
+	ctx, cancel := withTimeout(r, 10*time.Second)
+	defer cancel()
+	u, err := h.accounts.SetEmail(ctx, r.PathValue("id"), in.Email)
+	if err != nil {
+		writeError(w, r, err, dbError)
+		return
+	}
+	h.accounts.Audit(ctx, actor, clientIP(r), "correo_cambiado", u.Username, "")
+	writeJSON(w, http.StatusOK, u)
 }
 
 func (h accountHandler) resetPassword(w http.ResponseWriter, r *http.Request) {
@@ -215,7 +237,7 @@ func (h accountHandler) revokeKey(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// setMinGroup changes the minimum group size of the gender counts of a site (admin_lap only; every change is audited).
+// setMinGroup changes the minimum group size of the gender counts of a site (superadmin only; every change is audited).
 func (h accountHandler) setMinGroup(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Min *int `json:"minimo"`

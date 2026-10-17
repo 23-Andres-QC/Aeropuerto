@@ -72,12 +72,15 @@ func testConfig(media string) config.Config {
 }
 
 func jsonRequest(method, path string, body any) *http.Request {
+	var r *http.Request
 	if body == nil {
-		return httptest.NewRequest(method, path, nil)
+		r = httptest.NewRequest(method, path, nil)
+	} else {
+		b, _ := json.Marshal(body)
+		r = httptest.NewRequest(method, path, bytes.NewReader(b))
+		r.Header.Set("Content-Type", "application/json")
 	}
-	b, _ := json.Marshal(body)
-	r := httptest.NewRequest(method, path, bytes.NewReader(b))
-	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("X-Requested-With", "lap") // the anti-CSRF header the web sends on every change
 	return r
 }
 

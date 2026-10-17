@@ -14,6 +14,8 @@ export type Sesion = {
   sitio?: string;
   debe_cambiar_clave?: boolean;
   vence?: string;
+  /** Los módulos que el servidor deja abrir a este rol: el menú muestra exactamente estos. */
+  modulos?: string[];
 };
 
 /** La sesión que reconoce el servidor; null mientras no se inicie una. */
@@ -79,6 +81,42 @@ export async function cambiarClave(actual: string, nueva: string): Promise<Resul
     if (r.status === 401) sesionTerminada();
     const cuerpo = (await r.json().catch(() => ({}))) as { error?: string };
     return { ok: false, mensaje: cuerpo.error ?? `No se pudo cambiar la contraseña (error ${r.status}).` };
+  } catch {
+    return { ok: false, mensaje: "No se pudo conectar con el servidor. Revisa tu conexión y vuelve a intentar." };
+  }
+}
+
+/** «Olvidé mi contraseña»: el servidor responde lo mismo exista o no el correo. */
+export async function solicitarRecuperacion(correo: string): Promise<{ ok: boolean; mensaje: string }> {
+  try {
+    const r = await fetch("/api/v1/auth/olvide", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ correo: correo.trim() }) });
+    const cuerpo = (await r.json().catch(() => ({}))) as { mensaje?: string; error?: string };
+    if (r.status === 202) return { ok: true, mensaje: cuerpo.mensaje ?? "Si el correo pertenece a una cuenta, te enviamos un enlace." };
+    return { ok: false, mensaje: cuerpo.error ?? `No se pudo enviar el enlace (error ${r.status}).` };
+  } catch {
+    return { ok: false, mensaje: "No se pudo conectar con el servidor. Revisa tu conexión y vuelve a intentar." };
+  }
+}
+
+/** ¿El enlace del correo sigue vivo? */
+export async function validarEnlace(token: string): Promise<ResultadoLogin> {
+  try {
+    const r = await fetch("/api/v1/auth/restablecer/validar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) });
+    if (r.status === 204) return { ok: true };
+    const cuerpo = (await r.json().catch(() => ({}))) as { error?: string };
+    return { ok: false, mensaje: cuerpo.error ?? "El enlace no es válido o ya venció. Pide uno nuevo." };
+  } catch {
+    return { ok: false, mensaje: "No se pudo conectar con el servidor. Revisa tu conexión y vuelve a intentar." };
+  }
+}
+
+/** Elegir la contraseña nueva con el enlace del correo: el enlace se gasta y las sesiones de la cuenta se cierran. */
+export async function restablecerClave(token: string, nueva: string): Promise<ResultadoLogin> {
+  try {
+    const r = await fetch("/api/v1/auth/restablecer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, nueva }) });
+    if (r.status === 204) return { ok: true };
+    const cuerpo = (await r.json().catch(() => ({}))) as { error?: string };
+    return { ok: false, mensaje: cuerpo.error ?? `No se pudo restablecer la contraseña (error ${r.status}).` };
   } catch {
     return { ok: false, mensaje: "No se pudo conectar con el servidor. Revisa tu conexión y vuelve a intentar." };
   }
