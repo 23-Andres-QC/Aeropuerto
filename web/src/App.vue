@@ -140,7 +140,7 @@ function elegirSitio(s: Sitio) {
             class="modo-vivo"
             :class="{ activo: modoVivo }"
             type="button"
-            :title="modoVivo ? 'Salir del modo en vivo y volver a las sesiones guardadas' : 'Activar el modo en vivo con los teléfonos conectados'"
+            :title="modoVivo ? 'Salir del modo en vivo: guarda la captura y el modelo olvida a las personas (al volver, todos son nuevos)' : 'Activar el modo en vivo con los teléfonos conectados'"
             @click="fijarModoVivo(!modoVivo)"
           >
             {{ modoVivo ? "● EN VIVO · Salir" : "Activar en vivo" }}

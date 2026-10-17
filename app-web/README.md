@@ -10,7 +10,7 @@ teléfono ──WebSocket (JPEG)──▶ camara-web ──MJPEG con token──
 
 - Al unirse, la cámara se registra sola en la lista de **backend-vivo** (`POST /api/v1/telefonos`), el backend de las cámaras en vivo, separado del del demo. La URL que registra es la de su MJPEG, en el formato que lee `camara_telefono.py`. Al salir, o 10 s después de perder la conexión, se quita de la lista.
 - Si alguien la quita en **Teléfonos**, el teléfono se desconecta y no vuelve a registrarse solo.
-- **Solo se une con un código de unión.** El administrador lo crea en **Teléfonos → Crear código de unión** (QR y texto `XXXX-XXXX`): dura 15 minutos y une hasta 10 teléfonos. La página lo manda, con la clave de reconexión, en el **primer mensaje del WebSocket** (no en la URL). Cada teléfono recibe su propia clave para volver sin código; el administrador puede revocar el código o un teléfono (que no vuelve). Las claves y los códigos viven en memoria: reiniciar el servicio exige escanear de nuevo. La API de administración (`/api/codigos`, `/api/dispositivos/{teléfono}`) solo está en el puerto interno, detrás del nginx de la web (que pide la sesión del administrador).
+- **Solo se une con un código de unión.** El administrador lo crea en **Teléfonos → Crear código de unión** (QR y texto `XXXX-XXXX`): no vence ni tiene tope de teléfonos, así que el mismo código sirve siempre para cualquier teléfono hasta que se revoque. La página lo manda, con la clave de reconexión, en el **primer mensaje del WebSocket** (no en la URL). Cada teléfono recibe su propia clave para volver sin código; el administrador puede revocar el código o un teléfono (que no vuelve). Los códigos se guardan en el volumen `camara-datos` (`CODIGOS_ARCHIVO`, por defecto `~/datos/codigos.json`) y sobreviven a reiniciar el servicio; las claves de los teléfonos viven en memoria, pero la página manda también el código que recuerda, así que tras un reinicio se vuelve a unir sola. La API de administración (`/api/codigos`, `/api/dispositivos/{teléfono}`) solo está en el puerto interno, detrás del nginx de la web (que pide la sesión del administrador).
 - La sala (`/ws/sala`) la usa Teléfonos, a través del nginx de la web: el video procesado por el modelo, con cajas, o el directo de la cámara si el modelo aún no la procesa.
 
 ## Usar
@@ -43,8 +43,8 @@ Se cambian con `CAMARA_PORT`, `CAMARA_MJPEG_PORT` y `CAMARA_BIND_ADDR` en `.env`
 
 | Ruta | Qué |
 |---|---|
-| `GET /ws?id=…&nombre=…` | WebSocket de la cámara. Recibe JPEG binarios. Responde `{"tipo":"unido"}`, un acuse por cuadro `{"tipo":"ok","lectores":n,"espectadores":n}` o `{"tipo":"error","mensaje":…,"reintentar":bool}`. `{"tipo":"salir"}` la quita de la lista |
-| `GET /ws/sala` (8092) | Sala para Teléfonos: `{"tipo":"sala"}`, `{"tipo":"estado"}`, `{"tipo":"det"}` y cuadros binarios `[largo del id][id][m\|d][JPEG]` |
+| `GET /ws?id=…&nombre=…` | WebSocket de la cámara. Recibe cuadros binarios `[0x01][hora de captura: float64 big-endian, ms del reloj de la página][JPEG]` (o el JPEG solo, de una página anterior); el MJPEG del modelo recibe el JPEG solo. Responde `{"tipo":"unido"}`, un acuse por cuadro `{"tipo":"ok","lectores":n,"espectadores":n}` o `{"tipo":"error","mensaje":…,"reintentar":bool}`. `{"tipo":"salir"}` la quita de la lista |
+| `GET /ws/sala` (8092) | Sala para Teléfonos: `{"tipo":"sala"}`, `{"tipo":"estado"}`, `{"tipo":"det"}` y cuadros binarios `[largo del id][id][m\|d][número: uint32][hora de captura: float64, 0 si no se sabe][JPEG]`: Teléfonos muestra cada cuadro a la hora en que se tomó, no a la de su llegada (la Wi-Fi los entrega a ráfagas) |
 | `GET /video?token=…` (8092) | MJPEG `multipart/x-mixed-replace; boundary=frameesan`, el que lee `camara_telefono.py` |
 
 ## Pruebas

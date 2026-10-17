@@ -1,6 +1,6 @@
 // Modo EN VIVO de todo el sistema. Mientras está activo, un único motor (que sigue corriendo al cambiar de sección)
 // toma los teléfonos que procesa el modelo (Teléfonos) como las cámaras del sitio en el orden en que se unen
-// (el primero es cam01, el segundo cam02, el tercero cam03), proyecta cada persona detectada al plano con la
+// (el primero es cam01 y el segundo cam02; cam03 es solo de los videos grabados), proyecta cada persona detectada al plano con la
 // calibración de esa cámara y su pose actual, y va acumulando lo que En vivo e Insights muestran: posiciones,
 // rastros, mapa de calor, tiempo en cada zona, rutas y flujos.
 import { computed, ref, shallowRef, watch } from "vue";
@@ -8,7 +8,7 @@ import { json, request, socketPersistente } from "../../core/http";
 import { colorPersona } from "../../shared/format";
 import { api as apiVivo, RELEVO_VIVO, type Detecciones, type EstadoServicio, type EstadoTelefono, type Telefono, type UbicacionPlano } from "../telefonos/api";
 import { api, mapaDelSitio, type Camara, type Config, type Mapa, type Punto } from "./api";
-import { CELDA_CALOR, dentro, entradasPorIntervalo as entradasEntre, resumir, type ResumenVivo } from "./analisisVivo";
+import { CELDA_CALOR, claveGenero, dentro, entradasPorIntervalo as entradasEntre, resumir, type ResumenVivo } from "./analisisVivo";
 import type { PersonaPlano, RecorridoPlano } from "./components/PlanoSitio.vue";
 
 export { CELDA_CALOR };
@@ -18,8 +18,12 @@ import { construirSesion, uuid, type CargaSesion, type PersonaGuardable, type Tr
 
 /** Valor de la opción «En vivo» en los desplegables de sesión. */
 export const SESION_VIVO = "__vivo__";
-/** Cámaras del sitio que un teléfono puede tomar, por orden de llegada. */
-const CAMARAS_VIVO = ["cam01", "cam02", "cam03"];
+/**
+ * Cámaras del sitio que un teléfono puede tomar, por orden de llegada. Solo la 1 y la 2: son las que tienen referencias
+ * para ubicar al teléfono en el plano (Modelo/Test Modelo/Modelo/ubicacion/esan: A0-A2 y B0-B2). cam03 es la del video
+ * grabado (dataset) y en vivo no la toma ningún teléfono.
+ */
+export const CAMARAS_VIVO = ["cam01", "cam02"];
 /** Una detección más vieja que esto ya no se dibuja. */
 const VIGENCIA_MS = 2000;
 /** Cuánto se conserva el rastro en pantalla de quien dejó de verse. */
@@ -84,6 +88,9 @@ export type RanuraVivo = {
   personas: number;
   /** El plano no tiene calibración para esta cámara: no se puede proyectar. */
   sinCalibracion: boolean;
+  /** Cruces de la línea de conteo en esta captura (ver contarCruces). */
+  suben: number;
+  regresan: number;
 };
 
 const grados = (dx: number, dy: number) => ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360;
@@ -204,6 +211,64 @@ const CAMBIO_DE_CAMARA = 1.3;
 /** Cada cuánto se guarda sola la captura que se está grabando. */
 const AUTOGUARDADO_MS = 30_000;
 
+// --- Conteo por sentido ---------------------------------------------------------------------
+// Para validar el modelo: en cada cámara se cuenta quién cruza una línea horizontal a media altura del cuadro, por el pie
+// de su caja. «Suben» los que la cruzan hacia arriba de la imagen (se alejan de la cámara) y «regresan» los que la
+// cruzan hacia abajo (vienen hacia ella). Cuenta a cada track del modelo en esa cámara (su local_id), tenga o no ID
+// global y se sepa o no su género: un ID que llega después, o un género que se fija después, se le asigna igual. Cada
+// cruce cuenta una vez; quien sube y vuelve cuenta una en cada sentido. No depende de que el teléfono se ubique en el plano.
+/** Altura de la línea de conteo (fracción del alto del cuadro, desde arriba). */
+export const LINEA_CONTEO = 0.5;
+/** Hay que pasar de un lado a otro de esta banda para contar: el temblor de la caja sobre la línea no suma cruces. */
+const BANDA_CONTEO = 0.06;
+/** Un track que no se ve en este tiempo se olvida (su cruce ya contado queda). */
+const VIDA_TRACK_MS = 60_000;
+
+type Sentido = "sube" | "regresa";
+type TrackConteo = { lado: "arriba" | "abajo" | null; visto: number; genero: string | null; id: number | null };
+type Cruce = { camara: string; sentido: Sentido; track: TrackConteo };
+/** Lo contado de un sentido: total, por género y con o sin ID global. */
+export type CuentaSentido = { total: number; HOMBRE: number; MUJER: number; SIN_DETERMINAR: number; conId: number; sinId: number };
+export type ConteoCamara = { camara: string; sube: CuentaSentido; regresa: CuentaSentido };
+
+const tracksConteo = new Map<string, TrackConteo>();
+const cruces: Cruce[] = [];
+const conteo = shallowRef<ConteoCamara[]>([]);
+
+function contarCruces(tel: string, cid: string, m: Detecciones) {
+  if (!m.frame_h) return;
+  const t = Date.now();
+  for (const p of m.people ?? []) {
+    const clave = `${tel}:${p.local_id}`;
+    const track = tracksConteo.get(clave) ?? { lado: null, visto: t, genero: null, id: null };
+    track.visto = t;
+    if (p.global_id != null) track.id = p.global_id;
+    if (p.gender === "Hombre" || p.gender === "Mujer") track.genero = p.gender;
+    const pie = p.box[3] / m.frame_h;
+    const lado = pie < LINEA_CONTEO - BANDA_CONTEO ? "arriba" : pie > LINEA_CONTEO + BANDA_CONTEO ? "abajo" : track.lado;
+    if (track.lado && lado && lado !== track.lado) cruces.push({ camara: cid, sentido: lado === "arriba" ? "sube" : "regresa", track });
+    track.lado = lado;
+    tracksConteo.set(clave, track);
+  }
+}
+
+const cuentaVacia = (): CuentaSentido => ({ total: 0, HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0, conId: 0, sinId: 0 });
+
+/** Lo contado por cámara (las de CAMARAS_VIVO, en su orden), con el género y el ID que cada track tiene ahora. */
+function resumirConteo(): ConteoCamara[] {
+  const filas = new Map(CAMARAS_VIVO.map((camara) => [camara, { camara, sube: cuentaVacia(), regresa: cuentaVacia() }]));
+  for (const c of cruces) {
+    const fila = filas.get(c.camara);
+    if (!fila) continue;
+    const cuenta = fila[c.sentido];
+    cuenta.total++;
+    cuenta[claveGenero(c.track.genero)]++;
+    if (c.track.id != null) cuenta.conId++;
+    else cuenta.sinId++;
+  }
+  return [...filas.values()];
+}
+
 // --- Unión por posición ---------------------------------------------------------------
 // Red de seguridad para cuando el Re-ID del modelo le da IDs distintos a la misma persona en cámaras distintas: dos IDs que
 // dos cámaras distintas ubican muy cerca se muestran como un solo punto. Nunca se unen dos IDs que ve una misma cámara
@@ -293,6 +358,26 @@ const vivas = shallowRef<{ personas: PersonaPlano[]; recorridos: RecorridoPlano[
 const calor = shallowRef<[number, number, number][]>([]);
 /** Foto de la historia, renovada una vez por segundo: lo que lee Insights. */
 const historias = shallowRef<HistoriaViva[]>([]);
+/**
+ * Personas con ID que ningún teléfono ubicó en el plano (su cuadro no se parece a las referencias de su cámara): Insights
+ * las cuenta (personas, género, cuánto se vieron) aunque no tengan recorrido, y avisa cuántas son. Sin esto, con un
+ * teléfono que no reconoce el patio Insights quedaba en cero aunque el modelo viera e identificara a la gente.
+ */
+const sinUbicar = ref(0);
+
+/** La historia para Insights: las ubicadas en el plano y, sin recorrido, las memorizadas que no se ubicaron. */
+function fotoHistorias(): HistoriaViva[] {
+  const ubicadas = [...historia.values()].map((h) => ({ ...h, camaras: new Set(h.camaras), zonas: new Map(h.zonas), puntos: [...h.puntos], secuencia: [...h.secuencia] }));
+  const conRecorrido = new Set(historia.keys());
+  const solas: HistoriaViva[] = [];
+  for (const [id, r] of memorizadas) {
+    // Un ID que se unió a otro por posición es la misma persona: no cuenta como otra.
+    if (conRecorrido.has(id) || (idsUnidos.has(id) && conRecorrido.has(idsUnidos.get(id)!))) continue;
+    solas.push({ id, genero: r.genero, conf: r.conf, primera: r.primera, ultima: r.ultima, camaras: new Set(r.camaras), puntos: [], zonas: new Map(), secuencia: [], zonaActual: null, trazas: [] });
+  }
+  sinUbicar.value = solas.length;
+  return [...ubicadas, ...solas];
+}
 let ticks = 0;
 /** Identificador de la captura en vivo actual: guardar otra vez la actualiza; Reiniciar empieza una nueva. */
 let sesionId = uuid();
@@ -423,6 +508,7 @@ function alDetecciones(id: string, ev: MessageEvent) {
   }
   const cid = camaraDe(id);
   if (grabando.value) memorizar(m, cid);
+  if (grabando.value && cid) contarCruces(id, cid, m);
   // Solo un cuadro que el modelo ubicó en el plano de este sitio entra al plano: estimar por el tamaño de la persona lo
   // ponía mal y duplicaba a la gente. Sin ubicación el teléfono se ve igual en Teléfonos, pero no en el plano.
   const plano = m.plano && m.plano.sitio === sitio.value && m.plano.H?.length === 9 ? m.plano : null;
@@ -432,7 +518,13 @@ function alDetecciones(id: string, ev: MessageEvent) {
     else nuevos.delete(id);
     ubicados.value = nuevos;
   }
-  if (!cid || !plano || !m.frame_w || !m.frame_h) return;
+  if (!cid) return;
+  // Sin ubicación el teléfono sigue transmitiendo: su ranura cuenta como activa y En vivo avisa que no reconoce el patio
+  // (antes se ignoraba el cuadro y la cámara figuraba apagada, sin aviso).
+  if (!plano || !m.frame_w || !m.frame_h) {
+    cuadros.set(id, { llegada: Date.now(), observaciones: [] });
+    return;
+  }
   const observaciones: Observacion[] = [];
   for (const p of m.people ?? []) {
     // Solo quien tiene ID global va al plano: sin él, la misma persona que otra cámara ya identificó saldría dos veces.
@@ -603,7 +695,9 @@ function componer() {
   // El plano y Insights repintan todo lo acumulado: una vez por segundo basta.
   if (++ticks % 4 === 0) {
     calor.value = [...celdas.values()].map((c) => [c.cx, c.cy, c.s]);
-    historias.value = [...historia.values()].map((h) => ({ ...h, camaras: new Set(h.camaras), zonas: new Map(h.zonas), puntos: [...h.puntos], secuencia: [...h.secuencia] }));
+    historias.value = fotoHistorias();
+    conteo.value = resumirConteo();
+    for (const [clave, track] of [...tracksConteo]) if (t - track.visto > VIDA_TRACK_MS) tracksConteo.delete(clave);
   }
 }
 
@@ -622,6 +716,10 @@ export function reiniciarVivo() {
   unidasAhora.value = 0;
   calor.value = [];
   historias.value = [];
+  sinUbicar.value = 0;
+  tracksConteo.clear();
+  cruces.length = 0;
+  conteo.value = resumirConteo();
   inicio.value = Date.now();
   sesionId = uuid();
   trazasGuardadas = 0;
@@ -646,6 +744,7 @@ const ranuras = computed<RanuraVivo[]>(() => {
     const telefono = telefonos.value.find((t) => asignacion.get(t.id) === i);
     const cuadro = telefono ? cuadros.get(telefono.id) : undefined;
     const vigente = !!cuadro && ahora.value - cuadro.llegada < VIGENCIA_MS;
+    const contado = conteo.value.find((c) => c.camara === camara);
     return {
       camara,
       telefono,
@@ -654,10 +753,12 @@ const ranuras = computed<RanuraVivo[]>(() => {
       personas: vigente && cuadro ? cuadro.observaciones.length : 0,
       // El modelo no reconoce lo que ve (no apunta al patio): no se ubica en el plano (ver alDetecciones).
       sinCalibracion: !!telefono && vigente && !ubicados.value.has(telefono.id),
+      suben: contado?.sube.total ?? 0,
+      regresan: contado?.regresa.total ?? 0,
     };
   });
 });
-/** Teléfonos conectados que no alcanzaron cámara (el sitio tiene tres). */
+/** Teléfonos conectados que no alcanzaron cámara (en vivo hay dos, ver CAMARAS_VIVO). */
 const sobrantes = computed(() => {
   void asignacionVersion.value;
   return telefonos.value.filter((t) => !asignacion.has(t.id));
@@ -713,7 +814,8 @@ function prepararCaptura(): Pendiente | null {
   if (!personas.length) return null;
   const hora = new Date(inicio.value).toLocaleString("es-PE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const nombre = `${config.value?.site.name ?? quien} · en vivo · ${hora}`;
-  return { sitio: quien, carga: construirSesion(personas, { sesionId, nombre, inicio: inicio.value, fin: Date.now() }) };
+  const conteoDireccion = { linea: LINEA_CONTEO, camaras: resumirConteo() };
+  return { sitio: quien, carga: construirSesion(personas, { sesionId, nombre, inicio: inicio.value, fin: Date.now(), conteoDireccion }) };
 }
 
 /** Envía la captura como sesión LIVE del sitio: el backend reemplaza la anterior con el mismo identificador. */
@@ -771,13 +873,33 @@ export function reiniciarCaptura() {
   if (p) void enviarCaptura(p, false);
 }
 
-/** Al apagar el modo en vivo: lo que se estaba grabando se guarda por última vez y el motor se detiene. */
+/**
+ * Al apagar el modo en vivo: lo que se estaba grabando se guarda por última vez, el motor se detiene y, una vez
+ * guardado, el modelo olvida a todas las personas (como «Olvidar a todos» en Teléfonos): al volver a prenderlo los IDs
+ * empiezan en 1 y cada persona se identifica como nueva, sin arrastrar las de la captura anterior.
+ */
 function cerrarCaptura() {
   if (!corriendo) return;
   const p = grabando.value ? prepararCaptura() : null;
   grabando.value = false;
   detener();
-  if (p) void enviarCaptura(p, false);
+  const apagado = !modoVivo.value;
+  void (async () => {
+    if (p) await enviarCaptura(p, false);
+    if (apagado) await olvidarAlApagar();
+  })();
+}
+
+/** Vacía la memoria de identidades del modelo (backend-vivo sube la época y el modelo, al notarlo, olvida lo suyo). */
+async function olvidarAlApagar() {
+  try {
+    const { borradas } = await apiVivo.olvidarTodas();
+    const aviso = `El modelo olvidó a ${borradas} persona${borradas === 1 ? "" : "s"}: al volver a prender En vivo, todos son nuevos.`;
+    mensajeGuardado.value = mensajeGuardado.value ? `${mensajeGuardado.value} ${aviso}` : aviso;
+  } catch (e) {
+    const aviso = `El modelo no pudo olvidar a las personas (${(e as Error).message}): usa «Olvidar a todos» en Teléfonos.`;
+    mensajeGuardado.value = mensajeGuardado.value ? `${mensajeGuardado.value} ${aviso}` : aviso;
+  }
 }
 
 /**
@@ -880,4 +1002,4 @@ socketPersistente(`${RELEVO_VIVO}/telefonos/detections/watch`, false, (ev) => {
   }
 });
 
-export const motorVivo = { mapa, config, zonas, ranuras, sobrantes, vivas, calor, historias, resumen, servicioActivo, error, inicio, ahora };
+export const motorVivo = { mapa, config, zonas, ranuras, sobrantes, vivas, calor, historias, sinUbicar, conteo, resumen, servicioActivo, error, inicio, ahora };

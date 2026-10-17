@@ -13,8 +13,11 @@ const CALIDAD = 0.6;
 // Cuadros enviados sin acuse todavía: los que caben en una ida y vuelta al ritmo
 // pedido, más uno. Con el servidor lejos (ida y vuelta de ~400 ms desde un
 // celular), esperar cada acuse deja la cámara en ~3 fps; así llega a 15 fps.
-// Entre 2 y 6: la cola nunca pasa de eso aunque la red se ponga lenta.
-const EN_VUELO_MIN = 2;
+// Entre 4 y 6: la cola nunca pasa de eso aunque la red se ponga lenta. Con 2, en
+// la misma Wi-Fi bastaba que retuviera los cuadros ~150 ms (lo hace a menudo) para
+// que la cámara dejara de tomarlos y el video tuviera un corte; con 4 sigue
+// tomándolos y la web los muestra a su ritmo con la hora en que se tomaron.
+const EN_VUELO_MIN = 4;
 const EN_VUELO_MAX = 6;
 // Cajas y estado del modelo: pasado este tiempo sin novedades ya no se muestran.
 const DET_VIGENTE_MS = 2500;
@@ -22,16 +25,26 @@ const DET_VIGENTE_MS = 2500;
 // velocidad que traía entre sus dos últimos cuadros procesados, hasta este tiempo después del último (ver cajasAl).
 const PREDICCION_MAX_MS = 1500;
 // Mientras el modelo procesa, la pantalla muestra los cuadros enviados atrasados lo que tardan en volver sus cajas
-// (percentil RETRASO_PERCENTIL, más un margen, hasta RETRASO_MAX_MS): cada uno va con las suyas o interpoladas entre
-// los dos procesados que lo rodean, así las cajas van sincronizadas y desaparecen cuando la persona se va. Al cuadro
-// cuyas cajas tardan más que eso (1 de cada 4) se le llevan las del anterior con su velocidad (hasta
-// HORIZONTE_SINCRONIZADO_MS, unas decenas de ms): con el percentil 90 y 60 ms de margen la pantalla iba ~0,1 s más
-// atrasada para cubrir los pocos cuadros más lentos. Sin modelo, en vivo.
+// (percentil RETRASO_PERCENTIL de las últimas MUESTRAS_RETRASO, más un margen, hasta RETRASO_MAX_MS): cada uno va con
+// las suyas o interpoladas entre los dos procesados que lo rodean, así las cajas van sincronizadas y desaparecen cuando
+// la persona se va. Al cuadro cuyas cajas tardan más que eso (1 de cada 10) se le llevan las del anterior con su
+// velocidad (hasta HORIZONTE_SINCRONIZADO_MS). Las primeras DESCARTE_INICIAL no cuentan (el modelo recién toma la
+// cámara y tardan más). Sin modelo, en vivo. Lo mismo que Teléfonos de la web (SalaTelefonos.vue).
 const RETRASO_MAX_MS = 2000;
-const RETRASO_PERCENTIL = 0.75;
-const MARGEN_RETRASO_MS = 30;
+const RETRASO_PERCENTIL = 0.9;
+const MARGEN_RETRASO_MS = 20;
+const MUESTRAS_RETRASO = 90;
+const DESCARTE_INICIAL = 3;
 const HORIZONTE_SINCRONIZADO_MS = 150;
 const BUFER_MAX = 45; // cuadros guardados para mostrarlos atrasados (2 s a 15 fps, con holgura)
+// El atraso de la pantalla cambia de a poco (como en Teléfonos de la web): al subir, el video va al 80 % de su velocidad;
+// al bajar, al 110 %, y solo si el necesario se aleja más que la banda (faltan BANDA_SUBE_MS o sobran BANDA_BAJA_MS):
+// siguiéndolo en cada cuadro alternaba entre lento y rápido. Si sobra más que SALTO_ATRASO_MS, salta de una vez.
+const ATRASO_SUBE_POR_S = 0.2;
+const ATRASO_BAJA_POR_S = 0.1;
+const BANDA_SUBE_MS = 15;
+const BANDA_BAJA_MS = 40;
+const SALTO_ATRASO_MS = 400;
 
 const $ = (id) => document.getElementById(id);
 
@@ -66,8 +79,11 @@ const app = {
   instantaneas: [],
   cajasMostradas: null,
   retrasos: [], // ms entre tomar un cuadro y recibir sus cajas (los últimos)
+  dets: 0, // cajas numeradas recibidas (las primeras DESCARTE_INICIAL no cuentan para el atraso)
   bufer: [], // cuadros enviados { t: hora de captura, imagen }, para mostrarlos atrasados
   mostrado: null, // el cuadro del búfer que está en pantalla
+  atraso: 0, // ms con que se muestra la pantalla ahora (va de a poco hacia retrasoActual)
+  horaAtraso: 0,
 };
 
 const video = $('video');
@@ -202,8 +218,9 @@ function conectar() {
   const ws = new WebSocket(url);
   app.ws = ws;
   app.unida = false;
-  // El código y la clave van en el primer mensaje, no en la URL (quedaría en los registros del servidor).
-  ws.onopen = () => ws.send(JSON.stringify({ tipo: 'unirse', codigo: app.clave ? '' : $('codigo').value.trim(), clave: app.clave || '' }));
+  // El código y la clave van en el primer mensaje, no en la URL (quedaría en los registros del servidor). El código va
+  // siempre: no vence, así que si el servicio se reinició y ya no conoce la clave, la cámara se vuelve a unir sola.
+  ws.onopen = () => ws.send(JSON.stringify({ tipo: 'unirse', codigo: $('codigo').value.trim(), clave: app.clave || '' }));
   app.enVuelo = [];
   app.capturas = [];
   app.codificando = false;
@@ -217,6 +234,7 @@ function conectar() {
     }
     if (m.tipo === 'unido') {
       if (m.clave) app.clave = m.clave;
+      guardar('camara-web.codigo', $('codigo').value.trim()); // no vence: la próxima vez ya está puesto
       Object.assign(app, { unida: true, motivo: null, nombre: m.nombre, lectores: m.lectores, espectadores: m.espectadores || 0 });
       $('nombre-camara').textContent = m.nombre;
     } else if (m.tipo === 'ok') {
@@ -308,7 +326,7 @@ function bucleEnvio() {
   comprimir().then((blob) => {
     app.codificando = false;
     if (!blob || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(blob);
+    ws.send(new Blob([cabeceraCaptura(captura), blob]));
     const enviado = performance.now();
     if (ws === app.ws) {
       app.enVuelo.push(enviado);
@@ -316,6 +334,15 @@ function bucleEnvio() {
     }
     app.envios.push(enviado);
   });
+}
+
+// Cada cuadro viaja como [0x01][hora de captura: float64 big-endian, ms de performance.now()][JPEG]: la web lo muestra
+// a esa hora y no a la de su llegada (la Wi-Fi entrega los cuadros a ráfagas y el video se veía a saltos).
+function cabeceraCaptura(captura) {
+  const cabecera = new DataView(new ArrayBuffer(9));
+  cabecera.setUint8(0, 0x01);
+  cabecera.setFloat64(1, captura);
+  return cabecera.buffer;
 }
 
 // El JPEG del cuadro que está en el lienzo. canvas.toBlob comprime en los ratos libres del hilo principal, que con la
@@ -387,6 +414,8 @@ function numerar(seq, enviado) {
   if (ultimo !== undefined && seq < ultimo) {
     app.horas.clear(); // otra numeración (el servicio se reinició)
     app.instantaneas = [];
+    app.retrasos = [];
+    app.dets = 0;
   }
   app.horas.set(seq, enviado);
   while (app.horas.size > 200) app.horas.delete(app.horas.keys().next().value);
@@ -404,8 +433,8 @@ function alDetecciones(det) {
     return;
   }
   app.det = null;
-  app.retrasos.push(ahora - hora);
-  if (app.retrasos.length > 30) app.retrasos.shift();
+  if (++app.dets > DESCARTE_INICIAL) app.retrasos.push(ahora - hora);
+  if (app.retrasos.length > MUESTRAS_RETRASO) app.retrasos.shift();
   app.instantaneas.push({ ...det, t: hora });
   app.instantaneas.sort((a, b) => a.t - b.t);
   while (app.instantaneas.length > 2 && app.instantaneas[0].t < ahora - 5000) app.instantaneas.shift();
@@ -492,11 +521,21 @@ function retrasoActual() {
 
 // Por cuadro de pantalla, con cajas numeradas: con el modelo procesando, el cuadro enviado al que ya le toca (con su
 // atraso) y sus cajas; si no, las cajas llevadas hasta este instante sobre el video en vivo.
+// El atraso de la pantalla hacia el necesario, de a poco; al empezar a procesar (o al dejar de) cambia de una vez.
+function atrasoSuave(objetivo, ahora) {
+  const dt = Math.min(0.25, Math.max(0, (ahora - app.horaAtraso) / 1000));
+  app.horaAtraso = ahora;
+  if (!objetivo || !app.atraso || objetivo < app.atraso - SALTO_ATRASO_MS) app.atraso = objetivo;
+  else if (objetivo > app.atraso + BANDA_SUBE_MS) app.atraso = Math.min(objetivo, app.atraso + 1000 * ATRASO_SUBE_POR_S * dt);
+  else if (objetivo < app.atraso - BANDA_BAJA_MS) app.atraso = Math.max(objetivo, app.atraso - 1000 * ATRASO_BAJA_POR_S * dt);
+  return app.atraso;
+}
+
 function animar() {
   requestAnimationFrame(animar);
   if (!app.activa) return;
   const ahora = performance.now();
-  const retraso = app.instantaneas.length ? retrasoActual() : 0;
+  const retraso = atrasoSuave(app.instantaneas.length ? retrasoActual() : 0, ahora);
   if (!retraso) {
     if (!diferido.hidden) diferido.hidden = true;
     if (!app.instantaneas.length) return;
@@ -559,31 +598,48 @@ function dibujarCajas() {
   }
   g.clearRect(0, 0, capa.width, capa.height);
   const escala = det.frame_w / 640;
-  g.lineWidth = 2 * escala;
-  g.font = `600 ${Math.round(13 * escala)}px system-ui, sans-serif`;
-  for (const persona of det.people || []) {
-    const [x1, y1, x2, y2] = persona.box;
-    // Colores más claros que los de la web: sobre el video oscuro un tono medio no se ve.
-    const color = persona.global_id != null ? colorClaro(persona.global_id) : '#cfe2f7';
-    g.lineWidth = 3 * escala;
-    g.strokeStyle = 'rgba(0, 0, 0, 0.55)';
-    g.strokeRect(x1 - escala, y1 - escala, x2 - x1 + 2 * escala, y2 - y1 + 2 * escala);
-    g.lineWidth = 2 * escala;
-    g.strokeStyle = color;
-    g.strokeRect(x1, y1, x2 - x1, y2 - y1);
-    const genero = persona.gender
-      ? `${persona.gender}${persona.gender_conf ? ` ${Math.round(persona.gender_conf * 100)}%` : ''}`
-      : '';
-    // Solo el ID global (el de la memoria); mientras se confirma la caja va sin número.
-    const texto = [persona.global_id != null ? `G${persona.global_id}` : '', genero].filter(Boolean).join(' · ');
-    if (!texto) continue;
-    const alto = 18 * escala;
-    const y = Math.max(alto, y1);
-    g.fillStyle = color;
-    g.fillRect(x1, y - alto, g.measureText(texto).width + 10 * escala, alto);
-    g.fillStyle = '#0a1428';
-    g.fillText(texto, x1 + 5 * escala, y - 5 * escala);
+  g.font = `600 ${Math.round(12 * escala)}px system-ui, sans-serif`;
+  for (const persona of det.people || []) dibujarMarcador(g, persona, escala, det.frame_w);
+}
+
+// Un palito que sale de la cabeza de la persona (el borde de arriba de su caja), con un punto de su color y, al lado,
+// su ID global y su género; quien aún no tiene ID va con el palito claro, sin etiqueta. Sin caja: no tapa a la gente.
+// (Lo mismo que la web, web/src/shared/personas.ts.)
+function dibujarMarcador(g, persona, s, ancho) {
+  const [x1, y1, x2] = persona.box;
+  // Colores más claros que los de la web: sobre el video oscuro un tono medio no se ve.
+  const color = persona.global_id != null ? colorClaro(persona.global_id) : '#cfe2f7';
+  const cx = (x1 + x2) / 2;
+  const punta = Math.max(8 * s, y1 - 16 * s);
+  g.lineCap = 'round';
+  for (const [grosor, tinta] of [[4.5 * s, 'rgba(0, 0, 0, 0.6)'], [2.5 * s, color]]) {
+    g.beginPath();
+    g.moveTo(cx, y1);
+    g.lineTo(cx, punta);
+    g.lineWidth = grosor;
+    g.strokeStyle = tinta;
+    g.stroke();
   }
+  g.beginPath();
+  g.arc(cx, punta, 4.5 * s, 0, Math.PI * 2);
+  g.fillStyle = color;
+  g.fill();
+  g.lineWidth = 1.5 * s;
+  g.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+  g.stroke();
+  if (persona.global_id == null) return;
+  const genero = persona.gender
+    ? `${persona.gender}${persona.gender_conf ? ` ${Math.round(persona.gender_conf * 100)}%` : ''}`
+    : '';
+  const texto = [`G${persona.global_id}`, genero].filter(Boolean).join(' · ');
+  const largo = g.measureText(texto).width + 10 * s;
+  const alto = 17 * s;
+  const x = cx + 8 * s + largo <= ancho ? cx + 8 * s : cx - 8 * s - largo;
+  const y = Math.max(0, punta - alto / 2);
+  g.fillStyle = color;
+  g.fillRect(x, y, largo, alto);
+  g.fillStyle = '#0a1428';
+  g.fillText(texto, x + 5 * s, y + alto - 5 * s);
 }
 
 // Como colorPersona, pero claro (más luz y saturación) para dibujar sobre el video.
@@ -732,7 +788,6 @@ function terminar(mensaje) {
   $('inicio').hidden = false;
   $('unirse').disabled = false;
   if (mensaje) mostrarError(mensaje);
-  else $('codigo').value = '';
 }
 
 function iniciar() {
@@ -743,6 +798,8 @@ function iniciar() {
   if (fragmento.get('c')) {
     $('codigo').value = fragmento.get('c').slice(0, 12);
     history.replaceState(null, '', location.pathname + location.search);
+  } else {
+    $('codigo').value = leer('camara-web.codigo') || '';
   }
   $('unirse').addEventListener('click', unirse);
   $('salir').addEventListener('click', salir);

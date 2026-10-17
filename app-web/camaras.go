@@ -25,9 +25,10 @@ type Dispositivo struct {
 	codigo   string // id del código con que se unió
 	telefono string // su id en Teléfonos de backend-vivo (tel-…)
 
-	mu      sync.Mutex // frame, seq, cambio y llegada
+	mu      sync.Mutex // frame, seq, captura, cambio y llegada
 	frame   []byte
 	seq     uint64
+	captura float64       // ms en que la página tomó el cuadro (su reloj); 0 si no lo mandó
 	cambio  chan struct{} // se cierra con cada frame nuevo
 	llegada time.Time
 
@@ -40,11 +41,12 @@ type Dispositivo struct {
 	retiro   *time.Timer // vence la espera
 }
 
-// Publicar deja un JPEG nuevo para todos los lectores del MJPEG y devuelve su número de cuadro.
-func (d *Dispositivo) Publicar(jpeg []byte) uint64 {
+// Publicar deja un JPEG nuevo para todos los lectores del MJPEG y devuelve su número de cuadro. `captura` es la hora
+// (ms, reloj de la página) en que se tomó, o 0 si la página no la mandó.
+func (d *Dispositivo) Publicar(jpeg []byte, captura float64) uint64 {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.frame, d.llegada = jpeg, time.Now()
+	d.frame, d.captura, d.llegada = jpeg, captura, time.Now()
 	d.seq++
 	close(d.cambio)
 	d.cambio = make(chan struct{})
@@ -56,6 +58,13 @@ func (d *Dispositivo) Ultimo() ([]byte, uint64, <-chan struct{}) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.frame, d.seq, d.cambio
+}
+
+// UltimoConCaptura es como Ultimo, con la hora en que la página tomó el cuadro (0 si no la mandó).
+func (d *Dispositivo) UltimoConCaptura() ([]byte, uint64, float64) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.frame, d.seq, d.captura
 }
 
 // Transmitiendo indica si llegó un frame en los últimos 3 s.
@@ -139,11 +148,14 @@ var (
 
 func NuevasCamaras(aeropuerto Aeropuerto, urlMJPEG string, gracia time.Duration) *Camaras {
 	return &Camaras{aeropuerto: aeropuerto, urlMJPEG: strings.TrimRight(urlMJPEG, "/"), gracia: gracia,
-		porID: map[string]*Dispositivo{}, codigos: NuevosCodigos(), revocados: map[string]bool{}}
+		porID: map[string]*Dispositivo{}, codigos: NuevosCodigos(""), revocados: map[string]bool{}}
 }
 
 // Codigos son los códigos de unión que el administrador crea desde Teléfonos.
 func (cs *Camaras) Codigos() *Codigos { return cs.codigos }
+
+// GuardarCodigosEn carga los códigos de unión de archivo y guarda ahí cada cambio (antes de atender a nadie).
+func (cs *Camaras) GuardarCodigosEn(archivo string) { cs.codigos = NuevosCodigos(archivo) }
 
 // Conectar asocia la pestaña c a la cámara id. Si es nueva la registra en
 // Teléfonos; si vuelve dentro de la espera conserva su registro (y su token).

@@ -4,7 +4,7 @@ import { colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, type Config, type Replay, type Sesion } from "../api";
 import VistaTelefono from "../../telefonos/components/VistaTelefono.vue";
 import PlanoSitio, { type PersonaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
-import { CELDA_CALOR, SESION_VIVO, ajusteMapa, capturaDePrueba, capturasVersion, fijarUnion, unidasAhora, unirPorPosicion, grabando, iniciarGrabacion, terminarGrabacion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura } from "../enVivo";
+import { CAMARAS_VIVO, CELDA_CALOR, LINEA_CONTEO, SESION_VIVO, ajusteMapa, capturaDePrueba, capturasVersion, fijarUnion, unidasAhora, unirPorPosicion, grabando, iniciarGrabacion, terminarGrabacion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura } from "../enVivo";
 import { useRoute } from "vue-router";
 import { useSitios } from "../useSitios";
 
@@ -26,8 +26,13 @@ let ultimaSincronia = 0;
 
 const sesion = computed(() => sesiones.value.find((s) => s.session_id === sesionId.value));
 const mapa = computed(() => mapaDelSitio(config.value));
+// En vivo el plano muestra solo las cámaras que toman los teléfonos (cam01 y cam02); una sesión grabada, todas las suyas.
+const camarasPlano = computed(() =>
+  modoVivo.value ? config.value?.cameras.filter((c) => CAMARAS_VIVO.includes(c.camera_id)) : config.value?.cameras,
+);
 // «En vivo» es un modo de todo el sistema (lo recuerda el navegador y sigue al cambiar de sección): los teléfonos
-// conectados son las cámaras del sitio (el primero cam01, luego cam02 y cam03). Elegir una sesión guardada lo apaga.
+// conectados son las cámaras del sitio (el primero cam01, luego cam02; cam03 es solo del video grabado). Elegir una
+// sesión guardada lo apaga.
 const valorSesion = computed({
   get: () => (modoVivo.value ? SESION_VIVO : sesionId.value),
   set: (v: string) => {
@@ -276,7 +281,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
       <h1>Personas sobre el plano y cámaras sincronizadas</h1>
       <p v-if="modoVivo">
         Tracking en tiempo real: cada teléfono que se une en <RouterLink to="/telefonos">Teléfonos</RouterLink> toma una cámara del plano, en orden de llegada
-        (cam01, cam02, cam03), y sus personas se ubican con la posición de esa cámara.
+        (cam01, cam02), y sus personas se ubican con la posición de esa cámara.
       </p>
       <p v-else>Reproduce una sesión guardada en la base: posiciones en metros, IDs globales y los videos procesados, en el mismo reloj.</p>
     </div>
@@ -340,7 +345,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <span v-if="!grabando" class="muted">Pulsa «Iniciar captura» para registrar esta escena; «Terminar y guardar» la deja en Registros.</span>
         <span v-if="mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
       </div>
-      <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :personas="personas" :recorridos="recorridos" :calor="calorVivo" :celda-calor="CELDA_CALOR" :camaras="config?.cameras" :inicio="modoVivo ? 'sitio' : 'campus'" zoom />
+      <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :personas="personas" :recorridos="recorridos" :calor="calorVivo" :celda-calor="CELDA_CALOR" :camaras="camarasPlano" :inicio="modoVivo ? 'sitio' : 'campus'" zoom />
       <div v-if="replay && !modoVivo" class="controles">
         <button class="primary-button" type="button" @click="reproduciendo ? pausar() : reproducir()">{{ reproduciendo ? "❚❚ Pausa" : "▶ Reproducir" }}</button>
         <button type="button" @click="reiniciar">↺</button>
@@ -356,13 +361,16 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
     <div v-if="modoVivo" class="lado-vivo">
       <div class="camaras-lado" aria-label="Teléfonos y cámaras del plano">
         <div v-for="r in vivo.ranuras.value" :key="r.camara" class="ranura-col">
-          <VistaTelefono v-if="r.telefono" :id="r.telefono.id" :nombre="`${r.camara} · ${r.telefono.nombre}${r.telefono.simulado ? ' (prueba)' : ''}`" :estado="r.estado" compacta sin-quitar />
+          <VistaTelefono v-if="r.telefono" :id="r.telefono.id" :nombre="`${r.camara} · ${r.telefono.nombre}${r.telefono.simulado ? ' (prueba)' : ''}`" :estado="r.estado" :linea="LINEA_CONTEO" compacta sin-quitar />
+          <p v-if="r.telefono" class="conteo-ranura" title="Cruces de la línea punteada en esta captura: hacia arriba de la imagen (se alejan) y hacia abajo (vuelven). Cuenta también a quien no tiene ID ni género.">
+            <b>↑ {{ r.suben }}</b> suben · <b>↓ {{ r.regresan }}</b> regresan
+          </p>
           <article v-else class="panel ranura libre">
             <div class="panel-heading">
               <h2>{{ r.camara }}</h2>
               <span class="pill warn">libre</span>
             </div>
-            <p class="ranura-datos muted">Esperando el {{ r.camara === "cam01" ? "primer" : r.camara === "cam02" ? "segundo" : "tercer" }} teléfono.</p>
+            <p class="ranura-datos muted">Esperando el {{ r.camara === "cam01" ? "primer" : "segundo" }} teléfono.</p>
           </article>
           <p v-if="r.telefono && r.sinCalibracion" class="aviso-ranura">{{ r.camara }} no reconoce el patio en lo que ve: apunta el teléfono al piso del patio para ubicar a las personas.</p>
         </div>
@@ -380,7 +388,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         </aside>
       </div>
       <p v-if="vivo.sobrantes.value.length" class="muted ranura-nota">
-        {{ vivo.sobrantes.value.length }} teléfono(s) más conectado(s) sin cámara libre: el plano admite tres.
+        {{ vivo.sobrantes.value.length }} teléfono(s) más conectado(s) sin cámara libre: en vivo se usan dos (cam01 y cam02).
       </p>
       <p v-if="!vivo.servicioActivo.value" class="muted ranura-nota">
         El modelo no está publicando. Con Docker: <code>docker compose --profile modelo up -d</code>.
@@ -439,7 +447,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   gap: 14px;
   align-items: start;
 }
-/* En vivo: el plano comparte la fila con las cámaras (2×2: los tres teléfonos y quién está ahora). */
+/* En vivo: el plano comparte la fila con las cámaras (los dos teléfonos y, debajo, quién está ahora). */
 .envivo-esan.vivo {
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
 }
@@ -462,6 +470,18 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   align-items: start;
+}
+.conteo-ranura {
+  margin: 4px 2px 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.conteo-ranura b {
+  color: var(--ink);
+}
+.camaras-lado .presentes {
+  grid-column: 1 / -1;
 }
 .camaras-lado .presentes ul {
   max-height: 300px;

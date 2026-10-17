@@ -78,7 +78,8 @@ TRANSICION_MAX_S = 60.0
 MARGEN_BORDE_TELEFONO = -1
 # La web de Teléfonos muestra solo el ID global: se confirma con 3 vistas en ~1 s (las cámaras fijas del Build piden
 # 5 vistas y 2 s), a cambio de un poco más de riesgo de confundir a dos personas parecidas. Vale para el asociador y
-# para la memoria, así quien vuelve se compara con la memoria con las mismas vistas con que se confirma.
+# para la memoria, así quien vuelve se compara con la memoria con las mismas vistas con que se confirma. (Cuánto espera
+# una persona nueva su ID lo decide la memoria: DURACION_NUEVA_S en memoria_identidades.py.)
 ASOCIACION_TELEFONO = {"min_samples": 3, "min_query_samples": 3, "min_identity_duration_s": 1.0, "sample_interval_s": 0.3,
                        # Solo vistas nítidas para el Re-ID (40 px y 0,5, como el Build): con vistas desde 28 px, en un
                        # centro comercial lleno visto desde un balcón el Re-ID confundía a la gente lejana. Umbrales los del
@@ -119,13 +120,44 @@ ESTATICO_TELEFONO_S = 3.0
 ESTATICO_DESPLAZAMIENTO_TELEFONO = 0.5
 # Con esta certeza o más el género de una persona queda fijo y ya no cambia.
 GENERO_FIJO = 0.8
-GENERO_TELEFONO = {"min_height": 56, "min_detection_confidence": 0.35}
-# Género: a lo más INTENTOS_GENERO cuadros por track pasan por CLIP. Con el último se decide: si la certeza de sus votos
-# llega a GENERO_FIJO, el género queda fijo para ese track y su persona (su ID en la memoria) y no se vuelve a calcular;
-# si no llega, ese track queda sin género. Solo se muestra un género fijo, nunca uno con menos certeza. Así CLIP casi no
-# trabaja y el carril lento se dedica a los IDs.
-INTENTOS_GENERO = 3
+# Una muestra para CLIP cada 0,3 s por track (el Build, cada 0,6 s).
+GENERO_TELEFONO = {"min_height": 56, "min_detection_confidence": 0.35, "sample_interval_s": 0.3}
+# Género: cada cuadro de un track que pasa por CLIP suma un voto; en cuanto hay 2 votos con certeza de GENERO_FIJO o
+# más, el género queda fijo para ese track y su persona (su ID en la memoria) y no se vuelve a calcular. Si no llega, se
+# sigue probando hasta INTENTOS_GENERO cuadros; recién ahí el track queda sin género. Solo se muestra un género fijo,
+# nunca uno con menos certeza. Antes se decidía con 3 cuadros y, sin certeza, el track quedaba sin género para siempre:
+# medido con dos teléfonos, 1 de cada 4 personas no tenía género y otras lo recibían a los 10-28 s.
+INTENTOS_GENERO = 10
 PUERTO_CAMARA = int(os.environ.get("CAMARA_PORT", "8444"))  # el de la página de cámara (compose: camara-web)  # como en camaras.json: alguien puede pasar de un teléfono a otro en hasta 60 s
+# El Re-ID y CLIP (género) ven solo la mitad de arriba de cada persona: cabeza, pelo y torso hasta la cintura. Las
+# piernas se parecen mucho entre la gente (pantalones oscuros) y suelen estar tapadas o cortadas por el borde del cuadro;
+# además el Re-ID estira cada recorte a un cuadrado de 448 px: el cuerpo entero (angosto y alto) llegaba muy deformado y
+# la mitad de arriba llega casi sin deformar y con el doble de detalle. La caja, el seguimiento y la ubicación en el plano
+# (por los pies) siguen usando el cuerpo entero. Medido con los videos del dataset como dos teléfonos (gente de 40-115 px,
+# con las piernas a la vista), la mitad de arriba quedó a la par del cuerpo entero (cambios de ID y personas con género
+# dentro del ruido de una corrida a otra); su ventaja es con el teléfono cerca, donde las piernas salen cortadas.
+# MODELO_PARTE_SUPERIOR=1 vuelve al cuerpo entero (y 0.6, por ejemplo, llega hasta debajo de la cadera).
+MITAD_SUPERIOR = min(1.0, max(0.3, float(os.environ.get("MODELO_PARTE_SUPERIOR") or 0.5)))
+
+
+def mitad_superior(crop):
+    """La parte de arriba del recorte de una persona (MITAD_SUPERIOR de su alto)."""
+    return crop[:max(1, round(crop.shape[0] * MITAD_SUPERIOR))]
+
+
+class ReIDMitadSuperior:
+    """El Re-ID de los teléfonos sobre la mitad de arriba de cada recorte (ver MITAD_SUPERIOR)."""
+
+    def __init__(self, reid):
+        self.reid = reid
+
+    def __call__(self, crops):
+        return self.reid([mitad_superior(c) for c in crops])
+
+    def __getattr__(self, nombre):
+        return getattr(self.reid, nombre)
+
+
 # Un cuadro que falla (un error raro del modelo) se salta; tantos seguidos indican algo roto (ej. la GPU) y el proceso
 # termina con error: scripts/modelo_local.py lo vuelve a levantar.
 FALLOS_SEGUIDOS_MAX = 10
@@ -491,21 +523,28 @@ class SesionEnVivo:
         self.intentos_genero = {}  # (teléfono, track local) -> cuadros que ya pasaron por CLIP (hasta INTENTOS_GENERO)
         seguidor = getattr(motor, "config", {}).get("tracker", {})
         self._ventanas = {k: seguidor[k] for k in VENTANAS_SEGUIDOR if k in seguidor}  # en cuadros a RITMO_AJUSTE_SEGUIDOR
-        # Dos carriles: el rápido (detectar y seguir, que da las cajas) corre en el lazo principal y publica enseguida;
-        # el lento (género con CLIP, Re-ID y memoria de identidades) corre en un hilo aparte con el último instante
-        # de cada teléfono. Así las cajas no esperan a lo más pesado y el ID/género de cada persona se actualiza solo
-        # unos instantes después. `bloqueo` evita tocar el estado del modelo mientras cambia la lista de teléfonos.
-        self.bloqueo, self.generacion = threading.RLock(), 0
-        self._trabajos, self._hay_trabajo, self._cerrado = {}, threading.Condition(), False  # teléfono -> último trabajo
+        # Tres carriles: el rápido (detectar y seguir, que da las cajas) corre en el lazo principal y publica enseguida;
+        # el de los IDs (Re-ID y memoria de identidades) y el del género (CLIP) corren cada uno en su hilo, en paralelo,
+        # con el último instante de cada teléfono. Así las cajas no esperan a lo más pesado, y el ID no espera a CLIP ni
+        # el género al Re-ID (antes iban uno tras otro en el mismo hilo). `bloqueo` (IDs) y `bloqueo_genero` evitan tocar
+        # el estado del modelo mientras cambia la lista de teléfonos.
+        self.bloqueo, self.bloqueo_genero, self.generacion = threading.RLock(), threading.RLock(), 0
+        self._cerrado = False
+        self._trabajos, self._hay_trabajo = {}, threading.Condition()  # teléfono -> último trabajo (IDs)
+        self._trabajos_genero, self._hay_genero = {}, threading.Condition()  # teléfono -> último trabajo (género)
         self._hilo = threading.Thread(target=self._lazo_lento, daemon=True)
+        self._hilo_genero = threading.Thread(target=self._lazo_genero, daemon=True)
         self._hilo.start()
+        self._hilo_genero.start()
 
     def cambiar_telefonos(self, telefonos, clave):
         """Ajusta la sesión a otra lista: un teléfono que sigue (mismo id y URL) conserva su tracking y votos de género."""
-        with self.bloqueo:
+        with self.bloqueo, self.bloqueo_genero:
             self.generacion += 1
             with self._hay_trabajo:
                 self._trabajos.clear()
+            with self._hay_genero:
+                self._trabajos_genero.clear()
             self._cambiar_telefonos(telefonos, clave)
 
     def _cambiar_telefonos(self, telefonos, clave):
@@ -563,13 +602,19 @@ class SesionEnVivo:
             quieta = self.quietud.setdefault(cid, Quietud(ESTATICO_TELEFONO_S, ESTATICO_DESPLAZAMIENTO_TELEFONO))
             quieta.actualizar(self.t, fs, frames[cid])
             filas[cid] = [f for f in fs if not quieta.estatico(f["local_id"], self.t)]
-        # El carril lento recibe copias: modifica sus filas mientras el lazo principal publica las suyas.
-        trabajo = (self.generacion, self.t, frames, fuente, {cid: [dict(f) for f in fs] for cid, fs in filas.items()},
-                   dict(self.motor.detecciones_actuales))
+        # Cada carril lento recibe sus copias: modifica sus filas mientras el lazo principal publica las suyas.
+        copia = lambda: {cid: [dict(f) for f in fs] for cid, fs in filas.items()}  # noqa: E731
+        trabajo = (self.generacion, self.t, frames, fuente, copia(), dict(self.motor.detecciones_actuales))
         with self._hay_trabajo:
             for cid in frames:
                 self._trabajos[cid] = trabajo
             self._hay_trabajo.notify()
+        if self.motor.genero.enabled:
+            trabajo_genero = (self.generacion, self.t, frames, fuente, copia())
+            with self._hay_genero:
+                for cid in frames:
+                    self._trabajos_genero[cid] = trabajo_genero
+                self._hay_genero.notify()
         self._recoger_ubicacion()
         ahora = time.perf_counter()
         for cid, (_, _, llegada, _) in datos.items():
@@ -656,8 +701,7 @@ class SesionEnVivo:
             fila["_desde"] = getattr(asociador, "_desde", {}).get(tramo.global_id, math.inf)
 
     def _lazo_lento(self):
-        """Carril lento: Re-ID con memoria de identidades y, después, el género de quien todavía no lo tiene fijo;
-        siempre con el instante más reciente."""
+        """Carril de los IDs: Re-ID con memoria de identidades, siempre con el instante más reciente."""
         while True:
             with self._hay_trabajo:
                 while not self._trabajos and not self._cerrado:
@@ -673,11 +717,29 @@ class SesionEnVivo:
                     with self.bloqueo:
                         if generacion != self.generacion or self.asociador is None:
                             continue
-                        # Primero los IDs: el género no hace falta para asociar y así lo pesado de CLIP no los demora.
                         self.asociador.actualizar(t, frames, filas, occluders=ocluyentes)
-                        self._muestrear_genero(frames, fuente, filas)
                 except Exception as error:  # un instante fallido no debe detener el carril
                     print(f"Carril lento: {type(error).__name__}: {error}", flush=True)
+
+    def _lazo_genero(self):
+        """Carril del género: CLIP para los tracks a los que les falta, en paralelo con el de los IDs y siempre con el
+        instante más reciente. No necesita el ID: el género queda fijo por track y _genero se lo pasa a su persona."""
+        while True:
+            with self._hay_genero:
+                while not self._trabajos_genero and not self._cerrado:
+                    self._hay_genero.wait()
+                if self._cerrado:
+                    return
+                pendientes = sorted({id(tr): tr for tr in self._trabajos_genero.values()}.values(), key=lambda tr: tr[1])
+                self._trabajos_genero.clear()
+            for generacion, _, frames, fuente, filas in pendientes:
+                try:
+                    with self.bloqueo_genero:
+                        if generacion != self.generacion:
+                            continue
+                        self._muestrear_genero(frames, fuente, filas)
+                except Exception as error:  # un instante fallido no debe detener el carril
+                    print(f"Carril del género: {type(error).__name__}: {error}", flush=True)
 
     def _falta_genero(self, cid, fila):
         """El track todavía puede pasar un cuadro por CLIP: ni él ni su persona tienen género fijo y le quedan intentos."""
@@ -689,7 +751,8 @@ class SesionEnVivo:
                     and (persona.confianza_genero or 0) >= GENERO_FIJO)
 
     def _muestrear_genero(self, frames, fuente, filas):
-        """CLIP solo para los tracks a los que les falta el género (ver INTENTOS_GENERO); con su último cuadro se decide."""
+        """CLIP solo para los tracks a los que les falta el género (ver INTENTOS_GENERO): queda fijo en cuanto sus votos
+        llegan a GENERO_FIJO, o sin género tras su último intento."""
         genero = self.motor.genero
         if not genero.enabled:
             return
@@ -704,23 +767,23 @@ class SesionEnVivo:
             if estado is None or estado["last_frame"] == ultimo:
                 continue  # este cuadro no pasó por CLIP (persona chica o poco segura, o todavía no le tocaba)
             self.intentos_genero[llave] = self.intentos_genero.get(llave, 0) + 1
-            if self.intentos_genero[llave] < INTENTOS_GENERO:
-                continue
-            fila = next(f for f in pendientes[llave[0]] if f["local_id"] == llave[1])
             etiqueta, certeza = genero_por_votos(estado["votes"])
             if etiqueta is not None and len(estado["votes"]) >= 2 and certeza >= GENERO_FIJO:
+                # Fijo para el track; _genero (en el carril rápido) se lo pasa a su persona en la memoria.
                 self.fijos[llave] = (etiqueta, certeza)
-                pid = fila.get("global_id")
-                if pid is not None and pid in self.memoria.personas:
-                    self.memoria.genero(pid, etiqueta, certeza)
-            genero.memory.pop(llave, None)  # decidido: sus votos ya no hacen falta
+                genero.memory.pop(llave, None)  # decidido: sus votos ya no hacen falta
+            elif self.intentos_genero[llave] >= INTENTOS_GENERO:
+                genero.memory.pop(llave, None)  # sin certeza tras todos sus intentos: queda sin género
 
     def cerrar(self):
-        """Detiene el carril lento y el hilo de ubicación."""
+        """Detiene los carriles lentos y el hilo de ubicación."""
+        self._cerrado = True
         with self._hay_trabajo:
-            self._cerrado = True
             self._hay_trabajo.notify()
+        with self._hay_genero:
+            self._hay_genero.notify()
         self._hilo.join(timeout=5)
+        self._hilo_genero.join(timeout=5)
         self._ubicando.shutdown(wait=False)
 
     def _ritmo_genero(self):
@@ -830,13 +893,18 @@ def main():
         # Cajas de cuerpo sin brazos: puntos del cuerpo sobre el recorte de quien se ve de cerca; MODELO_POSE=ninguno las desactiva.
         motor.detector = DetectorCuerpo(motor.detector, pose, motor.device)
     reid = lap01.crear_asociador(motor, {"mode": "visual_temporal", "units": "m", "cameras": {"x": {}}}).reid
+    if motor.genero.enabled and MITAD_SUPERIOR < 1:
+        # CLIP ve la mitad de arriba (ver MITAD_SUPERIOR); lo usan los teléfonos y la sección Videos.
+        clasificar = motor.genero._clasificar
+        motor.genero._clasificar = lambda crops: clasificar([mitad_superior(c) for c in crops])
     ubicador = Ubicador.cargar(MODELO / "ubicacion" / SITIO_TELEFONOS)
+    print(f"Re-ID y género con {'el cuerpo entero' if MITAD_SUPERIOR >= 1 else f'la parte de arriba del cuerpo ({MITAD_SUPERIOR:.0%})'}.", flush=True)
     print(f"Modelo listo en {motor.device} · detector {type(getattr(motor.detector, 'base', motor.detector)).__name__} a "
           f"{config['detector']['imgsz']} px · ubicación: {SITIO_TELEFONOS if ubicador else 'sin referencias'} · "
           f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no'}", flush=True)
     memoria = MemoriaIdentidades(url_api, asociacion)
     relevo = Relevo(url_api)
-    sesion = SesionEnVivo(motor, reid, asociacion, memoria, ubicador)
+    sesion = SesionEnVivo(motor, ReIDMitadSuperior(reid) if MITAD_SUPERIOR < 1 else reid, asociacion, memoria, ubicador)
     # Los videos subidos van con la asociación del Build, sin los ajustes para teléfonos. Sin GPU tienen su propio Re-ID
     # con todos los núcleos (en el servidor es lo que más tarda por frame): corre en el hilo principal, sin esperar al de
     # los teléfonos, que usa el carril lento.
@@ -872,16 +940,17 @@ def main():
                     videos.revisar(lista_videos)
 
             hubo_video = videos.paso()
-            # Cada teléfono por su cuenta y sus cajas salen enseguida, sin esperar a los demás (procesarlos juntos sumaba
-            # el tiempo de todos a cada uno). Por turnos: entre los que tienen un cuadro nuevo, el que hace más que no se
-            # procesa. Elegir el del cuadro más viejo dependía solo del desfase entre teléfonos y, con cuadros a 15 por
-            # segundo, favorecía casi siempre al mismo (medido con dos: 14 cuadros por segundo para uno y 4,8 para el otro).
-            datos, turno = {}, math.inf
+            # Todos los teléfonos con un cuadro nuevo van juntos, en una sola pasada del detector (y de los puntos del
+            # cuerpo): así se procesan en el mismo instante, sus cajas salen sincronizadas entre sí y el mapa une a la
+            # misma persona con lo que vio cada cámara a la vez. Por turnos (uno por pasada) cada teléfono esperaba a
+            # los demás y el lote cuesta mucho menos que tres pasadas: medido con tres teléfonos a 15 fps, por turnos
+            # salían 4,6 cuadros por segundo por teléfono, con huecos de más de 0,4 s y los tres casi nunca en el mismo
+            # instante (cajas y mapa desfasados).
+            datos = {}
             for cid in sesion.telefonos:
                 dato = lectores[cid].tomar(sesion.ultimo[cid])
-                procesado = sesion.tiempos[cid][-1] if sesion.tiempos.get(cid) else -math.inf
-                if dato is not None and (not datos or procesado < turno):
-                    datos, turno = {cid: dato}, procesado
+                if dato is not None:
+                    datos[cid] = dato
             if datos:
                 try:
                     if not calentado:

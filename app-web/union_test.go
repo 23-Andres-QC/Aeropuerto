@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -38,12 +40,13 @@ func TestSinCodigoNoEntra(t *testing.T) {
 	}
 }
 
-// Un código une hasta 10 teléfonos; el 11.º no entra aunque el código siga vigente. Cada uno recibe su clave.
-func TestUnCodigoUneHastaDiezTelefonos(t *testing.T) {
+// Un código une a cualquier cantidad de teléfonos: no tiene tope y sigue vigente. Cada uno recibe su clave.
+func TestUnCodigoUneACualquierTelefono(t *testing.T) {
 	e := nuevoEntorno(t, time.Minute, "")
 	codigo := e.nuevoCodigo(t)
 	claves := map[string]bool{}
-	for i := 0; i < maxPorCodigo; i++ {
+	const telefonos = 25
+	for i := 0; i < telefonos; i++ {
 		ws := pedirUnirse(t, e, idN(i), fmt.Sprintf("Tel %d", i), codigo, "")
 		m := leerMensaje(t, ws)
 		if m.Tipo != "unido" || m.Clave == "" || claves[m.Clave] {
@@ -51,28 +54,24 @@ func TestUnCodigoUneHastaDiezTelefonos(t *testing.T) {
 		}
 		claves[m.Clave] = true
 	}
-	ws := pedirUnirse(t, e, idN(99), "Uno de más", codigo, "")
-	if m := leerMensaje(t, ws); m.Tipo != "error" || m.Reintentar {
-		t.Fatalf("el teléfono 11 no debía entrar: %+v", m)
-	}
-	if vistas := e.camaras.Codigos().Lista(); len(vistas) != 1 || vistas[0].Usos != maxPorCodigo || vistas[0].Activo {
-		t.Errorf("el código agotado: %+v", vistas)
+	if vistas := e.camaras.Codigos().Lista(); len(vistas) != 1 || vistas[0].Usos != telefonos || !vistas[0].Activo {
+		t.Errorf("el código debe seguir vigente: %+v", vistas)
 	}
 }
 
-// El código vence a los 15 minutos y se puede revocar; los teléfonos que ya entraron siguen.
-func TestElCodigoVenceYSeRevoca(t *testing.T) {
+// El código no vence (sirve igual un año después) y se puede revocar; los teléfonos que ya entraron siguen.
+func TestElCodigoNoVenceYSeRevoca(t *testing.T) {
 	e := nuevoEntorno(t, time.Minute, "")
 	ahora := time.Now()
 	e.camaras.Codigos().ahora = func() time.Time { return ahora }
-	vence := e.nuevoCodigo(t)
-	ws := pedirUnirse(t, e, idN(1), "Antes", vence, "")
+	codigo := e.nuevoCodigo(t)
+	ws := pedirUnirse(t, e, idN(1), "Antes", codigo, "")
 	if m := leerMensaje(t, ws); m.Tipo != "unido" {
-		t.Fatalf("antes de vencer: %+v", m)
+		t.Fatalf("recién creado: %+v", m)
 	}
-	ahora = ahora.Add(vigenciaCodigo + time.Second)
-	if m := leerMensaje(t, pedirUnirse(t, e, idN(2), "Tarde", vence, "")); m.Tipo != "error" {
-		t.Errorf("un código vencido no sirve: %+v", m)
+	ahora = ahora.Add(365 * 24 * time.Hour)
+	if m := leerMensaje(t, pedirUnirse(t, e, idN(2), "Un año después", codigo, "")); m.Tipo != "unido" {
+		t.Errorf("un año después el código sigue sirviendo: %+v", m)
 	}
 	// El primero sigue conectado y puede seguir mandando.
 	if err := ws.WriteMessage(2, []byte{0xFF, 0xD8, 0xFF, 1, 2, 3}); err != nil {
@@ -92,10 +91,63 @@ func TestElCodigoVenceYSeRevoca(t *testing.T) {
 		t.Errorf("un código revocado no sirve: %+v", m)
 	}
 	// Lo que se escribe a mano (minúsculas, con guion o espacios) vale lo mismo.
-	bueno := e.nuevoCodigo(t)
-	manual := strings.ToLower(bueno[:4]) + " - " + strings.ToLower(bueno[4:])
+	manual := strings.ToLower(codigo[:4]) + " - " + strings.ToLower(codigo[4:])
 	if m := leerMensaje(t, pedirUnirse(t, e, idN(4), "A mano", manual, "")); m.Tipo != "unido" {
 		t.Errorf("código escrito a mano: %+v", m)
+	}
+	// El revocado sale de la lista una hora después; el vigente sigue.
+	ahora = ahora.Add(recuerdoCodigo + time.Minute)
+	if vistas := e.camaras.Codigos().Lista(); len(vistas) != 1 || vistas[0].Codigo != mostrar(codigo) || !vistas[0].Activo {
+		t.Errorf("después de una hora: %+v", vistas)
+	}
+}
+
+// Los códigos se guardan en un archivo: tras reiniciar el servicio el vigente sigue sirviendo y el revocado no.
+func TestLosCodigosSobrevivenAReiniciar(t *testing.T) {
+	archivo := filepath.Join(t.TempDir(), "datos", "codigos.json")
+	antes := NuevosCodigos(archivo)
+	vigente, err := antes.Crear()
+	if err != nil {
+		t.Fatal(err)
+	}
+	revocado, _ := antes.Crear()
+	antes.Revocar(revocado.ID)
+	if _, err := antes.Canjear(vigente.Texto); err != nil {
+		t.Fatal(err)
+	}
+
+	despues := NuevosCodigos(archivo)
+	if id, err := despues.Canjear(mostrar(vigente.Texto)); err != nil || id != vigente.ID {
+		t.Errorf("el código vigente después de reiniciar: %q %v", id, err)
+	}
+	if _, err := despues.Canjear(revocado.Texto); err != errCodigo {
+		t.Errorf("el revocado sigue revocado: %v", err)
+	}
+	for _, k := range despues.Lista() {
+		if k.ID == vigente.ID && k.Usos != 2 {
+			t.Errorf("usos guardados: %+v", k)
+		}
+	}
+	// Un archivo dañado no impide arrancar: se empieza sin códigos.
+	if err := os.WriteFile(archivo, []byte("{no es json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if l := NuevosCodigos(archivo).Lista(); len(l) != 0 {
+		t.Errorf("archivo dañado: %+v", l)
+	}
+}
+
+// Tras un reinicio el servicio ya no conoce la clave de la página, pero la página manda también el código, que no
+// vence: vuelve a unirse sola, con una clave nueva.
+func TestTrasReiniciarVuelveConElCodigo(t *testing.T) {
+	e := nuevoEntorno(t, time.Minute, "")
+	codigo := e.nuevoCodigo(t)
+	if m := leerMensaje(t, pedirUnirse(t, e, idN(1), "Puerta", "", strings.Repeat("a", 32))); m.Tipo != "error" {
+		t.Errorf("solo con una clave vieja no entra: %+v", m)
+	}
+	m := leerMensaje(t, pedirUnirse(t, e, idN(1), "Puerta", codigo, strings.Repeat("a", 32)))
+	if m.Tipo != "unido" || m.Clave == "" || m.Clave == strings.Repeat("a", 32) {
+		t.Errorf("con la clave vieja y el código: %+v", m)
 	}
 }
 
@@ -222,11 +274,8 @@ func TestAdministrarCodigosPorHTTP(t *testing.T) {
 	}
 	resp, cuerpo := pedir("POST", "/api/codigos", "")
 	var k CodigoVista
-	if resp.StatusCode != http.StatusCreated || json.Unmarshal(cuerpo, &k) != nil || len(k.Codigo) != largoCodigo+1 || k.Max != maxPorCodigo || !k.Activo {
+	if resp.StatusCode != http.StatusCreated || json.Unmarshal(cuerpo, &k) != nil || len(k.Codigo) != largoCodigo+1 || !k.Activo {
 		t.Fatalf("crear código: %d %s", resp.StatusCode, cuerpo)
-	}
-	if d := k.Vence.Sub(k.Creado); d != vigenciaCodigo {
-		t.Errorf("el código dura %v", d)
 	}
 	resp, cuerpo = pedir("GET", "/api/codigos", "")
 	var lista []CodigoVista

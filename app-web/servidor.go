@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -172,8 +174,8 @@ func (s *Servidor) unirse(w http.ResponseWriter, r *http.Request) {
 		switch tipo {
 		case websocket.BinaryMessage:
 			var cuadro uint64
-			if esJPEG(datos) {
-				cuadro = d.Publicar(datos)
+			if jpeg, captura := separarCaptura(datos); esJPEG(jpeg) {
+				cuadro = d.Publicar(jpeg, captura)
 				s.sala.Avisar()
 			}
 			if c.Enviar(mensaje{Tipo: "ok", Lectores: d.Lectores(), Espectadores: s.sala.Espectadores(), Cuadro: cuadro,
@@ -239,8 +241,8 @@ func (s *Servidor) crearCodigo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// El código no se escribe en el registro: solo que se creó uno.
-	log.Printf("código de unión creado (vence %s, hasta %d teléfonos)", k.Vence.Format(time.RFC3339), k.Max)
-	responderJSON(w, http.StatusCreated, CodigoVista{ID: k.ID, Codigo: mostrar(k.Texto), Creado: k.Creado, Vence: k.Vence, Max: k.Max, Activo: true})
+	log.Printf("código de unión creado (no vence, sin tope de teléfonos)")
+	responderJSON(w, http.StatusCreated, CodigoVista{ID: k.ID, Codigo: mostrar(k.Texto), Creado: k.Creado, Activo: true})
 }
 
 func (s *Servidor) revocarCodigo(w http.ResponseWriter, r *http.Request) {
@@ -295,6 +297,20 @@ func latir(ws *websocket.Conn, parar <-chan struct{}) {
 }
 
 func esJPEG(b []byte) bool { return len(b) > 3 && b[0] == 0xFF && b[1] == 0xD8 }
+
+// separarCaptura: la página manda cada cuadro como [0x01][hora de captura: float64 big-endian, ms de su reloj][JPEG]
+// (o el JPEG solo, una página anterior). Con esa hora la sala muestra los cuadros al ritmo en que se tomaron, no al
+// de su llegada: la Wi-Fi del teléfono los entrega a ráfagas y, mostrados al llegar, el video se veía a saltos.
+func separarCaptura(datos []byte) ([]byte, float64) {
+	if len(datos) > 9 && datos[0] == 0x01 {
+		captura := math.Float64frombits(binary.BigEndian.Uint64(datos[1:9]))
+		if math.IsNaN(captura) || math.IsInf(captura, 0) || captura <= 0 {
+			captura = 0
+		}
+		return datos[9:], captura
+	}
+	return datos, 0
+}
 
 // video transmite la cámara como MJPEG, en el formato que lee camara_telefono.py.
 func (s *Servidor) video(w http.ResponseWriter, r *http.Request) {

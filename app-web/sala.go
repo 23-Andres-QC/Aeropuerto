@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -235,12 +236,13 @@ func (s *Sala) Atender(ws *websocket.Conn) {
 	go latir(ws, cerrado)
 
 	type camara struct {
-		id     string
-		frame  []byte
-		seq    uint64
-		fuente byte // 'm' (modelo) o 'd' (directo, sin procesar)
-		det    []byte
-		seqDet uint64
+		id      string
+		frame   []byte
+		seq     uint64
+		captura float64 // 'd': hora en que la página tomó el cuadro (ms, su reloj; 0 si no la mandó)
+		fuente  byte    // 'm' (modelo) o 'd' (directo, sin procesar)
+		det     []byte
+		seqDet  uint64
 	}
 	var vistaLista, vistaEstado uint64
 	enviado := map[string]uint64{} // último cuadro mandado, por cámara y fuente
@@ -288,14 +290,14 @@ func (s *Sala) Atender(ws *websocket.Conn) {
 			if d := s.camaras.PorTelefono(c.id); d != nil {
 				c.frame, c.fuente = nil, 'd'
 				if d.Transmitiendo() {
-					c.frame, c.seq, _ = d.Ultimo()
+					c.frame, c.seq, c.captura = d.UltimoConCaptura()
 				}
 			}
 			clave := c.id + string(c.fuente)
 			if c.frame == nil || len(c.id) > 255 || enviado[clave] == c.seq {
 				continue
 			}
-			if enviarCuadro(ws, c.id, c.fuente, c.seq, c.frame) != nil {
+			if enviarCuadro(ws, c.id, c.fuente, c.seq, c.captura, c.frame) != nil {
 				return
 			}
 			enviado[clave] = c.seq
@@ -389,14 +391,16 @@ func enviarJSON(ws *websocket.Conn, prefijo string, datos []byte) error {
 	return ws.WriteMessage(websocket.TextMessage, mensaje)
 }
 
-// enviarCuadro: [largo del id][id][fuente][número del cuadro: 4 bytes big-endian][JPEG]. El número de una
-// cámara web es el mismo que su MJPEG le pasa al modelo (X-Cuadro) y que vuelve con sus cajas («cuadro»).
-func enviarCuadro(ws *websocket.Conn, id string, fuente byte, seq uint64, jpeg []byte) error {
-	mensaje := make([]byte, 0, 6+len(id)+len(jpeg))
+// enviarCuadro: [largo del id][id][fuente][número del cuadro: 4 bytes big-endian][hora de captura: float64
+// big-endian, ms del reloj de la página, 0 si no se sabe][JPEG]. El número de una cámara web es el mismo que su MJPEG
+// le pasa al modelo (X-Cuadro) y que vuelve con sus cajas («cuadro»).
+func enviarCuadro(ws *websocket.Conn, id string, fuente byte, seq uint64, captura float64, jpeg []byte) error {
+	mensaje := make([]byte, 0, 14+len(id)+len(jpeg))
 	mensaje = append(mensaje, byte(len(id)))
 	mensaje = append(mensaje, id...)
 	mensaje = append(mensaje, fuente)
 	mensaje = binary.BigEndian.AppendUint32(mensaje, uint32(seq))
+	mensaje = binary.BigEndian.AppendUint64(mensaje, math.Float64bits(captura))
 	mensaje = append(mensaje, jpeg...)
 	_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	return ws.WriteMessage(websocket.BinaryMessage, mensaje)

@@ -4,7 +4,7 @@ import { useRoute } from "vue-router";
 import { cantidad, colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, GENEROS, type Analitica, type Config, type Insights, type Punto, type Replay, type Sesion } from "../api";
 import PlanoSitio, { type FlechaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
-import { CELDA_CALOR, SESION_VIVO, capturasVersion, entradasPorIntervalo, fijarModoVivo, historiasDe, mensajeGuardado, modoVivo, motorVivo as vivo } from "../enVivo";
+import { CELDA_CALOR, SESION_VIVO, capturasVersion, entradasPorIntervalo, fijarModoVivo, historiasDe, mensajeGuardado, modoVivo, motorVivo as vivo, type ConteoCamara, type CuentaSentido } from "../enVivo";
 import ContrasteSesiones from "../components/ContrasteSesiones.vue";
 import TraficoSitio from "../components/TraficoSitio.vue";
 import { desdeReplay, entradasPorIntervalo as entradasEntre, resumir, type HistoriaBasica, type ResumenVivo } from "../analisisVivo";
@@ -244,6 +244,38 @@ function sparkline(valores: (number | null)[] | undefined, w = 72, h = 22, pad =
 // Solo cuentas: de una sesión guardada el servidor no guarda el género de nadie, y entrega las categorías con 5 personas o más.
 // En vivo (que no se guarda) se cuenta en la pantalla con el mismo criterio. Una categoría oculta se dice, sin cifra.
 // El mínimo que se aplica: el del sitio (en vivo) o el que usó el servidor para esa sesión. Menos de 5: desglose solo para pruebas.
+/**
+ * Conteo por sentido (para validar el modelo): en vivo, lo de ahora; en una captura guardada, lo que se guardó con ella
+ * (summary.conteo_direccion). Una fila por cámara y sentido, más el total. El género sigue la regla de grupos pequeños
+ * del sitio (Configuración); el total y con o sin ID se ven siempre.
+ */
+const conteoSentido = computed<ConteoCamara[] | null>(() => {
+  if (modoVivo.value) return vivo.conteo.value;
+  const guardado = (sesion.value?.summary as { conteo_direccion?: { camaras?: ConteoCamara[] } } | null | undefined)?.conteo_direccion?.camaras;
+  return Array.isArray(guardado) ? guardado : null;
+});
+type FilaConteo = { camara: string; sentido: string; c: CuentaSentido; genero: (number | null)[] };
+const filasConteo = computed<FilaConteo[]>(() => {
+  const camaras = conteoSentido.value ?? [];
+  const suma = (k: "sube" | "regresa"): CuentaSentido => {
+    const t: CuentaSentido = { total: 0, HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0, conId: 0, sinId: 0 };
+    for (const cam of camaras) for (const clave of Object.keys(t) as (keyof CuentaSentido)[]) t[clave] += cam[k][clave] ?? 0;
+    return t;
+  };
+  // null: la cifra de ese género no se muestra (grupo de menos del mínimo del sitio).
+  const genero = (c: CuentaSentido) => {
+    const { visibles } = suprimirGenero({ HOMBRE: c.HOMBRE, MUJER: c.MUJER, SIN_DETERMINAR: c.SIN_DETERMINAR }, minimoGenero.value);
+    return (["HOMBRE", "MUJER", "SIN_DETERMINAR"] as const).map((g) => (c[g] ? (visibles[g] ?? null) : 0));
+  };
+  const filas: FilaConteo[] = [];
+  for (const cam of [...camaras.map((c) => ({ camara: c.camara, sube: c.sube, regresa: c.regresa })), ...(camaras.length > 1 ? [{ camara: "Total", sube: suma("sube"), regresa: suma("regresa") }] : [])]) {
+    filas.push({ camara: cam.camara, sentido: "↑ Suben", c: cam.sube, genero: genero(cam.sube) });
+    filas.push({ camara: cam.camara, sentido: "↓ Regresan", c: cam.regresa, genero: genero(cam.regresa) });
+  }
+  return filas;
+});
+const conteoOculto = computed(() => filasConteo.value.some((f) => f.genero.includes(null)));
+
 const minimoGenero = computed(() => (modoVivo.value ? (sitioActual.value?.min_group_size ?? 5) : (r.value?.genero_minimo ?? sitioActual.value?.min_group_size ?? 5)));
 const generoVisible = computed(() => {
   if (modoVivo.value) {
@@ -408,6 +440,14 @@ function exportarCSV() {
     [],
     ["Hora", "Entradas"],
     ...barras.value.map((b) => [b.hora, b.v]),
+    ...(filasConteo.value.length
+      ? [
+          [],
+          ["Conteo por sentido (línea a media altura de cada cámara)"],
+          ["Cámara", "Sentido", "Total", "Hombre", "Mujer", "Sin determinar", "Con ID", "Sin ID"],
+          ...filasConteo.value.map((f) => [f.camara, f.sentido.replace(/^[↑↓] /, ""), f.c.total, ...f.genero.map((n) => n ?? "oculto"), f.c.conId, f.c.sinId]),
+        ]
+      : []),
   ];
   const csv = filas.map((f) => f.map(celda).join(",")).join("\r\n");
   // BOM: Excel detecta UTF-8 (tildes, ñ) solo si el archivo empieza con él.
@@ -521,7 +561,7 @@ onMounted(async () => {
     <span><small>Desde</small><b>{{ new Date(vivo.inicio.value).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }) }}</b></span>
     <span><small>Duración</small><b>{{ segundos((vivo.ahora.value - vivo.inicio.value) / 1000) }}</b></span>
     <span><small>Personas</small><b>{{ vivo.resumen.value.personas.toLocaleString() }}</b></span>
-    <span><small>Cámaras transmitiendo</small><b>{{ vivo.ranuras.value.filter((r) => r.activa).length }} de 3</b></span>
+    <span><small>Cámaras transmitiendo</small><b>{{ vivo.ranuras.value.filter((r) => r.activa).length }} de {{ vivo.ranuras.value.length }}</b></span>
     <span><small>Alcance</small><b>{{ alcance }}</b></span>
   </div>
   <div v-else-if="sesion && !vistaSinCapturas" class="resumen-sesion" aria-label="Resumen de la sesión">
@@ -533,6 +573,11 @@ onMounted(async () => {
     <span><small>Cámaras</small><b>{{ config?.cameras.length ?? "—" }}</b></span>
     <span><small>Alcance</small><b>{{ alcance }}</b></span>
   </div>
+  <p v-if="modoVivo && vivo.sinUbicar.value" class="aviso-sin-ubicar" role="status">
+    {{ vivo.sinUbicar.value }} de {{ vivo.resumen.value.personas }} persona{{ vivo.resumen.value.personas === 1 ? "" : "s" }} con ID
+    {{ vivo.sinUbicar.value === 1 ? "no se ubicó" : "no se ubicaron" }} en el plano: su teléfono no reconoce el patio. Cuentan aquí, pero sin recorrido, zonas ni mapa de calor;
+    apunta el teléfono como en las fotos de referencia de su cámara (en <RouterLink :to="`/sitios/${slug}/en-vivo`">En vivo</RouterLink> se avisa qué cámara).
+  </p>
   <section v-if="vistaSinCapturas" class="panel vacio-guardado">
     <div class="panel-heading"><h2>Guardado en vivo</h2></div>
     <p>
@@ -731,6 +776,33 @@ onMounted(async () => {
       </article>
     </section>
   </div>
+
+  <section v-if="!vistaSinCapturas && conteoSentido" class="panel conteo-sentido">
+    <div class="panel-heading">
+      <h2>Conteo por sentido</h2>
+      <span class="muted">para validar · línea punteada a media altura de cada cámara</span>
+    </div>
+    <table>
+      <thead>
+        <tr><th>Cámara</th><th>Sentido</th><th>Total</th><th>Hombre</th><th>Mujer</th><th>Sin determinar</th><th>Con ID</th><th>Sin ID</th></tr>
+      </thead>
+      <tbody>
+        <tr v-for="f in filasConteo" :key="f.camara + f.sentido" :class="{ total: f.camara === 'Total' }">
+          <td>{{ f.camara }}</td>
+          <td>{{ f.sentido }}</td>
+          <td><b>{{ f.c.total }}</b></td>
+          <td v-for="(n, i) in f.genero" :key="i" :class="{ oculto: n == null }">{{ n ?? "oculto" }}</td>
+          <td>{{ f.c.conId }}</td>
+          <td>{{ f.c.sinId }}</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="muted nota-conteo">
+      «Suben»: cruzan la línea hacia arriba de la imagen (se alejan de la cámara); «regresan»: hacia abajo (vienen hacia ella).
+      Cuenta cada cruce de cada track del modelo, tenga o no ID y se sepa o no su género; quien sube y vuelve cuenta en los dos.
+      <template v-if="conteoOculto">Las cifras de género de menos de {{ minimoGenero }} se ocultan (se cambia en Configuración).</template>
+    </p>
+  </section>
 
   <details v-if="!vistaSinCapturas" class="plegable">
     <summary>⇄ Contraste · grabado, guardado en vivo y ahora</summary>
@@ -974,5 +1046,49 @@ onMounted(async () => {
 }
 .empty {
   margin: 12px;
+}
+.aviso-sin-ubicar {
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-s);
+  border: 1px solid color-mix(in srgb, var(--warn, #d97706) 45%, transparent);
+  background: color-mix(in srgb, var(--warn, #d97706) 10%, transparent);
+  font-size: 13px;
+}
+.conteo-sentido {
+  margin-top: 14px;
+}
+.conteo-sentido table {
+  width: calc(100% - 24px);
+  margin: 0 12px;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.conteo-sentido th,
+.conteo-sentido td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--glass-line);
+  text-align: right;
+}
+.conteo-sentido th:nth-child(-n + 2),
+.conteo-sentido td:nth-child(-n + 2) {
+  text-align: left;
+}
+.conteo-sentido th {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.conteo-sentido tr.total td {
+  font-weight: 600;
+}
+.conteo-sentido td.oculto {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+.nota-conteo {
+  margin: 8px 12px 12px;
+  font-size: 12px;
 }
 </style>

@@ -2,7 +2,6 @@
 // Uso: node web/tests/roles.mjs  (Node 22.18 o más nuevo: lee TypeScript directamente; sale con error si algo falla)
 import assert from "node:assert/strict";
 import {
-  cuentaRegresiva,
   enlaceConCodigo,
   inicioPara,
   minutosRestantes,
@@ -69,9 +68,6 @@ assert.equal(normalizarCodigo(" k7qm-2xpa "), "K7QM2XPA");
 assert.equal(enlaceConCodigo("https://192.168.1.5:8444/", "K7QM-2XPA"), "https://192.168.1.5:8444/#c=K7QM2XPA");
 assert.equal(enlaceConCodigo("https://sitio/camara/#viejo", "ABCD2345"), "https://sitio/camara/#c=ABCD2345", "reemplaza el fragmento que hubiera");
 const ahora = Date.parse("2026-10-14T10:00:00Z");
-assert.equal(cuentaRegresiva("2026-10-14T10:14:59Z", ahora), "14:59");
-assert.equal(cuentaRegresiva("2026-10-14T10:00:05Z", ahora), "0:05");
-assert.equal(cuentaRegresiva("2026-10-14T09:59:59Z", ahora), "vencido");
 assert.equal(minutosRestantes("2026-10-14T10:15:00Z", ahora), 15);
 assert.equal(minutosRestantes("2026-10-14T09:00:00Z", ahora), 0);
 

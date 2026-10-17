@@ -15,7 +15,8 @@ type Persona = {
 };
 type Mensaje = { ts: number; frame_w: number; frame_h: number; people: Persona[] };
 
-const props = defineProps<{ id: string; nombre: string; estado?: EstadoTelefono; sinQuitar?: boolean; compacta?: boolean }>();
+// `linea`: altura (fracción del cuadro) de la línea de conteo de En vivo, para ver sobre el video quién la cruza.
+const props = defineProps<{ id: string; nombre: string; estado?: EstadoTelefono; sinQuitar?: boolean; compacta?: boolean; linea?: number }>();
 const emit = defineEmits<{ quitar: [] }>();
 
 const imagen = ref("");
@@ -105,6 +106,9 @@ onUnmounted(() => {
     <div class="lienzo">
       <img v-if="imagen && enVivo" :src="imagen" :alt="`${nombre} en vivo`" />
       <canvas v-show="imagen && enVivo" ref="lienzo"></canvas>
+      <div v-if="linea != null && imagen && enVivo" class="linea-conteo" :style="{ top: `${linea * 100}%` }" aria-hidden="true">
+        <span>↑ suben · ↓ regresan</span>
+      </div>
       <p v-if="!imagen || !enVivo" class="espera">{{ aviso }}</p>
     </div>
   </section>
@@ -129,6 +133,23 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   height: 100%;
+}
+.linea-conteo {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 2px dashed rgba(255, 214, 10, 0.9);
+  pointer-events: none;
+}
+.linea-conteo span {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffd60a;
+  font-size: 10px;
 }
 .espera {
   display: grid;

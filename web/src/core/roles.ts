@@ -88,14 +88,6 @@ export function minutosRestantes(vence: string, ahora: number): number {
   return Number.isFinite(ms) && ms > 0 ? Math.ceil(ms / 60000) : 0;
 }
 
-/** «14:59» para una cuenta regresiva; «vencido» si ya pasó. */
-export function cuentaRegresiva(vence: string, ahora: number): string {
-  const ms = new Date(vence).getTime() - ahora;
-  if (!Number.isFinite(ms) || ms <= 0) return "vencido";
-  const s = Math.floor(ms / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
-
 /** Lo que se escribe a mano en la cámara: mayúsculas, sin guion ni espacios. */
 export function normalizarCodigo(c: string): string {
   return c.replace(/[\s_-]/g, "").toUpperCase();
