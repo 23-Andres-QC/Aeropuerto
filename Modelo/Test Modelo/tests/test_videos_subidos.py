@@ -141,17 +141,27 @@ def esperar_hilos():
 
 
 class VideoFalso:
-    """Un VideoEnProceso sin modelo: cada paso devuelve un frame hasta llegar a `frames`."""
+    """Un VideoEnProceso sin modelo: cada lectura devuelve un frame hasta llegar a `frames`."""
 
-    def __init__(self, vid, frames):
+    def __init__(self, vid, frames, detectados=None):
         self.id, self.nombre, self.frames, self.procesados, self.terminado = vid, vid, frames, 0, False
+        self.detectados = detectados if detectados is not None else []
+        self.motor = types.SimpleNamespace(detectar=self._detectar)
 
-    def paso(self):
+    def _detectar(self, frames):
+        self.detectados.append(sorted(frames))
+        return {vid: (np.zeros((0, 4)), np.zeros(0)) for vid in frames}
+
+    def leer(self):
         if self.procesados >= self.frames:
             self.terminado = True
             return None
+        return np.zeros((4, 4, 3), np.uint8), self.procesados / 15
+
+    def procesar(self, frame, t, detecciones=None, extra_s=0.0):
         self.procesados += 1
-        return np.zeros((4, 4, 3), np.uint8), []
+        self.ultimas = detecciones
+        return []
 
     def resumen(self):
         return {"procesados": self.procesados, "saltados": 0, "personas_total": 0}
@@ -161,7 +171,7 @@ class VideoFalso:
 
 
 class Simultaneos(unittest.TestCase):
-    """Varios videos subidos: se procesan al mismo tiempo, turnándose un frame de cada uno."""
+    """Varios videos subidos: se procesan al mismo tiempo, el frame de cada uno en la misma pasada del detector."""
 
     def videos(self):
         descargas, publicados, resumenes = [], [], {}
@@ -170,14 +180,15 @@ class Simultaneos(unittest.TestCase):
             def _descargar(self, info, cancelar):
                 descargas.append((info["id"], cancelar))
 
-            def _publicar(self, video, frame, filas):
+            def _publicar(self, video, frame, filas, t=None):
                 publicados.append(video.id)
 
             def _guardar_resumen(self, vid, resumen):
                 resumenes[vid] = resumen
 
         v = object.__new__(Prueba)
-        v.activos, v.descargas, v.descargados, v.hechos, v.turno = {}, {}, deque(), set(), 0
+        v.activos, v.descargas, v.descargados, v.hechos = {}, {}, deque(), set()
+        v.bloqueo = threading.Lock()
         v.motor = types.SimpleNamespace(device="cpu")
         return v, descargas, publicados, resumenes
 
@@ -194,18 +205,27 @@ class Simultaneos(unittest.TestCase):
         self.assertTrue(dict(descargas)["b"].is_set(), "se cancela su descarga")
         self.assertFalse(dict(descargas)["c"].is_set(), "la de «c» sigue")
 
-    def test_se_turnan_y_cada_uno_deja_su_resumen(self):
+    def test_todos_en_la_misma_pasada_y_cada_uno_deja_su_resumen(self):
         v, _, publicados, resumenes = self.videos()
+        detectados = []
         with tempfile.TemporaryDirectory() as carpeta:
+            falsos = {}
             for vid, frames in (("b", 2), ("c", 4)):
                 ruta = Path(carpeta) / f"{vid}.video"
                 ruta.write_bytes(b"x")
-                v.activos[vid] = (VideoFalso(vid, frames), ruta)
+                falsos[vid] = VideoFalso(vid, frames, detectados)
+                v.activos[vid] = (falsos[vid], ruta)
+            self.assertTrue(v.paso())
+            self.assertEqual(publicados, ["b", "c"], "una pasada procesa el frame de cada video")
+            self.assertEqual(detectados, [["b", "c"]], "y los detecta juntos, en una sola llamada al detector")
+            self.assertIsNotNone(v.activos["b"][0].ultimas, "cada video recibe sus detecciones del lote")
             while v.paso():
                 pass
             v.paso()
-        self.assertEqual(publicados[:4], ["b", "c", "b", "c"], "un frame de cada uno, por turnos")
+        self.assertEqual(publicados.count("b"), 2)
         self.assertEqual(publicados.count("c"), 4)
+        self.assertEqual(detectados[:2], [["b", "c"], ["b", "c"]], "en lote mientras hay dos videos")
+        self.assertEqual(detectados[2:], [["c"]] * 2, "ya solo, c también se detecta en la pasada")
         self.assertEqual(sorted(resumenes), ["b", "c"])
         self.assertEqual(resumenes["b"]["estado"], "terminado")
         self.assertEqual(v.activos, {})
