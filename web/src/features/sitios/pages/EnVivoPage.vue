@@ -45,6 +45,12 @@ const valorSesion = computed({
   },
 });
 const verCalor = ref(true);
+// Zona que se graba en vivo. Hoy se prueba solo el patio (las cámaras, la calibración y el modelo son de esa zona); las demás zonas
+// grabadas del campus (el comedor) salen en la lista pero se activarán cuando tengan sus cámaras.
+const zonasAGrabar = computed(() => [
+  { clave: "sitio", nombre: mapa.value?.campus?.nombre || "Patio", activa: true },
+  ...(mapa.value?.capas ?? []).map((c) => ({ clave: c.nombre, nombre: c.nombre, activa: false })),
+]);
 const guardadasVivo = computed(() => sesiones.value.filter((s) => s.kind === "LIVE"));
 const grabadas = computed(() => sesiones.value.filter((s) => s.kind === "BUILD"));
 
@@ -327,6 +333,22 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <span v-else-if="!cargando && !sesiones.length" class="pill">sin sesiones</span>
       </div>
       <div v-if="modoVivo" class="barra-vivo">
+        <div v-if="zonasAGrabar.length > 1" class="zona-a-grabar" role="group" aria-label="Zona a grabar" data-prueba="zona-a-grabar">
+          <span class="etiqueta-zona">Zona a grabar</span>
+          <button
+            v-for="z in zonasAGrabar"
+            :key="z.clave"
+            type="button"
+            class="opcion-zona"
+            :class="{ elegida: z.clave === 'sitio' }"
+            :disabled="!z.activa"
+            :aria-pressed="z.clave === 'sitio'"
+            :title="z.activa ? 'Se graba esta zona' : 'Próximamente: esta zona aún no tiene sus cámaras'"
+            :data-prueba="z.activa ? 'zona-activa' : 'zona-proxima'"
+          >
+            {{ z.nombre }}<small v-if="!z.activa"> · próximamente</small>
+          </button>
+        </div>
         <label class="check"><input v-model="verCalor" type="checkbox" /> Mapa de calor</label>
         <label class="check" title="Si dos cámaras distintas ubican a dos IDs casi en el mismo lugar, se muestran como una sola persona (por si el modelo les dio IDs distintos)">
           <input :checked="unirPorPosicion" type="checkbox" @change="fijarUnion(($event.target as HTMLInputElement).checked)" /> Unir personas muy cercanas
@@ -470,6 +492,39 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   gap: 6px 10px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--glass-line);
+}
+.zona-a-grabar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex-basis: 100%;
+}
+.etiqueta-zona {
+  font-size: 10.5px;
+  font-weight: 650;
+  color: var(--ink-soft);
+}
+.opcion-zona {
+  padding: 4px 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.opcion-zona.elegida {
+  border-color: #2563eb;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+.opcion-zona:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.opcion-zona small {
+  font-weight: 500;
 }
 .lado-vivo {
   min-width: 0;
