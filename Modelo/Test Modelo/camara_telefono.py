@@ -9,6 +9,7 @@ También procesa el video que se sube en la sección Videos de la web (videos_su
 aparte: ese video no se guarda ni entra a la memoria de identidades.
 """
 import argparse
+import ctypes
 import http.client
 import json
 import math
@@ -193,6 +194,29 @@ CARRIL_LENTO_CADA_S = float(os.environ.get("MODELO_CARRIL_LENTO_S") or 0)
 # Un cuadro que falla (un error raro del modelo) se salta; tantos seguidos indican algo roto (ej. la GPU) y el proceso
 # termina con error: scripts/modelo_local.py lo vuelve a levantar.
 FALLOS_SEGUIDOS_MAX = 10
+
+
+def sin_freno_de_windows():
+    """Pide a Windows que no frene este proceso: sin ventana propia, Windows lo trata como de fondo y con el plan de
+    energía equilibrado (EcoQoS) lo pasa a los núcleos de eficiencia a menor frecuencia. Medido con dos teléfonos en una
+    multitud, el mismo modelo tardaba unas veces 0,26 s por cuadro y otras 1,2 s (y la GPU, esperando a la CPU, no
+    subía de su modo de ahorro); sin el freno, 0,26 s siempre. También le da prioridad alta. Devuelve si lo logró."""
+    if sys.platform != "win32":
+        return False
+
+    class EstadoAhorro(ctypes.Structure):  # PROCESS_POWER_THROTTLING_STATE
+        _fields_ = [("Version", ctypes.c_ulong), ("ControlMask", ctypes.c_ulong), ("StateMask", ctypes.c_ulong)]
+
+    kernel = ctypes.windll.kernel32
+    kernel.GetCurrentProcess.restype = ctypes.c_void_p
+    kernel.SetProcessInformation.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_ulong]
+    kernel.SetPriorityClass.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+    proceso = kernel.GetCurrentProcess()
+    # Controla EXECUTION_SPEED e IGNORE_TIMER_RESOLUTION y los deja apagados (StateMask 0); ProcessPowerThrottling = 4.
+    estado = EstadoAhorro(1, 0x1 | 0x4, 0)
+    sin_ahorro = kernel.SetProcessInformation(proceso, 4, ctypes.byref(estado), ctypes.sizeof(estado))
+    prioridad = kernel.SetPriorityClass(proceso, 0x80)  # HIGH_PRIORITY_CLASS
+    return bool(sin_ahorro and prioridad)
 
 
 def leer_json(url, timeout=5):
@@ -935,6 +959,8 @@ def main():
     parser.add_argument("--api", default="http://127.0.0.1:8093", help="URL de backend-vivo")
     args = parser.parse_args()
     url_api = args.api.rstrip("/")
+    if not sin_freno_de_windows() and sys.platform == "win32":
+        print("Windows no dejó quitar el ahorro de energía a este proceso: puede ir más lento.", flush=True)
     config = json.loads((MODELO / "config_lap01.json").read_text())
     config["tracker"].update(SEGUIDOR_TELEFONO)
     config["detector"].update(DETECTOR_TELEFONO)

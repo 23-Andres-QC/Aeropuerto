@@ -174,6 +174,37 @@ class PruebasMemoria(unittest.TestCase):
         self.assertNotIn(nuevo, memoria.personas)
 
 
+class MismoTrackTrasUnHueco(unittest.TestCase):
+    """El seguidor pierde a alguien unos segundos (la tapan) y la retoma con el mismo track local en otro lugar."""
+
+    def test_conserva_su_id_aunque_haya_caminado(self):
+        escena = Escena(asociador(memoria_ram()))
+        antes = escena.ver(4, {"tel-a": [(1, A, 100)]})[("tel-a", 1)]
+        escena.esperar(10)  # más que tracklet_gap_s: el asociador abre un tramo nuevo
+        # Vuelve lejos de donde se perdió y de espaldas (el Re-ID no alcanza para reconocerla en la misma cámara).
+        despues = escena.ver(4, {"tel-a": [(1, A_ESPALDAS, 900)]})[("tel-a", 1)]
+        self.assertIsNotNone(antes)
+        self.assertEqual(despues, antes)
+
+    def test_otro_track_lejos_no_hereda_el_id(self):
+        escena = Escena(asociador(memoria_ram()))
+        antes = escena.ver(4, {"tel-a": [(1, A, 100)]})[("tel-a", 1)]
+        escena.esperar(10)
+        despues = escena.ver(4, {"tel-a": [(2, A_ESPALDAS, 900)]})[("tel-a", 2)]
+        self.assertIsNotNone(despues)
+        self.assertNotEqual(despues, antes)
+
+    def test_no_si_su_persona_ya_la_tiene_otro_track_a_la_vista(self):
+        escena = Escena(asociador(memoria_ram()))
+        antes = escena.ver(4, {"tel-a": [(1, A, 100)]})[("tel-a", 1)]
+        # Mientras el track 1 está perdido, la persona sigue como track 2 (y lo conserva por continuidad).
+        self.assertEqual(escena.ver(4, {"tel-a": [(2, A, 140)]})[("tel-a", 2)], antes)
+        # El seguidor revive el track 1 sobre otra persona mientras el 2 sigue a la vista: no se repite el ID.
+        ids = escena.ver(4, {"tel-a": [(2, A, 160), (1, A_ESPALDAS, 900)]})
+        self.assertEqual(ids[("tel-a", 2)], antes)
+        self.assertNotEqual(ids[("tel-a", 1)], antes)
+
+
 class PruebasPrimerSegundo(unittest.TestCase):
     """A 10 fps, como un teléfono real."""
 

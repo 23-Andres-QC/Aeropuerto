@@ -521,18 +521,28 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
         """Persona de un track de la misma cámara que terminó hace poco justo donde empieza este: es la misma persona.
 
         El seguidor a veces pierde a alguien un momento (pocos cuadros por segundo, oclusión, la cámara que se mueve) y
-        abre otro track. Con el tiempo y el lugar basta: no hace falta esperar vistas de apariencia para conservar su ID."""
+        abre otro track. Con el tiempo y el lugar basta: no hace falta esperar vistas de apariencia para conservar su ID.
+
+        Si el seguidor la retoma con el mismo track local (la reconoció por su apariencia tras perderla, ver reid_gate),
+        el asociador abre igual un tramo nuevo pasados tracklet_gap_s: ese tramo es la misma persona aunque haya
+        caminado mientras estaba tapada. Antes recibía un ID nuevo: era la causa más común de que alguien cambiara de
+        ID en una multitud (13 de 24 cortes en 74 s con dos teléfonos)."""
         nuevos = [t for t in self._miembros(gid) if t.huella and self.last_timestamp - t.inicio_s <= 4.0]
         mejor = None
         for t in nuevos:
             primero = t.huella[0]
             for o in self.tracklets.values():
                 if (o.camera_id != t.camera_id or o.global_id == gid or not o.huella
-                        or not 0 <= t.inicio_s - o.fin_s <= CONTINUIDAD_S):
+                        or not 0 <= t.inicio_s - o.fin_s):
+                    continue
+                mismo_track = o.local_id == t.local_id
+                if not mismo_track and t.inicio_s - o.fin_s > CONTINUIDAD_S:
                     continue
                 pid = self.confirmadas.get(o.global_id)
                 if pid is None or pid in ocupadas or pid not in self.memoria.personas:
                     continue
+                if mismo_track:
+                    return pid
                 ultimo = o.huella[-1]
                 alto = max(primero[3], ultimo[3], 1.0)
                 distancia = math.hypot(primero[1] - ultimo[1], primero[2] - ultimo[2]) / alto
