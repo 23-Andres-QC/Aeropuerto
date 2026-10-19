@@ -5,11 +5,13 @@ import { logout, sesion } from "./core/auth";
 import { NOMBRE_ROL, ROL_ADMIN } from "./core/roles";
 import AvisoInactividad from "./core/AvisoInactividad.vue";
 import AvisoVersion from "./core/AvisoVersion.vue";
+import ElegirZonaVivo from "./core/ElegirZonaVivo.vue";
 import PaletaComandos from "./core/PaletaComandos.vue";
 import SelectorSitio from "./features/sitios/components/SelectorSitio.vue";
 import { fijarModoVivo, modoVivo, usarSitioVivo, zonaVivo } from "./features/sitios/enVivo";
 import { rutaAlElegir } from "./features/sitios/selector";
-import type { Sitio } from "./features/sitios/api";
+import { api as apiSitios, type Sitio } from "./features/sitios/api";
+import { opcionesZonaVivo, type OpcionZonaVivo } from "./features/sitios/zonasVivo";
 import { recordarSitio, ultimoSitio, useSitios, vaciarSitios } from "./features/sitios/useSitios";
 
 const route = useRoute();
@@ -54,6 +56,28 @@ const title = computed(() => {
   const nombre = SECCIONES.find((s) => s.id === seccion.value)?.nombre ?? "";
   return `${actual.value?.name ?? slug.value} · ${nombre}`;
 });
+
+// «Activar en vivo» en un sitio con varias zonas grabadas pregunta dónde (patio, comedor o todo); en uno con una sola, activa directo.
+const zonasVivo = ref<OpcionZonaVivo[]>([]);
+async function alternarVivo() {
+  if (modoVivo.value) {
+    fijarModoVivo(false);
+    return;
+  }
+  let opciones: OpcionZonaVivo[] = [];
+  try {
+    opciones = opcionesZonaVivo((await apiSitios.config(sitioNav.value)).plano);
+  } catch {
+    /* sin la configuración no se puede ofrecer la elección: se activa como siempre */
+  }
+  if (opciones.length) zonasVivo.value = opciones;
+  else fijarModoVivo(true);
+}
+function elegirZonaVivo(o: OpcionZonaVivo) {
+  if (!o.activa) return;
+  zonasVivo.value = [];
+  fijarModoVivo(true);
+}
 
 async function salir() {
   await logout();
@@ -136,13 +160,13 @@ function elegirSitio(s: Sitio) {
       <header class="workspace-header">
         <div><span class="breadcrumb">LAP /</span> {{ title }}</div>
         <div class="workspace-meta">
-          <PaletaComandos :oscuro="theme === 'dark'" :vivo="modoVivo" :alternar-tema="toggleTheme" :alternar-vivo="() => fijarModoVivo(!modoVivo)" :salir="salir" />
+          <PaletaComandos :oscuro="theme === 'dark'" :vivo="modoVivo" :alternar-tema="toggleTheme" :alternar-vivo="alternarVivo" :salir="salir" />
           <button
             class="modo-vivo"
             :class="{ activo: modoVivo }"
             type="button"
             :title="modoVivo ? 'Salir del modo en vivo: guarda la captura y el modelo olvida a las personas (al volver, todos son nuevos)' : `Activar el modo en vivo con los teléfonos conectados${zonaVivo ? ` (zona: ${zonaVivo})` : ''}`"
-            @click="fijarModoVivo(!modoVivo)"
+            @click="alternarVivo"
           >
             {{ modoVivo ? `● EN VIVO${zonaVivo ? ` · ${zonaVivo.toUpperCase()}` : ""} · Salir` : "Activar en vivo" }}
           </button>
@@ -177,6 +201,7 @@ function elegirSitio(s: Sitio) {
   </div>
   <!-- A los 2 min sin actividad se cierra la sesión (10 s antes pregunta «¿sigues ahí?»); vale para todas las pantallas con sesión. -->
   <AvisoInactividad />
+  <ElegirZonaVivo v-if="zonasVivo.length" :opciones="zonasVivo" @elegir="elegirZonaVivo" @cerrar="zonasVivo = []" />
   <!-- Si se publica una versión nueva mientras la pestaña sigue abierta, lo avisa (la pestaña no se actualiza sola). -->
   <AvisoVersion />
 </template>

@@ -7,6 +7,7 @@ import PlanoSitio, { type PersonaPlano, type RecorridoPlano } from "../component
 import { CAMARAS_VIVO, CELDA_CALOR, LINEA_CONTEO, SESION_VIVO, ajusteMapa, capturaDePrueba, capturasVersion, fijarUnion, unidasAhora, unirPorPosicion, grabando, iniciarGrabacion, terminarGrabacion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura, zonaVivo } from "../enVivo";
 import { useRoute } from "vue-router";
 import { useSitios } from "../useSitios";
+import { opcionesZonaVivo } from "../zonasVivo";
 
 const route = useRoute();
 const { slug } = useSitios();
@@ -47,11 +48,7 @@ const valorSesion = computed({
 const verCalor = ref(true);
 // Zona que se graba en vivo. Hoy se prueba solo el patio (las cámaras, la calibración y el modelo son de esa zona); las demás zonas
 // grabadas del campus (el comedor) salen en la lista pero se activarán cuando tengan sus cámaras.
-const zonasAGrabar = computed(() => [
-  { clave: "sitio", nombre: mapa.value?.campus?.nombre || "Patio", activa: true },
-  ...(mapa.value?.capas ?? []).map((c) => ({ clave: c.nombre, nombre: c.nombre, activa: false })),
-  ...(mapa.value?.capas?.length ? [{ clave: "general", nombre: "General · patio y comedor a la vez", activa: false }] : []),
-]);
+const zonasAGrabar = computed(() => opcionesZonaVivo(mapa.value));
 const guardadasVivo = computed(() => sesiones.value.filter((s) => s.kind === "LIVE"));
 const grabadas = computed(() => sesiones.value.filter((s) => s.kind === "BUILD"));
 
@@ -338,13 +335,13 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
           <span class="etiqueta-zona">Zona a grabar</span>
           <button
             v-for="z in zonasAGrabar"
-            :key="z.clave"
+            :key="z.nombre"
             type="button"
             class="opcion-zona"
-            :class="{ elegida: z.clave === 'sitio' }"
+            :class="{ elegida: z.activa }"
             :disabled="!z.activa"
-            :aria-pressed="z.clave === 'sitio'"
-            :title="z.activa ? 'Se graba esta zona' : z.clave === 'general' ? 'Próximamente: en vivo simultáneo en el patio y el comedor' : 'Próximamente: esta zona aún no tiene sus cámaras'"
+            :aria-pressed="z.activa"
+            :title="z.activa ? 'Se graba esta zona' : z.clave === 'todo' ? 'Próximamente: en vivo simultáneo en el patio y el comedor' : 'Próximamente: esta zona aún no tiene sus cámaras'"
             :data-prueba="z.activa ? 'zona-activa' : 'zona-proxima'"
           >
             {{ z.nombre }}<small v-if="!z.activa"> · próximamente</small>

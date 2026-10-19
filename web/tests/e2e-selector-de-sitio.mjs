@@ -203,15 +203,29 @@ try {
   assert.ok(!ley.some((l) => /^(Ascensores|Carpa azul|Piso)/.test(l)), "y no lo del patio");
   console.log("✓ los videos salen solo al hacer clic en la zona del croquis; el comedor no tiene los del patio; cada zona lista lo suyo en la leyenda");
 
+  // «Activar en vivo» en un sitio con varias zonas grabadas pregunta dónde: patio, comedor o todo (hoy solo el patio está disponible).
+  await evalua(`localStorage.setItem('modo-vivo', '0'); 0`);
+  await cdp("Page.navigate", { url: `${WEB}/sitios/esan/en-vivo` });
+  await esperar(3500);
+  await clic(`document.querySelector('.modo-vivo')`);
+  await esperar(800);
+  const eleccion = await evalua(`({ abierto: !!document.querySelector('[data-prueba=elegir-zona-vivo]'), patio: document.querySelector('[data-prueba=zona-vivo-patio]')?.disabled, comedor: document.querySelector('[data-prueba=zona-vivo-comedor]')?.disabled, todo: document.querySelector('[data-prueba=zona-vivo-todo]')?.disabled, activo: /EN VIVO/.test(document.querySelector('.modo-vivo').textContent) })`);
+  assert.deepEqual(eleccion, { abierto: true, patio: false, comedor: true, todo: true, activo: false }, `al activar el en vivo se elige dónde: ${JSON.stringify(eleccion)}`);
+  await clic(`document.querySelector('[data-prueba=zona-vivo-patio]')`);
+  await esperar(1000);
+  assert.equal(await evalua(`!!document.querySelector('[data-prueba=elegir-zona-vivo]')`), false, "elegido el patio se cierra la elección");
+  assert.match(await evalua(`document.querySelector('.modo-vivo').textContent.trim()`), /EN VIVO · PATIO/, "y el en vivo queda activo en el patio");
+  console.log("✓ «Activar en vivo» ofrece patio, comedor o todo (hoy solo el patio) y arranca en la zona elegida");
+
   // En vivo (teléfonos): se elige la zona a grabar; hoy solo el patio, el comedor figura como próximamente.
   await evalua(`localStorage.setItem('modo-vivo', '1'); 0`);
   await cdp("Page.navigate", { url: `${WEB}/sitios/esan/en-vivo` });
   await esperar(3500);
   const zonasVivo = await evalua(`({ activas: [...document.querySelectorAll('[data-prueba=zona-activa]')].map((b) => b.textContent.trim()), proximas: [...document.querySelectorAll('[data-prueba=zona-proxima]')].map((b) => ({ texto: b.textContent.trim(), bloqueada: b.disabled })) })`);
   assert.deepEqual(zonasVivo.activas, ["Patio · zona grabada"], "en vivo se graba el patio");
-  assert.equal(zonasVivo.proximas.length, 2, "y el comedor y el general figuran aparte");
+  assert.equal(zonasVivo.proximas.length, 2, "y el comedor y «todo» figuran aparte");
   assert.ok(zonasVivo.proximas[0].bloqueada && /Zona grabada 2 · comedor.*próximamente/.test(zonasVivo.proximas[0].texto), `el comedor aún no se puede elegir: ${JSON.stringify(zonasVivo.proximas)}`);
-  assert.ok(zonasVivo.proximas[1].bloqueada && /General · patio y comedor a la vez.*próximamente/.test(zonasVivo.proximas[1].texto), `el general (simultáneo) es a futuro: ${JSON.stringify(zonasVivo.proximas)}`);
+  assert.ok(zonasVivo.proximas[1].bloqueada && /Todo · patio y comedor a la vez.*próximamente/.test(zonasVivo.proximas[1].texto), `«todo» (simultáneo) es a futuro: ${JSON.stringify(zonasVivo.proximas)}`);
   // Al activar el en vivo se dice dónde se está haciendo: el patio.
   assert.equal(await evalua(`document.querySelector('[data-prueba=pill-en-vivo]')?.textContent.trim()`), "● EN VIVO · PATIO", "el plano dice dónde es el en vivo");
   assert.equal(await evalua(`document.querySelector('[data-prueba=zona-en-vivo]')?.textContent.trim()`), "PATIO", "el título dice dónde es el en vivo");
