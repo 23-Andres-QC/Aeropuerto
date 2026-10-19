@@ -155,6 +155,9 @@ services:
       ENLACE_CAMARA: ${ENLACE_CAMARA:-}
       # Resolución del detector en CPU (vacío = 640 con yolo26s). 480 es ~1,5x más rápido pero ve peor a lo lejos.
       MODELO_IMGSZ: ${MODELO_IMGSZ:-}
+      # Cómo lee los cuadros del teléfono: vacío = el MJPEG de siempre; «foto» pide solo el más nuevo (/foto.jpg?despues=). Con el modelo
+      # en CPU, que procesa pocos cuadros por segundo, el MJPEG se acumula en los búferes y el modelo ve cuadros de hace segundos.
+      LECTURA_TELEFONOS: ${LECTURA_TELEFONOS:-}
       OMP_NUM_THREADS: ${MODELO_CPUS:-3}
     # Deja un núcleo libre para que la web y la API sigan respondiendo.
     cpus: ${MODELO_CPUS:-3}
