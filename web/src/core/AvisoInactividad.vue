@@ -10,7 +10,7 @@ const boton = ref<HTMLButtonElement>();
 
 async function cerrarPorInactividad() {
   try {
-    sessionStorage.setItem(CLAVE_AVISO_CIERRE, "1");
+    sessionStorage.setItem(CLAVE_AVISO_CIERRE, "inactividad");
   } catch {
     /* sin sessionStorage el login no explica el motivo, pero la sesión se cierra igual */
   }
