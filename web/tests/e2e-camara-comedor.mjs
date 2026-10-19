@@ -4,7 +4,9 @@
 //   1. Se crea una cámara en el centro del comedor (por la API, igual que lo hace el plano al hacer clic).
 //   2. En Configuración, acercado al comedor, la cámara se dibuja en el comedor (fuera de la hoja del patio) y la leyenda del comedor la lista.
 //   3. Con el patio acercado, la cámara del comedor no está pegada a su borde ni la leyenda del patio la cuenta como suya.
-//   4. La cámara de prueba se borra al final.
+//   4. Límites: con el plano en edición se ve el borde de la hoja del patio y del comedor; una cámara puesta lejos de las dos (en el
+//      campus) se lleva al borde de la hoja más cercana, no queda perdida en el mapa.
+//   5. Las cámaras de prueba se borran al final.
 //
 //   node web/tests/e2e-camara-comedor.mjs
 //
@@ -14,6 +16,7 @@ import { abrir, esperar } from "./lib-navegador.mjs";
 
 const paso = (texto) => console.log(`✓ ${texto}`);
 const ID = "e2e-cam-comedor";
+const creadas = [];
 const t = await abrir();
 const tocar = (selector) => t.evalua(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('click', { bubbles: true })); 0`); // un <g> de SVG no tiene click()
 const leyenda = () => t.evalua(`[...document.querySelectorAll('.leyenda-plano li')].map((l) => l.textContent.replace(/\\s+/g, ' ').trim())`);
@@ -57,11 +60,38 @@ try {
   const enPatio = await donde();
   assert.ok(enPatio && (enPatio.x < 0 || enPatio.y < 0), "y la cámara del comedor sigue en el comedor, no pegada al patio");
   paso("la cámara del comedor no se pega al borde del patio");
+  // 4. Límites: un clic lejos de las dos zonas.
+  const antes = new Set((await t.api("GET", "/api/v1/sites/esan/config")).cuerpo.cameras.map((c) => c.camera_id));
+  await t.clic(`button[aria-label="Ver todo el campus"]`);
+  await esperar(1200);
+  await t.clicTexto("button", /✎ Editar/);
+  await esperar(500);
+  assert.ok(await t.existe("[data-prueba=limites-zonas]"), "al editar se ve el borde de la hoja de cada zona");
+  assert.equal(await t.evalua(`document.querySelectorAll('[data-prueba=limites-zonas] .limite-zona').length`), 2, "el patio y el comedor");
+  await t.clicTexto("button", /＋ Cámara/);
+  const lejos = await t.evalua(`(() => { const r = document.querySelector('svg.lienzo-plano').getBoundingClientRect(); return { x: r.x + r.width * 0.94, y: r.y + r.height * 0.06 }; })()`);
+  await t.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: lejos.x, y: lejos.y });
+  await t.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: lejos.x, y: lejos.y, button: "left", clickCount: 1 });
+  await t.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: lejos.x, y: lejos.y, button: "left", clickCount: 1 });
+  await esperar(2000);
+  const cfg2 = (await t.api("GET", "/api/v1/sites/esan/config")).cuerpo;
+  const nueva = cfg2.cameras.find((c) => !antes.has(c.camera_id));
+  assert.ok(nueva?.position, "el clic en el plano creó una cámara");
+  creadas.push(nueva.camera_id);
+  const puntos = [...cfg2.zones.flatMap((z) => z.points), ...comedor.piso_m, ...cfg2.cameras.filter((c) => c.camera_id !== nueva.camera_id && c.position).map((c) => c.position)];
+  const [xs, ys] = [puntos.map((p) => p[0]), puntos.map((p) => p[1])];
+  const margen = 25;
+  assert.ok(
+    nueva.position[0] >= Math.min(...xs) - margen && nueva.position[0] <= Math.max(...xs) + margen && nueva.position[1] >= Math.min(...ys) - margen && nueva.position[1] <= Math.max(...ys) + margen,
+    `una cámara puesta lejos de las zonas queda en el borde de una hoja, no perdida en el campus: ${JSON.stringify(nueva.position)}`,
+  );
+  paso("al editar se ven los límites de cada zona y una cámara puesta afuera se lleva al borde de la hoja más cercana");
   assert.deepEqual(t.consola.filter((l) => !/status of 40[134]|Failed to load resource/.test(l)), [], "errores en la consola del navegador");
   console.log("cámara en el comedor: todo bien");
 } finally {
   try {
     await t.api("DELETE", `/api/v1/sites/esan/cameras/${ID}`);
+    for (const id of creadas) await t.api("DELETE", `/api/v1/sites/esan/cameras/${id}`);
   } catch {}
   t.cerrar();
 }

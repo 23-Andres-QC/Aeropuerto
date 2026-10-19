@@ -6,7 +6,7 @@ import { NOMBRE_ROL, ROL_ADMIN } from "./core/roles";
 import AvisoInactividad from "./core/AvisoInactividad.vue";
 import PaletaComandos from "./core/PaletaComandos.vue";
 import SelectorSitio from "./features/sitios/components/SelectorSitio.vue";
-import { fijarModoVivo, modoVivo, usarSitioVivo } from "./features/sitios/enVivo";
+import { fijarModoVivo, modoVivo, usarSitioVivo, zonaVivo } from "./features/sitios/enVivo";
 import { rutaAlElegir } from "./features/sitios/selector";
 import type { Sitio } from "./features/sitios/api";
 import { recordarSitio, ultimoSitio, useSitios, vaciarSitios } from "./features/sitios/useSitios";
@@ -140,10 +140,10 @@ function elegirSitio(s: Sitio) {
             class="modo-vivo"
             :class="{ activo: modoVivo }"
             type="button"
-            :title="modoVivo ? 'Salir del modo en vivo: guarda la captura y el modelo olvida a las personas (al volver, todos son nuevos)' : 'Activar el modo en vivo con los teléfonos conectados'"
+            :title="modoVivo ? 'Salir del modo en vivo: guarda la captura y el modelo olvida a las personas (al volver, todos son nuevos)' : `Activar el modo en vivo con los teléfonos conectados${zonaVivo ? ` (zona: ${zonaVivo})` : ''}`"
             @click="fijarModoVivo(!modoVivo)"
           >
-            {{ modoVivo ? "● EN VIVO · Salir" : "Activar en vivo" }}
+            {{ modoVivo ? `● EN VIVO${zonaVivo ? ` · ${zonaVivo.toUpperCase()}` : ""} · Salir` : "Activar en vivo" }}
           </button>
           <span class="live-dot"></span> Demo local
           <button

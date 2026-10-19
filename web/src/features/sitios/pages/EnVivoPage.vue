@@ -4,7 +4,7 @@ import { colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, type Config, type Replay, type Sesion } from "../api";
 import VistaTelefono from "../../telefonos/components/VistaTelefono.vue";
 import PlanoSitio, { type PersonaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
-import { CAMARAS_VIVO, CELDA_CALOR, LINEA_CONTEO, SESION_VIVO, ajusteMapa, capturaDePrueba, capturasVersion, fijarUnion, unidasAhora, unirPorPosicion, grabando, iniciarGrabacion, terminarGrabacion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura } from "../enVivo";
+import { CAMARAS_VIVO, CELDA_CALOR, LINEA_CONTEO, SESION_VIVO, ajusteMapa, capturaDePrueba, capturasVersion, fijarUnion, unidasAhora, unirPorPosicion, grabando, iniciarGrabacion, terminarGrabacion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura, zonaVivo } from "../enVivo";
 import { useRoute } from "vue-router";
 import { useSitios } from "../useSitios";
 
@@ -50,6 +50,7 @@ const verCalor = ref(true);
 const zonasAGrabar = computed(() => [
   { clave: "sitio", nombre: mapa.value?.campus?.nombre || "Patio", activa: true },
   ...(mapa.value?.capas ?? []).map((c) => ({ clave: c.nombre, nombre: c.nombre, activa: false })),
+  ...(mapa.value?.capas?.length ? [{ clave: "general", nombre: "General · patio y comedor a la vez", activa: false }] : []),
 ]);
 const guardadasVivo = computed(() => sesiones.value.filter((s) => s.kind === "LIVE"));
 const grabadas = computed(() => sesiones.value.filter((s) => s.kind === "BUILD"));
@@ -289,7 +290,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
 <template>
   <section class="page-title">
     <div>
-      <p class="eyebrow">{{ config?.site.name ?? slug }} · EN VIVO DEL MODELO</p>
+      <p class="eyebrow">{{ config?.site.name ?? slug }} · EN VIVO DEL MODELO<template v-if="modoVivo && zonaVivo"> · <b data-prueba="zona-en-vivo">{{ zonaVivo.toUpperCase() }}</b></template></p>
       <h1>Personas sobre el plano y cámaras sincronizadas</h1>
       <p v-if="modoVivo">
         Tracking en tiempo real: cada teléfono que se une en <RouterLink to="/telefonos">Teléfonos</RouterLink> toma una cámara del plano, en orden de llegada
@@ -300,7 +301,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
     <label class="selector-sesion">Sesión
       <select v-model="valorSesion">
         <optgroup label="Tiempo real">
-          <option :value="SESION_VIVO">● En vivo · teléfonos</option>
+          <option :value="SESION_VIVO">● En vivo{{ zonaVivo ? ` · ${zonaVivo}` : "" }} · teléfonos</option>
         </optgroup>
         <optgroup v-if="guardadasVivo.length" label="Guardado en vivo">
           <option v-for="s in guardadasVivo" :key="s.session_id" :value="s.session_id">
@@ -327,7 +328,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <h2>Plano · {{ (mapa.tam_px[0] / mapa.px_por_metro).toFixed(0) }} × {{ (mapa.tam_px[1] / mapa.px_por_metro).toFixed(0) }} m</h2>
         <span v-if="modoVivo" class="heading-meta">
           <span v-if="capturaDePrueba" class="pill prueba" title="Hay un teléfono simulado: se ve, pero esta captura no se guarda en la base">PRUEBA · no se guarda</span>
-          <span v-if="grabando && !capturaDePrueba" class="pill grabando">● GRABANDO</span><span class="pill en-vivo">● EN VIVO</span><span class="pill">{{ enPlano.length }} en el plano</span>
+          <span v-if="grabando && !capturaDePrueba" class="pill grabando">● GRABANDO</span><span class="pill en-vivo" data-prueba="pill-en-vivo">● EN VIVO{{ zonaVivo ? ` · ${zonaVivo.toUpperCase()}` : "" }}</span><span class="pill">{{ enPlano.length }} en el plano</span>
         </span>
         <span v-else-if="replay" class="heading-meta"><span class="pill">{{ enPlano.length }} en el plano</span><span class="pill">{{ replay.personas.length }} personas</span></span>
         <span v-else-if="!cargando && !sesiones.length" class="pill">sin sesiones</span>
@@ -343,7 +344,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
             :class="{ elegida: z.clave === 'sitio' }"
             :disabled="!z.activa"
             :aria-pressed="z.clave === 'sitio'"
-            :title="z.activa ? 'Se graba esta zona' : 'Próximamente: esta zona aún no tiene sus cámaras'"
+            :title="z.activa ? 'Se graba esta zona' : z.clave === 'general' ? 'Próximamente: en vivo simultáneo en el patio y el comedor' : 'Próximamente: esta zona aún no tiene sus cámaras'"
             :data-prueba="z.activa ? 'zona-activa' : 'zona-proxima'"
           >
             {{ z.nombre }}<small v-if="!z.activa"> · próximamente</small>
