@@ -2,6 +2,7 @@
 // manda solo y que ningún script de la página puede leer ni copiar. Aquí solo se guarda quién es (para mostrarlo y decidir si se
 // pide el login), nunca una credencial.
 import { ref } from "vue";
+import { CLAVE_AVISO_CIERRE } from "./inactividad";
 
 /** Quién es: el servidor lo dice en /auth/me. `debe_cambiar_clave`: la clave es temporal y solo puede elegir una propia. */
 export type Sesion = {
@@ -126,6 +127,19 @@ export async function logout(): Promise<void> {
   }
   sesion.value = null;
   comprobada = true;
+}
+
+/**
+ * Volver a la plataforma con las flechas del navegador (salió y regresó, o la página se restauró de la memoria del navegador) cierra la
+ * sesión: nadie que use ese equipo después debe encontrar la sesión abierta. Un F5 o un cambio de pantalla dentro de la plataforma no.
+ */
+export async function cerrarPorRegreso(): Promise<void> {
+  try {
+    sessionStorage.setItem(CLAVE_AVISO_CIERRE, "atras");
+  } catch {
+    /* sin sessionStorage el login no explica el motivo, pero la sesión se cierra igual */
+  }
+  await logout();
 }
 
 /** El servidor respondió 401: la sesión terminó (venció o se cerró en otra pestaña). */
