@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { logout, sesion } from "./core/auth";
 import { NOMBRE_ROL, ROL_ADMIN } from "./core/roles";
 import AvisoInactividad from "./core/AvisoInactividad.vue";
+import AvisoVersion from "./core/AvisoVersion.vue";
 import PaletaComandos from "./core/PaletaComandos.vue";
 import SelectorSitio from "./features/sitios/components/SelectorSitio.vue";
 import { fijarModoVivo, modoVivo, usarSitioVivo, zonaVivo } from "./features/sitios/enVivo";
@@ -176,6 +177,8 @@ function elegirSitio(s: Sitio) {
   </div>
   <!-- A los 2 min sin actividad se cierra la sesión (10 s antes pregunta «¿sigues ahí?»); vale para todas las pantallas con sesión. -->
   <AvisoInactividad />
+  <!-- Si se publica una versión nueva mientras la pestaña sigue abierta, lo avisa (la pestaña no se actualiza sola). -->
+  <AvisoVersion />
 </template>
 
 <style scoped>
