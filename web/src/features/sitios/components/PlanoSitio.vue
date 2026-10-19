@@ -358,9 +358,11 @@ const camaras = computed(() => {
     const a = arrastre.value?.id === c.id ? arrastre.value : null;
     const pos = a?.pos ?? c.pos;
     const angulo = a?.angulo ?? c.angulo;
+    // Sin campus la hoja es todo lo que se ve: una cámara fuera de ella se pega al borde para no perderse. Con campus (y otras zonas
+    // grabadas, como el comedor) se ve más que la hoja del sitio, y la cámara va donde está.
     const margen = 14 * e.value;
-    const x = Math.min(Math.max(px(pos[0]), margen), ancho.value - margen);
-    const y = Math.min(Math.max(py(pos[1]), margen), alto.value - margen);
+    const x = campus.value ? px(pos[0]) : Math.min(Math.max(px(pos[0]), margen), ancho.value - margen);
+    const y = campus.value ? py(pos[1]) : Math.min(Math.max(py(pos[1]), margen), alto.value - margen);
     const rad = (angulo * Math.PI) / 180;
     const alcance = 46 * e.value;
     const etiqueta = c.altura != null ? `${c.id} · ${c.altura.toFixed(1)} m` : c.id;
@@ -615,11 +617,14 @@ function dentro([x, y]: Punto, poligono: Punto[]): boolean {
   }
   return en;
 }
-/** A qué zona grabada pertenece una zona del plano: la otra zona grabada (capa) en cuyo piso cae su centro, o el sitio. */
+/** A qué zona grabada pertenece un punto del plano: la otra zona grabada (capa) en cuyo piso cae, o el sitio. */
+function lugarDePunto(c: Punto): string {
+  return (props.mapa.capas ?? []).find((q) => q.piso_m.length > 2 && dentro(c, q.piso_m))?.nombre ?? "sitio";
+}
+/** A qué zona grabada pertenece una zona del plano: la de su centro. */
 function lugarDeZona(z: Zona): string {
   if (!z.points.length) return "sitio";
-  const c: Punto = [z.points.reduce((a, p) => a + p[0], 0) / z.points.length, z.points.reduce((a, p) => a + p[1], 0) / z.points.length];
-  return (props.mapa.capas ?? []).find((q) => q.piso_m.length > 2 && dentro(c, q.piso_m))?.nombre ?? "sitio";
+  return lugarDePunto([z.points.reduce((a, p) => a + p[0], 0) / z.points.length, z.points.reduce((a, p) => a + p[1], 0) / z.points.length]);
 }
 /** Lo que se ve: todo el campus, el sitio o el nombre de otra zona grabada acercada. */
 const lugarActual = computed(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"));
@@ -631,7 +636,7 @@ const elementos = computed(() => {
     zonas: [...zonas].map(([nombre, color]) => ({ nombre, color })),
     piso: !!props.mapa.piso_L_m?.length && !props.mapa.fondo,
     obstaculos: !props.mapa.fondo && !!props.mapa.obstaculos?.length,
-    camaras: props.mostrarCamaras && camaras.value.length > 0,
+    camaras: props.mostrarCamaras && lugarActual.value !== "campus" && camaras.value.some((c) => lugarDePunto(c.pos) === lugarActual.value),
     personas: props.personas.some((p) => (p.estado ?? "visto") === "visto"),
     estimadas: props.personas.some((p) => p.estado === "estimado"),
     salieron: props.personas.some((p) => p.estado === "salio"),
@@ -838,13 +843,13 @@ watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
       <template v-if="veSitio">
         <li v-if="elementos.piso"><span class="muestra m-piso"></span>Piso</li>
         <li v-if="elementos.obstaculos"><span class="muestra m-obstaculo"></span>Obstáculo</li>
-        <li v-if="elementos.camaras">
-          <svg class="muestra-icono" viewBox="-13 -10 27 20" aria-hidden="true">
-            <rect x="-12" y="-8" width="18" height="16" rx="3.5" class="m-cuerpo" /><path d="M 5 -4.5 L 13 -9 L 13 9 L 5 4.5 Z" class="m-cuerpo" />
-          </svg>
-          Cámara
-        </li>
       </template>
+      <li v-if="elementos.camaras">
+        <svg class="muestra-icono" viewBox="-13 -10 27 20" aria-hidden="true">
+          <rect x="-12" y="-8" width="18" height="16" rx="3.5" class="m-cuerpo" /><path d="M 5 -4.5 L 13 -9 L 13 9 L 5 4.5 Z" class="m-cuerpo" />
+        </svg>
+        Cámara
+      </li>
       <li v-for="z in elementos.zonas" :key="z.nombre">
         <span class="muestra" :style="{ background: z.color + '33', borderColor: z.color }"></span>{{ z.nombre }}
       </li>
