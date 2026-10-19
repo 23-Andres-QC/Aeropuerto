@@ -14,6 +14,7 @@ import json
 import math
 import os
 import socket
+import struct
 import sys
 import threading
 import time
@@ -504,15 +505,19 @@ class Relevo:
         base = url_api.replace("https://", "wss://").replace("http://", "ws://") + "/api/v1/cameras"
         self._urgente, self._video = Publicador(base), Publicador(base)
 
-    def video(self, cid, frame, ancho=ANCHO_RELEVO, calidad=70, kbps=0):
-        """Publica el frame (reducido a `ancho` px) para que la web lo muestre; con `kbps`, dosificado."""
+    def video(self, cid, frame, ancho=ANCHO_RELEVO, calidad=70, kbps=0, cuadro=None):
+        """Publica el frame (reducido a `ancho` px) para que la web lo muestre; con `kbps`, dosificado.
+
+        Con `cuadro` (el número que le puso la cámara web) el mensaje lleva delante ese número en 4 bytes (big-endian): la web
+        junta cada cuadro con las cajas que el modelo calculó para él (un JPEG empieza con 0xFF, un número así nunca).
+        """
         def codificar():
             alto = round(frame.shape[0] * ancho / frame.shape[1])
             imagen = frame if frame.shape[1] == ancho else cv2.resize(frame, (ancho, alto), interpolation=cv2.INTER_AREA)
             for q in (calidad, 60, 45):
                 ok, jpeg = cv2.imencode(".jpg", imagen, [cv2.IMWRITE_JPEG_QUALITY, q])
                 if ok and len(jpeg) <= MAX_JPEG_RELEVO:
-                    return jpeg.tobytes()
+                    return jpeg.tobytes() if cuadro is None else struct.pack(">I", cuadro & 0xFFFFFFFF) + jpeg.tobytes()
             return None
         self._video.encolar(f"{cid}/publish", codificar, kbps)
 
@@ -528,6 +533,43 @@ class Relevo:
         """Manda lo pendiente (el último estado) y cierra las conexiones."""
         self._urgente.cerrar()
         self._video.cerrar()
+
+
+# Cuadros por segundo del video de los teléfonos hacia la web cuando no se fija RELEVO_VIDEO_FPS.
+VIDEO_TELEFONOS_FPS = 15.0
+
+
+class Difusor:
+    """Manda a la web el video de cada teléfono a su ritmo, sin esperar al modelo.
+
+    Antes cada cuadro salía recién cuando el modelo lo terminaba de procesar: en CPU eran ~5 por segundo y el video se veía a
+    saltos. Ahora sale el último cuadro de cada teléfono hasta `fps` veces por segundo, con su número de cuadro, y la web lo
+    muestra un poco atrasado (lo que tarda el modelo) para dibujarle las cajas que le corresponden.
+    """
+
+    def __init__(self, relevo, lectores, fps):
+        self.relevo, self.lectores, self.fps = relevo, lectores, fps
+        self._parar = threading.Event()
+        self._hilo = threading.Thread(target=self._correr, daemon=True)
+        self._hilo.start()
+
+    def _correr(self):
+        vistos = {}
+        while not self._parar.wait(1 / self.fps):
+            try:
+                actuales = list(self.lectores.items())
+            except RuntimeError:  # el lazo principal cambió la lista justo ahora: se mira en la próxima vuelta
+                continue
+            vistos = {lector: vistos.get(lector, 0) for _, lector in actuales}
+            for cid, lector in actuales:
+                dato = lector.tomar(vistos[lector])
+                if dato is None:
+                    continue
+                vistos[lector] = dato[0]
+                self.relevo.video(cid, dato[1], kbps=KBPS_VIDEO_TELEFONOS, cuadro=dato[3] or 0)
+
+    def detener(self):
+        self._parar.set()
 
 
 def config_telefonos(telefonos, asociacion):
@@ -990,10 +1032,10 @@ def main():
                                    batch_size=encoder.get("batch_size", 8), device="cpu")
     videos = VideosSubidos(url_api, motor, reid_videos, asociacion_build, relevo, personas_para_web)
     lectores, nombres, calentado = {}, {}, False
-    relevado = {}  # último video de cada teléfono por el relevo (con FPS_RELEVO)
     publicado, fallos, ultimo_video = 0.0, 0, -math.inf
     enlace, enlace_visto = None, -math.inf
     sondeo = Sondeo(url_api)
+    difusor = Difusor(relevo, lectores, FPS_RELEVO or VIDEO_TELEFONOS_FPS)
     try:
         while True:
             sondeado = sondeo.tomar()
@@ -1046,9 +1088,6 @@ def main():
                         raise
                     continue
                 for cid, (_, frame, _, cuadro) in datos.items():
-                    if not FPS_RELEVO or time.monotonic() - relevado.get(cid, -math.inf) >= 1 / FPS_RELEVO:
-                        relevado[cid] = time.monotonic()
-                        relevo.video(cid, frame, kbps=KBPS_VIDEO_TELEFONOS)
                     relevo.detecciones(cid, {"ts": time.time(), "cuadro": cuadro, "frame_w": ANCHO_RELEVO,
                                              "frame_h": round(frame.shape[0] * ANCHO_RELEVO / frame.shape[1]),
                                              "people": personas_para_web(filas[cid], frame.shape[1]),
@@ -1074,6 +1113,7 @@ def main():
     except KeyboardInterrupt:
         print("Detenido. La memoria de identidades queda guardada en backend-vivo.", flush=True)
     finally:
+        difusor.detener()
         sondeo.detener()
         for lector in lectores.values():
             lector.detener()
