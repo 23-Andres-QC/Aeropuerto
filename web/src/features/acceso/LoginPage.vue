@@ -2,6 +2,7 @@
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { login as iniciarSesion } from "../../core/auth";
+import { CLAVE_AVISO_CIERRE } from "../../core/inactividad";
 
 const router = useRouter();
 const username = ref("");
@@ -9,6 +10,14 @@ const password = ref("");
 const showPassword = ref(false);
 const error = ref("");
 const submitting = ref(false);
+// Si la sesión se cerró por inactividad (o por volver con las flechas del navegador), el login lo explica (una sola vez).
+const motivoCierre = ref<string | null>(null);
+try {
+  motivoCierre.value = sessionStorage.getItem(CLAVE_AVISO_CIERRE);
+  sessionStorage.removeItem(CLAVE_AVISO_CIERRE);
+} catch {
+  /* sessionStorage bloqueado: sin aviso */
+}
 
 async function login() {
   error.value = "";
@@ -83,6 +92,12 @@ async function login() {
             >{{ showPassword ? "Ocultar" : "Mostrar" }}</button>
           </div>
 
+          <p v-if="motivoCierre === 'inactividad' && !error" class="login-error" role="status" data-prueba="cierre-por-inactividad">
+            Cerramos tu sesión por inactividad (2 minutos). Vuelve a iniciar sesión para continuar.
+          </p>
+          <p v-if="motivoCierre === 'atras' && !error" class="login-error" role="status" data-prueba="cierre-por-regreso">
+            Por seguridad, cerramos tu sesión al volver con las flechas del navegador. Inicia sesión de nuevo para continuar.
+          </p>
           <p v-if="error" class="login-error" role="alert">{{ error }}</p>
           <p class="olvide"><RouterLink to="/olvide" data-prueba="ir-olvide">¿Olvidaste tu contraseña?</RouterLink></p>
           <button class="primary-button login-submit" type="submit" :disabled="submitting">

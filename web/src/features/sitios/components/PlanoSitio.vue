@@ -94,6 +94,44 @@ const px = (x: number) => (x - props.mapa.origen_m[0]) * k.value;
 const py = (y: number) => (props.mapa.origen_m[1] - y) * k.value;
 const puntos = (ps: Punto[]) => ps.map(([x, y]) => `${px(x).toFixed(1)},${py(y).toFixed(1)}`).join(" ");
 const aMetros = (p: DOMPoint): Punto => [+(p.x / k.value + props.mapa.origen_m[0]).toFixed(2), +(props.mapa.origen_m[1] - p.y / k.value).toFixed(2)];
+/**
+ * Límites de lo que se coloca y se mueve (cámaras y puntos de zonas): la hoja del dibujo de cada zona grabada, el patio y, si hay, el
+ * comedor (en px del plano). Fuera de ellas no hay nada que dibujar: un punto que cae afuera se lleva al borde de la hoja más cercana.
+ */
+const limites = computed<Punto[][]>(() => [
+  [[0, 0], [ancho.value, 0], [ancho.value, alto.value], [0, alto.value]],
+  ...capas.value.map((c) => c.hoja),
+]);
+function limitar(p: DOMPoint): DOMPoint {
+  const q: Punto = [p.x, p.y];
+  if (limites.value.some((l) => dentroDe(q, l))) return p;
+  let mejor: Punto = q;
+  let dist = Infinity;
+  for (const l of limites.value) {
+    for (let i = 0; i < l.length; i++) {
+      const [ax, ay] = l[i];
+      const [bx, by] = l[(i + 1) % l.length];
+      const [dx, dy] = [bx - ax, by - ay];
+      const t = Math.min(1, Math.max(0, ((q[0] - ax) * dx + (q[1] - ay) * dy) / (dx * dx + dy * dy || 1)));
+      const c: Punto = [ax + t * dx, ay + t * dy];
+      const d = Math.hypot(q[0] - c[0], q[1] - c[1]);
+      if (d < dist) [mejor, dist] = [c, d];
+    }
+  }
+  return new DOMPoint(mejor[0], mejor[1]);
+}
+/** Como `aMetros`, pero dentro de los límites. */
+const aMetrosLimitado = (p: DOMPoint): Punto => aMetros(limitar(p));
+/** ¿El punto cae dentro del polígono? (los dos en las mismas unidades) */
+function dentroDe([x, y]: Punto, poligono: Punto[]): boolean {
+  let en = false;
+  for (let i = 0, j = poligono.length - 1; i < poligono.length; j = i++) {
+    const [xi, yi] = poligono[i];
+    const [xj, yj] = poligono[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) en = !en;
+  }
+  return en;
+}
 
 // --- Campus: el lugar entero alrededor del sitio (ej. la universidad) ---------
 type Vista = { x: number; y: number; w: number; h: number };
@@ -122,8 +160,12 @@ const capas = computed(() =>
     const [X, Y] = [px(c.ancla_m[0]), py(c.ancla_m[1])];
     const ps: Punto[] = c.piso_m.map(([x, y]) => [px(x), py(y)]);
     const g = caja(ps.map((q) => girar(q, giro.value)));
-    return { nombre: c.nombre, fondo: c.fondo, ancho: c.tam_px[0], alto: c.tam_px[1], transform: `matrix(${a} ${b} ${cc} ${d} ${X - (a * u + cc * v)} ${Y - (b * u + d * v)})`,
-      contorno: ps.map((q) => q.join(",")).join(" "), caja: caja(ps), vista: g, x: g.x + g.w / 2, abajo: g.y + g.h };
+    const [tx, ty] = [X - (a * u + cc * v), Y - (b * u + d * v)];
+    const hoja: Punto[] = (
+      [[0, 0], [c.tam_px[0], 0], [c.tam_px[0], c.tam_px[1]], [0, c.tam_px[1]]] as Punto[]
+    ).map(([x, y]) => [a * x + cc * y + tx, b * x + d * y + ty]);
+    return { hoja, nombre: c.nombre, fondo: c.fondo, ancho: c.tam_px[0], alto: c.tam_px[1], transform: `matrix(${a} ${b} ${cc} ${d} ${X - (a * u + cc * v)} ${Y - (b * u + d * v)})`,
+      contorno: ps.map((q) => q.join(",")).join(" "), caja: caja(ps), vista: g, x: g.x + g.w / 2, arriba: g.y, abajo: g.y + g.h };
   }),
 );
 /** La zona grabada (otra capa) que se está mirando de cerca: la que tiene el centro de la vista; ninguna desde el campus ni sobre el sitio. */
@@ -135,6 +177,19 @@ const capaEnVista = computed(() => {
   const c = capas.value.find((q) => Math.abs(cx - (q.vista.x + q.vista.w / 2)) <= q.vista.w * 0.65 && Math.abs(cy - (q.vista.y + q.vista.h / 2)) <= q.vista.h * 0.65 && dist(q.vista.x + q.vista.w / 2, q.vista.y + q.vista.h / 2) < delSitio);
   return c?.nombre ?? null;
 });
+/**
+ * Desde el campus las zonas grabadas se marcan sin texto (con varias, los nombres se pisarían): un clic en una zona muestra su nombre y un
+ * segundo clic acerca a ella. Un clic en otro lado, o acercarse, la suelta.
+ */
+const elegida = ref<string | null>(null);
+function tocar(clave: string, acercar: () => void) {
+  if (elegida.value === clave) {
+    elegida.value = null;
+    acercar();
+  } else elegida.value = clave;
+}
+/** ¿Se ve la zona grabada del sitio (el patio)? Sin campus, siempre; con campus, no desde lejos ni sobre otra zona grabada. */
+const veSitio = computed(() => !campus.value || (!enCampus.value && !capaEnVista.value));
 /** Acercar a una de las zonas grabadas. */
 const irACapa = (i: number) => {
   const c = capas.value[i].caja;
@@ -345,9 +400,11 @@ const camaras = computed(() => {
     const a = arrastre.value?.id === c.id ? arrastre.value : null;
     const pos = a?.pos ?? c.pos;
     const angulo = a?.angulo ?? c.angulo;
+    // Sin campus la hoja es todo lo que se ve: una cámara fuera de ella se pega al borde para no perderse. Con campus (y otras zonas
+    // grabadas, como el comedor) se ve más que la hoja del sitio, y la cámara va donde está.
     const margen = 14 * e.value;
-    const x = Math.min(Math.max(px(pos[0]), margen), ancho.value - margen);
-    const y = Math.min(Math.max(py(pos[1]), margen), alto.value - margen);
+    const x = campus.value ? px(pos[0]) : Math.min(Math.max(px(pos[0]), margen), ancho.value - margen);
+    const y = campus.value ? py(pos[1]) : Math.min(Math.max(py(pos[1]), margen), alto.value - margen);
     const rad = (angulo * Math.PI) / 180;
     const alcance = 46 * e.value;
     const etiqueta = c.altura != null ? `${c.id} · ${c.altura.toFixed(1)} m` : c.id;
@@ -462,7 +519,7 @@ function moverZona(ev: PointerEvent, p: DOMPoint) {
   if (!a.movido && !seMovio(ev, a)) return;
   capturar(ev);
   a.movido = true;
-  const [x, y] = aMetros(p);
+  const [x, y] = a.modo === "vertice" ? aMetrosLimitado(p) : aMetros(p);
   if (a.modo === "vertice") {
     a.puntos = a.puntos.map((q, i) => (i === a.indice ? [x, y] : q));
     return;
@@ -494,7 +551,7 @@ function mover(ev: PointerEvent) {
   }
   const p = enSvg(ev);
   if (!p) return;
-  if (props.dibujando) cursor.value = aMetros(p);
+  if (props.dibujando) cursor.value = aMetrosLimitado(p);
   if (arrastreZona.value) {
     moverZona(ev, p);
     return;
@@ -503,7 +560,7 @@ function mover(ev: PointerEvent) {
   if (!a || a.soltado || (!a.movido && !seMovio(ev, a))) return;
   capturar(ev);
   a.movido = true;
-  if (a.modo === "mover") a.pos = aMetros(p);
+  if (a.modo === "mover") a.pos = aMetrosLimitado(p);
   else a.angulo = +((((Math.atan2(a.oy - p.y, p.x - a.ox) * 180) / Math.PI) + 360) % 360).toFixed(1);
 }
 
@@ -537,6 +594,7 @@ function soltar() {
 
 function clic(ev: MouseEvent) {
   if (suprimido()) return;
+  elegida.value = null;
   if (!props.dibujando) {
     emit("fondo");
     return;
@@ -544,7 +602,7 @@ function clic(ev: MouseEvent) {
   const p = enSvg(ev);
   if (!p) return;
   if (cierra.value) emit("cerrar");
-  else emit("punto", aMetros(p));
+  else emit("punto", aMetrosLimitado(p));
 }
 
 function clicZona(z: Zona) {
@@ -591,14 +649,36 @@ const flechasPlano = computed(() =>
 );
 
 // Leyenda: solo lo que este plano está dibujando.
+/** ¿El punto (m) cae dentro del polígono (m)? */
+function dentro([x, y]: Punto, poligono: Punto[]): boolean {
+  let en = false;
+  for (let i = 0, j = poligono.length - 1; i < poligono.length; j = i++) {
+    const [xi, yi] = poligono[i];
+    const [xj, yj] = poligono[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) en = !en;
+  }
+  return en;
+}
+/** A qué zona grabada pertenece un punto del plano: la otra zona grabada (capa) en cuyo piso cae, o el sitio. */
+function lugarDePunto(c: Punto): string {
+  return (props.mapa.capas ?? []).find((q) => q.piso_m.length > 2 && dentro(c, q.piso_m))?.nombre ?? "sitio";
+}
+/** A qué zona grabada pertenece una zona del plano: la de su centro. */
+function lugarDeZona(z: Zona): string {
+  if (!z.points.length) return "sitio";
+  return lugarDePunto([z.points.reduce((a, p) => a + p[0], 0) / z.points.length, z.points.reduce((a, p) => a + p[1], 0) / z.points.length]);
+}
+/** Lo que se ve: todo el campus, el sitio o el nombre de otra zona grabada acercada. */
+const lugarActual = computed(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"));
 const elementos = computed(() => {
+  // La leyenda lista las zonas de la zona grabada que se mira; con todo el campus a la vista, ninguna.
   const zonas = new Map<string, string>();
-  for (const z of props.zonas) if (!zonas.has(z.name)) zonas.set(z.name, z.color || "#3d8bff");
+  if (lugarActual.value !== "campus") for (const z of props.zonas) if (lugarDeZona(z) === lugarActual.value && !zonas.has(z.name)) zonas.set(z.name, z.color || "#3d8bff");
   return {
     zonas: [...zonas].map(([nombre, color]) => ({ nombre, color })),
     piso: !!props.mapa.piso_L_m?.length && !props.mapa.fondo,
     obstaculos: !props.mapa.fondo && !!props.mapa.obstaculos?.length,
-    camaras: props.mostrarCamaras && camaras.value.length > 0,
+    camaras: props.mostrarCamaras && lugarActual.value !== "campus" && camaras.value.some((c) => lugarDePunto(c.pos) === lugarActual.value),
     personas: props.personas.some((p) => (p.estado ?? "visto") === "visto"),
     estimadas: props.personas.some((p) => p.estado === "estimado"),
     salieron: props.personas.some((p) => p.estado === "salio"),
@@ -620,7 +700,7 @@ const idPiso = `piso-${Math.random().toString(36).slice(2, 9)}`;
 
 const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.length, ps.reduce((a, p) => a + p[1], 0) / ps.length];
 // Al final del script, cuando ya existe todo lo que la vista necesita.
-watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => emit("lugar", l), { immediate: true });
+watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
 </script>
 
 <template>
@@ -716,6 +796,9 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
           :class="r.hueco ? 'hueco' : r.activo ? 'rastro' : 'recorrido'"
           :style="{ stroke: r.color }"
         />
+        <g v-if="(editarCamaras || editarZonas || dibujando) && capas.length" class="limites" aria-hidden="true" data-prueba="limites-zonas">
+          <polygon v-for="(l, i) in limites" :key="'l' + i" :points="l.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')" class="limite-zona" />
+        </g>
         <g v-if="borrador.length">
           <polygon v-if="trazarZona && borrador.length >= 3" :points="puntos(borrador)" class="borrador-relleno" />
           <polyline :points="puntos(trazarZona && cursor && !cierra ? [...borrador, cursor] : borrador)" class="borrador" />
@@ -760,27 +843,28 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
           <text :x="px(p.x) + 12 * e" :y="py(p.y) - 8 * e" class="persona-etiqueta" :style="{ fill: p.color }">{{ p.etiqueta }}</text>
         </g>
         <!-- Desde el campus, el sitio grabado se marca y un clic acerca a él. -->
-        <g v-if="enCampus" class="entrada-sitio" role="button" tabindex="0" @click.stop="entrarAlSitio" @keydown.enter="entrarAlSitio">
+        <g v-if="enCampus" class="entrada-sitio" :class="{ elegida: elegida === 'sitio' }" role="button" tabindex="0" @click.stop="tocar('sitio', entrarAlSitio)" @keydown.enter="tocar('sitio', entrarAlSitio)">
           <polygon v-if="mapa.piso_L_m?.length" :points="puntos(mapa.piso_L_m)" class="marca-sitio" />
           <rect v-else :width="ancho" :height="alto" class="marca-sitio" />
-          <title>Acercar a {{ campus?.nombre || "la zona grabada" }}</title>
+          <title>{{ campus?.nombre || "Zona grabada" }}</title>
         </g>
         <!-- Las otras zonas grabadas del sitio: desde el campus se marcan y un clic acerca a ellas. -->
         <template v-if="enCampus">
-          <g v-for="(c, i) in capas" :key="'m' + c.nombre" class="entrada-vecino" role="button" tabindex="0" @click.stop="irACapa(i)" @keydown.enter="irACapa(i)">
+          <g v-for="(c, i) in capas" :key="'m' + c.nombre" class="entrada-vecino" :class="{ elegida: elegida === c.nombre }" role="button" tabindex="0" @click.stop="tocar(c.nombre, () => irACapa(i))" @keydown.enter="tocar(c.nombre, () => irACapa(i))">
             <polygon :points="c.contorno" class="marca-vecino" />
-            <title>Acercar a {{ c.nombre }}</title>
+            <title>{{ c.nombre }}</title>
           </g>
         </template>
       </g>
       <!-- Fuera del grupo girado: los textos siempre derechos. -->
-      <g v-if="enCampus" class="entrada-sitio" @click.stop="entrarAlSitio">
+      <g v-if="enCampus && elegida === 'sitio'" data-prueba="etiqueta-zona">
         <text :x="etiquetaSitio.x" :y="etiquetaSitio.arriba - 14 * e" class="nombre-sitio">{{ campus?.nombre || "Zona grabada" }}</text>
-        <text :x="etiquetaSitio.x" :y="etiquetaSitio.abajo + 24 * e" class="ayuda-sitio">Clic para acercar</text>
+        <text :x="etiquetaSitio.x" :y="etiquetaSitio.abajo + 24 * e" class="ayuda-sitio">Clic otra vez para acercar</text>
       </g>
       <g v-if="enCampus">
-        <g v-for="(c, i) in capas" :key="'n' + c.nombre" class="entrada-vecino" @click.stop="irACapa(i)">
-          <text :x="c.x" :y="c.abajo + 18 * e" class="nombre-vecino">{{ c.nombre }}</text>
+        <g v-for="c in capas.filter((q) => q.nombre === elegida)" :key="'n' + c.nombre" data-prueba="etiqueta-zona">
+          <text :x="c.x" :y="c.arriba - 26 * e" class="nombre-vecino">{{ c.nombre }}</text>
+          <text :x="c.x" :y="c.arriba - 9 * e" class="ayuda-vecino">Clic otra vez para acercar</text>
         </g>
       </g>
       <g class="escala" :transform="`translate(${vista.x + 14 * e} ${vista.y + vista.h - 18 * e})`">
@@ -793,22 +877,26 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
         </marker>
       </defs>
     </svg>
+    <button v-if="zoom && campus && !enCampus" type="button" class="ver-campus" data-prueba="ver-campus" @click="verTodo">⤢ Alejar: todo el campus</button>
     <div v-if="zoom" class="controles-zoom">
       <button type="button" aria-label="Acercar" title="Acercar (o rueda del ratón)" @click="acercar(0.7)">＋</button>
       <button type="button" aria-label="Alejar" title="Alejar" @click="acercar(1 / 0.7)">－</button>
       <button type="button" :aria-label="campus ? 'Ver todo el campus' : 'Ver todo el plano'" :title="campus ? 'Ver todo el campus' : 'Ver todo el plano'" @click="verTodo">⤢</button>
     </div>
     <ul v-if="leyenda" class="leyenda-plano" aria-label="Leyenda del plano">
-      <li v-if="elementos.piso"><span class="muestra m-piso"></span>Piso</li>
-      <li v-if="elementos.obstaculos"><span class="muestra m-obstaculo"></span>Obstáculo</li>
-      <li v-for="z in elementos.zonas" :key="z.nombre">
-        <span class="muestra" :style="{ background: z.color + '33', borderColor: z.color }"></span>{{ z.nombre }}
-      </li>
+      <!-- Lo que hay en la zona (piso, zonas, cámaras) solo se lista con la zona a la vista: con el campus entero serían decenas de textos. -->
+      <template v-if="veSitio">
+        <li v-if="elementos.piso"><span class="muestra m-piso"></span>Piso</li>
+        <li v-if="elementos.obstaculos"><span class="muestra m-obstaculo"></span>Obstáculo</li>
+      </template>
       <li v-if="elementos.camaras">
         <svg class="muestra-icono" viewBox="-13 -10 27 20" aria-hidden="true">
           <rect x="-12" y="-8" width="18" height="16" rx="3.5" class="m-cuerpo" /><path d="M 5 -4.5 L 13 -9 L 13 9 L 5 4.5 Z" class="m-cuerpo" />
         </svg>
         Cámara
+      </li>
+      <li v-for="z in elementos.zonas" :key="z.nombre">
+        <span class="muestra" :style="{ background: z.color + '33', borderColor: z.color }"></span>{{ z.nombre }}
       </li>
       <li v-if="elementos.personas"><span class="muestra m-persona"></span>Persona (G = ID global)</li>
       <li v-if="elementos.estimadas"><span class="muestra m-persona estimada"></span>Sin detección un momento (posición estimada)</li>
@@ -868,6 +956,15 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
   filter: invert(0.9) hue-rotate(180deg);
   opacity: 0.6;
 }
+/* Al editar con varias zonas grabadas, el borde de cada hoja marca hasta dónde se puede colocar y mover algo. */
+.limite-zona {
+  fill: none;
+  stroke: #2563eb;
+  stroke-width: calc(1.5px * var(--e));
+  stroke-dasharray: calc(8px * var(--e)) calc(6px * var(--e));
+  opacity: 0.7;
+  pointer-events: none;
+}
 /* Desde el campus, el sitio es chico: sin nombres de zonas, cámaras ni etiquetas encima de su marca. */
 .lienzo-plano.lejos .zona-nombre,
 .lienzo-plano.lejos .camara,
@@ -886,7 +983,8 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
   animation: latido 1.6s ease-in-out infinite;
 }
 .entrada-sitio:hover .marca-sitio,
-.entrada-sitio:focus-visible .marca-sitio {
+.entrada-sitio:focus-visible .marca-sitio,
+.entrada-sitio.elegida .marca-sitio {
   fill: rgba(37, 99, 235, 0.4);
 }
 @keyframes latido {
@@ -909,8 +1007,19 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
   stroke-width: 3;
 }
 .entrada-vecino:hover .marca-vecino,
-.entrada-vecino:focus-visible .marca-vecino {
+.entrada-vecino:focus-visible .marca-vecino,
+.entrada-vecino.elegida .marca-vecino {
   fill: rgba(234, 88, 12, 0.4);
+}
+.ayuda-vecino {
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #fff;
+  pointer-events: none;
+  font-size: calc(12px * var(--e));
+  font-weight: 600;
+  fill: #9a3412;
+  stroke-width: calc(3px * var(--e));
 }
 .nombre-vecino {
   text-anchor: middle;
@@ -1154,6 +1263,15 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
 .persona-g.salio .persona-etiqueta {
   font-size: calc(11px * var(--e));
 }
+.ver-campus {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 7px 13px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
 .controles-zoom {
   position: absolute;
   top: 8px;
@@ -1167,6 +1285,9 @@ watch(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"), (l) => e
   padding: 0;
   font-size: 15px;
   line-height: 1;
+}
+.leyenda-plano:not(:has(li)) {
+  display: none;
 }
 .leyenda-plano {
   display: flex;

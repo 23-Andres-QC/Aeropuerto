@@ -1041,4 +1041,10 @@ socketPersistente(`${RELEVO_VIVO}/telefonos/detections/watch`, false, (ev) => {
   }
 });
 
+/**
+ * Dónde se hace el en vivo. Hoy es el patio (la zona grabada 1: ahí están los teléfonos, la calibración y el modelo); el comedor y el
+ * «general» (patio y comedor a la vez) vendrán después. Un sitio con una sola zona grabada no necesita decirlo (null).
+ */
+export const zonaVivo = computed(() => (config.value?.plano?.capas?.length ? "Patio" : null));
+
 export const motorVivo = { mapa, config, zonas, ranuras, sobrantes, vivas, calor, historias, sinUbicar, conteo, resumen, servicioActivo, error, inicio, ahora };

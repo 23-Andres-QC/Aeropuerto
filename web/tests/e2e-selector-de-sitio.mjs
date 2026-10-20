@@ -156,7 +156,13 @@ try {
     assert.equal(e.marcasEnCampus, 1, "la segunda zona se marca sobre el campus");
     assert.equal(e.pestanas.length, 2, "no hay un sitio aparte para la zona 2");
   });
-  await evalua(`document.querySelector('g.entrada-vecino[role=button]').dispatchEvent(new MouseEvent('click', { bubbles: true })); 0`); // un <g> de SVG no tiene click()
+  const tocarZona = (selector) => evalua(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('click', { bubbles: true })); 0`); // un <g> de SVG no tiene click()
+  assert.equal(await evalua(`document.querySelectorAll('[data-prueba=etiqueta-zona]').length`), 0, "desde el campus las zonas se marcan sin nombres: no se pisan");
+  await tocarZona("g.entrada-vecino[role=button]");
+  await esperar(400);
+  assert.equal(await evalua(`document.querySelector('[data-prueba=etiqueta-zona]')?.textContent.includes('Zona grabada 2')`), true, "el primer clic muestra el nombre de la zona");
+  assert.equal(await evalua(`document.querySelectorAll('[data-prueba=etiqueta-zona]').length`), 1, "solo el de la zona elegida");
+  await tocarZona("g.entrada-vecino[role=button]");
   await paso("un clic en la zona 2 acerca a ella sin cambiar de sitio", (e) => {
     assert.equal(e.url, "/sitios/esan/configuracion");
     assert.equal(e.marcasEnCampus, 0, "de cerca ya no es campus");
@@ -166,22 +172,52 @@ try {
   await cdp("Page.navigate", { url: `${WEB}/sitios/esan/en-vivo` });
   await esperar(3500);
   const vistaEnVivo = () => evalua(`({ videos: document.querySelectorAll('.videos-esan video').length, elegir: !!document.querySelector('[data-prueba=elegir-zona]'), sinVideos: !!document.querySelector('[data-prueba=zona-sin-videos]'), controles: !!document.querySelector('.controles'), botones: document.querySelectorAll('.barra-campus, .alternar-campus').length })`);
-  const clicEnElPlano = (selector) => evalua(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('click', { bubbles: true })); 0`); // un <g> de SVG no tiene click()
+  // Un clic en una zona del croquis muestra su nombre y el segundo la acerca. (Un <g> de SVG no tiene click().)
+  const clicEnElPlano = async (selector) => {
+    for (let i = 0; i < 2; i++) { await evalua(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('click', { bubbles: true })); 0`); await esperar(400); }
+  };
+  const leyenda = () => evalua(`[...document.querySelectorAll('.leyenda-plano li')].map((l) => l.textContent.trim())`);
+  assert.ok(!(await leyenda()).some((l) => /^(Piso|Ascensores|Comedor|Cámara)/.test(l)), "con el campus entero no se listan las cosas de la zona");
   let ev = await vistaEnVivo();
   assert.deepEqual(ev, { videos: 0, elegir: true, sinVideos: false, controles: false, botones: 0 }, "al abrir En vivo no hay videos ni botones de zona: se elige en el croquis");
   await clicEnElPlano("g.entrada-sitio[role=button]");
   await esperar(1500);
   ev = await vistaEnVivo();
   assert.deepEqual(ev, { videos: 3, elegir: false, sinVideos: false, controles: true, botones: 0 }, "al hacer clic en el patio se ven sus 3 videos");
-  await clic(`document.querySelector('button[aria-label="Ver todo el campus"]')`);
+  let ley = await leyenda();
+  assert.ok(ley.some((l) => /^Ascensores/.test(l)) && ley.some((l) => /^Carpa azul/.test(l)), `acercado al patio, la leyenda lista lo que tiene el patio: ${ley}`);
+  assert.ok(!ley.some((l) => /^(Comedor|SS\.HH)/.test(l)), "y no lo del comedor");
+  assert.ok(!ley.some((l) => /^Piso/.test(l)), "el piso no es una zona que mapear");
+  assert.ok(await evalua(`!!document.querySelector('[data-prueba=ver-campus]')`), "acercado a una zona hay un botón para alejar a todo el campus");
+  await clic(`document.querySelector('[data-prueba=ver-campus]')`);
   await esperar(1500);
   ev = await vistaEnVivo();
   assert.equal(ev.videos, 0, "al alejarse al campus los videos se van");
+  assert.ok(!(await evalua(`!!document.querySelector('[data-prueba=ver-campus]')`)), "con todo el campus a la vista el botón de alejar se va");
   await clicEnElPlano("g.entrada-vecino[role=button]");
   await esperar(1500);
   ev = await vistaEnVivo();
   assert.deepEqual(ev, { videos: 0, elegir: false, sinVideos: true, controles: false, botones: 0 }, "al hacer clic en el comedor no se ven los videos del patio");
-  console.log("✓ los videos salen solo al hacer clic en la zona del croquis; el comedor no tiene los del patio");
+  ley = await leyenda();
+  assert.ok(ley.some((l) => /^Comedor/.test(l)) && ley.some((l) => /^SS\.HH\. hombres/.test(l)), `acercado al comedor, la leyenda lista lo que tiene el comedor: ${ley}`);
+  assert.ok(!ley.some((l) => /^(Ascensores|Carpa azul|Piso)/.test(l)), "y no lo del patio");
+  console.log("✓ los videos salen solo al hacer clic en la zona del croquis; el comedor no tiene los del patio; cada zona lista lo suyo en la leyenda");
+
+  // En vivo (teléfonos): se elige la zona a grabar; hoy solo el patio, el comedor figura como próximamente.
+  await evalua(`localStorage.setItem('modo-vivo', '1'); 0`);
+  await cdp("Page.navigate", { url: `${WEB}/sitios/esan/en-vivo` });
+  await esperar(3500);
+  const zonasVivo = await evalua(`({ activas: [...document.querySelectorAll('[data-prueba=zona-activa]')].map((b) => b.textContent.trim()), proximas: [...document.querySelectorAll('[data-prueba=zona-proxima]')].map((b) => ({ texto: b.textContent.trim(), bloqueada: b.disabled })) })`);
+  assert.deepEqual(zonasVivo.activas, ["Patio · zona grabada"], "en vivo se graba el patio");
+  assert.equal(zonasVivo.proximas.length, 2, "y el comedor y el general figuran aparte");
+  assert.ok(zonasVivo.proximas[0].bloqueada && /Zona grabada 2 · comedor.*próximamente/.test(zonasVivo.proximas[0].texto), `el comedor aún no se puede elegir: ${JSON.stringify(zonasVivo.proximas)}`);
+  assert.ok(zonasVivo.proximas[1].bloqueada && /General · patio y comedor a la vez.*próximamente/.test(zonasVivo.proximas[1].texto), `el general (simultáneo) es a futuro: ${JSON.stringify(zonasVivo.proximas)}`);
+  // Al activar el en vivo se dice dónde se está haciendo: el patio.
+  assert.equal(await evalua(`document.querySelector('[data-prueba=pill-en-vivo]')?.textContent.trim()`), "● EN VIVO · PATIO", "el plano dice dónde es el en vivo");
+  assert.equal(await evalua(`document.querySelector('[data-prueba=zona-en-vivo]')?.textContent.trim()`), "PATIO", "el título dice dónde es el en vivo");
+  assert.match(await evalua(`document.querySelector('.modo-vivo')?.textContent.trim()`), /EN VIVO · PATIO · Salir/, "el botón de arriba dice dónde es el en vivo");
+  await evalua(`localStorage.setItem('modo-vivo', '0'); 0`);
+  console.log("✓ en vivo se elige la zona a grabar: el patio activo y el comedor como próximamente");
 
   await clic(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Salir')`);
   await paso("Salir lleva al login", (e) => assert.equal(e.url, "/login"));

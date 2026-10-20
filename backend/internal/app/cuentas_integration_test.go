@@ -64,6 +64,7 @@ func TestPrivacyMigrationsUndoAndRedo(t *testing.T) {
 		t.Fatalf("el conteo de género de la sesión: %d %v", n, err)
 	}
 
+	run(migrations.DownFS, "down/019_esan_sin_zona_piso.down.sql")
 	run(migrations.DownFS, "down/018_sin_rol_tienda.down.sql")
 	if !table("store_api_keys") || !column("users", "local_id") {
 		t.Error("la tabla de llaves de tienda y local_id deben volver al deshacer la 018")
@@ -119,6 +120,7 @@ func TestPrivacyMigrationsUndoAndRedo(t *testing.T) {
 		t.Error("la 017 debe volver con su tabla de enlaces y el correo")
 	}
 	run(migrations.FS, "018_sin_rol_tienda.sql")
+	run(migrations.FS, "019_esan_sin_zona_piso.sql")
 	if table("store_api_keys") || column("users", "local_id") {
 		t.Error("la 018 quita las llaves de tienda y local_id de las cuentas")
 	}
