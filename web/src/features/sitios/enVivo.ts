@@ -55,15 +55,16 @@ function leerModo(): boolean {
 }
 /** El sistema está en modo en vivo: En vivo e Insights muestran lo que ven los teléfonos, no una sesión guardada. */
 export const modoVivo = ref(leerModo());
-/** Se acaba de prender En vivo a mano (no es una recarga con el modo ya prendido): la memoria empieza vacía. */
-let empezarLimpio = false;
+/** Se acaba de prender En vivo (no es una recarga con el modo ya prendido): la memoria empieza vacía. «auto»: se prendió
+ * solo, porque un teléfono empezó a transmitir (todas las pestañas lo ven a la vez: lo vacía una sola). */
+let empezarLimpio: false | "mano" | "auto" = false;
 /**
- * Prende o apaga En vivo. `limpiar`: al prenderlo a mano, la memoria del modelo se vacía. Cuando se prende solo (un
- * teléfono empezó a transmitir) no: los teléfonos ya recibieron sus primeros IDs y, con varias pestañas abiertas, cada
- * una la vaciaba otra vez a mitad de la sesión. Al apagar ya se vacía, así que la sesión siguiente empieza limpia igual.
+ * Prende o apaga En vivo. `limpiar`: la memoria del modelo se vacía al prenderlo (una grabación nueva empieza de cero).
+ * Cuando se prende solo porque un teléfono empezó a transmitir también, salvo en una pestaña que se abre con la sesión
+ * ya en marcha (sería a mitad de la sesión); varias pestañas del mismo navegador la vacían una sola vez (OLVIDO_RECIENTE_MS).
  */
-export function fijarModoVivo(valor: boolean, limpiar = true) {
-  if (valor && !modoVivo.value && limpiar) empezarLimpio = true;
+export function fijarModoVivo(valor: boolean, limpiar = true, automatico = false) {
+  if (valor && !modoVivo.value && limpiar) empezarLimpio = automatico ? "auto" : "mano";
   modoVivo.value = valor;
   try {
     localStorage.setItem(CLAVE_MODO, valor ? "1" : "0");
@@ -538,7 +539,7 @@ function alDetecciones(id: string, ev: MessageEvent) {
   if (!cid) return;
   // Sin ubicación el teléfono sigue transmitiendo: su ranura cuenta como activa y En vivo avisa que no reconoce el patio
   // (antes se ignoraba el cuadro y la cámara figuraba apagada, sin aviso).
-  if (!plano || !m.frame_w || !m.frame_h) {
+  if (!plano || !m.frame_w || !m.frame_h || Date.now() < descartarHasta) {
     cuadros.set(id, { llegada: Date.now(), observaciones: [] });
     return;
   }
@@ -868,6 +869,7 @@ export function iniciarGrabacion() {
   reiniciarVivo();
   grabando.value = true;
   mensajeGuardado.value = "Grabando esta escena…";
+  void olvidarGrabacionAnterior(); // la captura anterior ya quedó en Registros: el modelo empieza de cero
 }
 
 /** «Terminar»: se deja de registrar y recién ahora se guarda la captura (queda a la vista hasta la próxima). */
@@ -888,11 +890,19 @@ export async function terminarGrabacion(): Promise<boolean> {
   return enviarCaptura(p, false);
 }
 
-/** Reiniciar: si se está grabando, lo capturado queda guardado y empieza otra captura; si no, solo se limpia el mapa. */
+/**
+ * Reiniciar: si se está grabando, lo capturado queda guardado y empieza otra captura, con el modelo de cero (olvida a
+ * las personas de la anterior); si no, solo se limpia el mapa.
+ */
 export function reiniciarCaptura() {
   const p = grabando.value ? prepararCaptura() : null;
   reiniciarVivo();
-  if (p) void enviarCaptura(p, false);
+  if (p) {
+    void (async () => {
+      await enviarCaptura(p, false);
+      await olvidarGrabacionAnterior();
+    })();
+  }
 }
 
 /**
@@ -912,13 +922,44 @@ function cerrarCaptura() {
   })();
 }
 
-/** Vacía la memoria de identidades del modelo (backend-vivo sube la época y el modelo, al notarlo, olvida lo suyo). */
-async function vaciarMemoriaAlPrender() {
+/** Un vaciado de la memoria hecho hace menos de esto (en cualquier pestaña de este navegador) vale para esta grabación. */
+const OLVIDO_RECIENTE_MS = 15_000;
+const CLAVE_OLVIDO = "vivo-olvido-ms";
+/** Marca el vaciado de ahora. Con `siNadie`, false si otra pestaña ya lo hizo hace un momento (todas ven entrar el mismo teléfono). */
+function tomarOlvido(siNadie: boolean): boolean {
+  try {
+    if (siNadie && Date.now() - Number(localStorage.getItem(CLAVE_OLVIDO) ?? 0) < OLVIDO_RECIENTE_MS) return false;
+    localStorage.setItem(CLAVE_OLVIDO, String(Date.now()));
+  } catch {
+    /* localStorage bloqueado: se vacía igual */
+  }
+  return true;
+}
+/**
+ * Tras vaciar la memoria, lo que el modelo manda hasta notarlo (lo revisa cada 1 s) trae los IDs de la grabación anterior,
+ * que después se reparten de nuevo desde 1: no se registra, o la persona 5 de antes y la 5 de ahora quedarían juntas.
+ */
+const ESPERA_OLVIDO_MS = 2_500;
+let descartarHasta = 0;
+
+/**
+ * Empieza una grabación nueva: vacía la memoria de identidades del modelo (backend-vivo sube la época y el modelo, al
+ * notarlo, olvida la sesión entera: personas, tramos, seguidores y géneros), así no arrastra las grabaciones anteriores
+ * ni se va saturando. `automatico`: En vivo se prendió solo (ver tomarOlvido); una acción a mano vacía siempre.
+ */
+async function olvidarGrabacionAnterior(automatico = false) {
+  if (!tomarOlvido(automatico)) {
+    descartarHasta = Date.now() + ESPERA_OLVIDO_MS; // otra pestaña la vació recién: el modelo está olvidando
+    return;
+  }
+  descartarHasta = Infinity;
   try {
     const { borradas } = await apiVivo.olvidarTodas();
-    if (borradas) mensajeGuardado.value = `Sesión nueva: el modelo olvidó a ${borradas} persona${borradas === 1 ? "" : "s"} de antes; los IDs empiezan en 1.`;
+    if (borradas) mensajeGuardado.value = `Grabación nueva: el modelo olvidó a ${borradas} persona${borradas === 1 ? "" : "s"} de antes; los IDs empiezan en 1.`;
   } catch (e) {
     mensajeGuardado.value = `No se pudo vaciar la memoria del modelo (${(e as Error).message}): usa «Olvidar a todos» en Teléfonos.`;
+  } finally {
+    descartarHasta = Date.now() + ESPERA_OLVIDO_MS;
   }
 }
 
@@ -961,8 +1002,9 @@ function arrancar() {
   // identidades del modelo se vacía, así los IDs empiezan en 1 y el modelo no compara con gente de otras sesiones. Una
   // recarga de la página con En vivo ya prendido no la vacía (sería a mitad de la sesión).
   if (empezarLimpio) {
+    const automatico = empezarLimpio === "auto";
     empezarLimpio = false;
-    void vaciarMemoriaAlPrender();
+    void olvidarGrabacionAnterior(automatico);
   }
   // La captura empieza sola: lo que se ve en vivo queda registrado (Terminar la corta e Iniciar empieza otra).
   grabando.value = true;
@@ -1028,13 +1070,14 @@ watch(
 
 // Si se conecta un teléfono y el modelo empieza a procesarlo, el sistema entra solo al modo en vivo: lo que se ve en la web
 // es lo que ven los teléfonos, no una sesión guardada. Solo al pasar de ningún teléfono a alguno (si después se sale a mano,
-// no vuelve a entrar mientras sigan los mismos) y no si se está mirando a propósito una captura (?sesion=).
-let habiaTelefonos = false;
+// no vuelve a entrar mientras sigan los mismos) y no si se está mirando a propósito una captura (?sesion=). Es una grabación
+// nueva y el modelo empieza de cero, salvo si la pestaña se abrió con los teléfonos ya transmitiendo (null: aún no se sabía).
+let habiaTelefonos: boolean | null = null;
 socketPersistente(`${RELEVO_VIVO}/telefonos/detections/watch`, false, (ev) => {
   try {
     const e = JSON.parse(ev.data as string) as EstadoServicio;
     const hay = Object.values(e.telefonos ?? {}).some((t) => t.estado === "procesando");
-    if (hay && !habiaTelefonos && !modoVivo.value && !location.search.includes("sesion=")) fijarModoVivo(true, false);
+    if (hay && !habiaTelefonos && !modoVivo.value && !location.search.includes("sesion=")) fijarModoVivo(true, habiaTelefonos === false, true);
     habiaTelefonos = hay;
   } catch {
     /* un mensaje que no es del servicio: se ignora */

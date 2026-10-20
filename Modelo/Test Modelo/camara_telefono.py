@@ -621,6 +621,29 @@ class SesionEnVivo:
                 self._trabajos_genero.clear()
             self._cambiar_telefonos(telefonos, clave)
 
+    def _olvidar_si_se_vacio(self):
+        """Cada grabación en vivo empieza de cero: cuando la web vacía la memoria («Olvidar a todos», que pide al
+        empezar cada grabación y al apagar En vivo), se olvida la sesión entera, no solo las personas. Antes quedaban el
+        asociador (todos los tramos e identidades desde que arrancó el modelo, que se recorren en cada cuadro), los
+        seguidores con sus galerías y los géneros fijados: el modelo arrastraba las grabaciones anteriores y se iba
+        saturando. Los seguidores vuelven a numerar desde 1 y la ubicación de cada teléfono se conserva. True si olvidó."""
+        if getattr(self.memoria, "_epoca_nueva", None) is None:
+            return False
+        with self.bloqueo, self.bloqueo_genero:
+            if not self.memoria.aplicar_olvido():
+                return False
+            self.generacion += 1  # lo que los carriles lentos tenían pendiente era de la grabación anterior
+            with self._hay_trabajo:
+                self._trabajos.clear()
+            with self._hay_genero:
+                self._trabajos_genero.clear()
+            self.motor.reiniciar({cid: FPS_NOMINAL for cid in self.telefonos})
+            if self.asociador is not None:
+                self.asociador.reiniciar()
+            self.fijos, self.intentos_genero, self._ultimo_id, self.generos, self.quietud = {}, {}, {}, {}, {}
+        print("Grabación nueva: el modelo olvidó la anterior (personas, tramos, seguidores y géneros).", flush=True)
+        return True
+
     def _cambiar_telefonos(self, telefonos, clave):
         antes, urls = dict(self.clave), dict(clave)
         siguen = {cid: self.motor.trackers[cid] for cid in telefonos
@@ -657,6 +680,7 @@ class SesionEnVivo:
     def procesar(self, datos):
         """Carril rápido: detecta y sigue los frames nuevos de cada teléfono y devuelve las filas por teléfono, ya con
         el ID global y el género que se saben hasta ahora. El carril lento se encarga del resto."""
+        self._olvidar_si_se_vacio()
         self.t = max(self.t + 1e-3, time.perf_counter() - self.t0)
         frames = {}
         for cid, (numero, frame, _, _) in datos.items():

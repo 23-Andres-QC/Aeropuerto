@@ -34,7 +34,9 @@ from lap01.camaras_reid import _solapan, cargar_camaras
 DIMENSION = 512
 MAX_VISTAS = 16          # prototipos de tramo guardados por persona (enlace promedio)
 ESCRIBIR_CADA_S = 2.0    # una persona que cambia se escribe en la base como mucho cada 2 s
-SONDEO_S = 5.0           # cada cuánto se revisa si alguien vació la memoria desde la web
+# Cada cuánto se revisa si alguien vació la memoria desde la web (la web la vacía al empezar cada grabación en vivo).
+# Con 5 s, los primeros segundos de una grabación nueva salían con los IDs de la anterior y después cambiaban todos.
+SONDEO_S = 1.0
 REGRESO_S = 30.0         # sin verse más que esto, volver a verla cuenta como una reaparición
 REVISAR_NUEVAS_S = 60.0  # durante este tiempo un ID nuevo se sigue comparando con los antiguos
 REVISAR_CADA_S = 2.0
@@ -180,14 +182,17 @@ class MemoriaIdentidades:
                 self._pendientes[pid] = operacion
 
     def _escribir(self):
-        """Hilo escritor: cada 2 s manda lo que cambió y cada 5 s revisa si alguien vació la memoria."""
-        sondeo = time.monotonic()
+        """Hilo escritor: cada ESCRIBIR_CADA_S manda lo que cambió y cada SONDEO_S revisa si alguien vació la memoria."""
+        sondeo = escrito = time.monotonic()
         while True:
             with self._hay:
                 if not self._cerrado:
-                    self._hay.wait(timeout=ESCRIBIR_CADA_S)
+                    self._hay.wait(timeout=min(SONDEO_S, ESCRIBIR_CADA_S))
                 cerrado, epoca = self._cerrado, self.epoca
-                lote, self._pendientes = self._pendientes, {}
+                toca = cerrado or time.monotonic() - escrito >= ESCRIBIR_CADA_S
+                lote, self._pendientes = (self._pendientes, {}) if toca else ({}, self._pendientes)
+                if toca:
+                    escrito = time.monotonic()
                 fotos = {}
                 for pid, operacion in lote.items():
                     persona = self.personas.get(pid)
@@ -222,7 +227,7 @@ class MemoriaIdentidades:
                             self.personas[pid].vistas_sucias = True
             if cerrado and (not self._pendientes or fallidas):
                 return
-            if time.monotonic() - sondeo > SONDEO_S:
+            if time.monotonic() - sondeo >= SONDEO_S:
                 sondeo = time.monotonic()
                 try:
                     resumen = self._pedir("GET", f"{self.url}/resumen")
@@ -417,6 +422,7 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
         self._desde = {}       # identidad -> instante en que recibió su persona (ante un duplicado la conserva la primera)
         self._revisado = {}
         self.reconocidas = set()
+        self._juntos = {}  # pares de personas por número: tras un olvido esos números son de otra gente
         self._epoca = self.memoria.epoca
 
     def cambiar_camaras(self, config, conservar):

@@ -326,6 +326,34 @@ class PruebasPersistencia(unittest.TestCase):
         self.assertEqual(set(BackendFalso.estado["personas"]), {1})
 
 
+class GrabacionNuevaEmpiezaDeCero(unittest.TestCase):
+    """La web vacía la memoria al empezar cada grabación en vivo: el modelo olvida la sesión entera, no solo las personas."""
+
+    def test_al_vaciar_la_memoria_se_olvida_la_sesion_entera(self):
+        from types import SimpleNamespace
+        reinicios = []
+        motor = SimpleNamespace(genero=SimpleNamespace(enabled=False), reiniciar=lambda fps: reinicios.append(sorted(fps)))
+        memoria = memoria_ram()
+        sesion = SesionEnVivo(motor, None, None, memoria)
+        self.addCleanup(sesion.cerrar)
+        sesion.telefonos, sesion.asociador = ["tel-a"], asociador(memoria)
+        escena = Escena(sesion.asociador)
+        self.assertEqual(sorted(escena.ver(4, {"tel-a": [(1, A, 100), (2, B, 500)]}).values()), [1, 2])
+        sesion.fijos[("tel-a", 1)], sesion._ultimo_id[("tel-a", 1)] = ("Hombre", 0.9), (1, 3.0)
+        self.assertFalse(sesion._olvidar_si_se_vacio(), "sin vaciar la memoria no se olvida nada")
+
+        memoria._epoca_nueva = memoria.epoca + 1  # la web pidió «Olvidar a todos» (lo nota el hilo escritor)
+        self.assertTrue(sesion._olvidar_si_se_vacio())
+        a = sesion.asociador
+        self.assertEqual((a.tracklets, a.globales, a.confirmadas, a.locales, memoria.personas), ({}, {}, {}, {}, {}),
+                         "no queda nada de la grabación anterior: ni tramos, ni identidades, ni personas")
+        self.assertEqual((sesion.fijos, sesion._ultimo_id), ({}, {}))
+        self.assertEqual(reinicios, [["tel-a"]], "el seguidor de cada teléfono vuelve a empezar")
+        # B estaba en la grabación anterior: ahora es una persona nueva y los IDs empiezan en 1.
+        self.assertEqual(escena.ver(4, {"tel-a": [(1, B, 500)]})[("tel-a", 1)], 1)
+        self.assertFalse(sesion._olvidar_si_se_vacio(), "se olvida una sola vez por vaciado")
+
+
 class PruebasRitmoGenero(unittest.TestCase):
     """El género se muestrea por tiempo de reloj: a ~3 FPS (CPU) no se esperan 9 frames (3 s) entre muestras."""
 
