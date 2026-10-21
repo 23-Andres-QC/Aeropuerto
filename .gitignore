@@ -7,3 +7,6 @@ output/
 *.log
 # El informe del Capstone vive en su propio repositorio (23-Andres-QC/informe-captons-final).
 informe-captons-final/
+# Secuencias de MTMMC (s01, s10, …, y sus .tar): su licencia prohíbe redistribuirlas, así que nunca van al repositorio.
+/s[0-9][0-9]/
+/s[0-9][0-9].tar
