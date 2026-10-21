@@ -227,9 +227,11 @@ try {
   const generoPanel = await t.texto(".panel-genero");
   // ESAN tiene las sesiones que se hayan grabado en esta máquina: se comprueba la regla, no unas cifras fijas (el caso pequeño, con
   // datos propios, va más abajo en Demo).
+  // El mínimo es el ajuste del sitio (5 por defecto; en una base de pruebas puede estar más bajo, desde Configuración).
+  const minimoEsan = ((await t.api("GET", "/api/v1/sites")).cuerpo ?? []).find((x) => x.slug === "esan")?.min_group_size ?? 5;
   const cifras = [...generoPanel.matchAll(/(\d+)\s+(?:Hombre|Mujer|Sin determinar)\b/g)].map((m) => Number(m[1]));
-  assert.ok(cifras.every((n) => n >= 5), `el género de ESAN no muestra grupos de menos de 5: ${generoPanel}`);
-  assert.ok(!generoPanel.includes("oculto") || /grupos de menos de 5/.test(generoPanel), `lo que no se desglosa se explica: ${generoPanel}`);
+  assert.ok(cifras.every((n) => n >= minimoEsan), `el género de ESAN no muestra grupos de menos de ${minimoEsan}: ${generoPanel}`);
+  assert.ok(minimoEsan < 5 || !generoPanel.includes("oculto") || new RegExp(`grupos de menos de ${minimoEsan}`).test(generoPanel), `lo que no se desglosa se explica: ${generoPanel}`);
   await t.ir("/cuentas?ver=privacidad", 2500);
   await t.hasta(`!!document.querySelector('[data-prueba=estado-retencion]')`, "el estado de la retención");
   const retencion = await t.texto("[aria-label='Retención de datos']");

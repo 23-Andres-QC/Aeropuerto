@@ -1,9 +1,16 @@
 import { colorPersona } from "./format";
 
+/**
+ * Multitud: con mucha gente en el cuadro el modelo no sigue a cada persona; cuenta las cabezas (centro y radio, en píxeles del frame
+ * relevado) y todo el grupo lleva un solo número de grupo. `pies` sirve para ubicar al grupo en el plano.
+ */
+export type MultitudCuadro = { grupo: number; personas: number; cabezas: [number, number, number][]; pies: [number, number][] };
+
 /** Detecciones que el modelo publica para un frame: cajas en píxeles del frame relevado. */
 export type CuadroDetecciones = {
   frame_w: number;
   frame_h: number;
+  multitud?: MultitudCuadro | null;
   people: { box: [number, number, number, number]; global_id: number | null; gender: string | null; gender_conf: number | null }[];
 };
 
@@ -101,4 +108,28 @@ export function dibujarPersonas(c: HTMLCanvasElement, m: CuadroDetecciones) {
   ctx.clearRect(0, 0, c.width, c.height);
   ctx.font = `600 ${12 * s}px system-ui, sans-serif`;
   for (const p of m.people) dibujarMarcador(ctx, p, s, m.frame_w);
+  if (m.multitud) dibujarMultitud(ctx, m.multitud, s);
+}
+
+const COLOR_GRUPO = "#a855f7";
+
+/** Cada cabeza con un anillo del color del grupo y, arriba a la izquierda, «Grupo 3 · 14 personas». */
+function dibujarMultitud(ctx: CanvasRenderingContext2D, g: MultitudCuadro, s: number) {
+  for (const [x, y, r] of g.cabezas) {
+    ctx.beginPath();
+    ctx.arc(x, y, Math.max(3 * s, r * 1.1), 0, Math.PI * 2);
+    ctx.lineWidth = 3.5 * s;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
+    ctx.stroke();
+    ctx.lineWidth = 2 * s;
+    ctx.strokeStyle = COLOR_GRUPO;
+    ctx.stroke();
+  }
+  const texto = `Grupo ${g.grupo} · ${g.personas} personas`;
+  const largo = ctx.measureText(texto).width + 14 * s;
+  const alto = 22 * s;
+  ctx.fillStyle = "rgba(10, 20, 35, 0.85)";
+  ctx.fillRect(8 * s, 8 * s, largo, alto);
+  ctx.fillStyle = COLOR_GRUPO;
+  ctx.fillText(texto, 15 * s, 8 * s + alto - 7 * s);
 }
