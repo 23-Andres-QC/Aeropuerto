@@ -119,7 +119,12 @@ function cuadro() {
   else c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
 }
 
-watch(imagen, () => requestAnimationFrame(dibujar));
+// El frame procesado lleva las últimas cajas solo cuando es lo que se ve: con el video original en pantalla, cada frame
+// que llegaba pintaba encima las cajas de lo último procesado (segundos por delante del reloj) y las etiquetas saltaban
+// a donde la gente iba a estar.
+watch(imagen, () => {
+  if (!reproduce.value) requestAnimationFrame(dibujar);
+});
 
 onMounted(() => {
   animacion = requestAnimationFrame(cuadro);
