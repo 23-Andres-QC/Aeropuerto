@@ -111,14 +111,16 @@ func (a api) videos(w http.ResponseWriter, r *http.Request) {
 	escribir(w, http.StatusOK, a.Videos.Lista())
 }
 
-// subirVideo recibe el archivo tal cual en el cuerpo; nombre y modo van en la query.
+// subirVideo recibe el archivo tal cual en el cuerpo; nombre, modo y la tanda
+// (tanda y en_tanda: los videos elegidos juntos en la web) van en la query.
 func (a api) subirVideo(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength > a.Videos.Maximo() {
 		fallar(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("El video supera %d MB", a.Videos.Maximo()>>20))
 		return
 	}
 	q := r.URL.Query()
-	v, err := a.Videos.Subir(q.Get("nombre"), q.Get("modo"), r.Body)
+	enTanda, _ := strconv.Atoi(q.Get("en_tanda"))
+	v, err := a.Videos.SubirEnTanda(q.Get("nombre"), q.Get("modo"), q.Get("tanda"), enTanda, r.Body)
 	switch {
 	case err == nil:
 		escribir(w, http.StatusCreated, v)

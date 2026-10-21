@@ -155,7 +155,9 @@ async function cargar() {
   }
 }
 
-/** Sube todos los archivos elegidos a la vez; cada uno entra a la lista (y el modelo lo empieza) apenas termina de subir. */
+/** Sube todos los archivos elegidos a la vez; cada uno entra a la lista apenas termina de subir. Los elegidos juntos van
+ * en una tanda (cámaras del mismo lugar): el modelo espera a que suban todos y los procesa a la vez, con IDs compartidos;
+ * antes empezaba el que terminaba primero (el más chico) y los demás quedaban aparte. */
 async function elegidos() {
   const archivos = Array.from(entrada.value?.files ?? []);
   if (entrada.value) entrada.value.value = "";
@@ -166,12 +168,15 @@ async function elegidos() {
     error.value = `Caben ${libres} video(s) más en la lista (máximo ${MAX_VIDEOS}): se suben los primeros ${libres}.`;
   }
   const fallas: string[] = [];
+  const total = Math.min(archivos.length, libres);
+  // Sin crypto.randomUUID: por http desde otra máquina de la red no es un contexto seguro y no existe.
+  const tanda = total > 1 ? { id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`, total } : undefined;
   await Promise.all(
     archivos.slice(0, libres).map(async (archivo) => {
       const id = ++siguienteSubida;
       const { promesa, cancelar } = subirVideo(archivo, "tiempo_real", (f) => {
         subidas.value = subidas.value.map((x) => (x.id === id ? { ...x, fraccion: f } : x));
-      });
+      }, tanda);
       subidas.value = [...subidas.value, { id, nombre: archivo.name, fraccion: 0, cancelar }];
       try {
         const subido = await promesa;

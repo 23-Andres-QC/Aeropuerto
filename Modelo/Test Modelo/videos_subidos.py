@@ -104,6 +104,9 @@ MUESTREO_CPU_S = 2.0
 # Videos subidos juntos (GrupoVideos): quien sale de una cámara puede entrar en otra hasta este tiempo después (como
 # los teléfonos, camara_telefono.TRANSICION_MAX_S).
 TRANSICION_MAX_S = 60.0
+# Una tanda (los videos elegidos juntos en la web) espera a sus en_tanda videos hasta este tiempo desde que bajó el
+# primero; si uno no llega (falló o se canceló su subida), los demás empiezan sin él.
+ESPERA_TANDA_S = 300.0
 GENEROS = ("Hombre", "Mujer")
 # Una persona que en ESTATICO_S segundos a la vista no se aleja de donde apareció más que esta fracción de su altura
 # (descontando el movimiento de la cámara) es algo quieto: no se dibuja ni se cuenta.
@@ -490,6 +493,7 @@ class VideosSubidos:
         self.descargas = {}          # id -> (info, Event para cancelarla) en curso
         self.descargados = deque()   # (info, ruta o None, error) que dejan los hilos de descarga
         self.espera = []             # (info, ruta) ya descargados que esperan a los demás de su tanda (ver GrupoVideos)
+        self.llegada = {}            # tanda -> cuándo bajó su primer video (ver _listos)
         self.hechos = set()          # ids ya procesados, quitados o fallidos: no se repiten
         # Un hilo por video: el seguidor, el género y el Re-ID de cada uno corren a la vez (cada video tiene los suyos).
         self.hilos = ThreadPoolExecutor(max_workers=SIMULTANEOS, thread_name_prefix="video")
@@ -597,9 +601,8 @@ class VideosSubidos:
                 self._abrir(info, ruta, error)
             else:
                 self.espera.append((info, ruta))
-        # Los que se subieron juntos empiezan juntos, en un grupo, cuando ya se descargaron todos.
-        if self.espera and not self.descargas:
-            listos, self.espera = self.espera, []
+        # Los que se subieron juntos empiezan juntos, en un grupo (ver _listos).
+        for listos in self._listos():
             self._abrir_grupo(listos)
         if getattr(self, "lector", None) is None:
             lote, detecciones, extra, fines = self._leer_y_detectar()  # sin hilo lector (pruebas): todo aquí
@@ -674,6 +677,33 @@ class VideosSubidos:
                                            "frame_w": ancho_web,
                                            "frame_h": round(frame.shape[0] * ancho_web / frame.shape[1]),
                                            "people": self.personas_para_web(filas, frame.shape[1], ancho_web)})
+
+    def _listos(self):
+        """Saca de la espera los videos que ya pueden empezar, uno por grupo: los de una tanda de la web cuando ya bajaron
+        sus en_tanda videos (o pasó ESPERA_TANDA_S desde el primero); los subidos sin tanda, cuando ya no baja ninguno sin
+        tanda. Con solo la segunda regla, el video más chico de los elegidos juntos terminaba de subir primero, empezaba
+        solo y la misma persona no podía llevar el mismo ID en los demás."""
+        ahora = time.monotonic()
+        tandas = {}
+        for info, ruta in self.espera:
+            tandas.setdefault(info.get("tanda") or None, []).append((info, ruta))
+        for tanda in [t for t in self.llegada if t not in tandas]:
+            del self.llegada[tanda]  # se quitaron de la lista los que esperaban
+        bajan_sueltos = any(not info.get("tanda") for info, _ in self.descargas.values())
+        grupos = []
+        for tanda, miembros in tandas.items():
+            if tanda is None:
+                if bajan_sueltos:
+                    continue
+            else:
+                primero = self.llegada.setdefault(tanda, ahora)
+                if len(miembros) < int(miembros[0][0].get("en_tanda") or 1) and ahora - primero < ESPERA_TANDA_S:
+                    continue
+                self.llegada.pop(tanda)
+            grupos.append(miembros)
+        salen = {info["id"] for miembros in grupos for info, _ in miembros}
+        self.espera = [x for x in self.espera if x[0]["id"] not in salen]
+        return grupos
 
     def _abrir_grupo(self, listos):
         """Abre los videos descargados de una tanda en un grupo por modo (ver GrupoVideos) y los pone en marcha a la

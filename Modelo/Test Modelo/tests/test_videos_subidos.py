@@ -213,7 +213,7 @@ class Simultaneos(unittest.TestCase):
                 resumenes[vid] = resumen
 
         v = object.__new__(Prueba)
-        v.activos, v.descargas, v.descargados, v.espera, v.hechos = {}, {}, deque(), [], set()
+        v.activos, v.descargas, v.descargados, v.espera, v.hechos, v.llegada = {}, {}, deque(), [], set(), {}
         v.bloqueo = threading.Lock()
         v.motor = types.SimpleNamespace(device="cpu")
         return v, descargas, publicados, resumenes
@@ -310,6 +310,60 @@ class Simultaneos(unittest.TestCase):
         config = a.grupo.asociador.config
         self.assertEqual(config["overlaps"], [["a", "b"]], "pueden ver a la misma persona a la vez")
         self.assertEqual({(x["from"], x["to"]) for x in config["transitions"]}, {("a", "b"), ("b", "a")})
+
+    def test_una_tanda_espera_a_que_suban_todos_aunque_el_mas_chico_termine_primero(self):
+        import videos_subidos
+        v, _, _, _ = self.videos()
+        v.reid, v.asociacion = object(), {}
+        abiertos = []
+
+        class Abierto:
+            def __init__(self, info, ruta, motor, reid, asociacion, grupo=None):
+                self.id, self.nombre, self.modo, self.grupo = info["id"], info["nombre"], info["modo"], grupo
+                self.ancho = self.alto = 4
+                self.fps, self.ritmo, self.terminado = 15.0, Ritmo(15.0, info["modo"]), False
+                abiertos.append(self)
+
+            def leer(self):
+                return None
+
+            def cerrar(self):
+                pass
+
+        original, videos_subidos.VideoEnProceso = videos_subidos.VideoEnProceso, Abierto
+        try:
+            with tempfile.TemporaryDirectory() as carpeta:
+                chico = {"id": "a", "nombre": "a", "modo": "tiempo_real", "tanda": "t1", "en_tanda": 2}
+                suelto = {"id": "s", "nombre": "s", "modo": "tiempo_real"}
+                # El chico ya subió y bajó; el grande sigue subiendo: backend-vivo todavía no lo lista.
+                v.descargas["a"] = (chico, threading.Event())
+                v.descargados.append((chico, Path(carpeta) / "a.video", None))
+                v.paso()
+                self.assertEqual(abiertos, [], "«a» espera al otro de su tanda, que aún no sube")
+                v.descargas["s"] = (suelto, threading.Event())
+                v.descargados.append((suelto, Path(carpeta) / "s.video", None))
+                v.paso()
+                self.assertEqual([x.id for x in abiertos], ["s"], "uno subido aparte no espera a la tanda")
+                grande = {"id": "b", "nombre": "b", "modo": "tiempo_real", "tanda": "t1", "en_tanda": 2}
+                v.descargas["b"] = (grande, threading.Event())
+                v.descargados.append((grande, Path(carpeta) / "b.video", None))
+                v.paso()
+                a, b = abiertos[1:]
+                self.assertIs(a.grupo, b.grupo, "la tanda va junta, con IDs compartidos")
+                self.assertIsNot(a.grupo, abiertos[0].grupo)
+                self.assertEqual(a.ritmo.cero, b.ritmo.cero)
+                # Si uno de la tanda nunca llega, los demás empiezan igual pasado ESPERA_TANDA_S.
+                solo = {"id": "c", "nombre": "c", "modo": "tiempo_real", "tanda": "t2", "en_tanda": 2}
+                v.descargas["c"] = (solo, threading.Event())
+                v.descargados.append((solo, Path(carpeta) / "c.video", None))
+                v.paso()
+                self.assertEqual(len(abiertos), 3)
+                v.llegada["t2"] -= videos_subidos.ESPERA_TANDA_S
+                v.paso()
+                self.assertEqual([x.id for x in abiertos], ["s", "a", "b", "c"])
+                self.assertEqual(v.llegada, {})
+        finally:
+            videos_subidos.VideoEnProceso = original
 
     def test_con_gpu_el_grupo_usa_los_umbrales_de_osnet_y_sin_gpu_los_del_build(self):
         asociacion = {"threshold": 0.6, "average_threshold": 0.55, "same_camera_threshold": 0.7, "split_threshold": 0.4}

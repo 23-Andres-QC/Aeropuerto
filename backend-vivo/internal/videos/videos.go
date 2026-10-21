@@ -45,6 +45,11 @@ type Video struct {
 	Modo   string    `json:"modo"`
 	Bytes  int64     `json:"bytes"`
 	Subido time.Time `json:"subido"`
+	// Tanda agrupa los videos que se eligieron juntos en la web (cámaras del mismo
+	// lugar): el modelo los empieza a la vez, con IDs compartidos, cuando ya
+	// subieron los EnTanda. Vacía (y EnTanda 0) si se subió solo.
+	Tanda   string `json:"tanda"`
+	EnTanda int    `json:"en_tanda"`
 	// Resumen es el que deja el modelo al terminar; null mientras se procesa o espera.
 	Resumen json.RawMessage `json:"resumen"`
 	// ruta del archivo; vacía desde que llega el resumen (ya se borró).
@@ -97,6 +102,18 @@ func (r *Registro) Lleno() bool {
 
 // Subir copia el video a un archivo temporal y, si llega completo, lo agrega al final de la lista.
 func (r *Registro) Subir(nombre, modo string, cuerpo io.Reader) (Video, error) {
+	return r.SubirEnTanda(nombre, modo, "", 0, cuerpo)
+}
+
+// SubirEnTanda es Subir para uno de los enTanda videos de la tanda (ver Video.Tanda).
+func (r *Registro) SubirEnTanda(nombre, modo, tanda string, enTanda int, cuerpo io.Reader) (Video, error) {
+	if tanda == "" {
+		enTanda = 0
+	} else if len(tanda) > 64 || strings.Trim(tanda, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != "" {
+		return Video{}, fmt.Errorf("%w: la tanda admite hasta 64 letras, números, - o _", ErrInvalido)
+	} else if enTanda < 1 || enTanda > MaxVideos {
+		return Video{}, fmt.Errorf("%w: una tanda tiene de 1 a %d videos", ErrInvalido, MaxVideos)
+	}
 	nombre = strings.TrimSpace(filepath.Base(strings.ReplaceAll(nombre, `\`, "/")))
 	if nombre == "" || nombre == "." || nombre == "/" {
 		nombre = "video"
@@ -140,7 +157,7 @@ func (r *Registro) Subir(nombre, modo string, cuerpo io.Reader) (Video, error) {
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)
 	v := &Video{ID: "vid-" + hex.EncodeToString(b), Nombre: nombre, Modo: modo, Bytes: n,
-		Subido: time.Now().UTC().Truncate(time.Second), ruta: f.Name()}
+		Subido: time.Now().UTC().Truncate(time.Second), Tanda: tanda, EnTanda: enTanda, ruta: f.Name()}
 	r.mu.Lock()
 	// Otra subida pudo completar la lista mientras se copiaba este archivo.
 	if len(r.lista) >= MaxVideos {

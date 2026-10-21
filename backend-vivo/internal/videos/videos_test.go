@@ -43,8 +43,14 @@ func TestRegistro(t *testing.T) {
 	}
 	_ = f.Close()
 
-	dos, err := r.Subir("otro.mov", Todos, strings.NewReader(cab+"abc"))
+	if uno.Tanda != "" || uno.EnTanda != 0 {
+		t.Fatalf("subido solo, sin tanda: %+v", uno)
+	}
+	dos, err := r.SubirEnTanda("otro.mov", Todos, "k3x-9f", 2, strings.NewReader(cab+"abc"))
 	lista := r.Lista()
+	if err != nil || dos.Tanda != "k3x-9f" || dos.EnTanda != 2 {
+		t.Fatalf("subido en una tanda de 2: %+v, %v", dos, err)
+	}
 	if err != nil || dos.Modo != Todos || len(lista) != 2 || lista[0].ID != uno.ID || lista[1].ID != dos.ID || len(archivos(t, dir)) != 2 {
 		t.Fatalf("subir otro lo agrega al final, sin tocar al anterior: %+v %v %v", lista, err, archivos(t, dir))
 	}
@@ -61,6 +67,12 @@ func TestRegistro(t *testing.T) {
 	}
 	if _, err = r.Subir("x.mp4", "rapido", strings.NewReader(cab+"1")); !errors.Is(err, ErrInvalido) {
 		t.Fatalf("modo desconocido: %v", err)
+	}
+	if _, err = r.SubirEnTanda("x.mp4", "", "t1", 0, strings.NewReader(cab+"1")); !errors.Is(err, ErrInvalido) {
+		t.Fatalf("una tanda sin cuántos videos trae: %v", err)
+	}
+	if _, err = r.SubirEnTanda("x.mp4", "", "t 1/..", 2, strings.NewReader(cab+"1")); !errors.Is(err, ErrInvalido) {
+		t.Fatalf("una tanda con caracteres raros: %v", err)
 	}
 	if len(r.Lista()) != 2 || len(archivos(t, dir)) != 2 {
 		t.Fatalf("una subida fallida no toca la lista ni deja archivos: %+v %v", r.Lista(), archivos(t, dir))
