@@ -57,6 +57,14 @@ class CuandoEsMultitud(unittest.TestCase):
         for _ in range(5):
             self.assertIsNone(m.actualizar("cam", 50))
 
+    def test_una_grabacion_nueva_empieza_los_grupos_desde_1(self):
+        m = Multitud(entra=8, horarios=[])
+        m.actualizar("cam", 10)
+        self.assertEqual(m.actualizar("cam", 10), 1)
+        m.reiniciar()
+        m.actualizar("cam", 10)
+        self.assertEqual(m.actualizar("cam", 10), 1, "otra vez el grupo 1, no el 2")
+
     def test_olvida_los_telefonos_que_ya_no_estan(self):
         m = Multitud(entra=8, horarios=[])
         m.actualizar("cam01", 10)

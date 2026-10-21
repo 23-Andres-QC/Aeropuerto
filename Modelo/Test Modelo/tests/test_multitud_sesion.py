@@ -35,6 +35,7 @@ class MotorFalso:
 def sesion(personas):
     s = object.__new__(SesionEnVivo)
     s.motor = MotorFalso(personas)
+    s.memoria = types.SimpleNamespace()  # sin «olvidar»: nadie vació la memoria desde la web
     s.multitud, s.multitudes = Multitud(entra=8, horarios=[]), {}
     s.telefonos, s.camaras, s.planos = ["tel-1"], {}, {}
     s.t0, s.t = 0.0, -1.0
@@ -68,6 +69,24 @@ class SesionConHorario(unittest.TestCase):
         s.procesar(cuadro(1))
         self.assertEqual(s.multitudes, {})
         self.assertEqual(s.personas["tel-1"], 0)
+
+
+class GrabacionNueva(unittest.TestCase):
+    def test_vaciar_la_memoria_reinicia_los_grupos(self):
+        """Cada grabación en vivo empieza de cero (ver _olvidar_si_se_vacio): los grupos también vuelven a numerarse desde 1."""
+        s = sesion(12)
+        s.procesar(cuadro(1))
+        s.procesar(cuadro(2))
+        self.assertEqual(s.multitudes["tel-1"]["grupo"], 1)
+        pendiente = [True]
+        s.memoria = types.SimpleNamespace(_epoca_nueva=object(), aplicar_olvido=lambda: pendiente.pop() if pendiente else False)
+        s.bloqueo = s.bloqueo_genero = threading.RLock()
+        s.asociador = None
+        s.fijos = s.intentos_genero = s.generos = {}
+        s.motor.reiniciar = lambda fps: None
+        s.procesar(cuadro(3))
+        s.procesar(cuadro(4))
+        self.assertEqual(s.multitudes["tel-1"]["grupo"], 1, "la grabación nueva empieza en el grupo 1")
 
 
 class SesionEnMultitud(unittest.TestCase):

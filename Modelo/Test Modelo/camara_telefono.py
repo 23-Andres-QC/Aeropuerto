@@ -315,6 +315,10 @@ class Multitud:
         for cid in [c for c in self.estado if c not in activos]:
             del self.estado[cid]
 
+    def reiniciar(self):
+        """Grabación nueva: se olvidan los grupos de la anterior y la cuenta de grupos vuelve a empezar en 1."""
+        self.estado, self.grupos = {}, 0
+
 
 def cabezas_y_pies(cajas, ancho, ancho_relevo=ANCHO_RELEVO):
     """Cabezas (centro y radio) y pies (centro de abajo de la caja) de las personas de un cuadro, en píxeles del video relevado.
@@ -789,6 +793,8 @@ class SesionEnVivo:
             if self.asociador is not None:
                 self.asociador.reiniciar()
             self.fijos, self.intentos_genero, self._ultimo_id, self.generos, self.quietud = {}, {}, {}, {}, {}
+            self.multitud.reiniciar()
+            self.multitudes = {}
         print("Grabación nueva: el modelo olvidó la anterior (personas, tramos, seguidores y géneros).", flush=True)
         return True
 
