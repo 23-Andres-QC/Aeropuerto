@@ -155,10 +155,11 @@ def esperar_hilos():
 class VideoFalso:
     """Un VideoEnProceso sin modelo: cada lectura devuelve un frame hasta llegar a `frames`."""
 
-    def __init__(self, vid, frames, detectados=None):
+    def __init__(self, vid, frames, detectados=None, grupo=None):
         self.id, self.nombre, self.frames, self.procesados, self.terminado = vid, vid, frames, 0, False
         self.detectados = detectados if detectados is not None else []
         self.motor = types.SimpleNamespace(detectar=self._detectar)
+        self.grupo = grupo or GrupoFalso()
 
     def _detectar(self, frames):
         self.detectados.append(sorted(frames))
@@ -170,16 +171,29 @@ class VideoFalso:
             return None
         return np.zeros((4, 4, 3), np.uint8), self.procesados / 15
 
-    def procesar(self, frame, t, detecciones=None, extra_s=0.0):
+    def seguir(self, frame, detecciones=None, extra_s=0.0):
         self.procesados += 1
         self.ultimas = detecciones
         return []
+
+    def cerrar_paso(self, frame, t, filas):
+        return filas
 
     def resumen(self):
         return {"procesados": self.procesados, "saltados": 0, "personas_total": 0}
 
     def cerrar(self):
         pass
+
+
+class GrupoFalso:
+    """Un GrupoVideos sin Re-ID: anota qué videos se asociaron juntos en cada pasada."""
+
+    def __init__(self):
+        self.pasadas = []
+
+    def asociar(self, entradas):
+        self.pasadas.append(sorted(video.id for video, *_ in entradas))
 
 
 class Simultaneos(unittest.TestCase):
@@ -199,7 +213,7 @@ class Simultaneos(unittest.TestCase):
                 resumenes[vid] = resumen
 
         v = object.__new__(Prueba)
-        v.activos, v.descargas, v.descargados, v.hechos = {}, {}, deque(), set()
+        v.activos, v.descargas, v.descargados, v.espera, v.hechos = {}, {}, deque(), [], set()
         v.bloqueo = threading.Lock()
         v.motor = types.SimpleNamespace(device="cpu")
         return v, descargas, publicados, resumenes
@@ -243,6 +257,60 @@ class Simultaneos(unittest.TestCase):
         self.assertEqual(v.activos, {})
         self.assertEqual(v.hechos, {"b", "c"})
 
+    def test_los_de_un_mismo_grupo_se_asocian_juntos_en_cada_pasada(self):
+        v, _, publicados, _ = self.videos()
+        juntos, aparte = GrupoFalso(), GrupoFalso()
+        with tempfile.TemporaryDirectory() as carpeta:
+            for vid, grupo in (("a", juntos), ("b", juntos), ("c", aparte)):
+                ruta = Path(carpeta) / f"{vid}.video"
+                ruta.write_bytes(b"x")
+                v.activos[vid] = (VideoFalso(vid, 1, grupo=grupo), ruta)
+            self.assertTrue(v.paso())
+        self.assertEqual(juntos.pasadas, [["a", "b"]], "un solo instante del asociador con las dos cámaras")
+        self.assertEqual(aparte.pasadas, [["c"]])
+        self.assertEqual(sorted(publicados), ["a", "b", "c"])
+
+    def test_los_subidos_juntos_esperan_a_todos_y_empiezan_a_la_vez_en_un_grupo(self):
+        import videos_subidos
+        v, _, _, _ = self.videos()
+        v.reid, v.asociacion = object(), {}
+        abiertos = []
+
+        class Abierto:
+            def __init__(self, info, ruta, motor, reid, asociacion, grupo=None):
+                self.id, self.nombre, self.modo, self.grupo = info["id"], info["nombre"], info["modo"], grupo
+                self.ancho = self.alto = 4
+                self.fps, self.ritmo, self.terminado = 15.0, Ritmo(15.0, info["modo"]), False
+                abiertos.append(self)
+
+            def leer(self):
+                return None  # todavía no le toca ningún frame
+
+            def cerrar(self):
+                pass
+
+        original, videos_subidos.VideoEnProceso = videos_subidos.VideoEnProceso, Abierto
+        try:
+            with tempfile.TemporaryDirectory() as carpeta:
+                infos = [{"id": vid, "nombre": vid, "modo": "tiempo_real"} for vid in ("a", "b")]
+                for info in infos:
+                    v.descargas[info["id"]] = (info, threading.Event())
+                v.descargados.append((infos[0], Path(carpeta) / "a.video", None))
+                v.paso()
+                self.assertEqual(abiertos, [], "«a» espera a que termine de bajar «b»")
+                self.assertEqual([x["estado"] for x in v.estado()["videos"]], ["preparando", "preparando"])
+                v.descargados.append((infos[1], Path(carpeta) / "b.video", None))
+                v.paso()
+        finally:
+            videos_subidos.VideoEnProceso = original
+        self.assertEqual(sorted(v.activos), ["a", "b"])
+        a, b = abiertos
+        self.assertIs(a.grupo, b.grupo, "un mismo grupo: el mismo asociador")
+        self.assertEqual(a.ritmo.cero, b.ritmo.cero, "el mismo reloj: en cada pasada van por el mismo segundo")
+        config = a.grupo.asociador.config
+        self.assertEqual(config["overlaps"], [["a", "b"]], "pueden ver a la misma persona a la vez")
+        self.assertEqual({(x["from"], x["to"]) for x in config["transitions"]}, {("a", "b"), ("b", "a")})
+
     def test_no_repite_los_hechos(self):
         v, descargas, _, _ = self.videos()
         v.hechos.add("b")
@@ -266,7 +334,8 @@ class GeneroPorVotos(unittest.TestCase):
 
     def test_el_genero_mostrado_cambia_solo_si_el_otro_gana_claro(self):
         video = object.__new__(VideoEnProceso)
-        video.id, video.generos, video.mostrados, video.locales_de = "v", {}, {}, {}
+        video.id, video.generos = "v", {}
+        video.grupo = types.SimpleNamespace(locales_de={}, mostrados={})
         votos = []
         video.motor = types.SimpleNamespace(genero=types.SimpleNamespace(memory={("v", 1): {"votes": votos}}))
 

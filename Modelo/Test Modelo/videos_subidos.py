@@ -4,11 +4,12 @@ backend-vivo guarda cada archivo solo mientras se procesa (disco temporal, nunca
 procesan al mismo tiempo: en cada pasada se toma el frame que toca de cada video y todos van juntos por el detector (una
 sola pasada de YOLO, como los teléfonos), en un hilo propio que ya lee y detecta la pasada siguiente mientras el lazo
 principal sigue, re-identifica y publica la anterior (cuesta lo que la más lenta de las dos, no la suma); cada video
-sigue con su seguidor, su género y su asociador en su propio hilo, todos a la vez. Antes se turnaban, un frame de un
+sigue con su seguidor y su género en su propio hilo, todos a la vez, y los que se subieron juntos se re-identifican
+juntos: son cámaras del mismo lugar y la misma persona lleva el mismo ID en todas (ver GrupoVideos). Antes se turnaban, un frame de un
 solo video por pasada, y con tres videos de 15 fps cada uno recibía ~10 fps (detectar los tres a 1280 px toma ~60 ms). Aquí se descarga y se lee con
 OpenCV tal cual: cada frame a su resolución original, sin recomprimir ni redimensionar antes del modelo. Se publica como
-un teléfono (el frame procesado y sus detecciones por el relevo) y el avance va en el canal «videos». Usa un motor (con
-los mismos pesos) y un asociador propios, más sensibles que los del Build (ver AJUSTES): no toca la sesión de los
+un teléfono (el frame procesado y sus detecciones por el relevo) y el avance va en el canal «videos». Usa motores (con
+los mismos pesos) y asociadores propios, más sensibles que los del Build (ver AJUSTES): no toca la sesión de los
 teléfonos ni la memoria de identidades. Al terminar deja el resumen en backend-vivo, que borra el archivo; el resumen se ve en la web
 hasta que se quita el video. Quitarlo mientras se procesa lo detiene.
 """
@@ -89,6 +90,9 @@ GENERO_VIDEO = {"min_votes": 1, "min_confidence": 0.0, "min_margin": 0.0, "min_h
 CAMBIO_GENERO = 0.6
 # Sin GPU: Re-ID y género muestrean a cada persona cada 2 s (ver AJUSTES).
 MUESTREO_CPU_S = 2.0
+# Videos subidos juntos (GrupoVideos): quien sale de una cámara puede entrar en otra hasta este tiempo después (como
+# los teléfonos, camara_telefono.TRANSICION_MAX_S).
+TRANSICION_MAX_S = 60.0
 GENEROS = ("Hombre", "Mujer")
 # Una persona que en ESTATICO_S segundos a la vista no se aleja de donde apareció más que esta fracción de su altura
 # (descontando el movimiento de la cámara) es algo quieto: no se dibuja ni se cuenta.
@@ -268,10 +272,51 @@ class Quietud:
         return lid not in self.movidos and lid in self.origen and t - self.origen[lid][0] >= self.estatico_s
 
 
-class VideoEnProceso:
-    """Un video abierto con su propio motor y asociador; cada paso procesa el frame que toca."""
+def duracion_visible(tramos):
+    """Segundos a la vista de unos tramos (unión de sus intervalos, como AsociadorMulticamara._duracion_visible)."""
+    total, fin = 0.0, -math.inf
+    for a, b in sorted((t.inicio_s, t.fin_s) for t in tramos):
+        total += max(0.0, b - max(a, fin))
+        fin = max(fin, b)
+    return total
 
-    def __init__(self, info, ruta, motor, reid, asociacion):
+
+class GrupoVideos:
+    """Videos subidos juntos: cámaras del mismo lugar a la misma hora, como las del Build (Modelo/camaras.json) o los
+    teléfonos. Comparten el asociador (la misma persona lleva el mismo ID en todos: pueden verla a la vez o una después
+    de otra), el reloj (en cada pasada todos van por el mismo segundo) y los votos de género de cada persona. Antes cada
+    video tenía su asociador, sin las otras cámaras, y la misma persona salía con un ID distinto en cada video. Un video
+    subido aparte es un grupo de uno."""
+
+    def __init__(self, ids, reid, asociacion, gpu=True):
+        ids = list(ids)
+        config = {"mode": "visual_temporal", "units": "m",
+                  "cameras": {vid: {"timestamp_offset": 0.0} for vid in ids},
+                  "overlaps": [[a, b] for i, a in enumerate(ids) for b in ids[i + 1:]],
+                  "transitions": [{"from": a, "to": b, "t_min_s": 0.0, "t_max_s": TRANSICION_MAX_S, "max_distance_m": 30.0,
+                                   "min_direction_cos": -0.5} for a in ids for b in ids if a != b],
+                  "association": {**asociacion, **ASOCIACION_VIDEO}}
+        if not gpu:
+            config["association"]["sample_interval_s"] = MUESTREO_CPU_S
+        self.asociador = lap01.AsociadorMulticamara(reid, config)
+        self.asociador.quality["margen_borde"] = -1  # quien sale cortado por el borde también cuenta
+        self.t = -math.inf
+        self.locales_de = {}  # ID de cada persona -> {(video, track local)}: sus votos de género en todos los videos
+        self.mostrados = {}   # ID -> (género, certeza) que se ve sobre sus cajas
+
+    def asociar(self, entradas):
+        """Re-ID de una pasada: [(video, frame, t, filas)] de los videos del grupo, en un solo instante del asociador."""
+        # Con fps distintos los segundos de una pasada difieren en menos de un frame; el instante nunca retrocede.
+        self.t = max(max(t for _, _, t, _ in entradas), self.t + 1e-3)
+        self.asociador.actualizar(self.t, {v.id: frame for v, frame, _, _ in entradas},
+                                  {v.id: filas for v, _, _, filas in entradas},
+                                  occluders={v.id: v.motor.detecciones_actuales.get(v.id) for v, _, _, _ in entradas})
+
+
+class VideoEnProceso:
+    """Un video abierto con su propio motor (seguidor y género) en su grupo (asociador); cada paso procesa el frame que toca."""
+
+    def __init__(self, info, ruta, motor, reid, asociacion, grupo=None):
         self.id, self.nombre, self.modo = info["id"], info["nombre"], info["modo"]
         self.cap = cv2.VideoCapture(str(ruta))
         if not self.cap.isOpened() or not self.cap.grab():
@@ -294,19 +339,14 @@ class VideoEnProceso:
         # tiempo real le hacían creer que cada persona había desaparecido un rato y la perdía.
         self.motor.reiniciar({self.id: self.fps if self.modo == "todos" else min(self.fps, FPS_SEGUIDOR)})
         self.motor.calentar({self.id: primero})
-        config = {"mode": "visual_temporal", "units": "m", "cameras": {self.id: {"timestamp_offset": 0.0}},
-                  "overlaps": [], "transitions": [], "association": {**asociacion, **ASOCIACION_VIDEO}}
-        if not str(motor.device).startswith("cuda"):
-            config["association"]["sample_interval_s"] = MUESTREO_CPU_S
-        self.asociador = lap01.AsociadorMulticamara(reid, config)
-        self.asociador.quality["margen_borde"] = -1  # quien sale cortado por el borde también cuenta
+        self.grupo = grupo or GrupoVideos([self.id], reid, asociacion, gpu=str(motor.device).startswith("cuda"))
+        self.asociador = self.grupo.asociador
         self.ritmo = Ritmo(self.fps, self.modo)
         self.procesados = self.saltados = self.personas_ahora = 0
         self.ms, self.tiempos = deque(maxlen=30), deque(maxlen=30)
         self.ms_total = 0.0
+        self._inicio_paso = 0.0
         self.generos = {}
-        self.mostrados = {}  # ID -> (género, certeza) que se ve sobre su caja
-        self.locales_de = {}  # ID de cada persona -> sus tracks locales (cada uno con sus votos de género)
         self.quietud = Quietud()
         self.se_movieron = set()  # IDs de personas que se movieron alguna vez: las únicas que cuentan
         self.inicio = time.perf_counter()
@@ -325,12 +365,22 @@ class VideoEnProceso:
         return frame, self.ritmo.indice / self.fps
 
     def procesar(self, frame, t, detecciones=None, extra_s=0.0):
-        """Las filas del frame leído: seguidor, género y Re-ID de este video. `detecciones`: las de este frame si ya se
-        detectaron junto con los de los otros videos (si no, se detecta aquí); `extra_s`: lo que tardó esa pasada."""
-        inicio = time.perf_counter() - extra_s
+        """Las filas del frame leído, solo con este video en su grupo: seguidor, Re-ID y género (ver seguir)."""
+        filas = self.seguir(frame, detecciones, extra_s)
+        self.grupo.asociar([(self, frame, t, filas)])
+        return self.cerrar_paso(frame, t, filas)
+
+    def seguir(self, frame, detecciones=None, extra_s=0.0):
+        """Primera parte de un paso: el seguidor (y los votos de género) de este video. `detecciones`: las de este frame
+        si ya se detectaron junto con los de los otros videos (si no, se detecta aquí); `extra_s`: lo que tardó esa
+        pasada. Después el grupo asocia los videos juntos (GrupoVideos.asociar) y cerrar_paso termina."""
+        self._inicio_paso = time.perf_counter() - extra_s
         self.procesados += 1
-        filas = lap01.procesar_instante(self.motor, self.asociador, t, {self.id: frame}, {self.id: self.procesados},
-                                        detecciones)[self.id]
+        return self.motor.procesar({self.id: frame}, {self.id: self.procesados}, detecciones)[self.id]
+
+    def cerrar_paso(self, frame, t, filas):
+        """Última parte de un paso, ya con los IDs del grupo: lo quieto, el género y los tiempos; las filas a mostrar."""
+        inicio = self._inicio_paso
         self.quietud.actualizar(t, filas, frame)
         # Lo que no se mueve sigue en el seguidor (si no, volvería como alguien nuevo) pero no se muestra ni cuenta.
         filas = [f for f in filas if not self.quietud.estatico(f["local_id"], t)]
@@ -345,28 +395,30 @@ class VideoEnProceso:
         self.personas_ahora = len(filas)
         return filas
 
-    def _votos(self, locales):
-        """Votos de CLIP de unos tracks locales."""
-        memoria = self.motor.genero.memory
-        return [voto for lid in locales for voto in memoria.get((self.id, lid), {}).get("votes", [])]
+    @staticmethod
+    def _votos(locales):
+        """Votos de CLIP de unos tracks locales: (video, track local), de este video o de otro de su grupo."""
+        return [voto for video, lid in locales
+                for voto in video.motor.genero.memory.get((video.id, lid), {}).get("votes", [])]
 
     def _genero(self, fila):
-        """Género de la fila con los votos de todos los tracks de la persona (o del suyo mientras no tiene ID). El que ya
-        se mostró sobre el ID se mantiene, con su certeza, hasta que el otro gane con CAMBIO_GENERO (ver AJUSTES)."""
+        """Género de la fila con los votos de todos los tracks de la persona en los videos del grupo (o del suyo mientras
+        no tiene ID): la misma persona lleva el mismo género en todas las cámaras. El que ya se mostró sobre el ID se
+        mantiene, con su certeza, hasta que el otro gane con CAMBIO_GENERO (ver AJUSTES)."""
         pid = fila["global_id"]
-        locales = {fila["local_id"]}
+        locales = {(self, fila["local_id"])}
         if pid is not None:
-            locales = self.locales_de.setdefault(pid, set())
-            locales.add(fila["local_id"])
+            locales = self.grupo.locales_de.setdefault(pid, set())
+            locales.add((self, fila["local_id"]))
         etiqueta, certeza = genero_por_votos(self._votos(locales))
         fila["genero"], fila["confianza_genero"] = (etiqueta, certeza) if etiqueta in GENEROS else ("Sin determinar", None)
         if pid is not None:
             self.generos[pid] = fila["genero"]
-            mostrado = self.mostrados.get(pid)
+            mostrado = self.grupo.mostrados.get(pid)
             if mostrado is not None and fila["genero"] != mostrado[0] and (certeza or 0) < CAMBIO_GENERO:
                 fila["genero"], fila["confianza_genero"] = mostrado
             elif fila["genero"] in GENEROS:
-                self.mostrados[pid] = (fila["genero"], fila["confianza_genero"])
+                self.grupo.mostrados[pid] = (fila["genero"], fila["confianza_genero"])
 
     def estado(self):
         """Avance y métricas del video para la web."""
@@ -392,20 +444,21 @@ class VideoEnProceso:
         return r
 
     def personas(self):
-        """Cada persona contada: su ID, su género, entre qué segundos del video se vio y cuántos estuvo a la vista."""
+        """Cada persona contada: su ID, su género, entre qué segundos de este video se vio y cuántos estuvo a la vista en él."""
         a = self.asociador
         personas = {}
         for gid, publico in a.confirmadas.items():
-            tramos = [a.tracklets[uid] for uid in a.globales.get(gid, ())]
+            # El asociador es del grupo: aquí van solo los tramos de la persona en este video.
+            tramos = [a.tracklets[uid] for uid in a.globales.get(gid, ()) if a.tracklets[uid].camera_id == self.id]
             if not tramos or publico not in self.se_movieron:
                 continue
-            etiqueta, certeza = genero_por_votos(self._votos(self.locales_de.get(publico, ())))
+            etiqueta, certeza = genero_por_votos(self._votos(self.grupo.locales_de.get(publico, ())))
             p = personas.setdefault(publico, {"id": publico, "genero": etiqueta or "Sin determinar",
                                               "certeza": round(certeza, 2) if certeza else None,
                                               "desde_s": math.inf, "hasta_s": 0.0, "visible_s": 0.0})
             p["desde_s"] = min(p["desde_s"], min(t.inicio_s for t in tramos))
             p["hasta_s"] = max(p["hasta_s"], max(t.fin_s for t in tramos))
-            p["visible_s"] += a._duracion_visible(gid)
+            p["visible_s"] += duracion_visible(tramos)
         return [{**p, **{k: round(p[k], 1) for k in ("desde_s", "hasta_s", "visible_s")}} for _, p in sorted(personas.items())]
 
     def cerrar(self):
@@ -423,6 +476,7 @@ class VideosSubidos:
         self.activos = {}            # id -> (VideoEnProceso, copia local)
         self.descargas = {}          # id -> (info, Event para cancelarla) en curso
         self.descargados = deque()   # (info, ruta o None, error) que dejan los hilos de descarga
+        self.espera = []             # (info, ruta) ya descargados que esperan a los demás de su tanda (ver GrupoVideos)
         self.hechos = set()          # ids ya procesados, quitados o fallidos: no se repiten
         # Un hilo por video: el seguidor, el género y el Re-ID de cada uno corren a la vez (cada video tiene los suyos).
         self.hilos = ThreadPoolExecutor(max_workers=SIMULTANEOS, thread_name_prefix="video")
@@ -440,11 +494,17 @@ class VideosSubidos:
             self._soltar(vid)
         for vid in [v for v in self.descargas if v not in vigentes]:
             self.descargas.pop(vid)[1].set()
+        for info, ruta in [x for x in self.espera if x[0]["id"] not in vigentes]:
+            self.espera.remove((info, ruta))
+            ruta.unlink(missing_ok=True)
+            self.hechos.add(info["id"])
+        esperando = {info["id"] for info, _ in self.espera}
         for info in lista:
             vid = info["id"]
-            if info.get("resumen") is not None or vid in self.hechos or vid in self.activos or vid in self.descargas:
+            if (info.get("resumen") is not None or vid in self.hechos or vid in self.activos or vid in self.descargas
+                    or vid in esperando):
                 continue
-            if len(self.activos) + len(self.descargas) >= SIMULTANEOS:
+            if len(self.activos) + len(self.descargas) + len(self.espera) >= SIMULTANEOS:
                 break
             cancelar = threading.Event()
             self.descargas[vid] = (info, cancelar)
@@ -517,10 +577,17 @@ class VideosSubidos:
         """Procesa y publica el frame que toca de cada video, todos en la misma pasada del detector; True si procesó alguno."""
         while self.descargados:
             info, ruta, error = self.descargados.popleft()
-            if self.descargas.pop(info["id"], None) is not None:
+            if self.descargas.pop(info["id"], None) is None:
+                if ruta is not None:
+                    ruta.unlink(missing_ok=True)
+            elif error is not None:
                 self._abrir(info, ruta, error)
-            elif ruta is not None:
-                ruta.unlink(missing_ok=True)
+            else:
+                self.espera.append((info, ruta))
+        # Los que se subieron juntos empiezan juntos, en un grupo, cuando ya se descargaron todos.
+        if self.espera and not self.descargas:
+            listos, self.espera = self.espera, []
+            self._abrir_grupo(listos)
         if getattr(self, "lector", None) is None:
             lote, detecciones, extra, fines = self._leer_y_detectar()  # sin hilo lector (pruebas): todo aquí
         else:
@@ -534,27 +601,41 @@ class VideosSubidos:
         lote = [(video, frame, t) for video, frame, t in lote if self.activos.get(video.id, (None,))[0] is video]
         if not lote:
             return bool(fines)
-        procesar = lambda video, frame, t: video.procesar(  # noqa: E731
-            frame, t, None if detecciones is None else {video.id: detecciones[video.id]}, extra)
+        # 1) El seguidor de cada video, todos a la vez.
+        seguir = lambda video, frame: video.seguir(  # noqa: E731
+            frame, None if detecciones is None else {video.id: detecciones[video.id]}, extra)
         if len(lote) > 1 and getattr(self, "hilos", None) is not None:
-            futuros = [(video, frame, self.hilos.submit(procesar, video, frame, t)) for video, frame, t in lote]
+            futuros = [(video, frame, t, self.hilos.submit(seguir, video, frame)) for video, frame, t in lote]
             resultados = []
-            for video, frame, futuro in futuros:
+            for video, frame, t, futuro in futuros:
                 try:
-                    resultados.append((video, frame, futuro.result(), None))
+                    resultados.append((video, frame, t, futuro.result(), None))
                 except Exception as error:
-                    resultados.append((video, frame, None, error))
+                    resultados.append((video, frame, t, None, error))
         else:
             resultados = []
             for video, frame, t in lote:
                 try:
-                    resultados.append((video, frame, procesar(video, frame, t), None))
+                    resultados.append((video, frame, t, seguir(video, frame), None))
                 except Exception as error:
-                    resultados.append((video, frame, None, error))
-        for (video, frame, filas, error), (_, _, t) in zip(resultados, lote):
+                    resultados.append((video, frame, t, None, error))
+        # 2) El Re-ID de cada grupo en un solo instante, con todos sus videos (la misma persona, el mismo ID).
+        grupos = {}
+        for video, frame, t, filas, error in resultados:
             if error is not None:
                 self._terminar(video.id, "error", f"El modelo falló con este video: {error}")
             else:
+                grupos.setdefault(video.grupo, []).append((video, frame, t, filas))
+        for grupo, entradas in grupos.items():
+            try:
+                grupo.asociar(entradas)
+                # 3) Lo quieto y el género de cada video, ya con los IDs del grupo.
+                hechos = [(video, frame, t, video.cerrar_paso(frame, t, filas)) for video, frame, t, filas in entradas]
+            except Exception as error:
+                for video, *_ in entradas:
+                    self._terminar(video.id, "error", f"El modelo falló con este video: {error}")
+                continue
+            for video, frame, t, filas in hechos:
                 self._publicar(video, frame, filas, t)
         return True
 
@@ -581,16 +662,38 @@ class VideosSubidos:
                                            "frame_h": round(frame.shape[0] * ancho_web / frame.shape[1]),
                                            "people": self.personas_para_web(filas, frame.shape[1], ancho_web)})
 
-    def _abrir(self, info, ruta, error):
-        """Abre el video descargado (prepara su motor y asociador) o deja el error como su resumen."""
+    def _abrir_grupo(self, listos):
+        """Abre los videos descargados de una tanda en un grupo por modo (ver GrupoVideos) y los pone en marcha a la
+        vez: en tiempo real, cada pasada toma de todos el frame del mismo segundo."""
+        gpu = str(self.motor.device).startswith("cuda")
+        for modo in sorted({info["modo"] for info, _ in listos}):
+            tanda = [(info, ruta) for info, ruta in listos if info["modo"] == modo]
+            grupo = GrupoVideos([info["id"] for info, _ in tanda], self.reid, self.asociacion, gpu=gpu)
+            abiertos = [(video, ruta) for info, ruta in tanda if (video := self._abrir(info, ruta, None, grupo, activar=False))]
+            cero = time.perf_counter()
+            with self.bloqueo:
+                for video, ruta in abiertos:
+                    video.ritmo.cero = cero
+                    self.activos[video.id] = (video, ruta)
+            for video, _ in abiertos:
+                print(f"Procesando el video {video.nombre}: {video.ancho}x{video.alto}, {video.fps:g} FPS, "
+                      f"modo {video.modo} ({len(self.activos)} a la vez)", flush=True)
+            if len(abiertos) > 1:
+                print(f"Videos {', '.join(v.nombre for v, _ in abiertos)}: cámaras del mismo lugar, con IDs compartidos", flush=True)
+
+    def _abrir(self, info, ruta, error, grupo=None, activar=True):
+        """Abre el video descargado (prepara su motor, en su grupo) o deja el error como su resumen; el video o None.
+        Con `activar`, además empieza a procesarse."""
         if error is None:
             try:
-                video = VideoEnProceso(info, ruta, self.motor, self.reid, self.asociacion)
+                video = VideoEnProceso(info, ruta, self.motor, self.reid, self.asociacion, grupo)
+                if not activar:
+                    return video
                 with self.bloqueo:
                     self.activos[info["id"]] = (video, ruta)
                 print(f"Procesando el video {info['nombre']}: {video.ancho}x{video.alto}, {video.fps:g} FPS, "
                       f"modo {info['modo']} ({len(self.activos)} a la vez)", flush=True)
-                return
+                return video
             except Exception as e:
                 error = str(e)
         if ruta is not None:
@@ -640,8 +743,9 @@ class VideosSubidos:
         """Avance de cada video para la sección Videos (el resumen final se lee de backend-vivo)."""
         videos = [{**video.estado(), "estado": "procesando"} for video, _ in self.activos.values()]
         videos += [{"id": info["id"], "nombre": info["nombre"], "modo": info["modo"], "estado": "preparando"}
-                   for info, _ in self.descargas.values()]
-        return {"estado": "procesando" if self.activos else "preparando" if self.descargas else "libre", "videos": videos}
+                   for info, _ in [*self.descargas.values(), *self.espera]]
+        preparando = self.descargas or self.espera
+        return {"estado": "procesando" if self.activos else "preparando" if preparando else "libre", "videos": videos}
 
     def cerrar(self):
         """Suelta los videos y borra la carpeta temporal."""
