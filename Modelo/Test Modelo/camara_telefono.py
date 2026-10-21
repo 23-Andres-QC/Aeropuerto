@@ -15,10 +15,12 @@ import json
 import math
 import os
 import socket
+import struct
 import sys
 import threading
 import time
 import traceback
+from datetime import datetime, timedelta, timezone
 import urllib.request
 import warnings
 from collections import Counter, defaultdict, deque
@@ -189,6 +191,15 @@ MANTENER_ID_S = 3.0
 # Pausa mínima entre pasadas de los carriles lentos (IDs y género); 0 = sin pausa. Con 0,25 s y mucha gente el carril
 # rápido no fue más rápido (434 -> 554 ms por pasada con video1 y video2) y el ID tardaba más: se deja en 0.
 CARRIL_LENTO_CADA_S = float(os.environ.get("MODELO_CARRIL_LENTO_S") or 0)
+# Multitud: cuando un teléfono ve MULTITUD_PERSONAS o más personas a la vez, seguir a cada una (tracker, Re-ID, género) es caro y no
+# se sostiene (se tapan entre sí); en ese cuadro solo se cuentan las cabezas y todo el grupo lleva un solo ID de grupo. 0 lo apaga.
+MULTITUD_PERSONAS = int(os.environ.get("MULTITUD_PERSONAS") or 8)
+# Por horario: en estas franjas (hora de Lima, «12:00-15:00,18:30-20:00») el modo multitud va siempre, con cualquier cantidad de gente
+# (el almuerzo, donde seguir a cada persona no vale la pena); fuera de ellas, el seguimiento individual de siempre (y la regla de arriba).
+MULTITUD_HORARIO = os.environ.get("MULTITUD_HORARIO", "")
+HUSO_LIMA = timezone(timedelta(hours=-5))  # Lima no tiene horario de verano
+MULTITUD_CUADROS_ENTRA = 2  # cuadros seguidos con la gente suficiente para entrar al modo multitud
+MULTITUD_CUADROS_SALE = 6  # cuadros seguidos con bastante menos gente para salir (evita que parpadee)
 
 
 # Un cuadro que falla (un error raro del modelo) se salta; tantos seguidos indican algo roto (ej. la GPU) y el proceso
@@ -223,6 +234,101 @@ def leer_json(url, timeout=5):
     """GET de un JSON de la web."""
     with urllib.request.urlopen(url, timeout=timeout) as respuesta:
         return json.loads(respuesta.read().decode("utf-8"))
+
+
+def leer_horarios(texto):
+    """«12:00-15:00,18:30-20:00» -> [(720, 900), (1110, 1200)] en minutos desde la medianoche. Una franja que cruza la medianoche
+    («22:00-02:00») vale; lo que no se entiende se ignora con un aviso."""
+    franjas = []
+    for trozo in (texto or "").split(","):
+        trozo = trozo.strip()
+        if not trozo:
+            continue
+        try:
+            desde, hasta = (t.strip().split(":") for t in trozo.split("-"))
+            a, b = int(desde[0]) * 60 + int(desde[1]), int(hasta[0]) * 60 + int(hasta[1])
+            if not (0 <= a < 1440 and 0 <= b <= 1440 and a != b):
+                raise ValueError
+            franjas.append((a, b))
+        except (ValueError, IndexError):
+            print(f"MULTITUD_HORARIO: «{trozo}» no se entiende (se espera HH:MM-HH:MM); se ignora.", flush=True)
+    return franjas
+
+
+def minutos_en_lima():
+    ahora = datetime.now(HUSO_LIMA)
+    return ahora.hour * 60 + ahora.minute
+
+
+class Multitud:
+    """Cuándo un teléfono ve una multitud y qué número de grupo le toca.
+
+    Dos formas de entrar al modo multitud:
+      - por horario: dentro de una franja (`horarios`) va siempre, con cualquier cantidad de gente; cada franja es un grupo nuevo;
+      - por cantidad (fuera de las franjas): con `entra` personas o más en `MULTITUD_CUADROS_ENTRA` cuadros seguidos; sale con
+        menos de `sale` en `MULTITUD_CUADROS_SALE` cuadros seguidos. Cada multitud nueva (después de haber salido) es un grupo nuevo.
+    """
+
+    def __init__(self, entra=MULTITUD_PERSONAS, sale=None, horarios=None, reloj=minutos_en_lima):
+        self.entra = entra
+        self.sale = sale if sale is not None else max(2, entra - 3)
+        self.horarios = leer_horarios(MULTITUD_HORARIO) if horarios is None else horarios
+        self.reloj = reloj
+        self.estado, self.grupos = {}, 0
+
+    def en_horario(self):
+        """¿Ahora cae en alguna franja del horario de multitud?"""
+        m = self.reloj()
+        return any(a <= m < b if a < b else (m >= a or m < b) for a, b in self.horarios)
+
+    def descripcion(self):
+        """Lo que la web muestra del modo: las franjas («12:00-15:00»), si ahora es una y desde cuántas personas se entra solo."""
+        texto = [f"{a // 60:02d}:{a % 60:02d}-{b // 60:02d}:{b % 60:02d}" for a, b in self.horarios]
+        return {"horarios": texto, "en_horario": self.en_horario(), "umbral": self.entra}
+
+    def actualizar(self, cid, personas):
+        """El número de grupo si el teléfono está en multitud con este cuadro, o None."""
+        e = self.estado.setdefault(cid, {"grupo": None, "sobre": 0, "bajo": 0, "horario": False})
+        if self.en_horario():
+            if not e["horario"]:  # empezó la franja: grupo nuevo
+                e.update(horario=True, grupo=None, sobre=0, bajo=0)
+            if e["grupo"] is None:
+                self.grupos += 1
+                e["grupo"] = self.grupos
+            return e["grupo"]
+        if e["horario"]:  # terminó la franja: vuelve el seguimiento individual
+            e.update(horario=False, grupo=None, sobre=0, bajo=0)
+        if not self.entra:
+            return None
+        if e["grupo"] is None:
+            e["sobre"] = e["sobre"] + 1 if personas >= self.entra else 0
+            if e["sobre"] >= MULTITUD_CUADROS_ENTRA:
+                self.grupos += 1
+                e.update(grupo=self.grupos, sobre=0, bajo=0)
+        else:
+            e["bajo"] = e["bajo"] + 1 if personas < self.sale else 0
+            if e["bajo"] >= MULTITUD_CUADROS_SALE:
+                e.update(grupo=None, sobre=0, bajo=0)
+        return e["grupo"]
+
+    def olvidar(self, activos):
+        for cid in [c for c in self.estado if c not in activos]:
+            del self.estado[cid]
+
+
+def cabezas_y_pies(cajas, ancho, ancho_relevo=ANCHO_RELEVO):
+    """Cabezas (centro y radio) y pies (centro de abajo de la caja) de las personas de un cuadro, en píxeles del video relevado.
+
+    La cabeza se toma de arriba de cada caja: su radio es ~8 % de lo alto de la persona (sin pasar de un tercio de lo ancho).
+    """
+    escala = ancho_relevo / ancho
+    cabezas, pies = [], []
+    for x1, y1, x2, y2 in np.asarray(cajas, np.float32).reshape(-1, 4):
+        alto, largo = max(1.0, float(y2 - y1)), max(1.0, float(x2 - x1))
+        r = max(3.0, min(0.08 * alto, 0.33 * largo))
+        cabezas.append([round(float((x1 + x2) / 2) * escala, 1), round(float(y1 + r) * escala, 1), round(r * escala, 1)])
+        pies.append([round(float((x1 + x2) / 2) * escala, 1), round(float(y2) * escala, 1)])
+    return cabezas, pies
 
 
 class Sondeo:
@@ -536,15 +642,19 @@ class Relevo:
         base = url_api.replace("https://", "wss://").replace("http://", "ws://") + "/api/v1/cameras"
         self._urgente, self._video = Publicador(base), Publicador(base)
 
-    def video(self, cid, frame, ancho=ANCHO_RELEVO, calidad=70, kbps=0):
-        """Publica el frame (reducido a `ancho` px) para que la web lo muestre; con `kbps`, dosificado."""
+    def video(self, cid, frame, ancho=ANCHO_RELEVO, calidad=70, kbps=0, cuadro=None):
+        """Publica el frame (reducido a `ancho` px) para que la web lo muestre; con `kbps`, dosificado.
+
+        Con `cuadro` (el número que le puso la cámara web) el mensaje lleva delante ese número en 4 bytes (big-endian): la web
+        junta cada cuadro con las cajas que el modelo calculó para él (un JPEG empieza con 0xFF, un número así nunca).
+        """
         def codificar():
             alto = round(frame.shape[0] * ancho / frame.shape[1])
             imagen = frame if frame.shape[1] == ancho else cv2.resize(frame, (ancho, alto), interpolation=cv2.INTER_AREA)
             for q in (calidad, 60, 45):
                 ok, jpeg = cv2.imencode(".jpg", imagen, [cv2.IMWRITE_JPEG_QUALITY, q])
                 if ok and len(jpeg) <= MAX_JPEG_RELEVO:
-                    return jpeg.tobytes()
+                    return jpeg.tobytes() if cuadro is None else struct.pack(">I", cuadro & 0xFFFFFFFF) + jpeg.tobytes()
             return None
         self._video.encolar(f"{cid}/publish", codificar, kbps)
 
@@ -560,6 +670,43 @@ class Relevo:
         """Manda lo pendiente (el último estado) y cierra las conexiones."""
         self._urgente.cerrar()
         self._video.cerrar()
+
+
+# Cuadros por segundo del video de los teléfonos hacia la web cuando no se fija RELEVO_VIDEO_FPS.
+VIDEO_TELEFONOS_FPS = 15.0
+
+
+class Difusor:
+    """Manda a la web el video de cada teléfono a su ritmo, sin esperar al modelo.
+
+    Antes cada cuadro salía recién cuando el modelo lo terminaba de procesar: en CPU eran ~5 por segundo y el video se veía a
+    saltos. Ahora sale el último cuadro de cada teléfono hasta `fps` veces por segundo, con su número de cuadro, y la web lo
+    muestra un poco atrasado (lo que tarda el modelo) para dibujarle las cajas que le corresponden.
+    """
+
+    def __init__(self, relevo, lectores, fps):
+        self.relevo, self.lectores, self.fps = relevo, lectores, fps
+        self._parar = threading.Event()
+        self._hilo = threading.Thread(target=self._correr, daemon=True)
+        self._hilo.start()
+
+    def _correr(self):
+        vistos = {}
+        while not self._parar.wait(1 / self.fps):
+            try:
+                actuales = list(self.lectores.items())
+            except RuntimeError:  # el lazo principal cambió la lista justo ahora: se mira en la próxima vuelta
+                continue
+            vistos = {lector: vistos.get(lector, 0) for _, lector in actuales}
+            for cid, lector in actuales:
+                dato = lector.tomar(vistos[lector])
+                if dato is None:
+                    continue
+                vistos[lector] = dato[0]
+                self.relevo.video(cid, dato[1], kbps=KBPS_VIDEO_TELEFONOS, cuadro=dato[3] or 0)
+
+    def detener(self):
+        self._parar.set()
 
 
 def config_telefonos(telefonos, asociacion):
@@ -591,6 +738,7 @@ class SesionEnVivo:
         self.ultimo, self.procesados, self.saltados = {}, {}, {}
         self.latencias, self.tiempos, self.personas = {}, {}, {}
         self.generos = {}
+        self.multitud, self.multitudes = Multitud(), {}  # teléfono -> su grupo y las cabezas que cuenta (ver Multitud)
         self._ultimo_id = {}  # (teléfono, track local) -> (ID global, instante): ver MANTENER_ID_S
         self.quietud = {}  # teléfono -> Quietud: qué tracks no se mueven
         self.fijos = {}  # (teléfono, track local) -> (género, certeza) ya fijado con certeza >= GENERO_FIJO
@@ -695,8 +843,22 @@ class SesionEnVivo:
         detectadas = self.motor.detectar(frames)
         if not isinstance(self.motor.detector, DetectorCuerpo):  # con pose las cajas ya son de cuerpo sin brazos
             detectadas = {cid: ajustar_cajas(*dato) for cid, dato in detectadas.items()}
-        self._ventanas_seguidor(frames)
-        filas = self.motor.seguir(frames, fuente, detectadas)
+        # Multitud: esos teléfonos no pasan por el seguidor (ni, por lo tanto, por el Re-ID ni el género): solo cuentan cabezas.
+        self.multitud.olvidar(self.telefonos)
+        en_multitud = {}
+        for cid, (cajas, _) in detectadas.items():
+            grupo = self.multitud.actualizar(cid, len(cajas))
+            if grupo is not None:
+                en_multitud[cid] = grupo
+        self.multitudes = {}
+        for cid, grupo in en_multitud.items():
+            cabezas, pies = cabezas_y_pies(detectadas[cid][0], frames[cid].shape[1])
+            if cabezas:  # en una franja de horario puede no haber nadie: sin cabezas no hay nada que mostrar
+                self.multitudes[cid] = {"grupo": grupo, "personas": len(cabezas), "cabezas": cabezas, "pies": pies}
+        sigue = [cid for cid in frames if cid not in en_multitud]
+        self._ventanas_seguidor({cid: frames[cid] for cid in sigue})
+        filas = self.motor.seguir({cid: frames[cid] for cid in sigue}, fuente, {cid: detectadas[cid] for cid in sigue}) if sigue else {}
+        filas.update({cid: [] for cid in en_multitud})
         for cid, fs in filas.items():
             quieta = self.quietud.setdefault(cid, Quietud(ESTATICO_TELEFONO_S, ESTATICO_DESPLAZAMIENTO_TELEFONO))
             quieta.actualizar(self.t, fs, frames[cid])
@@ -719,7 +881,7 @@ class SesionEnVivo:
         for cid, (_, _, llegada, _) in datos.items():
             self.latencias[cid].append(ahora - llegada)
             self.tiempos[cid].append(ahora)
-            self.personas[cid] = len(filas[cid])
+            self.personas[cid] = self.multitudes[cid]["personas"] if cid in self.multitudes else len(filas[cid])
             for fila in filas[cid]:
                 self._conocido(cid, fila)
             self._sin_repetidos(filas[cid])
@@ -954,11 +1116,11 @@ class SesionEnVivo:
         memoria = {"personas": len(self.memoria.personas), "persistente": self.memoria.persistente}
         if self.asociador is None:
             return {"segundos": round(time.perf_counter() - self.t0, 1), "personas_total": 0, "multitelefono": 0,
-                    "reconocidas": 0, "memoria": memoria, "genero": {}}
+                    "reconocidas": 0, "memoria": memoria, "genero": {}, "multitud": self.multitud.descripcion()}
         vigentes = set(self.asociador.confirmadas.values())
         return {"segundos": round(time.perf_counter() - self.t0, 1), "personas_total": len(vigentes),
                 "multitelefono": self.asociador.resumen()["identidades_multicamara"],
-                "reconocidas": len(self.asociador.reconocidas), "memoria": memoria,
+                "reconocidas": len(self.asociador.reconocidas), "memoria": memoria, "multitud": self.multitud.descripcion(),
                 "genero": dict(Counter(g for pid, g in self.generos.items() if pid in vigentes))}
 
 
@@ -1052,10 +1214,10 @@ def main():
                                    batch_size=encoder.get("batch_size", 8), device="cpu")
     videos = VideosSubidos(url_api, motor, reid_videos, asociacion_build, relevo, personas_para_web)
     lectores, nombres, calentado = {}, {}, False
-    relevado = {}  # último video de cada teléfono por el relevo (con FPS_RELEVO)
     publicado, fallos, ultimo_video = 0.0, 0, -math.inf
     enlace, enlace_visto = None, -math.inf
     sondeo = Sondeo(url_api)
+    difusor = Difusor(relevo, lectores, FPS_RELEVO or VIDEO_TELEFONOS_FPS)
     try:
         while True:
             sondeado = sondeo.tomar()
@@ -1108,12 +1270,10 @@ def main():
                         raise
                     continue
                 for cid, (_, frame, _, cuadro) in datos.items():
-                    if not FPS_RELEVO or time.monotonic() - relevado.get(cid, -math.inf) >= 1 / FPS_RELEVO:
-                        relevado[cid] = time.monotonic()
-                        relevo.video(cid, frame, kbps=KBPS_VIDEO_TELEFONOS)
                     relevo.detecciones(cid, {"ts": time.time(), "cuadro": cuadro, "frame_w": ANCHO_RELEVO,
                                              "frame_h": round(frame.shape[0] * ANCHO_RELEVO / frame.shape[1]),
                                              "people": personas_para_web(filas[cid], frame.shape[1]),
+                                             "multitud": sesion.multitudes.get(cid),
                                              "plano": sesion.planos.get(cid)})
             elif not hubo_video:
                 time.sleep(0.003)
@@ -1136,6 +1296,7 @@ def main():
     except KeyboardInterrupt:
         print("Detenido. La memoria de identidades queda guardada en backend-vivo.", flush=True)
     finally:
+        difusor.detener()
         sondeo.detener()
         for lector in lectores.values():
             lector.detener()
