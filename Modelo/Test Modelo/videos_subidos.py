@@ -60,6 +60,13 @@ SIMULTANEOS = int(os.environ.get("VIDEOS_SIMULTANEOS") or 10)
 #   seguidas muy distintas (< 0,25, no 2 bajo 0,4), une más fácil a quien reaparece en la cámara (0,6, no 0,7) y el
 #   seguidor recupera a quien perdió un momento con 0,7 de parecido (no 0,8). En un video de un centro comercial: de 70
 #   a 58 identidades en 25 s y ningún corte, con las mismas personas a la vista;
+# - Re-ID con GPU: OSNet-AIN (REID_VIDEO_GPU) en vez del yolo26s-reid del Build, que estira cada recorte a un cuadrado
+#   y reconoce poco a la misma persona desde otra cámara. En 6 pares de cámaras del mismo lugar con 308 personas
+#   etiquetadas, la más parecida en la otra cámara era ella en el 58 % de los tramos de ~4 s; con OSNet-AIN, en el 78 %,
+#   en la mitad de tiempo. Sus parecidos son más altos para todos, así que los umbrales suben (ASOCIACION_REID_GPU) hasta
+#   unir a dos personas distintas de cámaras distintas igual de poco que antes (~1 % de los tramos), y así une al doble
+#   de las mismas (59 % de los tramos, no 31 %). Con dos videos del mismo lugar subidos juntos, la misma persona vista a
+#   la vez en los dos llevaba el mismo ID el 14 % de las veces y ahora el 36 %. Sin GPU sigue el del Build;
 # - cruces: cuando dos personas se cruzan, el seguidor elegía casi solo por movimiento y los dos tracks se cambiaban de
 #   persona (la mayoría de los cambios de ID). Ahora el parecido pesa 0,8 en esa elección (no 0,22), cuenta con un 80 %
 #   del vector profundo (no 20 %: el color distingue poco a gente vestida parecida) y un track activo sigue a una caja sin
@@ -85,6 +92,10 @@ ASOCIACION_VIDEO = {"min_samples": 3, "min_query_samples": 3, "min_identity_dura
                     "tracklet_views_target": 4, "identity_views_target": 12,
                     "min_conf": 0.15, "min_height": 16, "max_occlusion": 0.4,
                     "split_threshold": 0.25, "split_strikes": 3, "same_camera_threshold": 0.6}
+# Con GPU (ver AJUSTES): OSNet-AIN x1.0 entrenado en MSMT17 (torchreid, licencia MIT), en ONNX con la normalización
+# adentro, y los umbrales del asociador para sus parecidos.
+REID_VIDEO_GPU = "osnet_ain_x1_0_msmt17.onnx"
+ASOCIACION_REID_GPU = {"threshold": 0.75, "average_threshold": 0.70, "same_camera_threshold": 0.78, "split_threshold": 0.6}
 GENERO_VIDEO = {"min_votes": 1, "min_confidence": 0.0, "min_margin": 0.0, "min_height": 1.0,
                 "min_detection_confidence": 0.0, "sample_s": 1.0, "max_votes": 6}
 CAMBIO_GENERO = 0.6
@@ -296,7 +307,9 @@ class GrupoVideos:
                   "transitions": [{"from": a, "to": b, "t_min_s": 0.0, "t_max_s": TRANSICION_MAX_S, "max_distance_m": 30.0,
                                    "min_direction_cos": -0.5} for a in ids for b in ids if a != b],
                   "association": {**asociacion, **ASOCIACION_VIDEO}}
-        if not gpu:
+        if gpu:
+            config["association"].update(ASOCIACION_REID_GPU)  # con GPU el Re-ID es OSNet-AIN (ver AJUSTES)
+        else:
             config["association"]["sample_interval_s"] = MUESTREO_CPU_S
         self.asociador = lap01.AsociadorMulticamara(reid, config)
         self.asociador.quality["margen_borde"] = -1  # quien sale cortado por el borde también cuenta

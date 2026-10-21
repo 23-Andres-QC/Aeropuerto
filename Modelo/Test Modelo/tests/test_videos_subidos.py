@@ -19,8 +19,8 @@ sys.path.insert(0, str(TEST))
 import camara_telefono  # noqa: E402,F401  (prepara lap01 y sus rutas)
 import lap01  # noqa: E402
 from detector_pose import DetectorCuerpo  # noqa: E402
-from videos_subidos import (ESTATICO_S, MUESTREO_CPU_S, Quietud, Ritmo, VideoEnProceso, VideosSubidos,  # noqa: E402
-                            genero_por_votos, leer_hasta, motor_aparte)
+from videos_subidos import (ASOCIACION_REID_GPU, ESTATICO_S, MUESTREO_CPU_S, REID_VIDEO_GPU, GrupoVideos,  # noqa: E402
+                            Quietud, Ritmo, VideoEnProceso, VideosSubidos, genero_por_votos, leer_hasta, motor_aparte)
 
 
 class RitmoTiempoReal(unittest.TestCase):
@@ -310,6 +310,17 @@ class Simultaneos(unittest.TestCase):
         config = a.grupo.asociador.config
         self.assertEqual(config["overlaps"], [["a", "b"]], "pueden ver a la misma persona a la vez")
         self.assertEqual({(x["from"], x["to"]) for x in config["transitions"]}, {("a", "b"), ("b", "a")})
+
+    def test_con_gpu_el_grupo_usa_los_umbrales_de_osnet_y_sin_gpu_los_del_build(self):
+        asociacion = {"threshold": 0.6, "average_threshold": 0.55, "same_camera_threshold": 0.7, "split_threshold": 0.4}
+        con = GrupoVideos(["a", "b"], lambda crops: np.empty((0, 512), np.float32), asociacion, gpu=True).asociador
+        sin = GrupoVideos(["a", "b"], lambda crops: np.empty((0, 512), np.float32), asociacion, gpu=False).asociador
+        self.assertEqual((con.threshold, con.average_threshold, con.same_camera_threshold, con.split_threshold),
+                         tuple(ASOCIACION_REID_GPU[k] for k in ("threshold", "average_threshold", "same_camera_threshold",
+                                                                 "split_threshold")))
+        self.assertEqual((sin.threshold, sin.average_threshold), (0.6, 0.55))
+        self.assertEqual(sin.sample_s, MUESTREO_CPU_S)
+        self.assertTrue((TEST / "Modelo" / REID_VIDEO_GPU).is_file(), "los pesos de OSNet-AIN van con el modelo")
 
     def test_no_repite_los_hechos(self):
         v, descargas, _, _ = self.videos()
