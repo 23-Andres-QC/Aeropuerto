@@ -375,6 +375,15 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <button v-else type="button" class="reiniciar-calor terminar" title="Deja de registrar y guarda la captura" :disabled="guardando || capturaDePrueba" @click="terminarYRefrescar()">
           {{ guardando ? "Guardando…" : "■ Terminar y guardar" }}
         </button>
+        <span
+          v-if="vivo.modoMultitud.value?.horarios.length"
+          class="pill"
+          :class="vivo.modoMultitud.value.en_horario ? 'warn' : ''"
+          data-prueba="modo-multitud"
+          :title="`Franjas en que el en vivo cuenta cabezas y le da un ID a todo el grupo, en vez de seguir a cada persona: ${vivo.modoMultitud.value.horarios.join(', ')} (hora de Lima)`"
+        >
+          {{ vivo.modoMultitud.value.en_horario ? "Modo grupal por horario" : "Seguimiento individual" }} · grupal {{ vivo.modoMultitud.value.horarios.join(", ") }}
+        </span>
         <span v-if="!grabando" class="muted">Pulsa «Iniciar captura» para registrar esta escena; «Terminar y guardar» la deja en Registros.</span>
         <span v-if="mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
       </div>

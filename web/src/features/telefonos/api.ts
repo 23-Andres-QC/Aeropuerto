@@ -38,6 +38,8 @@ export type EstadoServicio = {
   /** Enlace para los teléfonos con la IP de la laptop en la red (lo publica el modelo, que corre en ella). */
   enlace?: string | null;
   memoria?: { personas: number; persistente: boolean };
+  /** Modo multitud: las franjas de horario («12:00-15:00», hora de Lima), si ahora es una, y desde cuántas personas se entra solo. */
+  multitud?: { horarios: string[]; en_horario: boolean; umbral: number };
   telefonos: Record<string, EstadoTelefono>;
 };
 

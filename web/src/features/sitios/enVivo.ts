@@ -1065,4 +1065,7 @@ socketPersistente(`${RELEVO_VIVO}/telefonos/detections/watch`, false, (ev) => {
  */
 export const zonaVivo = computed(() => (config.value?.plano?.capas?.length ? "Patio" : null));
 
-export const motorVivo = { mapa, config, zonas, ranuras, sobrantes, vivas, calor, historias, sinUbicar, conteo, resumen, servicioActivo, error, inicio, ahora };
+/** Modo multitud del modelo (franjas de horario y si ahora es una), o null si el modelo no lo publica. */
+const modoMultitud = computed(() => servicio.value?.multitud ?? null);
+
+export const motorVivo = { modoMultitud, mapa, config, zonas, ranuras, sobrantes, vivas, calor, historias, sinUbicar, conteo, resumen, servicioActivo, error, inicio, ahora };

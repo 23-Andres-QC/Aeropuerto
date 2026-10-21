@@ -206,6 +206,7 @@ Se activa con el botón de la cabecera, y también entra solo cuando se conecta 
   5. **Ajuste fino:** un desplazamiento en metros que se mueve con los botones del plano y se recuerda en el navegador. Lo que aun así cae fuera del piso pasa al borde más cercano.
 - **Multitud:**
   - con **8 o más personas** en el cuadro de un teléfono durante 2 cuadros seguidos, el modelo **no sigue a cada una** (ni Re-ID ni género): cuenta las cabezas y le pone **un solo ID de grupo** a todas («Grupo 3 · 14 personas»). Sale del modo con menos de 5 personas durante 6 cuadros seguidos; cada multitud nueva es un grupo nuevo. `MULTITUD_PERSONAS` cambia el umbral (0 lo apaga);
+  - **por horario:** `MULTITUD_HORARIO` (hora de Lima, p. ej. `12:00-15:00` para el almuerzo; varias franjas con comas) hace que dentro de la franja el modelo vaya **siempre** en modo multitud, con cualquier cantidad de gente, y que fuera de ella siga el seguimiento individual (más la regla por cantidad de arriba; `MULTITUD_PERSONAS=0` la apaga y deja solo el horario). Cada franja es un grupo nuevo. En vivo muestra qué modo está en marcha;
   - En vivo pone al grupo en el plano como un **solo punto** (el centro de sus pies) y lo lista en «Ahora mismo»; «en el plano» cuenta las cabezas;
   - **por ahora** la multitud no entra a la captura guardada (mapa de calor, recorridos, conteo de la línea ni estadísticas): solo se ve y se cuenta en vivo.
 - **Captura:**

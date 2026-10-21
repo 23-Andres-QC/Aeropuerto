@@ -35,7 +35,7 @@ class MotorFalso:
 def sesion(personas):
     s = object.__new__(SesionEnVivo)
     s.motor = MotorFalso(personas)
-    s.multitud, s.multitudes = Multitud(entra=8), {}
+    s.multitud, s.multitudes = Multitud(entra=8, horarios=[]), {}
     s.telefonos, s.camaras, s.planos = ["tel-1"], {}, {}
     s.t0, s.t = 0.0, -1.0
     s.ultimo, s.procesados, s.saltados = {"tel-1": 0}, {"tel-1": 0}, {"tel-1": 0}
@@ -51,6 +51,23 @@ def sesion(personas):
 
 def cuadro(numero):
     return {"tel-1": (numero, np.zeros((480, 640, 3), np.uint8), 0.0, numero)}
+
+
+class SesionConHorario(unittest.TestCase):
+    def test_en_la_franja_se_cuentan_cabezas_aunque_haya_pocas_personas(self):
+        s = sesion(3)
+        s.multitud = Multitud(entra=8, horarios=[(0, 1440)])
+        filas = s.procesar(cuadro(1))
+        self.assertEqual(filas["tel-1"], [])
+        self.assertEqual((s.multitudes["tel-1"]["grupo"], s.multitudes["tel-1"]["personas"]), (1, 3))
+        self.assertEqual(s.motor.llamadas_seguir, [], "ni el seguidor corre")
+
+    def test_en_la_franja_sin_nadie_no_hay_grupo_que_mostrar(self):
+        s = sesion(0)
+        s.multitud = Multitud(entra=8, horarios=[(0, 1440)])
+        s.procesar(cuadro(1))
+        self.assertEqual(s.multitudes, {})
+        self.assertEqual(s.personas["tel-1"], 0)
 
 
 class SesionEnMultitud(unittest.TestCase):

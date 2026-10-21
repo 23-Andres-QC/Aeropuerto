@@ -19,6 +19,7 @@ import sys
 import threading
 import time
 import traceback
+from datetime import datetime, timedelta, timezone
 import urllib.request
 import warnings
 from collections import Counter, defaultdict, deque
@@ -184,6 +185,10 @@ MANTENER_ID_S = 3.0
 # Multitud: cuando un teléfono ve MULTITUD_PERSONAS o más personas a la vez, seguir a cada una (tracker, Re-ID, género) es caro y no
 # se sostiene (se tapan entre sí); en ese cuadro solo se cuentan las cabezas y todo el grupo lleva un solo ID de grupo. 0 lo apaga.
 MULTITUD_PERSONAS = int(os.environ.get("MULTITUD_PERSONAS") or 8)
+# Por horario: en estas franjas (hora de Lima, «12:00-15:00,18:30-20:00») el modo multitud va siempre, con cualquier cantidad de gente
+# (el almuerzo, donde seguir a cada persona no vale la pena); fuera de ellas, el seguimiento individual de siempre (y la regla de arriba).
+MULTITUD_HORARIO = os.environ.get("MULTITUD_HORARIO", "")
+HUSO_LIMA = timezone(timedelta(hours=-5))  # Lima no tiene horario de verano
 MULTITUD_CUADROS_ENTRA = 2  # cuadros seguidos con la gente suficiente para entrar al modo multitud
 MULTITUD_CUADROS_SALE = 6  # cuadros seguidos con bastante menos gente para salir (evita que parpadee)
 
@@ -199,23 +204,70 @@ def leer_json(url, timeout=5):
         return json.loads(respuesta.read().decode("utf-8"))
 
 
+def leer_horarios(texto):
+    """«12:00-15:00,18:30-20:00» -> [(720, 900), (1110, 1200)] en minutos desde la medianoche. Una franja que cruza la medianoche
+    («22:00-02:00») vale; lo que no se entiende se ignora con un aviso."""
+    franjas = []
+    for trozo in (texto or "").split(","):
+        trozo = trozo.strip()
+        if not trozo:
+            continue
+        try:
+            desde, hasta = (t.strip().split(":") for t in trozo.split("-"))
+            a, b = int(desde[0]) * 60 + int(desde[1]), int(hasta[0]) * 60 + int(hasta[1])
+            if not (0 <= a < 1440 and 0 <= b <= 1440 and a != b):
+                raise ValueError
+            franjas.append((a, b))
+        except (ValueError, IndexError):
+            print(f"MULTITUD_HORARIO: «{trozo}» no se entiende (se espera HH:MM-HH:MM); se ignora.", flush=True)
+    return franjas
+
+
+def minutos_en_lima():
+    ahora = datetime.now(HUSO_LIMA)
+    return ahora.hour * 60 + ahora.minute
+
+
 class Multitud:
     """Cuándo un teléfono ve una multitud y qué número de grupo le toca.
 
-    Entra con `entra` personas o más en `MULTITUD_CUADROS_ENTRA` cuadros seguidos y sale con menos de `sale` en
-    `MULTITUD_CUADROS_SALE` cuadros seguidos. Cada multitud nueva (después de haber salido) es un grupo nuevo.
+    Dos formas de entrar al modo multitud:
+      - por horario: dentro de una franja (`horarios`) va siempre, con cualquier cantidad de gente; cada franja es un grupo nuevo;
+      - por cantidad (fuera de las franjas): con `entra` personas o más en `MULTITUD_CUADROS_ENTRA` cuadros seguidos; sale con
+        menos de `sale` en `MULTITUD_CUADROS_SALE` cuadros seguidos. Cada multitud nueva (después de haber salido) es un grupo nuevo.
     """
 
-    def __init__(self, entra=MULTITUD_PERSONAS, sale=None):
+    def __init__(self, entra=MULTITUD_PERSONAS, sale=None, horarios=None, reloj=minutos_en_lima):
         self.entra = entra
         self.sale = sale if sale is not None else max(2, entra - 3)
+        self.horarios = leer_horarios(MULTITUD_HORARIO) if horarios is None else horarios
+        self.reloj = reloj
         self.estado, self.grupos = {}, 0
+
+    def en_horario(self):
+        """¿Ahora cae en alguna franja del horario de multitud?"""
+        m = self.reloj()
+        return any(a <= m < b if a < b else (m >= a or m < b) for a, b in self.horarios)
+
+    def descripcion(self):
+        """Lo que la web muestra del modo: las franjas («12:00-15:00»), si ahora es una y desde cuántas personas se entra solo."""
+        texto = [f"{a // 60:02d}:{a % 60:02d}-{b // 60:02d}:{b % 60:02d}" for a, b in self.horarios]
+        return {"horarios": texto, "en_horario": self.en_horario(), "umbral": self.entra}
 
     def actualizar(self, cid, personas):
         """El número de grupo si el teléfono está en multitud con este cuadro, o None."""
+        e = self.estado.setdefault(cid, {"grupo": None, "sobre": 0, "bajo": 0, "horario": False})
+        if self.en_horario():
+            if not e["horario"]:  # empezó la franja: grupo nuevo
+                e.update(horario=True, grupo=None, sobre=0, bajo=0)
+            if e["grupo"] is None:
+                self.grupos += 1
+                e["grupo"] = self.grupos
+            return e["grupo"]
+        if e["horario"]:  # terminó la franja: vuelve el seguimiento individual
+            e.update(horario=False, grupo=None, sobre=0, bajo=0)
         if not self.entra:
             return None
-        e = self.estado.setdefault(cid, {"grupo": None, "sobre": 0, "bajo": 0})
         if e["grupo"] is None:
             e["sobre"] = e["sobre"] + 1 if personas >= self.entra else 0
             if e["sobre"] >= MULTITUD_CUADROS_ENTRA:
@@ -745,7 +797,8 @@ class SesionEnVivo:
         self.multitudes = {}
         for cid, grupo in en_multitud.items():
             cabezas, pies = cabezas_y_pies(detectadas[cid][0], frames[cid].shape[1])
-            self.multitudes[cid] = {"grupo": grupo, "personas": len(cabezas), "cabezas": cabezas, "pies": pies}
+            if cabezas:  # en una franja de horario puede no haber nadie: sin cabezas no hay nada que mostrar
+                self.multitudes[cid] = {"grupo": grupo, "personas": len(cabezas), "cabezas": cabezas, "pies": pies}
         sigue = [cid for cid in frames if cid not in en_multitud]
         self._ventanas_seguidor({cid: frames[cid] for cid in sigue})
         filas = self.motor.seguir({cid: frames[cid] for cid in sigue}, fuente, {cid: detectadas[cid] for cid in sigue}) if sigue else {}
@@ -1003,11 +1056,11 @@ class SesionEnVivo:
         memoria = {"personas": len(self.memoria.personas), "persistente": self.memoria.persistente}
         if self.asociador is None:
             return {"segundos": round(time.perf_counter() - self.t0, 1), "personas_total": 0, "multitelefono": 0,
-                    "reconocidas": 0, "memoria": memoria, "genero": {}}
+                    "reconocidas": 0, "memoria": memoria, "genero": {}, "multitud": self.multitud.descripcion()}
         vigentes = set(self.asociador.confirmadas.values())
         return {"segundos": round(time.perf_counter() - self.t0, 1), "personas_total": len(vigentes),
                 "multitelefono": self.asociador.resumen()["identidades_multicamara"],
-                "reconocidas": len(self.asociador.reconocidas), "memoria": memoria,
+                "reconocidas": len(self.asociador.reconocidas), "memoria": memoria, "multitud": self.multitud.descripcion(),
                 "genero": dict(Counter(g for pid, g in self.generos.items() if pid in vigentes))}
 
 
