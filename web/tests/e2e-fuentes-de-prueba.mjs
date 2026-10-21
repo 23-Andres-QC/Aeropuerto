@@ -16,6 +16,7 @@ import { mkdtempSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import assert from "node:assert/strict";
+import { SIEMPRE_VISIBLE, mantenerVisible } from "./lib-navegador.mjs";
 
 const WEB = (process.env.LAP_WEB ?? "http://localhost:8080").replace(/\/$/, "");
 const VIVO = (process.env.LAP_VIVO ?? "http://127.0.0.1:8093").replace(/\/$/, "");
@@ -58,7 +59,7 @@ try {
   console.log("✓ backend-vivo los marca como simulados");
 
   const puerto = 9400 + Math.floor(Math.random() * 400);
-  navegador = spawn(NAVEGADOR, [`--remote-debugging-port=${puerto}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), "e2e-prueba-"))}`, "--headless=new", "--disable-gpu", "--no-first-run", "about:blank"], { stdio: "ignore" });
+  navegador = spawn(NAVEGADOR, [`--remote-debugging-port=${puerto}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), "e2e-prueba-"))}`, "--headless=new", "--disable-gpu", "--no-first-run", ...SIEMPRE_VISIBLE, "about:blank"], { stdio: "ignore" });
   let url;
   for (let i = 0; i < 80 && !url; i++) {
     try { url = (await (await fetch(`http://127.0.0.1:${puerto}/json`)).json()).find((t) => t.type === "page")?.webSocketDebuggerUrl; } catch {}
@@ -75,6 +76,7 @@ try {
 
   await cdp("Page.enable");
   await cdp("Emulation.setDeviceMetricsOverride", { width: 1500, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await mantenerVisible(cdp);
   await cdp("Page.navigate", { url: `${WEB}/login` });
   await esperar(1500);
   const login = await evalua(`fetch('/api/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuario: ${JSON.stringify(process.env.LAP_USER ?? "LAP")}, clave: ${JSON.stringify(process.env.LAP_PASSWORD ?? "LAP")} }) }).then((r) => r.status)`);

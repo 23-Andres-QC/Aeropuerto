@@ -225,8 +225,11 @@ try {
   await t.ir("/sitios/esan/insights", 3500);
   await t.hasta(`!!document.querySelector('.panel-genero .generos')`, "el panel de género");
   const generoPanel = await t.texto(".panel-genero");
-  assert.match(generoPanel, /grupos de menos de 5/, `el género de ESAN no se desglosa: ${generoPanel}`);
-  assert.ok(!/\b3\b/.test(generoPanel.replace(/ESAN.*$/, "")) || generoPanel.includes("oculto"), "la categoría pequeña no muestra su cifra");
+  // ESAN tiene las sesiones que se hayan grabado en esta máquina: se comprueba la regla, no unas cifras fijas (el caso pequeño, con
+  // datos propios, va más abajo en Demo).
+  const cifras = [...generoPanel.matchAll(/(\d+)\s+(?:Hombre|Mujer|Sin determinar)\b/g)].map((m) => Number(m[1]));
+  assert.ok(cifras.every((n) => n >= 5), `el género de ESAN no muestra grupos de menos de 5: ${generoPanel}`);
+  assert.ok(!generoPanel.includes("oculto") || /grupos de menos de 5/.test(generoPanel), `lo que no se desglosa se explica: ${generoPanel}`);
   await t.ir("/cuentas?ver=privacidad", 2500);
   await t.hasta(`!!document.querySelector('[data-prueba=estado-retencion]')`, "el estado de la retención");
   const retencion = await t.texto("[aria-label='Retención de datos']");

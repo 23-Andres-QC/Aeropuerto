@@ -14,11 +14,25 @@ const NAVEGADOR =
   process.env.NAVEGADOR ??
   ["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "C:/Program Files/Google/Chrome/Application/chrome.exe", "/usr/bin/google-chrome", "/usr/bin/chromium", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"].find((r) => existsSync(r));
 
+/**
+ * Opciones para que la página de prueba no quede «oculta»: en Windows, Edge y Chrome sin pantalla marcan la ventana como
+ * tapada (detección de oclusión) a los pocos segundos; la página pasa a hidden, requestAnimationFrame deja de correr y
+ * se traban las transiciones de Vue (la pestaña Bitácora de Cuentas no entraba) y el zoom animado del plano.
+ */
+export const SIEMPRE_VISIBLE = ["--disable-features=CalculateNativeWinOcclusion", "--disable-backgrounding-occluded-windows",
+  "--disable-renderer-backgrounding", "--disable-background-timer-throttling"];
+
+/** Lo mismo desde dentro: la página se da por enfocada y activa aunque el navegador crea que nadie la mira. */
+export async function mantenerVisible(cdp) {
+  await cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+  await cdp("Page.setWebLifecycleState", { state: "active" });
+}
+
 /** Abre el navegador, inicia sesión y devuelve las herramientas. `cerrar()` lo deja todo como estaba. */
 export async function abrir({ ancho = 1500, alto = 1100 } = {}) {
   if (!NAVEGADOR) throw new Error("No encontré Edge ni Chrome: indica su ruta en NAVEGADOR.");
   const puerto = 9500 + Math.floor(Math.random() * 400);
-  const proceso = spawn(NAVEGADOR, [`--remote-debugging-port=${puerto}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), "e2e-trafico-"))}`, "--headless=new", "--disable-gpu", "--no-first-run", "about:blank"], { stdio: "ignore" });
+  const proceso = spawn(NAVEGADOR, [`--remote-debugging-port=${puerto}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), "e2e-trafico-"))}`, "--headless=new", "--disable-gpu", "--no-first-run", ...SIEMPRE_VISIBLE, "about:blank"], { stdio: "ignore" });
   let url;
   for (let i = 0; i < 80 && !url; i++) {
     try { url = (await (await fetch(`http://127.0.0.1:${puerto}/json`)).json()).find((t) => t.type === "page")?.webSocketDebuggerUrl; } catch {}
@@ -53,6 +67,7 @@ export async function abrir({ ancho = 1500, alto = 1100 } = {}) {
   await cdp("Page.enable");
   await cdp("Runtime.enable");
   await cdp("Emulation.setDeviceMetricsOverride", { width: ancho, height: alto, deviceScaleFactor: 1, mobile: false });
+  await mantenerVisible(cdp);
 
   const t = {
     cdp, evalua, consola,
