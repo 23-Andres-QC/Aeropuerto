@@ -91,8 +91,35 @@ function alDetecciones(ev: MessageEvent) {
   if (instantaneas.length > MAX_INSTANTANEAS) instantaneas.shift();
 }
 
-/** Cada cuadro de pantalla: lleva el video al segundo del reloj común (acelerando o frenando hasta un 10 %; salta solo
- * si se fue lejos) y dibuja las cajas del segundo que se ve. */
+// Cada video corrige su distancia al reloj común acelerando o frenando hasta AJUSTE_VELOCIDAD, y salta si se fue más de
+// SALTO_S. Con ±10 % y saltos desde 0,6 s, dos cámaras del mismo lugar podían ir medio segundo desfasadas por varios
+// segundos (la misma persona aparecía antes en una que en la otra); así quedan a menos de un cuadro en ~1 s.
+const AJUSTE_VELOCIDAD = 0.25;
+const SALTO_S = 0.25;
+
+// El segundo del cuadro que el navegador muestra: requestVideoFrameCallback da el de cada cuadro al presentarlo;
+// currentTime puede ir un cuadro por delante de la imagen y las cajas se adelantaban a la persona. Sin esa función
+// (Firefox) queda currentTime.
+type VideoConCuadros = HTMLVideoElement & {
+  requestVideoFrameCallback?: (alCuadro: (ahora: number, datos: { mediaTime: number }) => void) => number;
+  cancelVideoFrameCallback?: (pedido: number) => void;
+};
+let mostrado: number | null = null;
+let pedidoCuadro = 0;
+function seguirCuadros(v: VideoConCuadros) {
+  pedidoCuadro =
+    v.requestVideoFrameCallback?.((_, datos) => {
+      mostrado = datos.mediaTime;
+      seguirCuadros(v);
+    }) ?? 0;
+}
+watch(reproductor, (nuevo, viejo) => {
+  if (viejo && pedidoCuadro) (viejo as VideoConCuadros).cancelVideoFrameCallback?.(pedidoCuadro);
+  mostrado = null;
+  if (nuevo) seguirCuadros(nuevo);
+});
+
+/** Cada cuadro de pantalla: lleva el video al segundo del reloj común y dibuja las cajas del cuadro que se ve. */
 function cuadro() {
   animacion = requestAnimationFrame(cuadro);
   const v = reproductor.value;
@@ -107,14 +134,15 @@ function cuadro() {
     if (!v.paused) v.pause();
     if (Math.abs(error) > 0.04 && !v.seeking) v.currentTime = objetivo;
   } else {
-    if (Math.abs(error) > 0.6 && !v.seeking) v.currentTime = objetivo;
-    else v.playbackRate = Math.min(1.1, Math.max(0.9, 1 + 0.5 * error));
+    if (Math.abs(error) > SALTO_S && !v.seeking) v.currentTime = objetivo;
+    else v.playbackRate = Math.min(1 + AJUSTE_VELOCIDAD, Math.max(1 - AJUSTE_VELOCIDAD, 1 + 1.5 * error));
     if (v.paused && !arrancando) {
       arrancando = true;
       v.play().catch(() => undefined).finally(() => (arrancando = false));
     }
   }
-  const m = instantaneas.length ? cajasEn(instantaneas, v.currentTime) : undefined;
+  const visto = !v.paused && !v.seeking && mostrado != null ? mostrado : v.currentTime;
+  const m = instantaneas.length ? cajasEn(instantaneas, visto) : undefined;
   if (m) dibujarPersonas(c, m);
   else c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
 }
@@ -137,6 +165,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   cancelAnimationFrame(animacion);
+  if (pedidoCuadro) (reproductor.value as VideoConCuadros | undefined)?.cancelVideoFrameCallback?.(pedidoCuadro);
   cerrar.forEach((f) => f());
   if (imagen.value) URL.revokeObjectURL(imagen.value);
 });
