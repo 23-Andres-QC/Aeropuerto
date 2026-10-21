@@ -1,4 +1,5 @@
 import { request } from "../../core/http";
+import type { MultitudCuadro } from "../../shared/personas";
 
 // Las cámaras en vivo tienen su propio backend (backend-vivo), separado del de los
 // sitios LAP y ESAN; nginx lo expone en /vivo/.
@@ -66,7 +67,7 @@ export type PersonaDetectada = {
 
 /** Dónde cae en el plano cada píxel de este cuadro: homografía (de a 3 por fila) de píxeles de un cuadro de `ancho` px a metros. */
 export type UbicacionPlano = { sitio: string; ancho: number; H: number[]; referencia?: string };
-export type Detecciones = { ts: number; frame_w: number; frame_h: number; people: PersonaDetectada[]; plano?: UbicacionPlano | null };
+export type Detecciones = { ts: number; frame_w: number; frame_h: number; people: PersonaDetectada[]; multitud?: MultitudCuadro | null; plano?: UbicacionPlano | null };
 
 export const api = {
   telefonos: () => request<Telefono[]>(`${VIVO}/telefonos`),

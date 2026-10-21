@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { wsUrl } from "../../../core/http";
-import { dibujarPersonas } from "../../../shared/personas";
+import { dibujarPersonas, type MultitudCuadro } from "../../../shared/personas";
 import { RELEVO_VIVO, type EstadoTelefono } from "../api";
 
 type Persona = {
@@ -13,7 +13,7 @@ type Persona = {
   gender: string | null;
   gender_conf: number | null;
 };
-type Mensaje = { ts: number; cuadro?: number | null; frame_w: number; frame_h: number; people: Persona[] };
+type Mensaje = { ts: number; cuadro?: number | null; frame_w: number; frame_h: number; people: Persona[]; multitud?: MultitudCuadro | null };
 /** Un cuadro de video recibido: su número (el de la cámara web, o 0 si el modelo no lo manda), su dirección y cuándo llegó. */
 type CuadroVideo = { cuadro: number; url: string; llegada: number };
 type Deteccion = { cuadro: number; m: Mensaje };
@@ -174,7 +174,7 @@ onUnmounted(() => {
     <div class="panel-heading">
       <h2>{{ nombre }}</h2>
       <span class="heading-meta">
-        <span class="pill" :class="enVivo ? 'good' : 'warn'">{{ enVivo ? `${ultimo?.people.length ?? 0} en cuadro` : "sin video" }}</span>
+        <span class="pill" :class="enVivo ? 'good' : 'warn'">{{ enVivo ? `${ultimo?.multitud ? `${ultimo.multitud.personas} en cuadro · grupo ${ultimo.multitud.grupo}` : `${ultimo?.people.length ?? 0} en cuadro`}` : "sin video" }}</span>
         <button v-if="!sinQuitar" class="danger-button icon-button" type="button" :aria-label="`Quitar ${nombre}`" @click="emit('quitar')">✕</button>
       </span>
     </div>

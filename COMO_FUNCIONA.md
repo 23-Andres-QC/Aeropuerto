@@ -204,6 +204,10 @@ Se activa con el botón de la cabecera, y también entra solo cuando se conecta 
   3. **Sin referencia reconocida** (el teléfono no apunta al patio): ese teléfono no se ubica en el plano; se sigue viendo en Teléfonos.
   4. **Una persona, un punto:** solo entra quien tiene ID global y su posición sale de una sola cámara, la que la ve más grande.
   5. **Ajuste fino:** un desplazamiento en metros que se mueve con los botones del plano y se recuerda en el navegador. Lo que aun así cae fuera del piso pasa al borde más cercano.
+- **Multitud:**
+  - con **8 o más personas** en el cuadro de un teléfono durante 2 cuadros seguidos, el modelo **no sigue a cada una** (ni Re-ID ni género): cuenta las cabezas y le pone **un solo ID de grupo** a todas («Grupo 3 · 14 personas»). Sale del modo con menos de 5 personas durante 6 cuadros seguidos; cada multitud nueva es un grupo nuevo. `MULTITUD_PERSONAS` cambia el umbral (0 lo apaga);
+  - En vivo pone al grupo en el plano como un **solo punto** (el centro de sus pies) y lo lista en «Ahora mismo»; «en el plano» cuenta las cabezas;
+  - **por ahora** la multitud no entra a la captura guardada (mapa de calor, recorridos, conteo de la línea ni estadísticas): solo se ve y se cuenta en vivo.
 - **Captura:**
   - empieza sola al activar el modo en vivo; **Terminar y guardar** (En vivo) la guarda y la deja en Registros. Mientras se graba también se guarda sola cada 30 s y al cerrar la página;
   - la captura queda como una sesión `LIVE`, que se ve en Registros e Insights con el tablero completo;

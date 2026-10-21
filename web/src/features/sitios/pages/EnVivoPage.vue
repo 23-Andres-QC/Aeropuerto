@@ -160,6 +160,10 @@ const trazos = computed(() => {
 const personas = computed(() => (modoVivo.value ? vivo.vivas.value.personas : !verGrabacion.value ? [] : trazos.value.personas));
 const recorridos = computed(() => (modoVivo.value ? vivo.vivas.value.recorridos : !verGrabacion.value ? [] : trazos.value.recorridos));
 const enPlano = computed(() => personas.value.filter((p) => p.estado !== "salio"));
+// En vivo cuenta a cada persona suelta y las cabezas de cada multitud (un grupo va al plano como un solo punto, con id < -1000).
+const totalEnPlano = computed(
+  () => enPlano.value.filter((p) => p.id > -1000).length + vivo.vivas.value.lista.reduce((n, p) => n + (p.grupo != null ? (p.cantidad ?? 0) : 0), 0),
+);
 
 const presentes = computed(() => {
   if (!verGrabacion.value) return [];
@@ -328,7 +332,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <h2>Plano · {{ (mapa.tam_px[0] / mapa.px_por_metro).toFixed(0) }} × {{ (mapa.tam_px[1] / mapa.px_por_metro).toFixed(0) }} m</h2>
         <span v-if="modoVivo" class="heading-meta">
           <span v-if="capturaDePrueba" class="pill prueba" title="Hay un teléfono simulado: se ve, pero esta captura no se guarda en la base">PRUEBA · no se guarda</span>
-          <span v-if="grabando && !capturaDePrueba" class="pill grabando">● GRABANDO</span><span class="pill en-vivo" data-prueba="pill-en-vivo">● EN VIVO{{ zonaVivo ? ` · ${zonaVivo.toUpperCase()}` : "" }}</span><span class="pill">{{ enPlano.length }} en el plano</span>
+          <span v-if="grabando && !capturaDePrueba" class="pill grabando">● GRABANDO</span><span class="pill en-vivo" data-prueba="pill-en-vivo">● EN VIVO{{ zonaVivo ? ` · ${zonaVivo.toUpperCase()}` : "" }}</span><span class="pill">{{ totalEnPlano }} en el plano</span>
         </span>
         <span v-else-if="replay" class="heading-meta"><span class="pill">{{ enPlano.length }} en el plano</span><span class="pill">{{ replay.personas.length }} personas</span></span>
         <span v-else-if="!cargando && !sesiones.length" class="pill">sin sesiones</span>
@@ -413,9 +417,10 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
           <div class="panel-heading"><h2>Ahora mismo</h2><span class="pill">{{ vivo.vivas.value.lista.length }}</span></div>
           <ul>
             <li v-for="p in vivo.vivas.value.lista" :key="p.clave">
-              <span class="punto" :style="{ background: p.id != null ? colorPersona(p.id) : '#8ba4bf' }"></span>
-              <b>{{ p.id != null ? `G${p.id}` : "?" }}</b>
-              <span>{{ p.genero ?? "Sin determinar" }}<template v-if="p.conf"> · {{ Math.round(p.conf * 100) }}%</template></span>
+              <span class="punto" :style="{ background: p.grupo != null ? '#a855f7' : p.id != null ? colorPersona(p.id) : '#8ba4bf' }"></span>
+              <b>{{ p.grupo != null ? `Grupo ${p.grupo}` : p.id != null ? `G${p.id}` : "?" }}</b>
+              <span v-if="p.grupo != null" data-prueba="grupo-en-vivo">{{ p.cantidad }} personas contadas (sin seguir a cada una)</span>
+              <span v-else>{{ p.genero ?? "Sin determinar" }}<template v-if="p.conf"> · {{ Math.round(p.conf * 100) }}%</template></span>
               <small class="muted">{{ p.camaras.join(", ") }}</small>
             </li>
             <li v-if="!vivo.vivas.value.lista.length" class="muted vacio">Nadie en el plano. Une teléfonos en Teléfonos y camina frente a ellos.</li>

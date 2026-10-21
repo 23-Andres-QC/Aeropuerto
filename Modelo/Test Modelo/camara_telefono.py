@@ -181,6 +181,11 @@ VIDEOS_CON_TELEFONOS_S = 0.2
 # confirmar el nuevo (~0,6 s o más) la persona quedaba sin ID aunque el seguidor la siguiera: medido con un teléfono, 45 de
 # 49 cuadros sin ID tras tenerlo fueron eso (no un duplicado). Si se le confirma otro ID, se muestra ese.
 MANTENER_ID_S = 3.0
+# Multitud: cuando un teléfono ve MULTITUD_PERSONAS o más personas a la vez, seguir a cada una (tracker, Re-ID, género) es caro y no
+# se sostiene (se tapan entre sí); en ese cuadro solo se cuentan las cabezas y todo el grupo lleva un solo ID de grupo. 0 lo apaga.
+MULTITUD_PERSONAS = int(os.environ.get("MULTITUD_PERSONAS") or 8)
+MULTITUD_CUADROS_ENTRA = 2  # cuadros seguidos con la gente suficiente para entrar al modo multitud
+MULTITUD_CUADROS_SALE = 6  # cuadros seguidos con bastante menos gente para salir (evita que parpadee)
 
 
 # Un cuadro que falla (un error raro del modelo) se salta; tantos seguidos indican algo roto (ej. la GPU) y el proceso
@@ -192,6 +197,54 @@ def leer_json(url, timeout=5):
     """GET de un JSON de la web."""
     with urllib.request.urlopen(url, timeout=timeout) as respuesta:
         return json.loads(respuesta.read().decode("utf-8"))
+
+
+class Multitud:
+    """Cuándo un teléfono ve una multitud y qué número de grupo le toca.
+
+    Entra con `entra` personas o más en `MULTITUD_CUADROS_ENTRA` cuadros seguidos y sale con menos de `sale` en
+    `MULTITUD_CUADROS_SALE` cuadros seguidos. Cada multitud nueva (después de haber salido) es un grupo nuevo.
+    """
+
+    def __init__(self, entra=MULTITUD_PERSONAS, sale=None):
+        self.entra = entra
+        self.sale = sale if sale is not None else max(2, entra - 3)
+        self.estado, self.grupos = {}, 0
+
+    def actualizar(self, cid, personas):
+        """El número de grupo si el teléfono está en multitud con este cuadro, o None."""
+        if not self.entra:
+            return None
+        e = self.estado.setdefault(cid, {"grupo": None, "sobre": 0, "bajo": 0})
+        if e["grupo"] is None:
+            e["sobre"] = e["sobre"] + 1 if personas >= self.entra else 0
+            if e["sobre"] >= MULTITUD_CUADROS_ENTRA:
+                self.grupos += 1
+                e.update(grupo=self.grupos, sobre=0, bajo=0)
+        else:
+            e["bajo"] = e["bajo"] + 1 if personas < self.sale else 0
+            if e["bajo"] >= MULTITUD_CUADROS_SALE:
+                e.update(grupo=None, sobre=0, bajo=0)
+        return e["grupo"]
+
+    def olvidar(self, activos):
+        for cid in [c for c in self.estado if c not in activos]:
+            del self.estado[cid]
+
+
+def cabezas_y_pies(cajas, ancho, ancho_relevo=ANCHO_RELEVO):
+    """Cabezas (centro y radio) y pies (centro de abajo de la caja) de las personas de un cuadro, en píxeles del video relevado.
+
+    La cabeza se toma de arriba de cada caja: su radio es ~8 % de lo alto de la persona (sin pasar de un tercio de lo ancho).
+    """
+    escala = ancho_relevo / ancho
+    cabezas, pies = [], []
+    for x1, y1, x2, y2 in np.asarray(cajas, np.float32).reshape(-1, 4):
+        alto, largo = max(1.0, float(y2 - y1)), max(1.0, float(x2 - x1))
+        r = max(3.0, min(0.08 * alto, 0.33 * largo))
+        cabezas.append([round(float((x1 + x2) / 2) * escala, 1), round(float(y1 + r) * escala, 1), round(r * escala, 1)])
+        pies.append([round(float((x1 + x2) / 2) * escala, 1), round(float(y2) * escala, 1)])
+    return cabezas, pies
 
 
 class Sondeo:
@@ -601,6 +654,7 @@ class SesionEnVivo:
         self.ultimo, self.procesados, self.saltados = {}, {}, {}
         self.latencias, self.tiempos, self.personas = {}, {}, {}
         self.generos = {}
+        self.multitud, self.multitudes = Multitud(), {}  # teléfono -> su grupo y las cabezas que cuenta (ver Multitud)
         self._ultimo_id = {}  # (teléfono, track local) -> (ID global, instante): ver MANTENER_ID_S
         self.quietud = {}  # teléfono -> Quietud: qué tracks no se mueven
         self.fijos = {}  # (teléfono, track local) -> (género, certeza) ya fijado con certeza >= GENERO_FIJO
@@ -681,8 +735,21 @@ class SesionEnVivo:
         detectadas = self.motor.detectar(frames)
         if not isinstance(self.motor.detector, DetectorCuerpo):  # con pose las cajas ya son de cuerpo sin brazos
             detectadas = {cid: ajustar_cajas(*dato) for cid, dato in detectadas.items()}
-        self._ventanas_seguidor(frames)
-        filas = self.motor.seguir(frames, fuente, detectadas)
+        # Multitud: esos teléfonos no pasan por el seguidor (ni, por lo tanto, por el Re-ID ni el género): solo cuentan cabezas.
+        self.multitud.olvidar(self.telefonos)
+        en_multitud = {}
+        for cid, (cajas, _) in detectadas.items():
+            grupo = self.multitud.actualizar(cid, len(cajas))
+            if grupo is not None:
+                en_multitud[cid] = grupo
+        self.multitudes = {}
+        for cid, grupo in en_multitud.items():
+            cabezas, pies = cabezas_y_pies(detectadas[cid][0], frames[cid].shape[1])
+            self.multitudes[cid] = {"grupo": grupo, "personas": len(cabezas), "cabezas": cabezas, "pies": pies}
+        sigue = [cid for cid in frames if cid not in en_multitud]
+        self._ventanas_seguidor({cid: frames[cid] for cid in sigue})
+        filas = self.motor.seguir({cid: frames[cid] for cid in sigue}, fuente, {cid: detectadas[cid] for cid in sigue}) if sigue else {}
+        filas.update({cid: [] for cid in en_multitud})
         for cid, fs in filas.items():
             quieta = self.quietud.setdefault(cid, Quietud(ESTATICO_TELEFONO_S, ESTATICO_DESPLAZAMIENTO_TELEFONO))
             quieta.actualizar(self.t, fs, frames[cid])
@@ -705,7 +772,7 @@ class SesionEnVivo:
         for cid, (_, _, llegada, _) in datos.items():
             self.latencias[cid].append(ahora - llegada)
             self.tiempos[cid].append(ahora)
-            self.personas[cid] = len(filas[cid])
+            self.personas[cid] = self.multitudes[cid]["personas"] if cid in self.multitudes else len(filas[cid])
             for fila in filas[cid]:
                 self._conocido(cid, fila)
             self._sin_repetidos(filas[cid])
@@ -1091,6 +1158,7 @@ def main():
                     relevo.detecciones(cid, {"ts": time.time(), "cuadro": cuadro, "frame_w": ANCHO_RELEVO,
                                              "frame_h": round(frame.shape[0] * ANCHO_RELEVO / frame.shape[1]),
                                              "people": personas_para_web(filas[cid], frame.shape[1]),
+                                             "multitud": sesion.multitudes.get(cid),
                                              "plano": sesion.planos.get(cid)})
             elif not hubo_video:
                 time.sleep(0.003)
