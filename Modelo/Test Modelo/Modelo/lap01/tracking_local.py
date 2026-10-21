@@ -111,7 +111,8 @@ class ColorOcclusionTracker:
     def __init__(self, extractor, mezcla, max_age=120, colour_gate=0.72, distance_gate=0.95,
                  gallery_size=24, deep_appearance=True, min_confirmations=3, confirmation_window=5,
                  new_track_confidence=0.45, association_confidence=0.35, active_motion_gate=0.55,
-                 active_iou_gate=0.12, min_person_height=18, reid_gate=0.80, appearance_interval=5):
+                 active_iou_gate=0.12, min_person_height=18, reid_gate=0.80, appearance_interval=5,
+                 appearance_weight=0.22):
         if (min_confirmations < 1 or confirmation_window < min_confirmations or max_age < 1 or gallery_size < 1
                 or appearance_interval < 1):
             raise ValueError("Ventanas de tracking o tamaño de galería inválidos.")
@@ -129,6 +130,8 @@ class ColorOcclusionTracker:
         self.active_iou_gate = active_iou_gate
         self.min_person_height = min_person_height
         self.reid_gate = reid_gate
+        # Peso del parecido en el costo cuando hay que elegir (cruces, competencia, recuperaciones); el resto es geometría.
+        self.appearance_weight = appearance_weight
         self.appearance_interval = appearance_interval
         self.last_frame = None
         self.tracks = {}
@@ -351,7 +354,7 @@ class ColorOcclusionTracker:
                         requerido = min(0.88, self.reid_gate + 0.01 * min(gaps[row] - 2, 8))
                         ok = con_color and (visual[row] >= requerido or (continuidad and visual[row] >= 0.56))
                     if ok:
-                        costs[row, column] = geometria[row, column] + 0.22 * (1.0 - visual[row])
+                        costs[row, column] = geometria[row, column] + self.appearance_weight * (1.0 - visual[row])
             aislados = seguro & ~necesita[None, :]
             costs[aislados] = geometria[aislados] + 0.22
 

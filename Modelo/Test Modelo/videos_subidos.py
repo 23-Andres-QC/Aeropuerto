@@ -13,6 +13,7 @@ teléfonos ni la memoria de identidades. Al terminar deja el resumen en backend-
 hasta que se quita el video. Quitarlo mientras se procesa lo detiene.
 """
 import copy
+import dataclasses
 import json
 import math
 import os
@@ -51,15 +52,24 @@ SIMULTANEOS = int(os.environ.get("VIDEOS_SIMULTANEOS") or 10)
 #   0,3 y media precisión en la GPU: en un video de un centro comercial pasa de ~12 a ~40 personas por frame. La web
 #   reproduce el video original a su velocidad, así que un modelo más lento solo actualiza las cajas menos seguido;
 # - el seguidor toma todas esas detecciones: abre tracks desde 0,15 de confianza (no 0,6) y personas desde 12 px;
-# - el ID se confirma con 3 vistas y 2 s a la vista, y acepta vistas chicas y poco nítidas. Con tanta gente, Re-ID y
-#   género (lo que más tiempo toma por persona) muestrean cada 1 s y juntan menos vistas;
+# - el ID se confirma con 3 vistas y 2 s a la vista, y acepta vistas chicas y poco nítidas. Con tanta gente, el género
+#   (lo que más tiempo toma por persona) muestrea cada 1 s y el Re-ID cada 0,4 s, como en el Build: con 1 s los
+#   fragmentos de una persona tardaban más en volver a unirse, y en la GPU no se nota en el tiempo por frame;
 # - IDs estables: con recortes chicos el Re-ID es ruidoso, así que el asociador corta una identidad solo con 3 vistas
 #   seguidas muy distintas (< 0,25, no 2 bajo 0,4), une más fácil a quien reaparece en la cámara (0,6, no 0,7) y el
 #   seguidor recupera a quien perdió un momento con 0,7 de parecido (no 0,8). En un video de un centro comercial: de 70
 #   a 58 identidades en 25 s y ningún corte, con las mismas personas a la vista;
+# - cruces: cuando dos personas se cruzan, el seguidor elegía casi solo por movimiento y los dos tracks se cambiaban de
+#   persona (la mayoría de los cambios de ID). Ahora el parecido pesa 0,8 en esa elección (no 0,22), cuenta con un 80 %
+#   del vector profundo (no 20 %: el color distingue poco a gente vestida parecida) y un track activo sigue a una caja sin
+#   comparar apariencias solo si se solapa con ella al menos 0,25 (no 0,06). En 12 videos de 5 min en tiempo real, con
+#   30–90 personas etiquetadas cada uno: IDF1 de 35 % a 40 %, un tercio menos de cambios de ID (4422 -> 2940) y de 3,8
+#   a 2,9 IDs por persona, con el conteo igual de cerca (error total 109 -> 97) y el mismo tiempo por frame;
 # - lo que no se mueve no cuenta (maniquíes, afiches, estatuas): ver Quietud;
 # - el género vota desde la primera vista, sin mínimos de tamaño, votos ni consenso: se muestra la etiqueta más votada
-#   con su certeza promedio, en vez de «Sin determinar» hasta reunir 5 votos de personas de 96 px o más;
+#   con su certeza promedio, en vez de «Sin determinar» hasta reunir 5 votos de personas de 96 px o más. La que ya se
+#   mostró sobre un ID cambia solo si la otra gana con CAMBIO_GENERO de certeza: con uno o dos votos parpadeaba (en esos
+#   12 videos, de 248 a 108 de ~1100 IDs con el género cambiando en pantalla);
 # - sin GPU (el servidor) cada frame debe costar poco para que el seguidor no pierda a la gente entre un frame y otro:
 #   sin los puntos del cuerpo de los teléfonos (~120 ms por frame), Re-ID y género muestrean a cada persona cada 2 s y
 #   el Re-ID usa todos los núcleos. En un video de un centro comercial con ~13 personas a la vista pasó de ~570 a ~200 ms
@@ -68,13 +78,15 @@ IMGSZ_GPU = 1280
 IMGSZ_VIDEO = int(os.environ["VIDEO_IMGSZ"]) if os.environ.get("VIDEO_IMGSZ") else None
 DETECTOR_VIDEO = {"conf": 0.10}
 SEGUIDOR_VIDEO = {"new_track_confidence": 0.15, "association_confidence": 0.10, "min_person_height": 12,
-                  "max_age": 30, "gallery_size": 8, "reid_gate": 0.7}
-ASOCIACION_VIDEO = {"min_samples": 3, "min_query_samples": 3, "min_identity_duration_s": 2.0, "sample_interval_s": 1.0,
+                  "max_age": 30, "gallery_size": 8, "reid_gate": 0.7, "active_iou_gate": 0.25, "appearance_weight": 0.8}
+PESO_PROFUNDO_VIDEO = 0.8
+ASOCIACION_VIDEO = {"min_samples": 3, "min_query_samples": 3, "min_identity_duration_s": 2.0, "sample_interval_s": 0.4,
                     "tracklet_views_target": 4, "identity_views_target": 12,
                     "min_conf": 0.15, "min_height": 16, "max_occlusion": 0.4,
                     "split_threshold": 0.25, "split_strikes": 3, "same_camera_threshold": 0.6}
 GENERO_VIDEO = {"min_votes": 1, "min_confidence": 0.0, "min_margin": 0.0, "min_height": 1.0,
                 "min_detection_confidence": 0.0, "sample_s": 1.0, "max_votes": 6}
+CAMBIO_GENERO = 0.6
 # Sin GPU: Re-ID y género muestrean a cada persona cada 2 s (ver AJUSTES).
 MUESTREO_CPU_S = 2.0
 GENEROS = ("Hombre", "Mujer")
@@ -111,6 +123,7 @@ def motor_aparte(motor):
     otro = copy.copy(motor)
     otro.config = copy.deepcopy(motor.config)
     otro.config["tracker"].update(SEGUIDOR_VIDEO)
+    otro.mezcla = dataclasses.replace(motor.mezcla, deep_weight=PESO_PROFUNDO_VIDEO)
     # Con los puntos del cuerpo (teléfonos) el detector es un DetectorCuerpo que envuelve al YOLO. Videos usa una copia
     # del YOLO de adentro con sus propios ajustes y sin los puntos del cuerpo (ver AJUSTES).
     base = getattr(motor.detector, "base", motor.detector)
@@ -292,6 +305,7 @@ class VideoEnProceso:
         self.ms, self.tiempos = deque(maxlen=30), deque(maxlen=30)
         self.ms_total = 0.0
         self.generos = {}
+        self.mostrados = {}  # ID -> (género, certeza) que se ve sobre su caja
         self.locales_de = {}  # ID de cada persona -> sus tracks locales (cada uno con sus votos de género)
         self.quietud = Quietud()
         self.se_movieron = set()  # IDs de personas que se movieron alguna vez: las únicas que cuentan
@@ -337,7 +351,8 @@ class VideoEnProceso:
         return [voto for lid in locales for voto in memoria.get((self.id, lid), {}).get("votes", [])]
 
     def _genero(self, fila):
-        """Género de la fila con los votos de todos los tracks de la persona (o del suyo mientras no tiene ID)."""
+        """Género de la fila con los votos de todos los tracks de la persona (o del suyo mientras no tiene ID). El que ya
+        se mostró sobre el ID se mantiene, con su certeza, hasta que el otro gane con CAMBIO_GENERO (ver AJUSTES)."""
         pid = fila["global_id"]
         locales = {fila["local_id"]}
         if pid is not None:
@@ -347,6 +362,11 @@ class VideoEnProceso:
         fila["genero"], fila["confianza_genero"] = (etiqueta, certeza) if etiqueta in GENEROS else ("Sin determinar", None)
         if pid is not None:
             self.generos[pid] = fila["genero"]
+            mostrado = self.mostrados.get(pid)
+            if mostrado is not None and fila["genero"] != mostrado[0] and (certeza or 0) < CAMBIO_GENERO:
+                fila["genero"], fila["confianza_genero"] = mostrado
+            elif fila["genero"] in GENEROS:
+                self.mostrados[pid] = (fila["genero"], fila["confianza_genero"])
 
     def estado(self):
         """Avance y métricas del video para la web."""

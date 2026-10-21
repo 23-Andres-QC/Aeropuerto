@@ -19,8 +19,8 @@ sys.path.insert(0, str(TEST))
 import camara_telefono  # noqa: E402,F401  (prepara lap01 y sus rutas)
 import lap01  # noqa: E402
 from detector_pose import DetectorCuerpo  # noqa: E402
-from videos_subidos import (ESTATICO_S, MUESTREO_CPU_S, Quietud, Ritmo, VideosSubidos, genero_por_votos,  # noqa: E402
-                            leer_hasta, motor_aparte)
+from videos_subidos import (ESTATICO_S, MUESTREO_CPU_S, Quietud, Ritmo, VideoEnProceso, VideosSubidos,  # noqa: E402
+                            genero_por_votos, leer_hasta, motor_aparte)
 
 
 class RitmoTiempoReal(unittest.TestCase):
@@ -92,6 +92,7 @@ def motor_sin_pesos(device):
     motor.config, motor.device = config, device
     motor.trackers, motor.detecciones_actuales = {}, {}
     motor.detector = types.SimpleNamespace(config=config["detector"], model=object())
+    motor.mezcla = lap01.MezclaApariencia(config["appearance"]["deep_weight"], *config["appearance"]["calibration"])
     genero = object.__new__(lap01.ClasificadorGeneroCLIP)
     genero.enabled, genero.sample_s, genero.min_votes, genero.min_height = True, 0.6, 5, 96
     genero.memory, genero.sample_frames, genero.stats = {}, {}, {}
@@ -112,6 +113,17 @@ class MotorAparte(unittest.TestCase):
         self.assertEqual((motor.genero.min_votes, motor.genero.min_height), (5, 96))
         otro.genero.memory[("v", 1)] = {"votes": []}
         self.assertEqual(motor.genero.memory, {}, "los votos de género son de cada motor")
+
+    def test_en_los_cruces_el_seguidor_pesa_mas_la_apariencia_sin_tocar_la_de_los_telefonos(self):
+        motor = motor_sin_pesos("cuda:0")
+        otro = motor_aparte(motor)
+        self.assertEqual((otro.mezcla.deep_weight, motor.mezcla.deep_weight), (0.8, 0.2))
+        self.assertEqual((otro.mezcla.gain, otro.mezcla.offset), (motor.mezcla.gain, motor.mezcla.offset), "misma calibración")
+        self.assertEqual(otro.config["tracker"]["appearance_weight"], 0.8)
+        self.assertNotIn("appearance_weight", motor.config["tracker"], "el Build y los teléfonos siguen con 0,22")
+        seguidor = lap01.ColorOcclusionTracker(None, otro.mezcla, **otro.config["tracker"])
+        self.assertEqual((seguidor.appearance_weight, seguidor.active_iou_gate), (0.8, 0.25))
+        self.assertEqual(lap01.ColorOcclusionTracker(None, motor.mezcla).appearance_weight, 0.22)
 
     def test_en_cpu_la_misma_resolucion_sin_media_precision_y_muestreo_cada_2_s(self):
         otro = motor_aparte(motor_sin_pesos("cpu"))
@@ -251,6 +263,25 @@ class GeneroPorVotos(unittest.TestCase):
         etiqueta, certeza = genero_por_votos([("Hombre", 0.55), ("Mujer", 0.9), ("Mujer", 0.8)])
         self.assertEqual(etiqueta, "Mujer")
         self.assertGreaterEqual(certeza, 0.5)
+
+    def test_el_genero_mostrado_cambia_solo_si_el_otro_gana_claro(self):
+        video = object.__new__(VideoEnProceso)
+        video.id, video.generos, video.mostrados, video.locales_de = "v", {}, {}, {}
+        votos = []
+        video.motor = types.SimpleNamespace(genero=types.SimpleNamespace(memory={("v", 1): {"votes": votos}}))
+
+        def ver():
+            fila = {"global_id": 7, "local_id": 1}
+            video._genero(fila)
+            return fila["genero"], round(fila["confianza_genero"], 2)
+
+        votos.append(("Mujer", 0.8))
+        self.assertEqual(ver(), ("Mujer", 0.8))
+        votos.append(("Hombre", 0.9))  # Hombre: (0,2 + 0,9) / 2 = 0,55, no basta para cambiarlo
+        self.assertEqual(ver(), ("Mujer", 0.8), "se mantiene con la certeza con que se mostró")
+        self.assertEqual(video.generos[7], "Hombre", "el resumen cuenta todos los votos")
+        votos.append(("Hombre", 0.9))  # (0,2 + 0,9 + 0,9) / 3 = 0,67
+        self.assertEqual(ver(), ("Hombre", 0.67))
 
 
 def fila(lid, x, y, alto=60):
