@@ -10,6 +10,7 @@ import TraficoSitio from "../components/TraficoSitio.vue";
 import { desdeReplay, entradasPorIntervalo as entradasEntre, resumir, type HistoriaBasica, type ResumenVivo } from "../analisisVivo";
 import { GENEROS_ABREV, suprimirGenero, textoGenero } from "../../../core/roles";
 import { useSitios } from "../useSitios";
+import type { VistaGuardada } from "../vistaPlano";
 
 const route = useRoute();
 const { slug, actual: sitioActual } = useSitios();
@@ -23,6 +24,7 @@ const replay = ref<Replay>();
 const error = ref("");
 const cargando = ref(true);
 const capaCalor = ref<"ocupacion" | "visitantes">("ocupacion");
+const vistaPlanos = ref<VistaGuardada | null>(null);
 const verFlujos = ref(true);
 const guardadasVivo = computed(() => sesiones.value.filter((s) => s.kind === "LIVE"));
 const deVideos = computed(() => sesiones.value.filter((s) => s.kind === "VIDEO"));
@@ -634,6 +636,7 @@ onMounted(async () => {
           :zona-activa="zonaId"
           :mostrar-camaras="false"
           zoom
+          v-model:enlace="vistaPlanos"
           @zona="elegirZona"
         />
         <p v-else class="empty">Sin plano</p>
@@ -661,6 +664,7 @@ onMounted(async () => {
           :zona-activa="zonaId"
           :mostrar-camaras="false"
           zoom
+          v-model:enlace="vistaPlanos"
           @zona="elegirZona"
         />
         <p v-else class="empty">Sin plano</p>

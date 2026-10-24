@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { recordarVista, vistaRecordada } from "../vistaPlano";
+import { recordarVista, vistaRecordada, type VistaGuardada } from "../vistaPlano";
 import type { Camara, Mapa, Punto, Zona } from "../api";
 
 /** `estimado`: en un hueco de detección (posición interpolada); `salio`: ya dejó el plano (su última posición). */
@@ -41,6 +41,8 @@ const props = withDefaults(
     inicio?: "campus" | "sitio";
     /** Recordar el zoom y el desplazamiento para la próxima vez que se abra el plano de este sitio. */
     recordar?: boolean;
+    /** Con v-model:enlace, los planos que comparten la misma vista se acercan y desplazan juntos. */
+    enlace?: VistaGuardada | null;
   }>(),
   {
     zonas: () => [],
@@ -63,6 +65,7 @@ const props = withDefaults(
     zoom: false,
     inicio: "campus",
     recordar: true,
+    enlace: null,
   },
 );
 const emit = defineEmits<{
@@ -78,6 +81,7 @@ const emit = defineEmits<{
   fondo: [];
   /** Qué se mira: todo el campus, la zona grabada del sitio, o el nombre de otra zona grabada acercada. */
   lugar: [lugar: "campus" | "sitio" | string];
+  "update:enlace": [vista: VistaGuardada];
 }>();
 const svg = ref<SVGSVGElement>();
 /** Grupo con todo lo que está en px del plano (girado junto con la vista cuando hay campus). */
@@ -291,10 +295,20 @@ function iniciarVista() {
   else reiniciarVista();
 }
 watch(claveVista, iniciarVista, { immediate: true });
-// Cada cambio de zoom o de desplazamiento se recuerda para la próxima vez que se abra el plano.
+const misma = (a: Vista, b: Vista) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
+// Cada cambio de zoom o de desplazamiento se recuerda para la próxima vez que se abra el plano y pasa a los planos enlazados.
 watch(vista, (v) => {
   if (props.zoom && props.recordar && v.w > 0) recordarVista(claveVista.value, v);
+  if (v.w > 0 && !(props.enlace && misma(props.enlace, v))) emit("update:enlace", { ...v });
 });
+watch(
+  () => props.enlace,
+  (v) => {
+    if (!v || misma(v, vista.value)) return;
+    cancelAnimationFrame(animacion);
+    vista.value = acotar(v);
+  },
+);
 
 // Acercar al sitio (o alejarse al campus) en un movimiento: el ancho cambia en escala logarítmica
 // (el zoom se siente parejo) y el centro se desplaza a la vez.
