@@ -901,13 +901,14 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
 }
+/* Hombre, mujer y sin determinar uno al lado del otro, cada uno centrado: ícono, número, nombre y porcentaje. */
 .panel-genero .generos {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-around;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: center;
   flex: 1;
   gap: 8px;
-  padding: 10px 14px 4px;
+  padding: 14px 14px 6px;
 }
 .panel-genero .icono-genero {
   width: 40px;
@@ -925,7 +926,12 @@ onMounted(async () => {
   font-size: 12px;
 }
 .panel-genero .genero {
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+}
+.panel-genero .genero-datos {
+  justify-items: center;
 }
 .panel-genero .barra-genero {
   height: 12px;
