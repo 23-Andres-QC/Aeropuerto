@@ -44,10 +44,13 @@ try {
   const frente = await zona("Frente carpa", "OTRO", null, rect(5, 4, 9, 6));
   const interior = await zona("Dentro carpa", "OTRO", null, rect(5, 6, 9, 9));
   await t.ir(`/sitios/${SITIO}/configuracion`);
-  await t.hasta(`document.querySelectorAll('.lista li').length >= 5`, "la lista de zonas y tiendas");
-  paso("Configuración lista las zonas con su tipo y las tiendas del sitio");
+  await t.hasta(`document.querySelectorAll('.lista li').length >= 3`, "la lista de zonas");
   assert.match(await t.texto(".lista"), /Pasillo · /);
-  assert.equal(await t.evalua(`document.querySelectorAll('.lista')[1].querySelectorAll('li').length`), 2, "dos tiendas");
+  await t.clicTexto("[role=tab]", /Tiendas/);
+  assert.equal(await t.evalua(`document.querySelectorAll('.lista li').length`), 2, "dos tiendas");
+  await t.clicTexto("[role=tab]", /Zonas/);
+  paso("Configuración lista las zonas con su tipo y, en su pestaña, las tiendas del sitio");
+  const guardar = () => t.clicTexto(".editor button", /^Guardar$/);
 
   // --- Tipo de zona y tienda editables ----------------------------------------------------------------------------------------------------
   const zonaVista = async (id) => (await t.api("GET", `${API}/config`)).cuerpo.zones.find((z) => z.zone_id === id);
@@ -69,30 +72,38 @@ try {
   await t.poner(".editor select:nth-of-type(1)", "FRONTAGE"); // el primero es el tipo
   await t.hasta(`!!document.querySelector('.editor .aviso')`, "el aviso de que el frente necesita una tienda");
   assert.match(await t.texto(".editor .aviso"), /pertenecen a una: elige cuál/);
+  assert.equal(await t.evalua(`[...document.querySelectorAll('.editor button')].find((b) => b.textContent.trim() === 'Guardar').disabled`), true, "con varias tiendas no se puede guardar hasta elegir una");
   assert.equal((await zonaVista(frente.zone_id)).zone_type, "OTRO", "con varias tiendas no se guarda hasta elegir una");
   paso("un frente sin tienda avisa y no se guarda");
   await t.evalua(`(() => { const s = document.querySelectorAll('.editor select')[1]; s.value = [...s.options].find((o) => /Carpa azul/.test(o.textContent)).value; s.dispatchEvent(new Event('change', { bubbles: true })); return 1; })()`);
+  await guardar();
   let z = await zonaGuardada(frente.zone_id, (x) => x.zone_type === "FRONTAGE" && x.local_id === carpa.local_id, "frente de la carpa");
   paso("al elegir la tienda el frente se guarda (tipo y tienda)");
 
   await t.clicTexto(".lista li", /Dentro carpa/);
   await t.evalua(`(() => { const s = document.querySelectorAll('.editor select'); s[0].value = 'INTERIOR'; s[0].dispatchEvent(new Event('change', { bubbles: true })); return 1; })()`);
   await t.evalua(`(() => { const s = document.querySelectorAll('.editor select')[1]; s.value = [...s.options].find((o) => /Carpa azul/.test(o.textContent)).value; s.dispatchEvent(new Event('change', { bubbles: true })); return 1; })()`);
+  await guardar();
   z = await zonaGuardada(interior.zone_id, (x) => x.zone_type === "INTERIOR" && x.local_id === carpa.local_id, "interior de la carpa");
 
   await t.clicTexto(".lista li", /^Pasillo/);
   await t.evalua(`(() => { const s = document.querySelectorAll('.editor select')[0]; s.value = 'DESCANSO'; s.dispatchEvent(new Event('change', { bubbles: true })); return 1; })()`);
+  await guardar();
   await zonaGuardada(pasillo.zone_id, (x) => x.zone_type === "DESCANSO", "descanso, sin tienda");
   paso("el tipo «descanso» se elige y se guarda (sin tienda)");
+  await t.clicTexto(".lista li", /^Pasillo/);
   await t.evalua(`(() => { const s = document.querySelectorAll('.editor select')[0]; s.value = 'PASILLO'; s.dispatchEvent(new Event('change', { bubbles: true })); return 1; })()`);
+  await guardar();
   await zonaGuardada(pasillo.zone_id, (x) => x.zone_type === "PASILLO", "vuelve a pasillo");
 
   // --- Tiendas: crear, renombrar, categorizar y borrar ----------------------------------------------------------------------------------
+  await t.clicTexto("[role=tab]", /Tiendas/);
   await t.clicTexto("button", /＋ Tienda/);
-  await t.hasta(`document.querySelectorAll('.lista')[1].querySelectorAll('li').length === 3`, "la tienda nueva en la lista");
+  await t.hasta(`document.querySelectorAll('.lista li').length === 3`, "la tienda nueva en la lista");
   await t.hasta(`!!document.querySelector('.editor input[maxlength="100"]')`, "el editor de la tienda");
   await t.evalua(`(() => { const e = document.querySelector('.editor input[maxlength="100"]'); e.value = 'Kiosco del patio'; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); return 1; })()`);
   await t.evalua(`(() => { const e = document.querySelector('.editor input[maxlength="50"]'); e.value = 'Kiosco'; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); return 1; })()`);
+  await guardar();
   let locales = [];
   for (let i = 0; i < 30; i++) {
     locales = (await t.api("GET", `${API}/config`)).cuerpo.locales;
@@ -101,8 +112,9 @@ try {
   }
   assert.ok(locales.some((l) => l.name === "Kiosco del patio" && l.category === "Kiosco"), `la tienda no se guardó: ${JSON.stringify(locales)}`);
   paso("una tienda se crea, se renombra y se categoriza desde el panel");
+  await t.clicTexto(".lista li", /Kiosco del patio/);
   await t.clicTexto("button", /Eliminar tienda/);
-  await t.hasta(`document.querySelectorAll('.lista')[1].querySelectorAll('li').length === 2`, "la tienda eliminada ya no está");
+  await t.hasta(`document.querySelectorAll('.lista li').length === 2`, "la tienda eliminada ya no está");
   paso("una tienda sin zonas ni ventas se elimina");
 
   // --- Umbrales ---------------------------------------------------------------------------------------------------------------------------------

@@ -153,7 +153,7 @@ onUnmounted(() => {
 }
 .vistas {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 .vistas.varias {
   grid-template-columns: repeat(2, minmax(0, 1fr));

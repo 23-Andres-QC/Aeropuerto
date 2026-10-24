@@ -317,7 +317,7 @@ onMounted(cargar);
 <style scoped>
 .cuentas {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 .cuentas > .page-title {
   margin: 0;
@@ -546,7 +546,7 @@ label {
 .persona {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 .avatar {
   flex: none;

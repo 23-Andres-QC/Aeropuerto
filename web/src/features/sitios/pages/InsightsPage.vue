@@ -940,7 +940,7 @@ onMounted(async () => {
 .genero {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 .icono-genero {

@@ -412,7 +412,7 @@ onUnmounted(() => {
 .subida-uno {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 .subida-uno .nombre {
   flex: 0 1 220px;
@@ -442,7 +442,7 @@ onUnmounted(() => {
 .grilla {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
   align-items: start;
 }
 .grilla.uno {

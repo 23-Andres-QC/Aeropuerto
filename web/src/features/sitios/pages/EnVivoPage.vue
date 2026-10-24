@@ -293,33 +293,6 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
 </script>
 
 <template>
-  <section class="page-title">
-    <div>
-      <h1>Personas sobre el plano<template v-if="modoVivo && zonaVivo"> · <b data-prueba="zona-en-vivo">{{ zonaVivo.toUpperCase() }}</b></template></h1>
-    </div>
-    <label class="selector-sesion">Sesión
-      <select v-model="valorSesion">
-        <optgroup label="Tiempo real">
-          <option :value="SESION_VIVO">● En vivo{{ zonaVivo ? ` · ${zonaVivo}` : "" }} · teléfonos</option>
-        </optgroup>
-        <optgroup v-if="guardadasVivo.length" label="Guardado en vivo">
-          <option v-for="s in guardadasVivo" :key="s.session_id" :value="s.session_id">
-            {{ s.name || s.session_id.slice(0, 8) }} · {{ s.identities }} personas
-          </option>
-        </optgroup>
-        <optgroup v-if="deVideos.length" label="Videos">
-          <option v-for="s in deVideos" :key="s.session_id" :value="s.session_id">
-            {{ s.name || s.session_id.slice(0, 8) }} · {{ s.identities }} personas
-          </option>
-        </optgroup>
-        <optgroup v-if="grabadas.length" label="Grabado (dataset)">
-          <option v-for="s in grabadas" :key="s.session_id" :value="s.session_id">
-            {{ s.name || s.session_id.slice(0, 8) }} · {{ s.identities }} personas
-          </option>
-        </optgroup>
-      </select>
-    </label>
-  </section>
   <p v-if="error" class="error" role="alert">{{ error }}</p>
   <p v-else-if="!cargando && config && !mapa" class="empty panel">
     {{ config.site.name }} todavía no tiene plano.
@@ -400,54 +373,78 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
     </section>
 
     <!-- Al costado del plano: lo que capta cada teléfono (video con las cajas, los IDs y el género del modelo) y quién está ahora. -->
-    <div v-if="modoVivo" class="lado-vivo">
-      <div class="camaras-lado" aria-label="Teléfonos y cámaras del plano">
-        <div v-for="r in vivo.ranuras.value" :key="r.camara" class="ranura-col">
-          <VistaTelefono v-if="r.telefono" :id="r.telefono.id" :nombre="`${r.camara} · ${r.telefono.nombre}${r.telefono.simulado ? ' (prueba)' : ''}`" :estado="r.estado" :linea="LINEA_CONTEO" compacta sin-quitar />
-          <p v-if="r.telefono" class="conteo-ranura" title="Cruces de la línea punteada en esta captura: hacia arriba de la imagen (se alejan) y hacia abajo (vuelven). Cuenta también a quien no tiene ID ni género.">
-            <b>↑ {{ r.suben }}</b> suben · <b>↓ {{ r.regresan }}</b> regresan
-          </p>
-          <article v-else class="panel ranura libre">
-            <div class="panel-heading">
-              <h2 class="dato">{{ r.camara }}</h2>
-              <span class="pill warn">libre</span>
-            </div>
-            <p class="ranura-datos muted">Esperando el {{ r.camara === "cam01" ? "primer" : "segundo" }} teléfono.</p>
-          </article>
-          <p v-if="r.telefono && r.sinCalibracion" class="aviso-ranura">{{ r.camara }} no reconoce el patio: apunta el teléfono al piso.</p>
+    <div class="columna-lado">
+      <label class="selector-sesion">Sesión
+        <select v-model="valorSesion">
+          <optgroup label="Tiempo real">
+            <option :value="SESION_VIVO">● En vivo{{ zonaVivo ? ` · ${zonaVivo}` : "" }} · teléfonos</option>
+          </optgroup>
+          <optgroup v-if="guardadasVivo.length" label="Guardado en vivo">
+            <option v-for="s in guardadasVivo" :key="s.session_id" :value="s.session_id">
+              {{ s.name || s.session_id.slice(0, 8) }} · {{ s.identities }} personas
+            </option>
+          </optgroup>
+          <optgroup v-if="deVideos.length" label="Videos">
+            <option v-for="s in deVideos" :key="s.session_id" :value="s.session_id">
+              {{ s.name || s.session_id.slice(0, 8) }} · {{ s.identities }} personas
+            </option>
+          </optgroup>
+          <optgroup v-if="grabadas.length" label="Grabado (dataset)">
+            <option v-for="s in grabadas" :key="s.session_id" :value="s.session_id">
+              {{ s.name || s.session_id.slice(0, 8) }} · {{ s.identities }} personas
+            </option>
+          </optgroup>
+        </select>
+      </label>
+      <div v-if="modoVivo" class="lado-vivo">
+        <div class="camaras-lado" aria-label="Teléfonos y cámaras del plano">
+          <div v-for="r in vivo.ranuras.value" :key="r.camara" class="ranura-col">
+            <VistaTelefono v-if="r.telefono" :id="r.telefono.id" :nombre="`${r.camara} · ${r.telefono.nombre}${r.telefono.simulado ? ' (prueba)' : ''}`" :estado="r.estado" :linea="LINEA_CONTEO" compacta sin-quitar />
+            <p v-if="r.telefono" class="conteo-ranura" title="Cruces de la línea punteada en esta captura: hacia arriba de la imagen (se alejan) y hacia abajo (vuelven). Cuenta también a quien no tiene ID ni género.">
+              <b>↑ {{ r.suben }}</b> suben · <b>↓ {{ r.regresan }}</b> regresan
+            </p>
+            <article v-else class="panel ranura libre">
+              <div class="panel-heading">
+                <h2 class="dato">{{ r.camara }}</h2>
+                <span class="pill warn">libre</span>
+              </div>
+              <p class="ranura-datos muted">Esperando el {{ r.camara === "cam01" ? "primer" : "segundo" }} teléfono.</p>
+            </article>
+            <p v-if="r.telefono && r.sinCalibracion" class="aviso-ranura">{{ r.camara }} no reconoce el patio: apunta el teléfono al piso.</p>
+          </div>
+          <aside class="panel presentes">
+            <div class="panel-heading"><h2>Ahora mismo</h2><span class="pill">{{ vivo.vivas.value.lista.length }}</span></div>
+            <ul>
+              <li v-for="p in vivo.vivas.value.lista" :key="p.clave">
+                <span class="punto" :style="{ background: p.grupo != null ? '#a855f7' : p.id != null ? colorPersona(p.id) : '#8ba4bf' }"></span>
+                <b>{{ p.grupo != null ? `Grupo ${p.grupo}` : p.id != null ? `G${p.id}` : "?" }}</b>
+                <span v-if="p.grupo != null" data-prueba="grupo-en-vivo">{{ p.cantidad }} personas</span>
+                <span v-else>{{ p.genero ?? "Sin determinar" }}<template v-if="p.conf"> · {{ Math.round(p.conf * 100) }}%</template></span>
+                <small class="muted">{{ p.camaras.join(", ") }}</small>
+              </li>
+              <li v-if="!vivo.vivas.value.lista.length" class="muted vacio">Nadie en el plano.</li>
+            </ul>
+          </aside>
         </div>
-        <aside class="panel presentes">
-          <div class="panel-heading"><h2>Ahora mismo</h2><span class="pill">{{ vivo.vivas.value.lista.length }}</span></div>
-          <ul>
-            <li v-for="p in vivo.vivas.value.lista" :key="p.clave">
-              <span class="punto" :style="{ background: p.grupo != null ? '#a855f7' : p.id != null ? colorPersona(p.id) : '#8ba4bf' }"></span>
-              <b>{{ p.grupo != null ? `Grupo ${p.grupo}` : p.id != null ? `G${p.id}` : "?" }}</b>
-              <span v-if="p.grupo != null" data-prueba="grupo-en-vivo">{{ p.cantidad }} personas</span>
-              <span v-else>{{ p.genero ?? "Sin determinar" }}<template v-if="p.conf"> · {{ Math.round(p.conf * 100) }}%</template></span>
-              <small class="muted">{{ p.camaras.join(", ") }}</small>
-            </li>
-            <li v-if="!vivo.vivas.value.lista.length" class="muted vacio">Nadie en el plano.</li>
-          </ul>
-        </aside>
+        <p v-if="vivo.sobrantes.value.length" class="muted ranura-nota">
+          {{ vivo.sobrantes.value.length }} teléfono(s) sin cámara libre.
+        </p>
+        <p v-if="!vivo.servicioActivo.value" class="muted ranura-nota">
+          El modelo no está publicando.
+        </p>
       </div>
-      <p v-if="vivo.sobrantes.value.length" class="muted ranura-nota">
-        {{ vivo.sobrantes.value.length }} teléfono(s) sin cámara libre.
-      </p>
-      <p v-if="!vivo.servicioActivo.value" class="muted ranura-nota">
-        El modelo no está publicando.
-      </p>
+      <aside v-else class="panel presentes">
+        <div class="panel-heading"><h2>En este instante</h2><span class="pill">{{ presentes.length }}</span></div>
+        <ul>
+          <li v-for="p in presentes" :key="p.numero">
+            <span class="punto" :style="{ background: colorPersona(p.numero) }"></span>
+            <b>G{{ p.numero }}</b>
+            <small class="muted">{{ p.camaras.join(", ") }} · {{ segundos(p.fin_s - p.inicio_s) }}</small>
+          </li>
+          <li v-if="!presentes.length" class="muted vacio">{{ replay || !verGrabacion ? "Nadie en el plano." : "Sin sesión." }}</li>
+        </ul>
+      </aside>
     </div>
-    <aside v-else class="panel presentes">
-      <div class="panel-heading"><h2>En este instante</h2><span class="pill">{{ presentes.length }}</span></div>
-      <ul>
-        <li v-for="p in presentes" :key="p.numero">
-          <span class="punto" :style="{ background: colorPersona(p.numero) }"></span>
-          <b>G{{ p.numero }}</b>
-          <small class="muted">{{ p.camaras.join(", ") }} · {{ segundos(p.fin_s - p.inicio_s) }}</small>
-        </li>
-        <li v-if="!presentes.length" class="muted vacio">{{ replay || !verGrabacion ? "Nadie en el plano." : "Sin sesión." }}</li>
-      </ul>
-    </aside>
   </div>
 
   <section v-if="replay && camarasVideo.length" class="videos-esan">
@@ -476,22 +473,30 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
 </template>
 
 <style scoped>
+/* La columna del costado: arriba el selector de sesión y debajo las cámaras o quién está en este instante. */
+.columna-lado {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+}
 .selector-sesion {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 11.5px;
   font-weight: 600;
   color: var(--ink-soft);
 }
 .selector-sesion select {
-  width: auto;
-  max-width: 340px;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
 }
 .envivo-esan {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 8px;
   align-items: start;
 }
 /* En vivo: el plano comparte la fila con las cámaras (los dos teléfonos y, debajo, quién está ahora). */
@@ -543,7 +548,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .camaras-lado {
   display: grid;
@@ -701,7 +706,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
 .videos-esan {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 10px;
+  gap: 8px;
   margin-top: 14px;
 }
 .videos-esan video {

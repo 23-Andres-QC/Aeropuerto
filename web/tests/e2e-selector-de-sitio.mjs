@@ -71,7 +71,7 @@ try {
     capasDelPlano: document.querySelectorAll('main svg *').length,
     botonesDeZona: document.querySelectorAll('.barra-campus, .alternar-campus').length,
     marcasEnCampus: document.querySelectorAll('g.entrada-vecino[role=button]').length,
-    panelZonas: [...document.querySelectorAll('main h2, main h3')].some((h) => h.textContent.trim() === 'Zonas'),
+    panelZonas: [...document.querySelectorAll('[role=tab]')].some((h) => /^Zonas/.test(h.textContent.trim())),
   }))()`);
   const paso = async (texto, verifica) => { await esperar(2500); const e = await estado(); verifica(e); console.log(`✓ ${texto}`); };
   // Cuántos sitios ofrece la tarjeta: abre su lista, los cuenta y la cierra.
@@ -226,7 +226,6 @@ try {
   assert.ok(zonasVivo.proximas[1].bloqueada && /General · patio y comedor a la vez.*próximamente/.test(zonasVivo.proximas[1].texto), `el general (simultáneo) es a futuro: ${JSON.stringify(zonasVivo.proximas)}`);
   // Al activar el en vivo se dice dónde se está haciendo: el patio.
   assert.equal(await evalua(`document.querySelector('[data-prueba=pill-en-vivo]')?.textContent.trim()`), "● EN VIVO · PATIO", "el plano dice dónde es el en vivo");
-  assert.equal(await evalua(`document.querySelector('[data-prueba=zona-en-vivo]')?.textContent.trim()`), "PATIO", "el título dice dónde es el en vivo");
   assert.match(await evalua(`document.querySelector('.modo-vivo')?.textContent.trim()`), /EN VIVO · PATIO · Salir/, "el botón de arriba dice dónde es el en vivo");
   await evalua(`localStorage.setItem('modo-vivo', '0'); 0`);
   console.log("✓ en vivo se elige la zona a grabar: el patio activo y el comedor como próximamente");

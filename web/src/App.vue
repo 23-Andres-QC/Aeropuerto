@@ -191,7 +191,7 @@ function elegirSitio(s: Sitio) {
 .simple-cabecera {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 10px 18px;
   border-bottom: 1px solid var(--line, rgba(100, 116, 139, 0.25));
 }
