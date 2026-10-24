@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Sitio } from "../api";
-import { tieneDatos } from "../selector";
 import IconoNav from "../../../shared/IconoNav.vue";
 
 // La tarjeta del sitio, arriba a la izquierda: muestra el sitio en el que se está y, al pulsarla, deja elegir otro (ESAN, LAP…).
@@ -16,10 +15,6 @@ const boton = ref<HTMLButtonElement>();
 const lista = ref<HTMLElement>();
 
 const hayVarios = computed(() => props.sitios.length > 1);
-const detalle = (s: Sitio) => {
-  const camaras = s.cameras === 1 ? "1 cámara" : `${s.cameras} cámaras`;
-  return tieneDatos(s) ? `${s.description || "Sitio"} · ${camaras}` : `${s.description || "Sitio"} · plano y configuración`;
-};
 
 function abrir() {
   if (!hayVarios.value) return;
@@ -83,7 +78,7 @@ onBeforeUnmount(() => document.removeEventListener("mousedown", fuera));
       <IconoNav class="airport-symbol" nombre="sitio" />
       <div>
         <b>{{ actual?.name ?? slug }}</b
-         ><small :title="actual ? detalle(actual) : undefined">{{ actual ? detalle(actual) : "Cargando sitio…" }}</small>
+         ><small v-if="!actual">Cargando sitio…</small>
       </div>
       <span v-if="hayVarios" class="sitio-flecha" aria-hidden="true">▾</span>
     </button>
@@ -99,7 +94,6 @@ onBeforeUnmount(() => document.removeEventListener("mousedown", fuera));
         @click="elegir(s)"
       >
         <b>{{ s.name }}</b
-        ><small>{{ detalle(s) }}</small
         ><span v-if="s.slug === slug" class="sitio-marca" aria-hidden="true">✓</span>
       </li>
     </ul>
@@ -159,7 +153,7 @@ onBeforeUnmount(() => document.removeEventListener("mousedown", fuera));
   margin: 0;
   padding: 6px;
   list-style: none;
-  border-radius: 14px;
+  border-radius: 8px;
   background: #0b2f66;
   border: 1px solid rgba(255, 255, 255, 0.22);
   box-shadow: 0 16px 36px rgba(3, 18, 44, 0.5);
@@ -167,21 +161,15 @@ onBeforeUnmount(() => document.removeEventListener("mousedown", fuera));
 }
 .sitio-lista li {
   position: relative;
-  padding: 10px 34px 10px 12px;
-  border-radius: 10px;
+  padding: 8px 34px 8px 12px;
+  border-radius: 6px;
   cursor: pointer;
   color: #cfe2f7;
 }
 .sitio-lista li b {
   display: block;
-  font-size: 15px;
+  font-size: 13.5px;
   color: #fff;
-}
-.sitio-lista li small {
-  display: block;
-  font-size: 11.5px;
-  line-height: 1.4;
-  color: #86aed6;
 }
 .sitio-lista li.activa {
   background: rgba(255, 255, 255, 0.12);
