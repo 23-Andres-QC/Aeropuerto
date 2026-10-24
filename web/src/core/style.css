@@ -401,11 +401,11 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .login-submit { width: 100%; justify-content: center; margin-top: 22px; padding: 12px 15px; }
 .login-security { margin-top: 20px; color: var(--ink-faint); font-size: 11px; text-align: center; }
 .login-security span { margin-right: 5px; color: var(--good); font-size: 16px; vertical-align: -1px; }
-.logout-button { padding: 0 8px; border: 0; background: transparent; box-shadow: none; color: var(--ink-soft); font-size: 11.5px; }
+.logout-button { padding: 0 10px; border: 0; background: transparent; box-shadow: none; color: var(--ink-soft); font-size: 13.5px; }
 .logout-button:hover { color: var(--danger); background: rgba(207, 64, 64, .08); }
-.theme-toggle { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; color: var(--ink-soft); font-size: 14px; }
+.theme-toggle { display: grid; place-items: center; width: 38px; height: 38px; padding: 0; color: var(--ink-soft); font-size: 14px; }
 .theme-toggle:hover { color: var(--blue-600); }
-.icono-tema { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.icono-tema { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- estructura ---------- */
 .app-shell {
@@ -544,12 +544,12 @@ input::-ms-reveal, input::-ms-clear { display: none; }
   position: sticky;
   top: 0;
   z-index: 20;
-  height: 48px;
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 18px;
-  font-size: 12.5px;
+  padding: 0 22px;
+  font-size: 15px;
   font-weight: 600;
   background: var(--glass-strong);
   border-bottom: 1px solid var(--glass-line);
@@ -557,28 +557,46 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .breadcrumb {
   color: var(--ink-faint);
 }
+/* El título de la cabecera no se parte en renglones: si falta lugar, se corta con puntos suspensivos. */
+.titulo-cab {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-right: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.workspace-meta {
+  flex: none;
+}
 .workspace-meta {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
+  gap: 8px;
+  font-size: 13.5px;
   color: var(--ink-soft);
 }
 /* Los controles de la cabecera van a la misma altura, para que se lean como una sola fila. */
 .workspace-meta button {
-  min-height: 30px;
-  height: 30px;
+  min-height: 38px;
+  height: 38px;
 }
 .estado-local {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 6px;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 8px;
   border: 1px solid var(--line-control);
   font-weight: 600;
   white-space: nowrap;
+}
+/* Con la pantalla angosta se quita la etiqueta «Demo local» para que el título de la sección se lea entero. */
+@media (max-width: 1150px) {
+  .estado-local {
+    display: none;
+  }
 }
 .sesion-usuario {
   display: inline-flex;
@@ -589,8 +607,8 @@ input::-ms-reveal, input::-ms-clear { display: none; }
   border-left: 1px solid var(--glass-line);
 }
 .live-dot {
-  width: 7px;
-  height: 7px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: var(--good);
   box-shadow: 0 0 0 3px rgba(14, 155, 116, 0.16);
@@ -598,10 +616,10 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .avatar {
   display: grid;
   place-items: center;
-  width: 27px;
-  height: 27px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   color: #fff;
   background: var(--blue-600);

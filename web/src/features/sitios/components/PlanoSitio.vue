@@ -260,6 +260,17 @@ const giro = computed(() => giroDe(vista.value.w));
 /** El ancho de vista más grande que aún es «de cerca»: el sitio o la más ancha de sus zonas grabadas. */
 const anchoCerca = computed(() => Math.max(ancho.value, ...capas.value.map((c) => c.caja.w * 1.3)));
 const enCampus = computed(() => !!campus.value && vista.value.w > anchoCerca.value * 1.8);
+/**
+ * La vista guarda la proporción del plano del sitio, que es más ancha que la del campus: con todo el campus a la vista sobran barras
+ * a los lados. Se recortan agrandando el lienzo (y el panel lo corta), de a poco a medida que se aleja, para que el mapa use todo el ancho.
+ */
+const agrandar = computed(() => {
+  if (!campus.value) return 1;
+  const holgura = Math.max(1, vistaTodo.value.w / mundoCon(giroCampus.value).w);
+  const [lejos, tope] = [anchoCerca.value * 1.8, anchoMax.value];
+  if (tope <= lejos) return 1;
+  return 1 + (holgura - 1) * Math.min(1, Math.max(0, (vista.value.w - lejos) / (tope - lejos)));
+});
 /** Dónde van el nombre del sitio (arriba) y la ayuda (abajo) en la vista, ya girada. */
 const etiquetaSitio = computed(() => {
   const piso = props.mapa.piso_L_m;
@@ -704,13 +715,13 @@ watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
 </script>
 
 <template>
-  <div class="plano-sitio">
+  <div class="plano-sitio" :style="agrandar > 1.001 ? { overflow: 'hidden' } : undefined">
     <svg
       ref="svg"
       class="lienzo-plano"
       :class="{ dibujando, desplazable: zoom && vista.w < anchoMax - 0.5, lejos: enCampus }"
       :viewBox="`${vista.x} ${vista.y} ${vista.w} ${vista.h}`"
-      :style="{ '--e': e }"
+      :style="{ '--e': e, ...(agrandar > 1.001 ? { width: `${agrandar * 100}%`, marginLeft: `${(1 - agrandar) * 50}%` } : {}) }"
       preserveAspectRatio="xMidYMid meet"
       role="img"
       aria-label="Plano del sitio en metros"

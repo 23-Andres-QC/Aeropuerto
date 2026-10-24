@@ -319,7 +319,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
 
   <!-- El plano se muestra aunque el sitio aún no tenga sesiones (LAP): la reproducción aparece cuando haya una. -->
   <div v-if="mapa" class="envivo-esan" :class="{ vivo: modoVivo }">
-    <section class="panel plano-panel">
+    <section class="panel plano-panel" :class="{ 'en-campus': lugar === 'campus' }">
       <div class="panel-heading">
         <h2>Plano <span class="dato">· {{ (mapa.tam_px[0] / mapa.px_por_metro).toFixed(0) }} × {{ (mapa.tam_px[1] / mapa.px_por_metro).toFixed(0) }} m</span></h2>
         <span v-if="modoVivo" class="heading-meta">
@@ -593,6 +593,10 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
 .plano-panel :deep(.plano-sitio) {
   margin: 10px;
   width: calc(100% - 20px);
+}
+/* Con todo el campus a la vista no hay leyenda ni controles debajo: el mapa ocupa el alto que queda en la pantalla (cabecera, título del panel y márgenes aparte). */
+.plano-panel.en-campus :deep(.lienzo-plano) {
+  max-height: calc(100vh - 135px);
 }
 .aviso-zona {
   margin: 0 12px 12px;

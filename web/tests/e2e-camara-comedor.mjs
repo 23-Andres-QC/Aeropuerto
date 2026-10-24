@@ -61,6 +61,7 @@ try {
   assert.ok(enPatio && (enPatio.x < 0 || enPatio.y < 0), "y la cámara del comedor sigue en el comedor, no pegada al patio");
   paso("la cámara del comedor no se pega al borde del patio");
   // 4. Límites: un clic lejos de las dos zonas.
+  // (El clic se mide sobre el panel del plano, no sobre el lienzo: con todo el campus a la vista el lienzo es más ancho y el panel recorta los lados.)
   const antes = new Set((await t.api("GET", "/api/v1/sites/esan/config")).cuerpo.cameras.map((c) => c.camera_id));
   await t.clic(`button[aria-label="Ver todo el campus"]`);
   await esperar(1200);
@@ -69,7 +70,7 @@ try {
   assert.ok(await t.existe("[data-prueba=limites-zonas]"), "al editar se ve el borde de la hoja de cada zona");
   assert.equal(await t.evalua(`document.querySelectorAll('[data-prueba=limites-zonas] .limite-zona').length`), 2, "el patio y el comedor");
   await t.clicTexto("button", /＋ Cámara/);
-  const lejos = await t.evalua(`(() => { const r = document.querySelector('svg.lienzo-plano').getBoundingClientRect(); return { x: r.x + r.width * 0.94, y: r.y + r.height * 0.06 }; })()`);
+  const lejos = await t.evalua(`(() => { const r = document.querySelector('.plano-sitio').getBoundingClientRect(); return { x: r.x + r.width * 0.94, y: r.y + r.height * 0.06 }; })()`);
   await t.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: lejos.x, y: lejos.y });
   await t.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: lejos.x, y: lejos.y, button: "left", clickCount: 1 });
   await t.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: lejos.x, y: lejos.y, button: "left", clickCount: 1 });
