@@ -111,42 +111,6 @@ export type RanuraVivo = {
   regresan: number;
 };
 
-const grados = (dx: number, dy: number) => ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360;
-
-/**
- * De píxeles del frame a metros del plano. Usa la homografía imagen→metros que calibró el Build para esa cámara y
- * la mueve con ella: si la cámara se desplazó o giró en Configuración respecto de donde el Build la calibró, la
- * proyección se traslada y gira igual alrededor de su posición.
- */
-export function proyector(camara: Camara | undefined, mapa: Mapa): ((u: number, v: number, anchoFrame: number, altoFrame: number) => Punto | null) | null {
-  const h = camara?.homography;
-  if (!camara || !h || h.length !== 9) return null;
-  const pose0 = mapa.camaras[camara.camera_id];
-  const pos0: Punto = pose0?.posicion_m ?? camara.position ?? [0, 0];
-  const ang0 = pose0 ? grados(pose0.direccion[0], pose0.direccion[1]) : (camara.angle_deg ?? 0);
-  const pos1: Punto = camara.position ?? pos0;
-  const giro = (((camara.angle_deg ?? ang0) - ang0) * Math.PI) / 180;
-  const [cos, sen] = [Math.cos(giro), Math.sin(giro)];
-  const [ancho, alto] = [camara.width_px ?? 1280, camara.height_px ?? 720];
-  const [x0, y1] = mapa.origen_m;
-  const [anchoM, altoM] = [mapa.tam_px[0] / mapa.px_por_metro, mapa.tam_px[1] / mapa.px_por_metro];
-  const margen = 3;
-  return (u, v, anchoFrame, altoFrame) => {
-    const [pu, pv] = [(u * ancho) / anchoFrame, (v * alto) / altoFrame];
-    const w = h[6] * pu + h[7] * pv + h[8];
-    if (!Number.isFinite(w) || Math.abs(w) < 1e-9) return null;
-    const X = (h[0] * pu + h[1] * pv + h[2]) / w;
-    const Y = (h[3] * pu + h[4] * pv + h[5]) / w;
-    const [rx, ry] = [X - pos0[0], Y - pos0[1]];
-    const x = pos1[0] + rx * cos - ry * sen;
-    const y = pos1[1] + rx * sen + ry * cos;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    // Un punto muy fuera del plano es un error de proyección (suelo mal estimado), no una persona.
-    if (x < x0 - margen || x > x0 + anchoM + margen || y > y1 + margen || y < y1 - altoM - margen) return null;
-    return [x, y];
-  };
-}
-
 /** Altura de una persona (m) y distancia máxima a la que se ubica; más allá es un error, no una persona. */
 const ALTURA_PERSONA_M = 1.7;
 const ALCANCE_MAX_M = 30;

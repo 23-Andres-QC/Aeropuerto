@@ -7,8 +7,6 @@ func TestModuleOf(t *testing.T) {
 		{"GET", "/api/v1/sites", ModBase}, {"GET", "/api/v1/sites/esan/config", ModBase}, {"GET", "/api/v1/sites/esan/sessions", ModBase},
 		{"GET", "/api/v1/sites/esan/sessions/s1/replay", ModBase}, {"GET", "/api/v1/sites/esan/media/a/b.mp4", ModEnVivo},
 		{"POST", "/api/v1/sites/esan/sessions", ModEnVivo}, {"DELETE", "/api/v1/sites/esan/sessions/s1", ModConfig},
-		{"GET", "/api/v1/cameras/cam01/watch", ModEnVivo}, {"POST", "/api/v1/cameras/cam01/detections/publish", ModEnVivo},
-		{"GET", "/api/v1/telefonos", ModTelefono}, {"DELETE", "/api/v1/telefonos/x", ModTelefono},
 		{"GET", "/api/v1/sites/esan/ventas/resumen", ModVentas}, {"POST", "/api/v1/sites/esan/sessions/s1/ventas/emparejar", ModConfig}, {"POST", "/api/v1/sites/esan/ventas/tickets", ModConfig},
 		{"POST", "/api/v1/sites/esan/ventas/simulados", ModConfig},
 		{"GET", "/api/v1/sites/esan/trafico/calor", ModInsights}, {"GET", "/api/v1/sites/esan/sessions/s1/insights", ModInsights},

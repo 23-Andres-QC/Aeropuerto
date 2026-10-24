@@ -14,8 +14,8 @@ const (
 )
 
 // reducido devuelve el JPEG con a lo más `ancho` px de ancho (misma proporción), o el original si ya es angosto o no
-// se puede decodificar. Lo pide el modelo cuando corre en otra máquina que la web (scripts/modelo_local.py): por
-// internet, el cuadro entero de cada teléfono no alcanza a llegar a tiempo.
+// se puede decodificar. Lo pide el modelo cuando corre en otra máquina que la web (MJPEG_ANCHO en camara_telefono.py):
+// por internet, el cuadro entero de cada teléfono no alcanza a llegar a tiempo.
 func reducido(frame []byte, ancho int) []byte {
 	img, err := jpeg.Decode(bytes.NewReader(frame))
 	if err != nil {

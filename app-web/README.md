@@ -37,7 +37,7 @@ Arriba, el teléfono muestra su estado («El modelo procesa esta cámara») y cu
 
 Se cambian con `CAMARA_PORT`, `CAMARA_MJPEG_PORT` y `CAMARA_BIND_ADDR` en `.env`. Por la red solo se ve la página de cámara: el MJPEG y la sala quedan en esta máquina.
 
-**Sin autenticación:** cualquiera que abra la página desde la red puede unirse como cámara. Úsala en una red de confianza. En redes públicas o de universidad con aislamiento de clientes, los dispositivos no se ven entre sí: usa el punto de acceso de un celular.
+**Solo con código de unión:** quien abre la página sin un código vigente no se une (ver arriba). Aun así, úsala en una red de confianza. En redes públicas o de universidad con aislamiento de clientes, los dispositivos no se ven entre sí: usa el punto de acceso de un celular.
 
 ## Protocolo
 

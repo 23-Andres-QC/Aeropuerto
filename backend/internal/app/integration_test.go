@@ -100,11 +100,10 @@ func TestTheAPIRequiresALogin(t *testing.T) {
 	}
 	for _, c := range []struct{ method, path string }{
 		{"GET", "/api/v1/sites"}, {"GET", "/api/v1/sites/esan/config"}, {"GET", "/api/v1/sites/esan/sessions"},
-		{"GET", "/api/v1/sites/esan/ventas/resumen"}, {"GET", "/api/v1/telefonos"},
+		{"GET", "/api/v1/sites/esan/ventas/resumen"}, {"GET", "/api/v1/auth/check?modulo=telefonos"},
 		{"POST", "/api/v1/sites"}, {"PUT", "/api/v1/sites/esan"}, {"POST", "/api/v1/sites/esan/ventas/simulados"},
 		{"DELETE", "/api/v1/sites/esan"}, {"DELETE", "/api/v1/sites/esan/sessions/00000000-0000-0000-0000-000000000000"},
-		{"DELETE", "/api/v1/sites/esan/ventas/simulados"}, {"DELETE", "/api/v1/telefonos/x"},
-		{"GET", "/api/v1/cameras/cam01/watch"},
+		{"DELETE", "/api/v1/sites/esan/ventas/simulados"},
 	} {
 		if got := serve(c.method, c.path, nil); got != http.StatusUnauthorized {
 			t.Errorf("%s %s without login: %d (want 401)", c.method, c.path, got)

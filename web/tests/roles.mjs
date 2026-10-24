@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import {
   enlaceConCodigo,
   inicioPara,
-  minutosRestantes,
   moduloDeRuta,
   normalizarCodigo,
   problemaConClave,
@@ -60,9 +59,6 @@ assert.match(problemaConClave("SinNumeroEnLaClave", ""), /número/, "exige núme
 assert.equal(normalizarCodigo(" k7qm-2xpa "), "K7QM2XPA");
 assert.equal(enlaceConCodigo("https://192.168.1.5:8444/", "K7QM-2XPA"), "https://192.168.1.5:8444/#c=K7QM2XPA");
 assert.equal(enlaceConCodigo("https://sitio/camara/#viejo", "ABCD2345"), "https://sitio/camara/#c=ABCD2345", "reemplaza el fragmento que hubiera");
-const ahora = Date.parse("2026-10-14T10:00:00Z");
-assert.equal(minutosRestantes("2026-10-14T10:15:00Z", ahora), 15);
-assert.equal(minutosRestantes("2026-10-14T09:00:00Z", ahora), 0);
 
 // Género: lo que no se muestra se dice sin dar la cifra de ninguna categoría pequeña.
 let g = resumenGenero(30, { MUJER: 20 }, 10);

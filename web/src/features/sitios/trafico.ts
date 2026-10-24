@@ -114,16 +114,6 @@ export function sumarDias(fecha: string, dias: number): string {
   return new Date(Date.UTC(a, m - 1, d + dias)).toISOString().slice(0, 10);
 }
 
-/** La fecha de Lima en que cae un instante ISO. */
-export function fechaDeLima(iso: string): string {
-  return new Date(new Date(iso).getTime() + LIMA_MS).toISOString().slice(0, 10);
-}
-
-/** La hora de Lima (0 a 23) en que cae un instante ISO. */
-export function horaDeLima(iso: string): number {
-  return new Date(new Date(iso).getTime() + LIMA_MS).getUTCHours();
-}
-
 export const FECHA_VALIDA = /^\d{4}-\d{2}-\d{2}$/;
 
 export type PeriodoRapido = { id: string; nombre: string; dias: number };
@@ -209,12 +199,6 @@ export function barrasPermanencia(d: Pick<PermanenciaTrafico, "bordes_s" | "cont
     else etiqueta = `${duracion(desde)}–${duracion(hasta)}`;
     return { desde, hasta, etiqueta, n, altura: n / max, pct: total ? (100 * n) / total : 0 };
   });
-}
-
-/** Índice de la barra en que cae una duración (para marcar los umbrales sobre el histograma). */
-export function barraDe(bordes_s: number[], segundos: number): number {
-  const i = bordes_s.findIndex((b) => segundos < b);
-  return i < 0 ? bordes_s.length : i;
 }
 
 // --- Embudo ----------------------------------------------------------------------------------------------------------------------

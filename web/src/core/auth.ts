@@ -38,10 +38,6 @@ export function asegurarSesion(): Promise<void> {
   return (consulta ??= leerSesion());
 }
 
-export function isAuthenticated(): boolean {
-  return sesion.value !== null;
-}
-
 export type ResultadoLogin = { ok: true } | { ok: false; mensaje: string };
 
 export async function login(usuario: string, clave: string): Promise<ResultadoLogin> {

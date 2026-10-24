@@ -116,19 +116,6 @@ func TestImportStartDeclaration(t *testing.T) {
 	}
 }
 
-func TestPhoneInputNormalize(t *testing.T) {
-	ok := PhoneInput{Name: " Entrada ", URL: " http://192.168.1.17:8080/video?token=abc "}
-	if err := ok.Normalize(); err != nil || ok.Name != "Entrada" || ok.URL != "http://192.168.1.17:8080/video?token=abc" {
-		t.Fatalf("teléfono válido rechazado: %v %+v", err, ok)
-	}
-	for _, bad := range []string{"", "192.168.1.17:8080/video", "rtsp://192.168.1.17/video", "http:///video"} {
-		in := PhoneInput{URL: bad}
-		if err := in.Normalize(); err == nil {
-			t.Fatalf("URL inválida aceptada: %q", bad)
-		}
-	}
-}
-
 func TestSiteInputNormalize(t *testing.T) {
 	in := SiteInput{Slug: " Mall-Norte ", Name: " Mall Norte ", Description: "Centro comercial"}
 	if err := in.Normalize(true); err != nil || in.Slug != "mall-norte" || in.Name != "Mall Norte" {

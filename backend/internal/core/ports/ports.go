@@ -141,13 +141,6 @@ type TrafficRepository interface {
 	DeleteSimulated(ctx context.Context, site domain.Site) (int, error)
 }
 
-// PhoneRepository keeps the registered phones (in memory by design).
-type PhoneRepository interface {
-	List() []domain.Phone
-	Add(p domain.Phone)
-	Remove(id string) bool
-}
-
 // Mailer sends an e-mail (the password-recovery link). Implementations never log the body.
 type Mailer interface {
 	Send(ctx context.Context, to, subject, html, text string) error

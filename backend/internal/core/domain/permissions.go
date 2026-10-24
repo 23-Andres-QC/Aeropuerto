@@ -51,8 +51,6 @@ func ModulesOf(role string) []string {
 
 var (
 	reOnlySuper = regexp.MustCompile(`^/api/v1/(usuarios|auditoria|demo|privacidad)(/|$)|/llaves(/|$)|/grupo-minimo$`)
-	rePhones    = regexp.MustCompile(`^/api/v1/telefonos(/|$)`)
-	reCameras   = regexp.MustCompile(`^/api/v1/cameras/[^/]+/`)
 	reSales     = regexp.MustCompile(`^/api/v1/sites/[^/]+/(ventas(/|$)|sessions/[^/]+/ventas(/|$))`)
 	reTraffic   = regexp.MustCompile(`^/api/v1/sites/[^/]+/trafico/(resumen|serie|calor|permanencia|embudo|umbrales)$`)
 	reInsights  = regexp.MustCompile(`^/api/v1/sites/[^/]+/sessions/[^/]+/(insights|analytics|points)$`)
@@ -71,10 +69,6 @@ func ModuleOf(method, path string) string {
 	switch {
 	case reOnlySuper.MatchString(path):
 		return ModUsuarios
-	case rePhones.MatchString(path):
-		return ModTelefono
-	case reCameras.MatchString(path):
-		return ModEnVivo
 	case reSales.MatchString(path):
 		// Sales and insights are for looking: loading tickets, matching and simulating data belong to Configuración.
 		if read {

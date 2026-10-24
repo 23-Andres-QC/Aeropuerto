@@ -3,16 +3,13 @@
 // Uso: node web/tests/trafico.mjs  (Node 22.18 o más nuevo: lee TypeScript directamente; sale con error si algo falla)
 import assert from "node:assert/strict";
 import {
-  FRANJAS, PERIODOS, barraDe, barrasPermanencia, consultaAQuery, describirFranja, fechaDeLima, franjaDe, horaDeLima, hoyLima, maximoDeCalor, pasosEmbudo,
+  FRANJAS, PERIODOS, barrasPermanencia, consultaAQuery, describirFranja, franjaDe, hoyLima, maximoDeCalor, pasosEmbudo,
   rangoDe, sumarDias,
 } from "../src/features/sitios/trafico.ts";
 
 // --- Fechas de Lima (UTC-5, sin horario de verano) ---------------------------------------------------------------------------------
 assert.equal(hoyLima(new Date("2026-09-27T04:59:00Z")), "2026-09-26", "a las 23:59 de Lima todavía es el día anterior");
 assert.equal(hoyLima(new Date("2026-09-27T05:00:00Z")), "2026-09-27");
-assert.equal(fechaDeLima("2026-09-27T05:37:28Z"), "2026-09-27");
-assert.equal(horaDeLima("2026-09-27T05:37:28Z"), 0, "las 05:37 UTC son las 00:37 en Lima");
-assert.equal(horaDeLima("2026-09-27T14:00:00Z"), 9);
 assert.equal(sumarDias("2026-09-27", 1), "2026-09-28");
 assert.equal(sumarDias("2026-09-01", -1), "2026-08-31");
 assert.equal(sumarDias("2026-12-31", 1), "2027-01-01");
@@ -49,10 +46,6 @@ assert.equal(barras[3].altura, 1, "el tramo más alto llena la barra");
 assert.equal(barras[0].altura, 0.125);
 assert.ok(Math.abs(barras.reduce((a, b) => a + b.pct, 0) - 100) < 1e-9, "los porcentajes suman 100");
 assert.equal(barrasPermanencia({ bordes_s: bordes, conteo: Array(14).fill(0) }).every((b) => b.pct === 0 && b.altura === 0), true, "sin estancias no hay barras ni divisiones por cero");
-assert.equal(barraDe(bordes, 1), 0);
-assert.equal(barraDe(bordes, 5), 2, "5 s es el comienzo del tramo 5–10 s");
-assert.equal(barraDe(bordes, 30), 5);
-assert.equal(barraDe(bordes, 99999), 13, "más de 30 min cae en el último tramo");
 
 // --- Escala del calor ---------------------------------------------------------------------------------------------------------------
 assert.equal(maximoDeCalor([]), 1);

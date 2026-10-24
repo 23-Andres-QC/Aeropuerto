@@ -10,10 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"aeropuerto/internal/adapters/httpapi"
-	"aeropuerto/internal/adapters/memory"
 	"aeropuerto/internal/adapters/mailer"
 	"aeropuerto/internal/adapters/postgres"
-	"aeropuerto/internal/adapters/relay"
 	"aeropuerto/internal/config"
 	"aeropuerto/internal/core/services"
 )
@@ -69,13 +67,11 @@ func New(db *pgxpool.Pool, cfg config.Config, opts ...Option) http.Handler {
 		Sessions: sessions,
 		Sales:    sales,
 		Traffic:  traffic,
-		Phones:   services.NewPhoneService(memory.NewPhoneRepository()),
 		Accounts: accounts,
 		Privacy:  privacy,
 		Demo:     services.NewDemoService(sites, sessions, sales, traffic),
 	}, httpapi.Options{
 		Auth:     httpapi.NewAuth(httpapi.AuthConfig{Accounts: accounts, APIKey: cfg.APIKey}),
-		Realtime: relay.NewHub(),
 		MediaDir: cfg.MediaDir,
 		Ready:    db.Ping,
 	})

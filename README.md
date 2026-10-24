@@ -11,7 +11,6 @@ CCTV / dataset → Modelo LAP01 (Python, GPU) → API Go → PostgreSQL/PostGIS 
 
 ## Enlaces del proyecto
 
-- **Aplicación en el servidor:** http://34.70.132.18/ (HTTPS: https://34.70.132.18/, cámara web: https://34.70.132.18/camara/)
 - **Presentación Canva:** https://canva.link/s9381tjj12znjbi
 - **Informe:** https://www.overleaf.com/4988787614zrfjthnvgdhr#5a9571
 - **Carpeta de Drive:** https://drive.google.com/drive/folders/1OH2wUcujzm-cPwITiiukz6uNG6pCSm8Q
@@ -20,25 +19,21 @@ CCTV / dataset → Modelo LAP01 (Python, GPU) → API Go → PostgreSQL/PostGIS 
 ## Ejecutar
 
 ```bash
-scripts/levantar.sh
+docker compose up -d --build                                    # web, API, backend-vivo, cámara web y las dos bases
+python "Modelo/Test Modelo/camara_telefono.py"                  # el modelo en vivo, fuera de Docker y con la GPU
 ```
 
-El mismo comando sirve en la laptop y en el servidor: el script reconoce si corre en la VM de Google Cloud y toma la configuración de cada lugar.
+| | |
+|---|---|
+| Web | http://localhost:8080 · https://localhost:8443 |
+| Cámara web (teléfonos en la misma Wi-Fi) | https://IP-de-la-laptop:8444 |
+| Modelo en vivo | fuera de Docker, con la GPU (sin GPU: `COMPOSE_PROFILES=modelo` en `.env` lo corre en CPU dentro de Docker) |
+| Contraseñas de las bases | las de demostración |
+| Acceso a la web y a la API | usuario `LAP`, contraseña `LAP` (de prueba) |
 
-| | Laptop | Servidor (VM de Google Cloud) |
-|---|---|---|
-| Configuración | valores por defecto de `compose.yaml` | `servidor.env` (versionado) |
-| Web | http://localhost:8080 · https://localhost:8443 | http://IP-pública · https://IP-pública |
-| Cámara web | https://IP-de-la-laptop:8444 | https://IP-pública/camara/ |
-| Modelo en vivo | fuera de Docker, con la GPU | en la laptop, con su GPU, por un túnel SSH (`python scripts/modelo_local.py`); el servidor solo tiene la web |
-| Contraseñas de las bases | las de demostración | aleatorias en `.env` (las crea el script la primera vez) |
-| Acceso a la web y a la API | usuario `LAP`, contraseña `LAP` (de prueba) | usuario, contraseña, firma de sesiones y llave de scripts aleatorios en `.env` (el script los crea y muestra la contraseña una vez); la API no arranca sin ellos |
+`.env` (no versionado) tiene los ajustes de una sola máquina, como el correo de recuperación de contraseña; ver `.env.example`.
 
-En el servidor la IP pública se lee de la propia VM en cada arranque, así que si cambia al encenderla basta volver a correr el script. `.env` (no versionado) tiene prioridad sobre `servidor.env` para ajustes de una sola máquina; ver `.env.example`. En la laptop también funciona `docker compose up -d --build` directamente.
-
-**Modelo en la laptop, web en el servidor.** `python scripts/modelo_local.py` (con el compose local detenido) abre un túnel SSH a backend-vivo (8093) y al MJPEG de camara-web (8092) del servidor, que ahí solo escuchan en 127.0.0.1, y corre `camara_telefono.py` con la GPU contra ellos: Teléfonos y Videos funcionan igual que con el modelo en el servidor. Los teléfonos se unen en `https://IP-pública/camara/`; su video baja por el túnel y las cajas, IDs, género y memoria de identidades vuelven al servidor. Entra siempre con la contraseña del servidor, que lee de `SERVIDOR_CLAVE` en el `.env` de la laptop (no versionado; sin ella la pide una vez); `MODELO_SERVIDOR=usuario@IP` apunta a otro servidor. Se recupera solo: rehace el túnel si la conexión se corta o queda colgada (la prueba cada 10 s), espera al servidor si está arrancando y vuelve a levantar el modelo si se cae. Requiere `pip install paramiko`. Con un enlace lento (~1 MB/s) el modelo recibe menos cuadros por teléfono, pero salta cuadros en vez de atrasarse. Para volver al modelo en CPU dentro del servidor: `COMPOSE_PROFILES=modelo` en su `.env`.
-
-Web en http://localhost:8080 (usuario y contraseña de prueba de la laptop: `LAP` / `LAP`; en el servidor, los que creó `levantar.sh`; ver «Seguridad»). Cada sección es la misma para todos los sitios: `/sitios/<sitio>/en-vivo`, `/sitios/<sitio>/insights` y `/sitios/<sitio>/configuracion`, con pestañas para cambiar de sitio. `/telefonos` procesa cámaras de teléfono en vivo y `/videos` prueba el modelo con un video de tu computadora, sin guardar nada.
+Web en http://localhost:8080 (usuario y contraseña de prueba: `LAP` / `LAP`; ver «Seguridad»). Cada sección es la misma para todos los sitios: `/sitios/<sitio>/en-vivo`, `/sitios/<sitio>/insights` y `/sitios/<sitio>/configuracion`, con pestañas para cambiar de sitio. `/telefonos` procesa cámaras de teléfono en vivo y `/videos` prueba el modelo con un video de tu computadora, sin guardar nada.
 
 Los datos se conservan en el volumen `aeropuerto-demo_pgdata`. La base se crea vacía con dos sitios (ESAN y LAP) y **sin datos de ejemplo**: todo lo que muestra lo publica el modelo o se configura en la web.
 
@@ -106,7 +101,7 @@ Los datos se conservan en el volumen `aeropuerto-demo_pgdata`. La base se crea v
 - **Lo quieto no cuenta:** maniquíes, afiches o estatuas que el detector toma por personas. Si en 4 s a la vista no se alejan más de un 20 % de su altura de donde aparecieron (descontando el movimiento de la cámara), no se dibujan ni se cuentan. Quien se mueve una vez cuenta para siempre. Una persona que se queda totalmente quieta todo ese tiempo también se oculta.
 - **IDs:** se confirman con 3 vistas y 2 s a la vista.
 - **Género:** se muestra desde la primera vista, con la certeza promedio de CLIP, en vez de «Sin determinar» hasta juntar votos. En el Build y en las cámaras en vivo el género se fuerza a Hombre o Mujer con 2 votos de CLIP (55 % de certeza, personas de 72 px o más); «Sin determinar» queda solo para quien nunca tuvo una vista con evidencia suficiente (`gender` en `config_lap01.json`).
-- **Sin GPU (servidor):** sin los puntos del cuerpo de los teléfonos, Re-ID y género cada 2 s por persona y Re-ID con todos los núcleos; el movimiento de la cámara se mide sobre el fondo (fuera de las personas) para que los maniquíes no parezcan moverse. En un video de un centro comercial: de ~570 a ~240 ms por frame.
+- **Sin GPU:** sin los puntos del cuerpo de los teléfonos, Re-ID y género cada 2 s por persona y Re-ID con todos los núcleos; el movimiento de la cámara se mide sobre el fondo (fuera de las personas) para que los maniquíes no parezcan moverse. En un video de un centro comercial: de ~570 a ~240 ms por frame.
 
 Con mucha gente el modelo va a unos 3–4 FPS en una RTX 4060. El video se ve fluido igual, pero las cajas se actualizan menos seguido. A cambio de detectar a casi todos, hay más falsos positivos y géneros menos seguros en las personas lejanas. Los valores están en `AJUSTES` de `Modelo/Test Modelo/videos_subidos.py`. El modelo procesa en tiempo real, como una cámara en vivo: si no alcanza al video, salta frames. Se pueden elegir varios videos a la vez (hasta 10 en la lista, de hasta 1 GB cada uno): el modelo los procesa todos al mismo tiempo, turnándose un frame de cada uno, y la página muestra el estado de cada uno (preparando, procesando o terminado) y el video o el resumen del que se elija. Con más videos a la vez, las cajas de cada uno se actualizan menos seguido (`VIDEOS_SIMULTANEOS` limita cuántos).
 
@@ -175,11 +170,11 @@ backend/                      Go · arquitectura hexagonal (núcleo + adaptadore
   cmd/api/main.go             arranque: configuración, conexión, migraciones y servidor
   internal/core/domain/       entidades, validaciones y errores (sin HTTP ni SQL)
   internal/core/ports/        interfaces de repositorios
-  internal/core/services/     casos de uso (sitios, sesiones, teléfonos) y caché
+  internal/core/services/     casos de uso (sitios, sesiones, ventas, tráfico, cuentas) y caché
   internal/adapters/httpapi/  REST: handlers, rutas y middleware
   internal/adapters/postgres/ repositorios PostGIS y migrador
-  internal/adapters/memory/   teléfonos (en memoria por diseño)
-  internal/adapters/relay/    WebSocket de video y detecciones
+  internal/adapters/memory/   cuentas en memoria para las pruebas
+  internal/adapters/mailer/   correo de recuperación de contraseña (SMTP)
   internal/app/               composición + pruebas de integración
   migrations/                 esquema: 001_sitios, 002_plano, 003_modelo, 004_plano_lap, 005_plano_dibujado, 006_posicion_ajustada, 007_extensiones_sin_uso, 008_ventas
 web/src/                      Vue 3 + TypeScript
@@ -226,9 +221,9 @@ Todas las rutas de sitio siguen `/api/v1/sites/<sitio>/…`:
 | `GET/PUT /{sitio}/trafico/umbrales` · `POST …/trafico/recalcular` | umbrales «se detiene» e «interesado» (guardarlos recalcula); recalcular lo desactualizado (`?todo=1`: todo) |
 | `POST/DELETE /{sitio}/trafico/simulados` | genera (`?semanas=N`, 2 a 25; sin ello usa las ventas simuladas que haya o 6 semanas) o borra el tráfico simulado |
 | `GET /{sitio}/media/{archivo}` | archivos exportados por el Build |
-| `GET/POST /api/v1/telefonos` · `DELETE /{id}` | teléfonos (solo en memoria). El POST admite `"simulado": true` para una **fuente de prueba**: En vivo la muestra, pero no guarda sus capturas en la base |
+| `GET/POST /vivo/api/v1/telefonos` · `DELETE /{id}` | teléfonos (backend-vivo, solo en memoria). El POST admite `"simulado": true` para una **fuente de prueba**: En vivo la muestra, pero no guarda sus capturas en la base |
 | `GET/POST /vivo/api/v1/videos` · `DELETE /{id}` | videos subidos en Videos con su resumen al terminar (disco temporal y memoria de backend-vivo; hasta 10, procesados al mismo tiempo) |
-| `/api/v1/cameras/{id}/publish·watch·detections/…` | relé WebSocket de video y detecciones |
+| `/vivo/api/v1/cameras/{id}/watch·detections/watch` | relevo WebSocket de video y detecciones (backend-vivo; el modelo publica por el 8093) |
 | `GET /{sitio}/ventas/resumen` · `/ventas/pronostico` | embudo por local (visitantes → tickets → ingresos), productos y precios; pronóstico de ingresos, visitantes, conversión y ticket promedio (`dias`, `datos=real|simulado|todos`, `locales=1,2,3` o `local=1`, `paso=dia|hora`, `horizonte`) |
 | `GET /{sitio}/ventas/patrones` | ventas y visitas por día de la semana × hora (hora de Lima), en total y por local, con los días con actividad de cada día de la semana para sacar promedios (`dias`, `datos`, `locales`) |
 | `GET/POST /{sitio}/ventas/tickets` · `DELETE …/{id}` | tickets de venta con sus líneas (producto, cantidad, precio); un número de ticket repetido no se duplica |
@@ -240,13 +235,13 @@ Todas las rutas de sitio siguen `/api/v1/sites/<sitio>/…`:
 
 La web y la API piden iniciar sesión, con cuentas en la base y dos roles (ver «Cuentas y privacidad (PR 2)»). Qué hay y cómo se usa:
 
-- **Login en el servidor.** `POST /api/v1/auth/login` con `{"usuario","clave"}` deja la cookie `lap_sesion`: un secreto al azar (la base guarda solo su SHA-256), **HttpOnly** (ningún script de la página la lee), **SameSite=Strict** (otro sitio no puede mandarla) y **Secure** cuando la web se sirve por HTTPS; una sesión se desconecta tras 8 h sin usarla o 3 días. `POST /auth/logout` la **revoca en la base**, así una copia de la cookie deja de servir también tras un reinicio de la API. `GET /auth/me` dice quién eres. Además, las peticiones que cambian algo y vienen de otro origen se rechazan.
+- **Login.** `POST /api/v1/auth/login` con `{"usuario","clave"}` deja la cookie `lap_sesion`: un secreto al azar (la base guarda solo su SHA-256), **HttpOnly** (ningún script de la página la lee), **SameSite=Strict** (otro sitio no puede mandarla) y **Secure** cuando la web se sirve por HTTPS; una sesión se desconecta tras 8 h sin usarla o 3 días. `POST /auth/logout` la **revoca en la base**, así una copia de la cookie deja de servir también tras un reinicio de la API. `GET /auth/me` dice quién eres. Además, las peticiones que cambian algo y vienen de otro origen se rechazan.
 - **Qué responde sin sesión.** Solo `/health/live`, `/health/ready` y el login. Todo lo demás de `/api/` responde **401**, incluidas las lecturas. nginx también cierra `/vivo/` (backend-vivo: teléfonos, videos y memoria de personas), la sala de cámaras (`/camara-web/ws/sala`, que muestra el video de todos los teléfonos) y `/camara/personas`, preguntándole al backend (`auth_request`).
 - **Roles.** `superadmin` puede todo; `seguridad` y `negocio` abren solo sus módulos (lo demás, 403). Los scripts usan la **llave de API** (`Authorization: Bearer <API_KEY>`, rol `maquina`): leen y escriben pero **nunca borran** (un `DELETE` con la llave da 403) y no administran cuentas (403). Todo borrado se registra en el log con quién, desde qué IP y cómo terminó.
 - **Scripts de Python** (Build, Parte III, `generar_plano.py`): mandan la llave que encuentran en `LAP_API_KEY`, o en `API_KEY` del `.env` de la raíz, o la de prueba de la laptop. Con otra, la web responde 401 y el script avisa qué falta.
 - **Límites.** nginx limita por IP: el login a 5 intentos por minuto, la API a 30 por segundo y la puerta pública de las cámaras (`/camara/`) con su propia cuota (20 por segundo y 30 conexiones). Además el backend bloquea 15 minutos a una IP tras 5 logins fallidos seguidos (también con la clave correcta).
-- **Credenciales.** En la laptop (`APP_ENV=local`, lo normal) valen las de prueba `LAP` / `LAP` y una llave de prueba; la API lo avisa en su log. En el servidor (`APP_ENV=servidor`, de `servidor.env`) **no arranca** con las de prueba ni con credenciales débiles (`ADMIN_PASSWORD` de 12 o más caracteres, `API_KEY` de 24 o más): `scripts/levantar.sh` las crea al azar en `.env` la primera vez, muestra la contraseña una sola vez y conserva el `.env` que ya existía (solo agrega lo que falta). No se escriben en ningún log ni en la web.
-- **Lo que sigue público, a propósito.** La página `/camara/` y su WebSocket, para que un teléfono se una sin iniciar sesión: solo GET, sus cinco archivos (con el Worker que comprime los cuadros) y el WebSocket, nada del MJPEG, la foto ni el estado. **Riesgo conocido:** cualquiera que alcance esa URL puede mandar video como si fuera una cámara; y el puerto 8444 de la cámara web existe para que los teléfonos de la misma Wi-Fi se unan a la laptop: sirve solo la página y su WebSocket (el panel de personas, el video y el estado no salen por ahí), y en el servidor ni siquiera se publica (`CAMARA_BIND_ADDR=127.0.0.1` en `servidor.env`; los teléfonos entran por `/camara/`). **Ya no basta la URL:** un teléfono se une solo con un código de unión (no vence, sirve para cualquier teléfono) que crea el admin; sin él, el WebSocket responde un error y no registra nada.
+- **Credenciales.** En la laptop (`APP_ENV=local`, lo normal) valen las de prueba `LAP` / `LAP` y una llave de prueba; la API lo avisa en su log. Con `APP_ENV=servidor` en `.env` **no arranca** con las de prueba ni con credenciales débiles (`ADMIN_PASSWORD` de 12 o más caracteres, `API_KEY` de 24 o más): hay que ponerlas en `.env`. No se escriben en ningún log ni en la web.
+- **Lo que sigue público, a propósito.** La página `/camara/` y su WebSocket, para que un teléfono se una sin iniciar sesión: solo GET, sus cinco archivos (con el Worker que comprime los cuadros) y el WebSocket, nada del MJPEG, la foto ni el estado. **Riesgo conocido:** cualquiera que alcance esa URL puede mandar video como si fuera una cámara; y el puerto 8444 de la cámara web existe para que los teléfonos de la misma Wi-Fi se unan a la laptop: sirve solo la página y su WebSocket (el panel de personas, el video y el estado no salen por ahí); `CAMARA_BIND_ADDR=127.0.0.1` en `.env` lo deja solo para esta máquina. **Ya no basta la URL:** un teléfono se une solo con un código de unión (no vence, sirve para cualquier teléfono) que crea el admin; sin él, el WebSocket responde un error y no registra nada.
 - **Aún no hay:** doble factor ni un portal de tiendas (se descartó: no hace falta).
 - **Fuentes de prueba: nada falso en la base.** `node scripts/simular_telefonos.mjs` simula dos teléfonos con una persona caminando (para probar En vivo sin teléfonos; `--ids distinto` prueba la unión por posición) y los registra siempre con `simulado: true`. En vivo muestra lo que ven (con «PRUEBA · no se guarda» y «(prueba)» en sus mosaicos), pero ninguna captura que los incluya se guarda: ni al terminar, ni al reiniciar, ni sola cada 30 s. La marca se queda aunque el teléfono se desconecte a mitad de la captura. Las pruebas de Go con base de datos usan una base desechable (`aeropuerto_test`) y se niegan a correr en otra. Si registras a mano una cámara de prueba (por ejemplo el video de `Modelo/Test Modelo/simular_telefono.py`), pasa `"simulado": true`.
 
@@ -272,32 +267,3 @@ python -m unittest discover -s "Modelo/Test Modelo/tests"        # memoria de id
 `backend-vivo` y `app-web` ejecutan `go vet` y `go test` al construir su imagen; la prueba de `backend-vivo` contra PostgreSQL + pgvector reales corre con `VIVO_TEST_DATABASE_URL` apuntando a una base desechable (ver [backend-vivo/README.md](backend-vivo/README.md)).
 
 El Dockerfile del backend ejecuta `go vet` y `go test` al construir. La prueba de integración crea una base `aeropuerto_test` desechable (se borra al terminar) y recorre el ciclo completo: sitios, importación de sesiones, cámaras con pose manual, locales, zonas, Parte III y archivos.
-
-## Despliegue en un servidor
-
-Por defecto la web se publica solo en `127.0.0.1`. Para servirla por la IP pública, crea un `.env` con:
-
-```bash
-BIND_ADDR=0.0.0.0
-WEB_PORT=80
-WEB_TLS_PORT=443
-PUBLIC_HOST=<IP pública del servidor>
-DB_PASSWORD=<una contraseña propia, no la del ejemplo>
-VIVO_DB_PASSWORD=<otra contraseña propia>
-# Solo si el servidor es ARM (ej. GCP c4a): postgis/postgis no tiene imagen arm64.
-DB_IMAGE=imresamu/postgis:17-3.5
-# Modelo en vivo en CPU (servidor sin GPU) y enlace público para unir teléfonos.
-COMPOSE_PROFILES=modelo
-ENLACE_CAMARA=https://<IP pública del servidor>/camara/
-MODELO_CPUS=7        # núcleos para el modelo (deja uno para la web)
-MODELO_IMGSZ=640     # resolución del detector en CPU (por defecto 640 con yolo26s; 480 va más rápido pero ve peor a lo lejos)
-```
-
-El modelo en vivo (`modelo-vivo`) necesita los pesos de CLIP que van por Git LFS: en el servidor, `git lfs install --local && git lfs pull` antes de construir.
-
-y levanta con `docker compose up -d --build`. nginx añade `nosniff`, `SAMEORIGIN`, `Referrer-Policy` y un límite de peticiones por IP sobre `/api/`; PostgreSQL y el backend no publican puertos al host.
-
-- **Acceso:** la web y la API piden iniciar sesión y el servidor no arranca con credenciales de prueba (ver «Seguridad»); `scripts/levantar.sh servidor` crea `ADMIN_USER`, `ADMIN_PASSWORD` y `API_KEY` al azar en `.env`. Si armas el `.env` a mano, agrégalos y pon `APP_ENV=servidor` (ya está en `servidor.env`). Para un uso real conviene servir por HTTPS: la cookie solo marca `Secure` cuando la página llega así.
-- **Cámaras del navegador y teléfonos:** los navegadores solo dan acceso a la cámara en `localhost` o HTTPS (la web también escucha en `WEB_TLS_PORT` con un certificado autofirmado). La cámara web (`app-web`) se sirve además por el nginx de la web en `https://<IP>/camara/`, así en el servidor basta con abrir 80 y 443 en el firewall.
-
-Diseño original de la arquitectura: [FLUJO_IMPLEMENTACION.md](FLUJO_IMPLEMENTACION.md).

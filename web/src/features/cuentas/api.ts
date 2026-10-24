@@ -54,9 +54,6 @@ export type ResultadoDepurar = { sesiones: number; puntos: number; sesiones_de_l
 
 export type DatosUsuario = { usuario: string; correo: string; nombre: string; rol: string };
 
-/** El sitio de demostración tiene este nombre: para borrarlo se escribe tal cual. */
-export const NOMBRE_DEMO = "Demo (simulado)";
-
 export const cuentas = {
   usuarios: () => request<Usuario[]>("/api/v1/usuarios"),
   crearUsuario: (d: DatosUsuario) => request<ConClaveTemporal>("/api/v1/usuarios", json("POST", d)),

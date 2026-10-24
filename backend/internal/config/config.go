@@ -97,7 +97,7 @@ func (c *Config) resolveAccess() error {
 			faltan = append(faltan, "API_KEY (al menos 24 caracteres, distinta de la de prueba)")
 		}
 		if len(faltan) > 0 {
-			return fmt.Errorf("APP_ENV=servidor exige credenciales propias: faltan o son débiles %v (scripts/levantar.sh las crea en .env)", faltan)
+			return fmt.Errorf("APP_ENV=servidor exige credenciales propias: faltan o son débiles %v (ponlas en .env)", faltan)
 		}
 	default:
 		return errors.New("APP_ENV debe ser local o servidor")

@@ -1,8 +1,9 @@
 // Prueba del simulador «¿Y si…?».
 // Uso: node web/tests/simulador.mjs  (Node 22.18 o más nuevo: lee TypeScript directamente; sale con error si algo falla)
 import assert from "node:assert/strict";
-import { RECETAS, SIN_CAMBIOS, simular } from "../src/features/ventas/simulador.ts";
+import { RECETAS, simular } from "../src/features/ventas/simulador.ts";
 
+const SIN_CAMBIOS = { visitantes: 0, conversion: 0, ticket: 0 };
 const cerca = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-6, `${m}: ${a} ≠ ${b}`);
 // 1 000 visitantes × 40 % × S/ 10 = S/ 4 000 en el horizonte.
 const base = { ingresos: 4000, bajo: 3600, alto: 4400, visitantes: 1000, conversion: 0.4, ticket: 10 };

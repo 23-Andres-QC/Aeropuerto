@@ -411,37 +411,3 @@ func (h siteHandler) media(w http.ResponseWriter, r *http.Request) {
 	req.URL.Path = "/" + r.PathValue("file")
 	http.FileServer(http.Dir(filepath.Join(h.mediaDir, site))).ServeHTTP(w, req)
 }
-
-type phoneHandler struct {
-	svc *services.PhoneService
-}
-
-func (h phoneHandler) routes(m *http.ServeMux) {
-	m.HandleFunc("GET /api/v1/telefonos", h.list)
-	m.HandleFunc("POST /api/v1/telefonos", h.add)
-	m.HandleFunc("DELETE /api/v1/telefonos/{id}", h.remove)
-}
-
-func (h phoneHandler) list(w http.ResponseWriter, r *http.Request) { ok(w, h.svc.List()) }
-
-func (h phoneHandler) add(w http.ResponseWriter, r *http.Request) {
-	var in domain.PhoneInput
-	if decode(w, r, 4096, &in) != nil {
-		fail(w, http.StatusBadRequest, "JSON inválido")
-		return
-	}
-	phone, err := h.svc.Add(in)
-	if err != nil {
-		writeError(w, r, err, "No se pudo agregar el teléfono")
-		return
-	}
-	writeJSON(w, http.StatusCreated, phone)
-}
-
-func (h phoneHandler) remove(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.Remove(r.PathValue("id")); err != nil {
-		writeError(w, r, err, "No se pudo quitar el teléfono")
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}

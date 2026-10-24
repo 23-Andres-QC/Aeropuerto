@@ -80,14 +80,14 @@ func TestRolesInTheDatabase(t *testing.T) {
 		want   int
 	}{
 		{"seguridad abre los sitios", secCookie, "GET", "/api/v1/sites", 200},
-		{"seguridad abre Teléfonos", secCookie, "GET", "/api/v1/telefonos", 200},
+		{"seguridad abre Teléfonos", secCookie, "GET", "/api/v1/auth/check?modulo=telefonos", 204},
 		{"seguridad no abre Ventas", secCookie, "GET", "/api/v1/sites/esan/ventas/resumen", 403},
 		{"seguridad no abre Insights", secCookie, "GET", "/api/v1/sites/esan/trafico/resumen", 403},
 		{"seguridad no cambia la configuración", secCookie, "POST", "/api/v1/sites/esan/zones", 403},
 		{"seguridad no ve las cuentas", secCookie, "GET", "/api/v1/usuarios", 403},
 		{"negocio abre Ventas", bizCookie, "GET", "/api/v1/sites/esan/ventas/resumen", 200},
 		{"negocio abre Insights", bizCookie, "GET", "/api/v1/sites/esan/trafico/resumen", 200},
-		{"negocio no abre Teléfonos", bizCookie, "GET", "/api/v1/telefonos", 403},
+		{"negocio no abre Teléfonos", bizCookie, "GET", "/api/v1/auth/check?modulo=telefonos", 403},
 		{"negocio sí abre la reproducción (Insights dibuja sus mapas con ella)", bizCookie, "GET", "/api/v1/sites/esan/sessions/00000000-0000-0000-0000-000000000000/replay", 404},
 		{"seguridad abre la reproducción", secCookie, "GET", "/api/v1/sites/esan/sessions/00000000-0000-0000-0000-000000000000/replay", 404},
 		{"negocio no carga tickets", bizCookie, "POST", "/api/v1/sites/esan/ventas/tickets", 403},

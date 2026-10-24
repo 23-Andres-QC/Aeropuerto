@@ -57,7 +57,7 @@ La web reproduce el video original a su velocidad y dibuja encima las deteccione
 | `GET /api/v1/videos` · `POST /api/v1/videos?nombre=` · `DELETE /api/v1/videos/{id}` | videos subidos en Videos (el cuerpo del POST es el archivo tal cual; la web siempre usa `modo=tiempo_real`) |
 | `GET /api/v1/videos/{id}/archivo` | el archivo, para el modelo y para que la web lo reproduzca mientras se procesa |
 | `PUT /api/v1/videos/{id}/resumen` | el resumen final, solo para el modelo (no pasa por nginx) |
-| `GET /api/v1/cameras/{id}/publish\|watch\|detections/publish\|detections/watch` | relevo WebSocket (mismo protocolo que el del demo); a quien mira se le hace ping cada 20 s para que la conexión no se corte |
+| `GET /api/v1/cameras/{id}/publish\|watch\|detections/publish\|detections/watch` | relevo WebSocket; a quien mira se le hace ping cada 20 s para que la conexión no se corte |
 | `GET /api/v1/personas` | memoria completa: `{dimension, siguiente_id, epoca, retencion_horas, personas}` |
 | `GET /api/v1/personas/resumen` | `{personas, vistas, siguiente_id, epoca, retencion_horas}` sin vectores |
 | `PUT /api/v1/personas/{id}?epoca=N` | crea o reemplaza el estado de una persona; `vistas` ausente conserva las guardadas; 409 si la época cambió |

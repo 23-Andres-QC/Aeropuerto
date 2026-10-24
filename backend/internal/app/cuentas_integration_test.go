@@ -228,7 +228,7 @@ func TestAccountsInTheDatabase(t *testing.T) {
 	if w := c.do("GET", "/api/v1/sites", nil, cookie(negocio)); w.Code != 200 {
 		t.Errorf("con su clave propia entra: %d %s", w.Code, w.Body)
 	}
-	for _, p := range []string{"/api/v1/usuarios", "/api/v1/auditoria", "/api/v1/telefonos", "/api/v1/privacidad"} {
+	for _, p := range []string{"/api/v1/usuarios", "/api/v1/auditoria", "/api/v1/auth/check?modulo=telefonos", "/api/v1/privacidad"} {
 		if w := c.do("GET", p, nil, cookie(negocio)); w.Code != http.StatusForbidden {
 			t.Errorf("GET %s como negocio: %d (debe ser 403)", p, w.Code)
 		}

@@ -58,11 +58,9 @@ func TestRolePermissionMatrix(t *testing.T) {
 	}{
 		// Lo que toda pantalla necesita: sitios, su plano y sus sesiones.
 		{"GET", "/api/v1/sites", all}, {"GET", "/api/v1/sites/esan/config", all}, {"GET", "/api/v1/sites/esan/sessions", all},
-		// 1. En vivo, 6. Teléfonos y 7. Videos.
+		// 1. En vivo (Teléfonos y Videos están en backend-vivo: nginx los cierra con /auth/check, ver TestCheckByModule).
 		{"GET", "/api/v1/sites/esan/sessions/s1/replay", all}, // En vivo la reproduce e Insights dibuja sus mapas con ella
 		{"GET", "/api/v1/sites/esan/media/cam01.mp4", live}, {"POST", "/api/v1/sites/esan/sessions", live}, // guardar la captura al apagar En vivo
-		{"GET", "/api/v1/telefonos", live}, {"POST", "/api/v1/telefonos", live}, {"GET", "/api/v1/cameras/cam01/watch", live},
-		{"GET", "/api/v1/cameras/cam01/publish", live},
 		// 2. Insights y 3. Ventas.
 		{"GET", "/api/v1/sites/esan/sessions/s1/insights", biz}, {"GET", "/api/v1/sites/esan/sessions/s1/analytics", biz},
 		{"GET", "/api/v1/sites/esan/sessions/s1/points", biz},
@@ -87,7 +85,7 @@ func TestRolePermissionMatrix(t *testing.T) {
 		{"GET", "/api/v1/auditoria", only}, {"GET", "/api/v1/privacidad", only}, {"POST", "/api/v1/demo", only},
 		{"PUT", "/api/v1/sites/esan/grupo-minimo", only},
 		// Borrar: solo el superadmin, en cualquier módulo.
-		{"DELETE", "/api/v1/sites/esan/zones/1", only}, {"DELETE", "/api/v1/sites/esan/ventas/tickets/1", only}, {"DELETE", "/api/v1/telefonos/x", only},
+		{"DELETE", "/api/v1/sites/esan/zones/1", only}, {"DELETE", "/api/v1/sites/esan/ventas/tickets/1", only},
 		// Algo que nadie listó se cierra a los roles de módulo (por defecto, Configuración).
 		{"GET", "/api/v1/algo-nuevo", super}, {"POST", "/api/v1/sites/esan/ventas-raras", super},
 	} {
@@ -119,15 +117,15 @@ func TestRolePermissionMatrix(t *testing.T) {
 func TestDeniedAccessIsAudited(t *testing.T) {
 	rg := rbacRig(t)
 	business := rg.newStaff(t, "gerente", domain.RoleBusiness)
-	if w := call(rg.h, "GET", "/api/v1/telefonos", nil, withCookie(business)); w.Code != http.StatusForbidden {
-		t.Fatalf("negocio no abre Teléfonos: %d", w.Code)
+	if w := call(rg.h, "GET", "/api/v1/sites/esan/media/cam01.mp4", nil, withCookie(business)); w.Code != http.StatusForbidden {
+		t.Fatalf("negocio no abre los videos de En vivo: %d", w.Code)
 	}
 	entries, err := rg.svc.AuditLog(context.Background(), 20)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, e := range entries {
-		if e.Action == "acceso_denegado" && e.Actor == "gerente" && e.Role == domain.RoleBusiness && e.Target == "GET /api/v1/telefonos" && strings.Contains(e.Detail, "telefonos") {
+		if e.Action == "acceso_denegado" && e.Actor == "gerente" && e.Role == domain.RoleBusiness && e.Target == "GET /api/v1/sites/esan/media/cam01.mp4" && strings.Contains(e.Detail, "en_vivo") {
 			return
 		}
 	}
@@ -393,7 +391,6 @@ func TestAccessDashboard(t *testing.T) {
 	m := http.NewServeMux() // el router de verdad: con las rutas de cuentas y del panel
 	rg.a.routes(m)
 	accountHandler{accounts: rg.svc}.routes(m)
-	m.HandleFunc("GET /api/v1/telefonos", func(w http.ResponseWriter, r *http.Request) {})
 	rg.h = sameOrigin(rg.a.Require(m))
 	mail := newFakeMailer()
 	rg.svc.SetMailer(mail, "http://app.test")
@@ -402,7 +399,7 @@ func TestAccessDashboard(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		call(rg.h, "POST", "/api/v1/auth/login", map[string]string{"usuario": "gerente", "clave": "mala-clave-77"}, func(r *http.Request) { r.Header.Set("X-Real-IP", "198.51.100.77") })
 	}
-	call(rg.h, "GET", "/api/v1/telefonos", nil, withCookie(business)) // un acceso denegado
+	call(rg.h, "GET", "/api/v1/sites/esan/media/cam01.mp4", nil, withCookie(business)) // un acceso denegado
 	forgot(rg, "gerente@lap.test", "198.51.100.5")
 	_, _, text := mail.wait(t)
 	if w := call(rg.h, "POST", "/api/v1/auth/restablecer", map[string]string{"token": tokenFrom(t, text), "nueva": "Nueva-clave-2026"}, nil); w.Code != http.StatusNoContent {

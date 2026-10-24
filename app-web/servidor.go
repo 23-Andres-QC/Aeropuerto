@@ -373,7 +373,7 @@ func (s *Servidor) video(w http.ResponseWriter, r *http.Request) {
 }
 
 // foto da el último cuadro. Con ?despues=N espera (hasta esperaFoto) uno posterior al N, y con ?ancho= lo reduce como
-// el MJPEG: así lo lee el modelo en otra máquina (scripts/modelo_local.py), pidiendo el siguiente recién cuando
+// el MJPEG: así lo lee el modelo en CPU o en otra máquina (LECTURA_TELEFONOS=foto), pidiendo el siguiente recién cuando
 // terminó el anterior. Con el MJPEG, lo que el modelo no alcanzaba a leer se acumulaba en los búferes de la red y
 // procesaba cuadros de segundos atrás; así siempre procesa el más nuevo. X-Cuadro lleva su número, como en el MJPEG.
 func (s *Servidor) foto(w http.ResponseWriter, r *http.Request) {

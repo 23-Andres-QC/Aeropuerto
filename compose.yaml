@@ -1,10 +1,7 @@
 name: aeropuerto-demo
 services:
   db:
-    # postgis/postgis solo se publica para amd64. En un servidor ARM (ej. GCP
-    # c4a/Axion) poner DB_IMAGE=imresamu/postgis:17-3.5 en .env: es la misma
-    # imagen (PostgreSQL 17 + PostGIS 3.5) construida también para arm64.
-    image: ${DB_IMAGE:-postgis/postgis:17-3.5}
+    image: postgis/postgis:17-3.5
     environment:
       POSTGRES_DB: aeropuerto
       POSTGRES_USER: aeropuerto
@@ -22,9 +19,8 @@ services:
     environment:
       DATABASE_URL: postgres://aeropuerto:${DB_PASSWORD:-demo_local_only}@db:5432/aeropuerto?sslmode=disable
       MEDIA_DIR: /media
-      # Acceso (README, «Seguridad»). En la laptop, vacío: valen las credenciales de prueba (LAP / LAP). En el
-      # servidor (APP_ENV=servidor, de servidor.env) la API no arranca sin credenciales propias: scripts/levantar.sh
-      # las crea al azar en .env la primera vez.
+      # Acceso (README, «Seguridad»). En la laptop, vacío: valen las credenciales de prueba (LAP / LAP). Con
+      # APP_ENV=servidor en .env la API no arranca sin credenciales propias (ADMIN_USER, ADMIN_PASSWORD y API_KEY).
       APP_ENV: ${APP_ENV:-local}
       ADMIN_USER: ${ADMIN_USER:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
@@ -57,10 +53,10 @@ services:
   web:
     build: ./web
     environment:
-      # IP pública o dominio del servidor: entra al certificado autofirmado.
+      # IP o dominio con que se abre la web desde otro equipo: entra al certificado autofirmado.
       PUBLIC_HOST: ${PUBLIC_HOST:-}
     ports:
-      # Local: 127.0.0.1. Servidor: BIND_ADDR=0.0.0.0 y WEB_PORT=80 en .env.
+      # Solo esta máquina (127.0.0.1); BIND_ADDR=0.0.0.0 en .env la abre a la red.
       - "${BIND_ADDR:-127.0.0.1}:${WEB_PORT:-8080}:80"
       # HTTPS (certificado autofirmado, ver web/docker-entrypoint.sh): hace
       # falta para usar la cámara desde otro equipo en la misma red, ya que
@@ -139,9 +135,9 @@ services:
       retries: 12
       start_period: 5s
     restart: unless-stopped
-  # Modelo en vivo (camara_telefono.py) en CPU, para un servidor sin GPU. En la
-  # laptop corre directo con Python y la GPU, así que va con perfil: se levanta
-  # solo con COMPOSE_PROFILES=modelo en .env (o docker compose --profile modelo).
+  # Modelo en vivo (camara_telefono.py) en CPU, para una máquina sin GPU. Con GPU
+  # corre directo con Python, así que va con perfil: se levanta solo con
+  # COMPOSE_PROFILES=modelo en .env (o docker compose --profile modelo).
   modelo-vivo:
     build: "./Modelo/Test Modelo"
     profiles: [modelo]
@@ -150,8 +146,8 @@ services:
     network_mode: host
     command: ["--api", "http://127.0.0.1:${VIVO_API_PORT:-8093}"]
     environment:
-      # Enlace que Teléfonos muestra para unir un teléfono: el público, no la IP
-      # de la red interna del servidor (ej. https://34.70.132.18/camara/).
+      # Enlace que Teléfonos muestra para unir un teléfono. Dentro de Docker el
+      # modelo no ve la IP de la laptop en la red: ej. https://192.168.1.5:8444.
       ENLACE_CAMARA: ${ENLACE_CAMARA:-}
       # Con tantas personas o más en un cuadro de teléfono, el modelo no las sigue una por una: cuenta cabezas y le da un ID a todo el grupo
       # (vacío = 8; 0 lo apaga).

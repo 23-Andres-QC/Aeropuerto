@@ -13,7 +13,6 @@ import (
 type Services struct {
 	Sites    *services.SiteService
 	Sessions *services.SessionService
-	Phones   *services.PhoneService
 	Sales    *services.SalesService
 	Traffic  *services.TrafficService
 	// Accounts, Privacy and Demo are the administration of accounts, retention and the demo site (nil: not served).
@@ -24,8 +23,6 @@ type Services struct {
 
 // Options configure the parts of the API that are not use cases.
 type Options struct {
-	// Realtime registers the WebSocket camera relay.
-	Realtime interface{ Routes(*http.ServeMux) }
 	// MediaDir holds, per site, the files the Build exported (<MediaDir>/<site>/).
 	MediaDir string
 	// Ready reports whether the database answers.
@@ -40,12 +37,8 @@ func NewRouter(s Services, o Options) http.Handler {
 	siteHandler{sites: s.Sites, sessions: s.Sessions, mediaDir: o.MediaDir}.routes(m)
 	salesHandler{s.Sales}.routes(m)
 	trafficHandler{s.Traffic}.routes(m)
-	phoneHandler{s.Phones}.routes(m)
 	if s.Accounts != nil {
 		accountHandler{accounts: s.Accounts, sites: s.Sites, privacy: s.Privacy, demo: s.Demo}.routes(m)
-	}
-	if o.Realtime != nil {
-		o.Realtime.Routes(m)
 	}
 	if o.Auth != nil {
 		o.Auth.routes(m)

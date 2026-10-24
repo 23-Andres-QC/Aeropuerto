@@ -69,4 +69,3 @@ export const RECETAS: Receta[] = [
   { id: "precios", nombre: "Subir precios 5 %", detalle: "+5 % de ticket, −3 % de conversión", cambios: { visitantes: 0, conversion: -0.03, ticket: 0.05 } },
   { id: "combo", nombre: "Combos y venta sugerida", detalle: "+10 % de ticket", cambios: { visitantes: 0, conversion: 0, ticket: 0.1 } },
 ];
-export const SIN_CAMBIOS: Cambios = { visitantes: 0, conversion: 0, ticket: 0 };

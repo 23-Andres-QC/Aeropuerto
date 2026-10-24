@@ -12,7 +12,6 @@ const CLAVE_ULTIMA = "lap-ultima-actividad";
 const CLAVE_LIMITE = "lap-inactividad-s";
 /** Marca (en esta pestaña) para que el login explique por qué se cerró la sesión: `inactividad` o `atras` (volvió con las flechas del navegador). */
 export const CLAVE_AVISO_CIERRE = "lap-motivo-cierre";
-export type MotivoCierre = "inactividad" | "atras";
 
 /** Quien abre la consola puede acortar el plazo (las pruebas lo usan); nunca lo alarga más de lo normal. */
 function limite(): number {

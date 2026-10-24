@@ -13,7 +13,7 @@ El sistema tiene dos partes que no comparten base ni backend:
 | | **Sitios (análisis de sesiones)** | **En vivo (teléfonos y videos)** |
 |---|---|---|
 | Entrada | Videos de un dataset procesados por el Build | Teléfonos como cámaras en vivo, o un video subido |
-| Modelo | `Modelo/Build Modelo/Build_Modelo.ipynb` (Partes I y II) | `Modelo/Test Modelo/camara_telefono.py` (contenedor `modelo-vivo` en el servidor) |
+| Modelo | `Modelo/Build Modelo/Build_Modelo.ipynb` (Partes I y II) | `Modelo/Test Modelo/camara_telefono.py` (en la laptop, con la GPU) |
 | Backend | `backend/` (Go, arquitectura hexagonal) | `backend-vivo/` (Go) |
 | Base | `db`: PostgreSQL 17 + PostGIS | `vivo-db`: PostgreSQL 17 + pgvector |
 | En la web | En vivo, Insights, Registros, Configuración | Teléfonos, Videos (y el modo en vivo de todo el sistema) |
@@ -24,7 +24,7 @@ dataset/ ─▶ Build (Partes I y II) ─▶ backend ─▶ db (PostGIS) ◀─ 
                                        ▲
                                      web (Vue) ──── nginx: /api/ → backend · /vivo/ → backend-vivo · /camara/ → camara-web
                                        ▼
-teléfono ─▶ camara-web ─▶ modelo-vivo ─▶ backend-vivo ─▶ vivo-db (pgvector)
+teléfono ─▶ camara-web ─▶ modelo en vivo ─▶ backend-vivo ─▶ vivo-db (pgvector)
                 └─────────────── EN VIVO ───────────────┘
 ```
 
@@ -33,12 +33,12 @@ teléfono ─▶ camara-web ─▶ modelo-vivo ─▶ backend-vivo ─▶ vivo-d
 | Servicio | Qué hace | Puertos al host |
 |---|---|---|
 | `db` | PostGIS de los sitios | ninguno |
-| `backend` | API REST `/api/v1/…`, migraciones, relé WebSocket | ninguno |
+| `backend` | API REST `/api/v1/…` y migraciones | ninguno |
 | `web` | Vue + nginx: sirve la app y redirige `/api`, `/vivo`, `/camara` | `WEB_PORT` (80/8080) y `WEB_TLS_PORT` (443/8443) |
 | `vivo-db` | pgvector, solo para la memoria de identidades | ninguno |
 | `backend-vivo` | teléfonos, videos subidos, relevo y memoria de identidades | `127.0.0.1:8093` |
 | `camara-web` | página que convierte el navegador del teléfono en cámara | `8444` (HTTPS) y `127.0.0.1:8092` (MJPEG) |
-| `modelo-vivo` | el modelo en vivo en CPU (perfil `modelo`, solo en el servidor) | ninguno |
+| `modelo-vivo` | el modelo en vivo en CPU, para una máquina sin GPU (perfil `modelo`; apagado por defecto) | ninguno |
 
 **Regla:** las bases y los backends nunca se exponen a internet. Solo `web` (y `camara-web` en la laptop) escuchan fuera de la máquina. El navegador nunca habla con una base.
 
@@ -222,7 +222,7 @@ Se activa con el botón de la cabecera, y también entra solo cuando se conecta 
 
 - **Detector:**
   - **En GPU:** a 960 px con confianza 0,15, para ver a quien está lejos.
-  - **En CPU** (el servidor): `yolo26s` a 640 px (`MODELO_IMGSZ`).
+  - **En CPU** (`modelo-vivo`): `yolo26s` a 640 px (`MODELO_IMGSZ`).
   - Los puntos del cuerpo (`yolo26s-pose`) solo afinan la caja de quien se ve de cerca, sin los brazos. Una caja muy ancha (brazos abiertos) se angosta.
 - **Dos carriles:**
   - el **rápido** (detectar y seguir) publica las cajas enseguida;
@@ -278,18 +278,12 @@ Se activa con el botón de la cabecera, y también entra solo cuando se conecta 
 
 ## 11. Despliegue y configuración
 
-- **Un solo comando:** `scripts/levantar.sh`. Detecta si corre en la VM de Google Cloud.
-  - **Laptop:** valores por defecto de `compose.yaml`. Web en `http://localhost:8080` y el modelo en vivo fuera de Docker, con la GPU.
-  - **Servidor:** `docker compose --env-file servidor.env --env-file .env up -d --build`, más la IP pública que lee de la propia VM.
-- **Qué gana cuando un valor está en varios archivos:** `.env` (no versionado, contraseñas y ajustes de una máquina) > `servidor.env` (versionado, sin secretos) > `compose.yaml`.
-- **Servidor ARM** (GCP c4a):
-  - `DB_IMAGE=imresamu/postgis:17-3.5`, porque `postgis/postgis` no tiene imagen arm64;
-  - `COMPOSE_PROFILES=modelo` para correr el modelo en CPU;
-  - el firewall solo abre **80 y 443**, así que la cámara de los teléfonos va por `https://<IP>/camara/`.
+- **Levantar:** `docker compose up -d --build`, con los valores por defecto de `compose.yaml`. Web en `http://localhost:8080` y el modelo en vivo fuera de Docker, con la GPU (`python "Modelo/Test Modelo/camara_telefono.py"`).
+- **Qué gana cuando un valor está en varios archivos:** `.env` (no versionado, contraseñas y ajustes de una máquina) > `compose.yaml`.
+- **Sin GPU:** `COMPOSE_PROFILES=modelo` en `.env` corre el modelo en CPU dentro de Docker (`modelo-vivo`).
 - **HTTPS:** los navegadores solo dan la cámara en `localhost` o HTTPS. Por eso la web y `camara-web` usan un certificado autofirmado (Avanzado → Continuar).
 - **nginx** añade `nosniff`, `SAMEORIGIN`, `Referrer-Policy` y un límite de peticiones por IP en `/api/`.
-- **Pesos de CLIP:** van por Git LFS. En el servidor, antes de construir: `git lfs install --local && git lfs pull`.
-- **Servidor actual:** `https://34.176.194.83/` (VM `aeropuerto-scl`, ARM), con el repo en `~/Aeropuerto`.
+- **Pesos de CLIP:** van por Git LFS. En un clon nuevo, antes de construir: `git lfs install --local && git lfs pull`.
 
 ### Pruebas
 

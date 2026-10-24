@@ -3,8 +3,6 @@
 // le muestre pantallas que no podría usar.
 
 export const ROL_ADMIN = "superadmin";
-export const ROL_SEGURIDAD = "seguridad";
-export const ROL_NEGOCIO = "negocio";
 
 /** Los módulos del menú. El servidor dice cuáles puede abrir cada rol (en /auth/me, campo `modulos`): esta lista solo los nombra. */
 export const MODULOS = ["en_vivo", "insights", "ventas", "registros", "configuracion", "telefonos", "videos", "usuarios"] as const;
@@ -74,11 +72,6 @@ export function problemaConClave(clave: string, usuario: string): string | null 
   return null;
 }
 
-/** Minutos que faltan para `vence` (ISO); 0 si ya pasó. */
-export function minutosRestantes(vence: string, ahora: number): number {
-  const ms = new Date(vence).getTime() - ahora;
-  return Number.isFinite(ms) && ms > 0 ? Math.ceil(ms / 60000) : 0;
-}
 
 /** Lo que se escribe a mano en la cámara: mayúsculas, sin guion ni espacios. */
 export function normalizarCodigo(c: string): string {
