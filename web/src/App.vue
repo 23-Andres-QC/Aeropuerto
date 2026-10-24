@@ -133,7 +133,7 @@ function elegirSitio(s: Sitio) {
     </aside>
     <div class="workspace">
       <header class="workspace-header">
-        <div><span class="breadcrumb">LAP /</span> {{ title }}</div>
+        <div class="titulo-cab"><span class="breadcrumb">LAP /</span> {{ title }}</div>
         <div class="workspace-meta">
           <PaletaComandos :oscuro="theme === 'dark'" :vivo="modoVivo" :alternar-tema="toggleTheme" :alternar-vivo="() => fijarModoVivo(!modoVivo)" :salir="salir" />
           <button

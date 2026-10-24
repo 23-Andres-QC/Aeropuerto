@@ -203,11 +203,11 @@ onBeforeUnmount(() => window.removeEventListener("keydown", global));
 .paleta-boton {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 6px 0 10px;
-  min-width: 180px;
+  gap: 9px;
+  padding: 0 8px 0 13px;
+  min-width: 240px;
   justify-content: flex-start;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--ink-faint);
   border-color: rgba(61, 139, 255, 0.22);
@@ -216,8 +216,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", global));
   margin-left: auto;
 }
 .lupa {
-  width: 14px;
-  height: 14px;
+  width: 17px;
+  height: 17px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
@@ -225,14 +225,19 @@ onBeforeUnmount(() => window.removeEventListener("keydown", global));
 }
 .paleta-boton kbd,
 .paleta kbd {
-  padding: 1px 6px;
+  padding: 2px 7px;
   border: 1px solid var(--glass-line);
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--pill-bg);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.5;
   color: var(--ink-soft);
+}
+@media (max-width: 1250px) {
+  .paleta-boton {
+    min-width: 170px;
+  }
 }
 @media (max-width: 760px) {
   .paleta-texto,
