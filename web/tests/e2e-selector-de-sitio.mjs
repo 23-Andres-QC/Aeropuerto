@@ -180,7 +180,7 @@ try {
     assert.equal(e.marcasEnCampus, 0, "de cerca ya no es campus");
   });
 
-  // En vivo: no hay videos hasta que se hace clic en una zona del croquis; los grabados son del patio y el comedor no los tiene.
+  // En vivo: no hay videos hasta que se hace clic en una zona del croquis; los grabados son del patio y el comedor tiene el suyo.
   await cdp("Page.navigate", { url: `${WEB}/sitios/esan/en-vivo` });
   await esperar(3500);
   const vistaEnVivo = () => evalua(`({ videos: document.querySelectorAll('.videos-esan video').length, sinVideos: !!document.querySelector('[data-prueba=zona-sin-videos]'), controles: !!document.querySelector('.controles'), botones: document.querySelectorAll('.barra-campus, .alternar-campus').length })`);
@@ -209,11 +209,11 @@ try {
   await clicEnElPlano("g.entrada-vecino[role=button]");
   await esperar(1500);
   ev = await vistaEnVivo();
-  assert.deepEqual(ev, { videos: 0, sinVideos: true, controles: false, botones: 0 }, "al hacer clic en el comedor no se ven los videos del patio");
+  assert.deepEqual(ev, { videos: 2, sinVideos: false, controles: true, botones: 0 }, "al hacer clic en el comedor se ve sus 2 videos (cam04 y cam05), no los del patio");
   ley = await leyenda();
   assert.ok(ley.some((l) => /^Comedor/.test(l)) && ley.some((l) => /^SS\.HH\. hombres/.test(l)), `acercado al comedor, la leyenda lista lo que tiene el comedor: ${ley}`);
   assert.ok(!ley.some((l) => /^(Ascensores|Carpa azul|Piso)/.test(l)), "y no lo del patio");
-  console.log("✓ los videos salen solo al hacer clic en la zona del croquis; el comedor no tiene los del patio; cada zona lista lo suyo en la leyenda");
+  console.log("✓ los videos salen solo al hacer clic en la zona del croquis; el comedor tiene su propio video y no los del patio; cada zona lista lo suyo en la leyenda");
 
   // En vivo (teléfonos): se elige la zona a grabar; hoy solo el patio, el comedor figura como próximamente.
   await evalua(`localStorage.setItem('modo-vivo', '1'); 0`);

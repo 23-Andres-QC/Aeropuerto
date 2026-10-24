@@ -52,23 +52,34 @@ const zonasAGrabar = computed(() => [
   ...(mapa.value?.capas ?? []).map((c) => ({ clave: c.nombre, nombre: c.nombre, activa: false })),
   ...(mapa.value?.capas?.length ? [{ clave: "general", nombre: "General · patio y comedor a la vez", activa: false }] : []),
 ]);
-const guardadasVivo = computed(() => sesiones.value.filter((s) => s.kind === "LIVE"));
-const deVideos = computed(() => sesiones.value.filter((s) => s.kind === "VIDEO"));
-const grabadas = computed(() => sesiones.value.filter((s) => s.kind === "BUILD"));
+/** Zona grabada de una sesión: la del comedor lo declara en su resumen (`zona`); todo lo demás es del patio. */
+const zonaDe = (s: Sesion) => (typeof s.summary?.zona === "string" ? s.summary.zona : "sitio");
+// El selector lista las sesiones de la zona a la vista (con todo el campus, las del patio).
+const zonaVista = computed(() => (lugar.value === "campus" ? "sitio" : lugar.value));
+const sesionesZona = computed(() => sesiones.value.filter((s) => zonaDe(s) === zonaVista.value));
+const guardadasVivo = computed(() => sesionesZona.value.filter((s) => s.kind === "LIVE"));
+const deVideos = computed(() => sesionesZona.value.filter((s) => s.kind === "VIDEO"));
+const grabadas = computed(() => sesionesZona.value.filter((s) => s.kind === "BUILD"));
 
 /** Termina la captura (se guarda recién ahora) y recarga la lista para que aparezca en «Guardado en vivo». */
 async function terminarYRefrescar() {
   if (await terminarGrabacion()) sesiones.value = await api.sesiones(slug.value);
 }
 const calorVivo = computed(() => (modoVivo.value && verCalor.value ? vivo.calor.value : []));
-const desfases = computed(() => mapa.value?.desfases_s ?? {});
-// Las sesiones y los videos grabados son del patio: aparecen solo cuando se hace clic en esa zona del croquis y se acerca a ella. Con
-// todo el campus a la vista no hay videos, y otra zona grabada (el comedor) tendrá los suyos.
+// Los videos de una sesión grabada: los del Build del patio (`camXX_procesado.mp4`) o, en la zona del comedor, los que declara su resumen.
+const archivosVideo = computed<Record<string, string>>(() => {
+  const propios = sesion.value?.summary?.videos;
+  if (propios && typeof propios === "object") return propios as Record<string, string>;
+  return Object.fromEntries(Object.keys(mapa.value?.desfases_s ?? {}).map((cid) => [cid, `${cid}_procesado.mp4`]));
+});
+const desfases = computed(() => (sesion.value?.summary?.desfases_s as Record<string, number> | undefined) ?? mapa.value?.desfases_s ?? {});
+// Las sesiones y los videos grabados salen solo cuando se hace clic en su zona del croquis y se acerca a ella: la del patio o la del
+// comedor, cada una con los suyos. Con todo el campus a la vista no hay videos.
 const lugar = ref<string>("sitio");
-const verGrabacion = computed(() => lugar.value === "sitio");
-const otraZona = computed(() => (lugar.value === "campus" || lugar.value === "sitio" ? null : lugar.value));
+const verGrabacion = computed(() => lugar.value !== "campus" && (sesion.value ? zonaDe(sesion.value) === lugar.value : lugar.value === "sitio"));
+const otraZona = computed(() => (lugar.value === "campus" || lugar.value === "sitio" || sesionesZona.value.length ? null : lugar.value));
 const camarasVideo = computed(() =>
-  sesion.value?.kind === "BUILD" && verGrabacion.value ? Object.keys(desfases.value).sort() : [],
+  sesion.value?.kind === "BUILD" && verGrabacion.value ? Object.keys(archivosVideo.value).sort() : [],
 );
 const duracion = computed(() => replay.value?.duracion_s ?? 0);
 /** Duración de cada video procesado, leída al cargar sus metadatos. */
@@ -267,6 +278,13 @@ watch(ventana, ({ inicio, fin }) => {
 });
 watch(velocidad, () => sincronizar(true));
 watch(sesionId, cargarSesion);
+// Al acercarse a otra zona grabada se elige una de sus sesiones (la que tenga recorridos primero).
+watch(lugar, (zona) => {
+  if (modoVivo.value || zona === "campus" || (sesion.value && zonaDe(sesion.value) === zona)) return;
+  const propias = sesiones.value.filter((s) => zonaDe(s) === zona);
+  const elegida = propias.find((s) => s.kind === "BUILD" && s.points > 0) ?? propias[0];
+  if (elegida) sesionId.value = elegida.session_id;
+});
 // Al entrar o salir del modo en vivo: lo guardado se suelta o se vuelve a cargar.
 watch(modoVivo, cargarSesion);
 // Cada captura en vivo que se guarda (sola o a pedido) aparece enseguida en el selector.
@@ -455,16 +473,16 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
       </div>
       <video
         :ref="(el) => { if (el) videos[cid] = el as HTMLVideoElement }"
-        :src="api.media(slug, `${cid}_procesado.mp4`)"
+        :src="api.media(slug, archivosVideo[cid])"
         muted
         playsinline
         preload="auto"
         @loadedmetadata="videoListo(cid, $event)"
       ></video>
-      <a class="descarga" :href="api.media(slug, `${cid}_procesado.mp4`)" download>⬇ Descargar</a>
+      <a class="descarga" :href="api.media(slug, archivosVideo[cid])" download>⬇ Descargar</a>
     </article>
   </section>
-  <p v-if="replay && sesion?.kind === 'BUILD' && verGrabacion" class="descargas muted">
+  <p v-if="replay && sesion?.kind === 'BUILD' && verGrabacion && lugar === 'sitio'" class="descargas muted">
     Resultados del build:
     <template v-for="(archivo, i) in ['mapa_2d.mp4', 'mapa_trayectorias.png', 'trajectory_points.csv', 'identidades_genero.csv']" :key="archivo"
       >{{ i ? " · " : "" }}<a :href="api.media(slug, archivo)" download>{{ archivo }}</a></template
@@ -712,6 +730,8 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
 .videos-esan video {
   display: block;
   width: 100%;
+  max-height: 560px;
+  object-fit: contain;
   background: #000;
 }
 .descarga {
