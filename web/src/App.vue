@@ -7,6 +7,7 @@ import AvisoInactividad from "./core/AvisoInactividad.vue";
 import AvisoVersion from "./core/AvisoVersion.vue";
 import PaletaComandos from "./core/PaletaComandos.vue";
 import SelectorSitio from "./features/sitios/components/SelectorSitio.vue";
+import IconoNav from "./shared/IconoNav.vue";
 import { fijarModoVivo, modoVivo, usarSitioVivo, zonaVivo } from "./features/sitios/enVivo";
 import { rutaAlElegir } from "./features/sitios/selector";
 import type { Sitio } from "./features/sitios/api";
@@ -17,11 +18,11 @@ const router = useRouter();
 const { sitios, slug, actual, recargar } = useSitios();
 
 const SECCIONES = [
-  { id: "en-vivo", n: 1, modulo: "en_vivo", nombre: "En vivo", icono: "⌖" },
-  { id: "insights", n: 2, modulo: "insights", nombre: "Insights", icono: "▥" },
-  { id: "ventas", n: 3, modulo: "ventas", nombre: "Ventas", icono: "S/" },
-  { id: "registros", n: 4, modulo: "registros", nombre: "Registros", icono: "☰" },
-  { id: "configuracion", n: 5, modulo: "configuracion", nombre: "Configuración", icono: "◇" },
+  { id: "en-vivo", n: 1, modulo: "en_vivo", nombre: "En vivo" },
+  { id: "insights", n: 2, modulo: "insights", nombre: "Insights" },
+  { id: "ventas", n: 3, modulo: "ventas", nombre: "Ventas" },
+  { id: "registros", n: 4, modulo: "registros", nombre: "Registros" },
+  { id: "configuracion", n: 5, modulo: "configuracion", nombre: "Configuración" },
 ];
 // El menú muestra solo los módulos que el servidor deja abrir a este rol (la API vuelve a comprobarlo en cada pregunta).
 const puede = (modulo: string) => sesion.value?.modulos?.includes(modulo) ?? true;
@@ -103,7 +104,7 @@ function elegirSitio(s: Sitio) {
         ><span class="brand-icon">✈</span><span>LAP<small>LIMA AIRPORT PARTNERS</small></span></RouterLink
       >
       <div v-if="telefonos || videos || cuentas" class="airport-switch">
-        <span class="airport-symbol">⌖</span>
+        <IconoNav class="airport-symbol" :nombre="telefonos ? 'telefonos' : cuentas ? 'cuentas' : 'videos'" />
         <div v-if="telefonos"><b>Teléfonos</b><small>Modelo final en vivo · IDs estables</small></div>
         <div v-else-if="cuentas"><b>Cuentas</b><small>Cuentas, accesos y privacidad</small></div>
         <div v-else><b>Videos</b><small>Modelo final sobre un archivo · nada se guarda</small></div>
@@ -116,13 +117,13 @@ function elegirSitio(s: Sitio) {
           :key="s.id"
           :to="`/sitios/${sitioNav}/${s.id}`"
           :class="{ 'router-link-active': seccion === s.id }"
-          ><span>{{ s.icono }}</span><span class="nav-label"><b class="nav-step">{{ s.n }}.</b>{{ s.nombre }}</span></RouterLink
+          ><IconoNav :nombre="s.id" /><span class="nav-label"><b class="nav-step">{{ s.n }}.</b>{{ s.nombre }}</span></RouterLink
         ><RouterLink v-if="puede('telefonos')" to="/telefonos"
-          ><span>📱</span><span class="nav-label"><b class="nav-step">6.</b>Teléfonos</span></RouterLink
+          ><IconoNav nombre="telefonos" /><span class="nav-label"><b class="nav-step">6.</b>Teléfonos</span></RouterLink
         ><RouterLink v-if="puede('videos')" to="/videos"
-          ><span>🎞</span><span class="nav-label"><b class="nav-step">7.</b>Videos</span></RouterLink
+          ><IconoNav nombre="videos" /><span class="nav-label"><b class="nav-step">7.</b>Videos</span></RouterLink
         ><RouterLink v-if="esAdmin" to="/cuentas" data-prueba="ir-cuentas"
-          ><span>🔐</span><span class="nav-label"><b class="nav-step">8.</b>Cuentas</span></RouterLink
+          ><IconoNav nombre="cuentas" /><span class="nav-label"><b class="nav-step">8.</b>Cuentas</span></RouterLink
         >
       </nav>
       <div class="sidebar-bottom">
@@ -146,7 +147,7 @@ function elegirSitio(s: Sitio) {
           >
             {{ modoVivo ? `● EN VIVO${zonaVivo ? ` · ${zonaVivo.toUpperCase()}` : ""} · Salir` : "Activar en vivo" }}
           </button>
-          <span class="live-dot"></span> Demo local
+          <span class="estado-local"><span class="live-dot"></span>Demo local</span>
           <button
             class="theme-toggle"
             type="button"
@@ -154,10 +155,14 @@ function elegirSitio(s: Sitio) {
             :title="theme === 'dark' ? 'Modo claro' : 'Modo oscuro'"
             @click="toggleTheme"
           >
-            {{ theme === "dark" ? "☀" : "☾" }}
+            <svg class="icono-tema" viewBox="0 0 24 24" aria-hidden="true">
+              <path v-if="theme === 'dark'" d="M12 8a4 4 0 1 1 0 8a4 4 0 0 1 0-8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+              <path v-else d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
+            </svg>
           </button>
-          <span class="avatar" title="Sesión LAP">LAP</span>
-          <button class="logout-button" type="button" @click="salir">Salir</button>
+          <span class="sesion-usuario"
+            ><span class="avatar" title="Sesión LAP">LAP</span><button class="logout-button" type="button" @click="salir">Salir</button></span
+          >
         </div>
       </header>
       <main>
@@ -183,10 +188,12 @@ function elegirSitio(s: Sitio) {
 
 <style scoped>
 .modo-vivo {
-  padding: 5px 12px;
-  border-radius: 999px;
+  padding: 0 12px;
   font-size: 11.5px;
-  font-weight: 700;
+  font-weight: 650;
+  color: var(--pill-fg);
+  border-color: rgba(61, 139, 255, 0.35);
+  background: rgba(61, 139, 255, 0.08);
 }
 .modo-vivo.activo {
   color: #fff;

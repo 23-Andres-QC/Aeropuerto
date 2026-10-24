@@ -159,7 +159,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", global));
 
 <template>
   <button type="button" class="paleta-boton" title="Buscar y saltar a cualquier parte" aria-label="Abrir la búsqueda de comandos" @click="abrir">
-    <span aria-hidden="true">⌕</span><span class="paleta-texto">Buscar…</span><kbd>{{ mac ? "⌘ K" : "Ctrl K" }}</kbd>
+    <svg class="lupa" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4 4" /></svg><span class="paleta-texto">Buscar…</span><kbd>{{ mac ? "⌘ K" : "Ctrl K" }}</kbd>
   </button>
 
   <Teleport to="body">
@@ -204,10 +204,24 @@ onBeforeUnmount(() => window.removeEventListener("keydown", global));
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 10px;
-  border-radius: 999px;
+  padding: 0 6px 0 10px;
+  min-width: 180px;
+  justify-content: flex-start;
   font-size: 12px;
-  color: var(--ink-soft);
+  font-weight: 500;
+  color: var(--ink-faint);
+  border-color: rgba(61, 139, 255, 0.22);
+}
+.paleta-boton kbd {
+  margin-left: auto;
+}
+.lupa {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
 }
 .paleta-boton kbd,
 .paleta kbd {

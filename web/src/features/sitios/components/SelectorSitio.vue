@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Sitio } from "../api";
 import { tieneDatos } from "../selector";
+import IconoNav from "../../../shared/IconoNav.vue";
 
 // La tarjeta del sitio, arriba a la izquierda: muestra el sitio en el que se está y, al pulsarla, deja elegir otro (ESAN, LAP…).
 // Lista desplegable con teclado: Enter o las flechas la abren, las flechas eligen, Enter confirma y Esc cierra.
@@ -79,10 +80,10 @@ onBeforeUnmount(() => document.removeEventListener("mousedown", fuera));
       @click="abierto ? cerrar() : abrir()"
       @keydown="alTeclearBoton"
     >
-      <span class="airport-symbol" aria-hidden="true">⌖</span>
+      <IconoNav class="airport-symbol" nombre="sitio" />
       <div>
         <b>{{ actual?.name ?? slug }}</b
-        ><small>{{ actual ? detalle(actual) : "Cargando sitio…" }}</small>
+         ><small :title="actual ? detalle(actual) : undefined">{{ actual ? detalle(actual) : "Cargando sitio…" }}</small>
       </div>
       <span v-if="hayVarios" class="sitio-flecha" aria-hidden="true">▾</span>
     </button>
@@ -142,7 +143,7 @@ onBeforeUnmount(() => document.removeEventListener("mousedown", fuera));
 .sitio-flecha {
   flex: none;
   color: #8fb4dc;
-  font-size: 17px;
+  font-size: 13px;
   transition: transform 0.16s;
 }
 .abierto .sitio-flecha {
