@@ -4,7 +4,9 @@
 // recién ahí saluda. Con «reducir movimiento» en el sistema se queda quieta y solo muestra el saludo.
 import { ref } from "vue";
 
-const props = withDefaults(defineProps<{ saludo?: string; burbuja?: "izquierda" | "derecha"; entrada?: boolean }>(), { saludo: "¡Hola!", burbuja: "izquierda", entrada: false });
+// `inicioBurbuja` y `finBurbuja` (segundos desde que carga la página) fijan cuándo aparece y cuándo se va el primer globo; así las mascotas
+// pueden decir una frase entre todas, una después de otra. Al pasarle el ratón dice siempre «¡Hola!».
+const props = withDefaults(defineProps<{ saludo?: string; burbuja?: "izquierda" | "derecha"; entrada?: boolean; inicioBurbuja?: number; finBurbuja?: number }>(), { saludo: "¡Hola!", burbuja: "izquierda", entrada: false });
 
 const ENTRADA_MS = 2600; // lo que dura el vuelo con la voltereta (--vuelo en el estilo)
 
@@ -13,6 +15,8 @@ const vez = ref(0);
 const saludando = ref(true);
 const entrando = ref(props.entrada);
 const conEntrada = props.entrada; // el primer saludo espera a que termine el vuelo
+const escalonada = props.inicioBurbuja != null; // el primer globo sale a su hora y se queda hasta `finBurbuja`
+const estiloBurbuja = escalonada ? { "--b-ini": `${props.inicioBurbuja}s`, "--b-fin": `${props.finBurbuja ?? 12}s` } : undefined;
 let reloj: number | undefined;
 
 function saludar() {
@@ -23,7 +27,9 @@ function saludar() {
 }
 function fin() {
   window.clearTimeout(reloj);
-  reloj = window.setTimeout(() => (saludando.value = false), 4200 + (conEntrada && vez.value === 0 ? ENTRADA_MS : 0));
+  const primero = vez.value === 0;
+  const ms = primero && escalonada ? (props.finBurbuja ?? 12) * 1000 + 800 : 4200 + (primero && conEntrada ? ENTRADA_MS : 0);
+  reloj = window.setTimeout(() => (saludando.value = false), ms);
 }
 fin();
 if (entrando.value) window.setTimeout(() => (entrando.value = false), ENTRADA_MS + 60);
@@ -31,7 +37,7 @@ if (entrando.value) window.setTimeout(() => (entrando.value = false), ENTRADA_MS
 
 <template>
   <span class="maru" :class="[burbuja, { entra: entrando }]" data-prueba="maru" @mouseenter="saludar" @click="saludar">
-    <span v-if="saludando" :key="'b' + vez" class="maru-burbuja" :class="{ tarde: conEntrada && vez === 0 }" role="status">{{ saludo }}</span>
+    <span v-if="saludando" :key="'b' + vez" class="maru-burbuja" :class="{ tarde: conEntrada && vez === 0, escalonada: escalonada && vez === 0 }" :style="vez === 0 ? estiloBurbuja : undefined" role="status">{{ vez === 0 ? saludo : "¡Hola!" }}</span>
     <span class="maru-vuelo"
       ><img :key="'i' + vez" class="maru-img" :class="{ saludando, tarde: conEntrada && vez === 0 }" src="/maru.png" alt="Maru, la mascota de LAP" draggable="false"
     /></span>
@@ -100,6 +106,11 @@ if (entrando.value) window.setTimeout(() => (entrando.value = false), ENTRADA_MS
 .maru-burbuja.tarde {
   animation-delay: var(--vuelo);
 }
+.maru-burbuja.escalonada {
+  animation:
+    maru-burbuja-sale 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) var(--b-ini) 1 both,
+    maru-burbuja-se-va 0.6s ease-in var(--b-fin) 1 forwards;
+}
 .maru-burbuja::after {
   content: "";
   position: absolute;
@@ -160,6 +171,14 @@ if (entrando.value) window.setTimeout(() => (entrando.value = false), ENTRADA_MS
   0%, 100% { transform: translateY(0) rotate(0); }
   50% { transform: translateY(-3px) rotate(-1deg); }
 }
+@keyframes maru-burbuja-sale {
+  from { opacity: 0; transform: scale(0.3); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes maru-burbuja-se-va {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
 @keyframes maru-burbuja {
   0% { opacity: 0; transform: scale(0.3); }
   8% { opacity: 1; transform: scale(1.12); }
@@ -177,6 +196,9 @@ if (entrando.value) window.setTimeout(() => (entrando.value = false), ENTRADA_MS
   }
   .maru-burbuja.tarde {
     animation-delay: 0s;
+  }
+  .maru-burbuja.escalonada {
+    animation: none;
   }
 }
 </style>

@@ -264,7 +264,63 @@ def agrupar(suaves, frames, embs):
         ga["n"] += gb["n"]
 
 
-def recorridos(cuadros, camara, tam, embs):
+def movimiento(video, cuadros):
+    """Cuánto se mueve la cámara (en la mano) entre un cuadro y otro: se sigue el fondo (techo, columnas, mesas; sin las personas) y se estima
+    el giro, el desplazamiento y el acercamiento de cada cuadro respecto al primero. Devuelve una matriz 3x3 por cuadro (cuadro → primer cuadro)."""
+    import cv2
+
+    esc = 0.5
+    cap = cv2.VideoCapture(video)
+    paso = max(1, round(cap.get(cv2.CAP_PROP_FPS) / FPS_SALIDA))
+    mats, acum, previo, idx = [], np.eye(3), None, 0
+    while True:
+        ok, im = cap.read()
+        if not ok:
+            break
+        if idx % paso == 0:
+            k = idx // paso
+            if k >= len(cuadros):
+                break
+            gris = cv2.cvtColor(cv2.resize(im, None, fx=esc, fy=esc), cv2.COLOR_BGR2GRAY)
+            mascara = np.full(gris.shape, 255, np.uint8)
+            for _, (x1, y1, x2, y2), _ in cuadros[k]["gente"]:  # lo que se mueve solo no cuenta como fondo
+                cv2.rectangle(mascara, (int(x1 * esc) - 8, int(y1 * esc) - 8), (int(x2 * esc) + 8, int(y2 * esc) + 8), 0, -1)
+            if previo is not None:
+                p0 = cv2.goodFeaturesToTrack(previo[0], 300, 0.01, 8, mask=previo[1])
+                if p0 is not None and len(p0) >= 12:
+                    p1, st, _ = cv2.calcOpticalFlowPyrLK(previo[0], gris, p0, None, winSize=(21, 21), maxLevel=3)
+                    bien = st.ravel() == 1
+                    if bien.sum() >= 12:
+                        m, _ = cv2.estimateAffinePartial2D(p1[bien], p0[bien], method=cv2.RANSAC, ransacReprojThreshold=2.0)
+                        if m is not None:
+                            acum = acum @ np.vstack([m, [0, 0, 1]])
+            mats.append(acum.copy())
+            previo = (gris, mascara)
+        idx += 1
+    cap.release()
+    S = np.diag([esc, esc, 1.0])
+    return np.array([np.linalg.inv(S) @ a @ S for a in mats])
+
+
+def estabilizar(mats, tam):
+    """Deja el movimiento de la cámara centrado: el «lugar promedio» de la cámara es el que se configuró (posición y rumbo), y cada cuadro se
+    corrige solo por lo que se aparta de él."""
+    c = np.array([tam[0] / 2.0, tam[1] / 2.0, 1.0])
+    centros = np.array([a @ c for a in mats])[:, :2]
+    ajuste = c[:2] - centros.mean(axis=0)
+    out = mats.copy()
+    for a in out:
+        a[:2, 2] += ajuste
+    return out
+
+
+def corregir(mat, u, v):
+    """El punto (u, v) de un cuadro, donde estaría si la cámara no se hubiera movido."""
+    p = mat @ np.array([u, v, 1.0])
+    return p[0], p[1]
+
+
+def recorridos(cuadros, camara, tam, embs, mats=None):
     """Posición en el piso de cada persona (suavizada), con los recorridos de una misma persona bajo un solo número.
     Devuelve (id del seguidor → (número, puntos), número → {"e": vector de apariencia, "n": cuántos}); descarta lo que dura muy poco."""
     pistas, frames = {}, {}
@@ -273,17 +329,22 @@ def recorridos(cuadros, camara, tam, embs):
             frames.setdefault(i, set()).add(k)
             if y2 > tam[1] - 4:  # el pie queda fuera de la imagen: no hay dónde pararla en el piso
                 continue
-            m = camara.piso((x1 + x2) / 2, y2)
+            u, v = (x1 + x2) / 2, y2
+            if mats is not None:
+                u, v = corregir(mats[k], u, v)
+            m = camara.piso(u, v)
             if m:
                 pistas.setdefault(i, []).append((cuadro["t"], m[0], m[1], c, k))
     suaves = {}
     for i, pts in pistas.items():
         if len(pts) < 4:
             continue
+        # La mediana de 5 quita los saltos sueltos de la ubicación; la media de 9 la deja pareja.
+        med = [(float(np.median([q[1] for q in pts[max(0, j - 2): j + 3]])), float(np.median([q[2] for q in pts[max(0, j - 2): j + 3]]))) for j in range(len(pts))]
         suave = []
         for j, p in enumerate(pts):
-            ventana = pts[max(0, j - 2): j + 3]
-            suave.append((p[0], sum(q[1] for q in ventana) / len(ventana), sum(q[2] for q in ventana) / len(ventana), p[3], p[4]))
+            ventana = med[max(0, j - 4): j + 5]
+            suave.append((p[0], sum(q[0] for q in ventana) / len(ventana), sum(q[1] for q in ventana) / len(ventana), p[3], p[4]))
         suaves[i] = suave
     grupos = agrupar(suaves, frames, embs)
     buenos = [g for g in grupos if sum(len(suaves[i]) for i in g["tids"]) >= MIN_PUNTOS
@@ -495,8 +556,22 @@ def analizar(camara_id, config, ruta, args, salida, embebedor):
     else:
         embs = embeber(ruta, cuadros, tam, embebedor)
         np.savez(guardado_emb, ids=np.repeat(list(embs), [len(v) for v in embs.values()]), e=np.concatenate(list(embs.values())) if embs else np.zeros((0, 1)))
+    guardado_mov = salida / f"movimiento_{camara_id}.npy"
+    if guardado_mov.exists() and not args.rehacer:
+        mats = np.load(guardado_mov)
+    else:
+        mats = movimiento(ruta, cuadros)
+        np.save(guardado_mov, mats)
+    if args.sin_estabilizar:
+        mats = None
+    else:
+        mats = estabilizar(mats, tam)
+        c = np.array([tam[0] / 2.0, tam[1] / 2.0, 1.0])
+        desp = np.array([a @ c - c for a in mats])[:, :2]
+        giro = np.degrees([np.arctan2(a[1, 0], a[0, 0]) for a in mats])
+        print(f"{camara_id}: la cámara se movió hasta {np.abs(desp[:, 0]).max():.0f} px de lado, {np.abs(desp[:, 1]).max():.0f} px de alto y {np.abs(giro).max():.1f}° de giro (respecto a su lugar promedio)")
     camara = Camara(cfg, *tam)
-    personas, vectores = recorridos(cuadros, camara, tam, embs)
+    personas, vectores = recorridos(cuadros, camara, tam, embs, mats)
     crudas = len({i for c in cuadros for i, _, _ in c["gente"]})
     print(f"{camara_id}: {len(cuadros)} cuadros, {crudas} IDs del seguidor → {len(vectores)} personas")
     return {"id": camara_id, "cfg": cfg, "camara": camara, "cuadros": cuadros, "personas": personas, "vectores": vectores,
@@ -510,6 +585,7 @@ def main():
     ap.add_argument("--pesos", default="/app/Modelo/yolo26s.pt")
     ap.add_argument("--reid", default="/app/Modelo/osnet_ain_x1_0_msmt17.onnx", help="el Re-ID corporal en ONNX (OSNet-AIN)")
     ap.add_argument("--hoja", action="store_true", help="guarda hoja_<cámara>.jpg: recortes de cada persona para revisar a ojo")
+    ap.add_argument("--sin-estabilizar", action="store_true", help="ubica a las personas como si la cámara estuviera quieta (sin corregir el movimiento de la mano)")
     ap.add_argument("--sin-video", action="store_true", help="solo afina las personas (cuenta y hojas): no dibuja los videos ni arma la sesión")
     ap.add_argument("--publicar", metavar="SESION_JSON", help="no procesa: envía una sesión ya armada a la web")
     ap.add_argument("--rehacer", action="store_true", help="vuelve a detectar aunque ya haya cuadros guardados")

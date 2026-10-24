@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Amigo from "../../shared/Amigo.vue";
 import Maru from "../../shared/Maru.vue";
 import { ref } from "vue";
 import VisualAcceso from "./VisualAcceso.vue";
@@ -29,9 +30,12 @@ async function enviar() {
     <VisualAcceso />
     <section class="login-panel">
       <div class="login-card">
-        <Maru class="maru-acceso" entrada />
+        <!-- Entre las tres dicen «Bienvenido a AeroVision», una después de otra: el otorongo, el cóndor y Maru. -->
+        <Maru class="maru-acceso" entrada saludo="AeroVision" :inicio-burbuja="5.8" :fin-burbuja="12" />
+        <Amigo class="amigo-ave" tipo="ave" src="/amigo-ave.png" alt="Cóndor piloto, otra mascota de LAP" :retraso="2.7" texto="a" :inicio-texto="4.6" :fin-texto="12" lado="arriba" />
+        <Amigo class="amigo-jaguar" tipo="felino" src="/amigo-jaguar.png" alt="Otorongo piloto, otra mascota de LAP" :retraso="3.0" texto="Bienvenido" :inicio-texto="3.4" :fin-texto="12" lado="izquierda" />
         <div class="login-card-heading">
-          <div class="login-card-marca"><span class="brand-icon">✈</span>LAP</div>
+          <div class="login-card-marca"><span class="brand-icon">✈</span>AeroVision</div>
           <h2>¿Olvidaste tu contraseña?</h2>
         </div>
 

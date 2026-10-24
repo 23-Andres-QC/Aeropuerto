@@ -376,6 +376,10 @@ button:disabled {
 .login-card { position: relative; width: min(100%, 420px); padding: 32px 36px 24px; border: 1px solid rgba(255, 255, 255, .7); border-radius: 16px; background: rgba(255, 255, 255, .94); box-shadow: 0 24px 60px rgba(3, 16, 38, .35); }
 /* Maru asoma por encima de la tarjeta del acceso. */
 .login-card > .maru.maru-acceso { position: absolute; top: -78px; right: 22px; width: 116px; filter: drop-shadow(0 6px 10px rgba(3, 16, 38, .35)); }
+/* Sus amigas y amigos asoman por las otras esquinas: el ave sobre el borde de arriba, a la izquierda, y el jaguar sentado en la esquina de abajo. */
+.login-card > .amigo.amigo-ave { position: absolute; top: -104px; left: 22px; width: 78px; z-index: 3; filter: drop-shadow(0 6px 10px rgba(3, 16, 38, .3)); }
+.login-card > .amigo.amigo-jaguar { position: absolute; bottom: -10px; left: -64px; width: 98px; z-index: 3; filter: drop-shadow(0 6px 10px rgba(3, 16, 38, .35)); }
+@media (max-width: 600px) { .login-card > .amigo.amigo-jaguar { display: none; } }
 /* Y acompaña al pie del menú lateral. */
 .maru-lateral { margin-top: auto; padding: 14px 6px 4px; display: grid; justify-items: center; gap: 4px; text-align: center; font-size: 11.5px; letter-spacing: .3px; color: #8fb4dc; }
 .maru-lateral-img { width: 150px; max-width: 100%; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .35)); }
