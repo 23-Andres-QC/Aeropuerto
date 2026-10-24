@@ -13,6 +13,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import torch
 
 TEST = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TEST))
@@ -440,6 +441,22 @@ class ReIDCombinadoPromedia(unittest.TestCase):
         self.assertEqual(v.shape, (2, 5))
         self.assertAlmostEqual(float(v[0] @ v[0]), 1.0, places=6)
         self.assertAlmostEqual(float(v[0] @ v[1]), 0.5, places=6, msg="(0 + 1) / 2")
+
+
+@unittest.skipUnless(torch.cuda.is_available(), "sin GPU no se graba nada")
+class RedGrabadaIgualALaRed(unittest.TestCase):
+    def test_da_lo_mismo_que_la_red_con_cualquier_lote(self):
+        from lap01.grafos import RedGrabada
+
+        torch.manual_seed(0)
+        red = torch.nn.Sequential(torch.nn.Conv2d(3, 8, 3), torch.nn.BatchNorm2d(8), torch.nn.ReLU(),
+                                  torch.nn.AdaptiveAvgPool2d(1), torch.nn.Flatten()).cuda().eval()
+        grabada = RedGrabada(red, (3, 16, 8), (2, 4), "cuda:0")
+        for n in (1, 3, 4, 9):  # relleno hasta 2 o 4, y por partes si pasa de 4
+            x = torch.rand((n, 3, 16, 8), device="cuda:0")
+            with torch.inference_mode():
+                esperado = red(x)
+            self.assertTrue(torch.allclose(grabada(x), esperado, atol=1e-5), f"lote de {n}")
 
 
 class GeneroPorVotos(unittest.TestCase):

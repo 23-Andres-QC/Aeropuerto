@@ -12,6 +12,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from lap01.grafos import RedGrabada
+
 MEDIA = np.array((0.485, 0.456, 0.406), np.float32)
 DESVIO = np.array((0.229, 0.224, 0.225), np.float32)
 
@@ -68,6 +70,13 @@ class ReIDPersonViT:
         self.red = _PersonViT()
         self.red.load_state_dict({k: v.float() for k, v in load_file(str(pesos)).items()})
         self.red = self.red.to(device).eval()
+        self.media = torch.tensor(MEDIA, device=device).view(1, 3, 1, 1)
+        self.desvio = torch.tensor(DESVIO, device=device).view(1, 3, 1, 1)
+        self.grabada = None
+        if str(device).startswith("cuda"):
+            tamanos = tuple(t for t in (2, 4, 8, 16, 32, 64) if t < batch_size) + (batch_size,)
+            # Grabada (ver lap01.grafos): con 4 recortes, de 20 a 9 ms.
+            self.grabada = RedGrabada(self.red, (3, 256, 128), tamanos, device, media_precision=True)
 
     @torch.inference_mode()
     def __call__(self, crops):
@@ -75,11 +84,49 @@ class ReIDPersonViT:
             return np.empty((0, self.dimension), np.float32)
         salida = []
         for inicio in range(0, len(crops), self.batch_size):
-            lote = np.stack([cv2.resize(c, (128, 256), interpolation=cv2.INTER_CUBIC)[:, :, ::-1]
-                             for c in crops[inicio:inicio + self.batch_size]]).astype(np.float32) / 255
-            x = torch.from_numpy(((lote - MEDIA) / DESVIO).transpose(0, 3, 1, 2).copy()).to(self.device)
-            with torch.autocast("cuda", dtype=torch.float16, enabled=str(self.device).startswith("cuda")):
-                salida.append(F.normalize(self.red(x).float(), dim=1).cpu().numpy())
+            # Solo el cambio de tamaño en la CPU; pasar a float y normalizar en numpy costaba más que la red.
+            lote = np.stack([cv2.resize(c, (128, 256), interpolation=cv2.INTER_CUBIC)
+                             for c in crops[inicio:inicio + self.batch_size]])
+            x = torch.from_numpy(lote).to(self.device).flip(-1).permute(0, 3, 1, 2).float().div_(255)
+            x = (x - self.media) / self.desvio
+            if self.grabada is not None:
+                y = self.grabada(x)
+            else:
+                y = self.red(x).float()
+            salida.append(F.normalize(y, dim=1).cpu().numpy())
+        return np.concatenate(salida)
+
+
+class ReIDGrabado:
+    """Un ReIDPersonas en la GPU (OSNet-AIN convertido de ONNX) con la red grabada en CUDA graphs (ver lap01.grafos):
+    con 4 recortes, de ~29 a 5 ms. Mismos vectores, en precisión completa como antes."""
+
+    def __init__(self, reid):
+        self.reid, self.dimension, self.batch_size = reid, reid.dimension, reid.batch_size
+        red = reid.red
+        # La conversión aplana el vector con Shape -> Concat -> Reshape, que crea tensores en la GPU desde la CPU (no
+        # se puede grabar); un flatten hace lo mismo.
+        for nodo in list(red.graph.nodes):
+            if nodo.op == "call_module" and type(red.get_submodule(nodo.target)).__name__ == "OnnxReshape":
+                with red.graph.inserting_after(nodo):
+                    plano = red.graph.call_function(torch.flatten, (nodo.args[0], 1))
+                nodo.replace_all_uses_with(plano)
+                red.graph.erase_node(nodo)
+        red.graph.eliminate_dead_code()
+        red.recompile()
+        tamanos = tuple(t for t in (2, 4, 8) if t < reid.batch_size) + (reid.batch_size,)
+        self.grabada = RedGrabada(red, (3, reid.height, reid.width), tamanos, reid.device)
+
+    @torch.inference_mode()
+    def __call__(self, crops):
+        if not crops:
+            return np.empty((0, self.dimension), np.float32)
+        salida = []
+        for inicio in range(0, len(crops), self.batch_size):
+            lote = np.stack([cv2.resize(c, (self.reid.width, self.reid.height), interpolation=cv2.INTER_LINEAR)
+                             for c in crops[inicio:inicio + self.batch_size]])
+            x = torch.from_numpy(lote).to(self.reid.device).flip(-1).permute(0, 3, 1, 2).float().div_(255)
+            salida.append(F.normalize(self.grabada(x), dim=1).cpu().numpy())
         return np.concatenate(salida)
 
 

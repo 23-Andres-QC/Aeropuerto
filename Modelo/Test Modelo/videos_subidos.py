@@ -77,6 +77,11 @@ SIMULTANEOS = int(os.environ.get("VIDEOS_SIMULTANEOS") or 10)
 #   revisado recorte por recorte, de 60 % a 28 % de los IDs con más de una persona, con 135 y 139 personas por cámara
 #   (no 82 y 89: antes juntaba a varias en un ID). Unir solo a quien se vio en los últimos 30 s (no 60–120 s) partía
 #   a cada persona en más IDs (194 y 195), así que las ventanas quedan como antes;
+# - velocidad con GPU: la GPU trabajaba ~30 % del tiempo; lo demás se iba en Python, lanzando una por una las
+#   operaciones de las redes chicas y preparando los recortes con numpy. Ahora OSNet-AIN, PersonViT y la apariencia del
+#   seguidor van grabados en CUDA graphs (ver lap01.grafos) y los recortes se pasan a float en la GPU, con los mismos
+#   vectores. Con dos videos de 5 min del mismo lugar en tiempo real se procesa el 54 % de los cuadros, no el 36 %:
+#   el seguidor pierde menos a la gente y las cajas se mueven a pasos más cortos;
 # - cruces: cuando dos personas se cruzan, el seguidor elegía casi solo por movimiento y los dos tracks se cambiaban de
 #   persona (la mayoría de los cambios de ID). Ahora el parecido pesa 0,8 en esa elección (no 0,22), cuenta con un 80 %
 #   del vector profundo (no 20 %: el color distingue poco a gente vestida parecida) y un track activo sigue a una caja sin

@@ -54,7 +54,7 @@ from detector_onnx import DetectorONNX
 from detector_pose import DetectorCuerpo, ajustar_cajas
 from memoria_identidades import AsociadorConMemoria, MemoriaIdentidades
 from ubicacion import Ubicador
-from reid_videos import ReIDCombinado, ReIDPersonViT
+from reid_videos import ReIDCombinado, ReIDGrabado, ReIDPersonViT
 from videos_subidos import (CANAL_ESTADO as CANAL_VIDEOS, PERSONVIT_VIDEO_GPU, REID_VIDEO_GPU, Quietud, VideosSubidos,
                             genero_por_votos)
 
@@ -1216,7 +1216,7 @@ def main():
     # sin GPU, el del Build con todos los núcleos (en el servidor es lo que más tarda por frame): corre en el hilo
     # principal, sin esperar al de los teléfonos, que usa el carril lento.
     if str(motor.device).startswith("cuda"):
-        reid_videos = ReIDCombinado([ReIDPersonas(MODELO / REID_VIDEO_GPU, batch_size=16, device=motor.device),
+        reid_videos = ReIDCombinado([ReIDGrabado(ReIDPersonas(MODELO / REID_VIDEO_GPU, batch_size=16, device=motor.device)),
                                      ReIDPersonViT(MODELO / PERSONVIT_VIDEO_GPU, device=motor.device)])
     else:
         encoder = config["multicamera_encoder"]

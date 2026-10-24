@@ -252,12 +252,14 @@ class ReIDPersonas:
         for start in range(0, len(crops), self.batch_size):
             chunk = crops[start:start + self.batch_size]
             batch = np.stack([cv2.resize(crop, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
-                              for crop in chunk])[..., ::-1]
-            tensor = np.ascontiguousarray(batch.transpose(0, 3, 1, 2), dtype=np.float32) / 255.0
+                              for crop in chunk])
             if self.red is not None:
+                # En la GPU se pasa a float allí: en numpy costaba más que la red.
                 with torch.inference_mode():
-                    outputs.append(self.red(torch.from_numpy(tensor).to(self.device)).float().cpu().numpy())
+                    tensor = torch.from_numpy(batch).to(self.device).flip(-1).permute(0, 3, 1, 2).float().div_(255.0)
+                    outputs.append(self.red(tensor).float().cpu().numpy())
                 continue
+            tensor = np.ascontiguousarray(batch[..., ::-1].transpose(0, 3, 1, 2), dtype=np.float32) / 255.0
             if self.fixed_batch and len(tensor) < self.fixed_batch:
                 tensor = np.concatenate((tensor, np.repeat(tensor[-1:], self.fixed_batch - len(tensor), axis=0)))
             outputs.append(self.session.run(None, {self.input: tensor})[0][:len(chunk)])
