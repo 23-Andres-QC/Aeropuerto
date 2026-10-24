@@ -46,7 +46,7 @@ async function login() {
 
     <section class="login-panel">
       <div class="login-card">
-        <Maru class="maru-acceso" />
+        <Maru class="maru-acceso" entrada />
         <div class="login-card-heading">
           <div class="login-card-marca"><span class="brand-icon">✈</span>LAP</div>
           <h2>Bienvenido</h2>

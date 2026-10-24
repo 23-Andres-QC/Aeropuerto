@@ -29,6 +29,8 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import numpy as np
+
 AQUI = Path(__file__).resolve().parent
 CONFIG = AQUI / "camaras_video.json"
 if not CONFIG.exists():
@@ -41,7 +43,12 @@ ESPACIO = uuid.UUID("6f1d2c9e-5b0a-4c63-9a52-3a8d7e0c1b44")
 # Dibujo del comedor (px del plano) → metros del patio, igual que la capa del plano de ESAN (capa.json).
 PX_POR_M, ANCLA_PX, ANCLA_M, ANGULO = 29.7, (595.0, 428.0), (-59.38, 16.59), math.radians(-8.3)
 PISO_PX = (110.0, 110.0, 1080.0, 747.0)  # el piso del comedor en el dibujo (u0, v0, u1, v1), con un paso de margen a los muros
-UNIR_S, UNIR_M = 3.0, 3.0  # un recorrido que empieza a menos de esto (segundos y metros) de donde terminó otro es la misma persona
+# Unir recorridos de una misma persona (el seguidor la parte en varios IDs): hasta UNIR_S segundos de hueco, caminando a VMAX m/s como mucho
+# (más D0 m de margen por el error de la ubicación), y con apariencia parecida (coseno del Re-ID): SIM_CONTINUA si se siguen casi pegados,
+# SIM_SALTO si hubo un hueco, y SIM_CAMARAS para decir que dos cámaras ven a la misma persona.
+UNIR_S, VMAX, D0, MAX_SOLAPE = 120.0, 1.8, 1.5, 2
+SIM_MIN, SIM_CERCA, SIM_CAMARAS = 0.70, 0.62, 0.80
+EMB_CADA, EMB_ALTO, EMB_CONF, EMB_IOU = 2, 28, 0.3, 0.35  # un vector cada 2 cuadros procesados, de cajas de al menos 28 px de alto
 
 
 def px_a_m(u, v):
@@ -121,11 +128,149 @@ def seguir(video, pesos, cadencia):
     return cuadros, fps / paso, tam
 
 
-def recorridos(cuadros, camara, tam):
-    """Posición en el piso de cada persona seguida (suavizada); descarta los recorridos que duran muy poco."""
-    pistas = {}
+class Embebedor:
+    """Re-ID corporal (OSNet-AIN): un vector por recorte de persona; la misma persona da vectores parecidos aunque cambie de lugar o la tapen."""
+
+    def __init__(self, ruta):
+        import onnxruntime as ort
+
+        self.sesion = ort.InferenceSession(str(ruta), providers=["CPUExecutionProvider"])
+        spec = self.sesion.get_inputs()[0]
+        self.nombre = spec.name
+        self.alto = spec.shape[2] if isinstance(spec.shape[2], int) else 256
+        self.ancho = spec.shape[3] if isinstance(spec.shape[3], int) else 128
+        self.fijo = spec.shape[0] if isinstance(spec.shape[0], int) else None
+
+    def __call__(self, recortes):
+        import cv2
+
+        salida, paso = [], self.fijo or 16
+        for a in range(0, len(recortes), paso):
+            lote = recortes[a:a + paso]
+            x = np.stack([cv2.resize(r, (self.ancho, self.alto), interpolation=cv2.INTER_LINEAR) for r in lote])[..., ::-1]
+            x = np.ascontiguousarray(x.transpose(0, 3, 1, 2), dtype=np.float32) / 255.0
+            if self.fijo and len(lote) < self.fijo:
+                x = np.concatenate([x, np.repeat(x[-1:], self.fijo - len(lote), axis=0)])
+            salida.append(self.sesion.run(None, {self.nombre: x})[0][:len(lote)])
+        f = np.concatenate(salida)
+        return f / (np.linalg.norm(f, axis=1, keepdims=True) + 1e-12)
+
+
+def _iou(a, b):
+    ix, iy = max(0.0, min(a[2], b[2]) - max(a[0], b[0])), max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    return inter / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter + 1e-9)
+
+
+def embeber(video, cuadros, tam, embebedor):
+    """Un vector de apariencia por pista (varios, de cuadros limpios): recortes enteros, nítidos y sin otra persona encima."""
+    import cv2
+
+    cap = cv2.VideoCapture(video)
+    paso = max(1, round(cap.get(cv2.CAP_PROP_FPS) / FPS_SALIDA))
+    pendientes, ids, vectores, idx = [], [], [], 0
+
+    def vaciar():
+        if pendientes:
+            vectores.append(embebedor([r for _, r in pendientes]))
+            ids.extend(i for i, _ in pendientes)
+            pendientes.clear()
+
+    while True:
+        ok, im = cap.read()
+        if not ok:
+            break
+        if idx % paso == 0:
+            k = idx // paso
+            if k >= len(cuadros):
+                break
+            if k % EMB_CADA == 0:
+                gente = cuadros[k]["gente"]
+                for i, (x1, y1, x2, y2), c in gente:
+                    if c < EMB_CONF or y2 - y1 < EMB_ALTO or x1 < 3 or y1 < 3 or x2 > tam[0] - 3 or y2 > tam[1] - 3:
+                        continue
+                    if any(j != i and _iou((x1, y1, x2, y2), b) > EMB_IOU for j, b, _ in gente):
+                        continue
+                    pendientes.append((i, im[int(y1):int(y2), int(x1):int(x2)].copy()))
+                if len(pendientes) >= 48:
+                    vaciar()
+        idx += 1
+    vaciar()
+    cap.release()
+    if not ids:
+        return {}
+    todo, ids = np.concatenate(vectores), np.array(ids)
+    return {int(i): todo[ids == i] for i in np.unique(ids)}
+
+
+def _media(v):
+    if v is None or len(v) == 0:
+        return None
+    m = v.mean(axis=0)
+    return m / (np.linalg.norm(m) + 1e-12)
+
+
+def _puntaje(a, b):
+    """Qué tan bien encaja que los grupos `a` y `b` sean la misma persona; None si no pueden serlo. Manda la apariencia (Re-ID): una persona
+    sentada o quieta, que el seguidor pierde y vuelve a crear, se reconoce aunque pase mucho rato; el lugar solo suma (o permite unir con
+    menos parecido si se siguen casi pegados) porque con la cámara en la mano la ubicación en el piso se mueve."""
+    if a["ini"][0] > b["ini"][0]:
+        a, b = b, a
+    if len(a["frames"] & b["frames"]) > MAX_SOLAPE:  # a la vez en el mismo video: son dos personas
+        return None
+    hueco = b["ini"][0] - a["fin"][0]
+    if hueco > UNIR_S:
+        return None
+    dist = math.hypot(b["ini"][1] - a["fin"][1], b["ini"][2] - a["fin"][2])
+    cerca = -0.3 <= hueco <= 2.0 and dist <= D0 + VMAX * max(hueco, 0.0)
+    sim = float(a["e"] @ b["e"]) if a["e"] is not None and b["e"] is not None else None
+    if sim is None:
+        return 0.6 + 0.1 * cerca - 0.001 * max(hueco, 0.0) if cerca else None
+    if sim < (SIM_CERCA if cerca else SIM_MIN):
+        return None
+    return sim + 0.1 * cerca - 0.001 * max(hueco, 0.0)
+
+
+def agrupar(suaves, frames, embs):
+    """El seguidor parte a una persona en varios IDs cuando la tapan o sale y entra. Se unen los recorridos que se siguen en el tiempo y el
+    espacio y que se parecen (apariencia Re-ID), del mejor encaje al peor, sin juntar nunca a dos que aparecen a la vez en el video."""
+    grupos = {}
+    for i, pts in suaves.items():
+        v = embs.get(i)
+        grupos[i] = {"tids": [i], "ini": pts[0], "fin": pts[-1], "frames": set(frames[i]), "e": _media(v), "n": 0 if v is None else len(v)}
+    while True:
+        mejor = None
+        claves = list(grupos)
+        for x in range(len(claves)):
+            for y in range(x + 1, len(claves)):
+                p = _puntaje(grupos[claves[x]], grupos[claves[y]])
+                if p is not None and (mejor is None or p > mejor[0]):
+                    mejor = (p, claves[x], claves[y])
+        if mejor is None:
+            return list(grupos.values())
+        _, a, b = mejor
+        ga, gb = grupos[a], grupos.pop(b)
+        if ga["ini"][0] > gb["ini"][0]:
+            ga["ini"] = gb["ini"]
+        if gb["fin"][0] > ga["fin"][0]:
+            ga["fin"] = gb["fin"]
+        ga["tids"] += gb["tids"]
+        ga["frames"] |= gb["frames"]
+        if ga["e"] is None or gb["e"] is None:
+            ga["e"] = ga["e"] if ga["e"] is not None else gb["e"]
+        else:
+            m = ga["e"] * max(ga["n"], 1) + gb["e"] * max(gb["n"], 1)
+            ga["e"] = m / (np.linalg.norm(m) + 1e-12)
+        ga["n"] += gb["n"]
+
+
+def recorridos(cuadros, camara, tam, embs):
+    """Posición en el piso de cada persona (suavizada), con los recorridos de una misma persona bajo un solo número.
+    Devuelve (id del seguidor → (número, puntos), número → {"e": vector de apariencia, "n": cuántos}); descarta lo que dura muy poco."""
+    pistas, frames = {}, {}
     for k, cuadro in enumerate(cuadros):
         for i, (x1, y1, x2, y2), c in cuadro["gente"]:
+            frames.setdefault(i, set()).add(k)
             if y2 > tam[1] - 4:  # el pie queda fuera de la imagen: no hay dónde pararla en el piso
                 continue
             m = camara.piso((x1 + x2) / 2, y2)
@@ -140,26 +285,89 @@ def recorridos(cuadros, camara, tam):
             ventana = pts[max(0, j - 2): j + 3]
             suave.append((p[0], sum(q[1] for q in ventana) / len(ventana), sum(q[2] for q in ventana) / len(ventana), p[3], p[4]))
         suaves[i] = suave
-    # El seguidor parte a una persona en varios IDs cuando la tapan: los recorridos que se siguen en el tiempo y el espacio se unen.
-    grupos = []  # [fin_t, fin_x, fin_y, [ids]]
-    for i in sorted(suaves, key=lambda i: suaves[i][0][0]):
-        ini, fin = suaves[i][0], suaves[i][-1]
-        mejor = None
-        for g in grupos:
-            hueco, dist = ini[0] - g[0], math.hypot(ini[1] - g[1], ini[2] - g[2])
-            if 0 <= hueco <= UNIR_S and dist <= UNIR_M and (mejor is None or dist < mejor[0]):
-                mejor = (dist, g)
-        if mejor:
-            mejor[1][:3] = [fin[0], fin[1], fin[2]]
-            mejor[1][3].append(i)
-        else:
-            grupos.append([fin[0], fin[1], fin[2], [i]])
-    personas = {}
-    buenos = [g for g in grupos if sum(len(suaves[i]) for i in g[3]) >= MIN_PUNTOS and suaves[g[3][-1]][-1][0] - suaves[g[3][0]][0][0] >= MIN_SEGUNDOS]
-    for numero, g in enumerate(sorted(buenos, key=lambda g: suaves[g[3][0]][0][0]), 1):
-        for i in g[3]:
-            personas[i] = (numero, suaves[i])  # id del seguidor → (número público, puntos)
-    return personas
+    grupos = agrupar(suaves, frames, embs)
+    buenos = [g for g in grupos if sum(len(suaves[i]) for i in g["tids"]) >= MIN_PUNTOS
+              and max(suaves[i][-1][0] for i in g["tids"]) - min(suaves[i][0][0] for i in g["tids"]) >= MIN_SEGUNDOS]
+    personas, vectores = {}, {}
+    for numero, g in enumerate(sorted(buenos, key=lambda g: g["ini"][0]), 1):
+        vectores[numero] = {"e": g["e"], "n": g["n"]}
+        for i in g["tids"]:
+            personas[i] = (numero, suaves[i])
+    return personas, vectores
+
+
+def unir_camaras(resultados):
+    """La misma persona vista por dos cámaras lleva el mismo número: se une lo que se parece con mucha seguridad (Re-ID), de a una pareja.
+    Los números quedan únicos en toda la sesión (1, 2, 3… sin repetirse entre cámaras)."""
+    padre = {}
+
+    def raiz(x):
+        while padre.setdefault(x, x) != x:
+            padre[x] = padre[padre[x]]
+            x = padre[x]
+        return x
+
+    nodos = [(r["id"], n) for r in resultados for n in sorted(r["vectores"])]
+    for x in nodos:
+        raiz(x)
+    unidos = 0
+    for a in range(len(resultados)):
+        for b in range(a + 1, len(resultados)):
+            ra, rb = resultados[a], resultados[b]
+            cand = [(float(va["e"] @ vb["e"]), na, nb) for na, va in ra["vectores"].items() for nb, vb in rb["vectores"].items()
+                    if va["e"] is not None and vb["e"] is not None and va["n"] >= 3 and vb["n"] >= 3]
+            usados_a, usados_b = set(), set()
+            for sim, na, nb in sorted(cand, reverse=True):
+                if sim < SIM_CAMARAS or na in usados_a or nb in usados_b:
+                    continue
+                usados_a.add(na)
+                usados_b.add(nb)
+                padre[raiz((rb["id"], nb))] = raiz((ra["id"], na))
+                unidos += 1
+    numero, asignado = 0, {}
+    for x in nodos:
+        if raiz(x) not in asignado:
+            numero += 1
+            asignado[raiz(x)] = numero
+    for r in resultados:
+        r["personas"] = {i: (asignado[raiz((r["id"], n))], pts) for i, (n, pts) in r["personas"].items()}
+    return unidos
+
+
+def hoja_contacto(video, cuadros, personas, salida, n=6):
+    """Para revisar a ojo: una fila por persona con recortes repartidos a lo largo del video (si dos filas son la misma persona, quedó partida)."""
+    import cv2
+
+    por_numero = {}
+    for k, cuadro in enumerate(cuadros):
+        for i, caja, _ in cuadro["gente"]:
+            if i in personas:
+                por_numero.setdefault(personas[i][0], []).append((k, caja))
+    cap = cv2.VideoCapture(video)
+    paso = max(1, round(cap.get(cv2.CAP_PROP_FPS) / FPS_SALIDA))
+    filas = []
+    for numero in sorted(por_numero):
+        lista = por_numero[numero]
+        celdas = []
+        for j in range(min(n, len(lista))):
+            k, (x1, y1, x2, y2) = lista[int((j + 0.5) * len(lista) / min(n, len(lista)))]
+            cap.set(cv2.CAP_PROP_POS_FRAMES, k * paso)
+            ok, im = cap.read()
+            celda = np.zeros((160, 80, 3), np.uint8)
+            if ok and x2 - x1 > 4 and y2 - y1 > 4:
+                celda = cv2.resize(im[max(0, int(y1)):int(y2), max(0, int(x1)):int(x2)], (80, 160))
+            celdas.append(celda)
+        while len(celdas) < n:
+            celdas.append(np.zeros((160, 80, 3), np.uint8))
+        fila = np.concatenate(celdas, axis=1)
+        cv2.putText(fila, f"G{numero}", (3, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2, cv2.LINE_AA)
+        filas.append(fila)
+    cap.release()
+    cols = 3
+    while len(filas) % cols:
+        filas.append(np.zeros_like(filas[0]))
+    hoja = np.concatenate([np.concatenate(filas[r:r + cols], axis=1) for r in range(0, len(filas), cols)], axis=0)
+    cv2.imwrite(str(salida), hoja)
 
 
 def dibujar(video, cuadros, numeros, camara_id, salida, fps, tam):
@@ -209,21 +417,17 @@ def sesion_para_bd(resultados, config):
     inicio = datetime.fromisoformat(primera["cfg"]["inicio"])
     sid = str(uuid.uuid5(ESPACIO, f"{primera['id']}/{primera['cfg']['video']}"))
     duracion = max(r["duracion"] for r in resultados)
-    identidades, tracklets, camaras = [], [], []
+    identidades, tracklets, camaras, por_numero = [], [], [], {}
     puntos = {k: [] for k in ("global_id", "tracklet_id", "camera_id", "local_id", "t", "x", "y", "speed_mps", "direction_deg", "confidence")}
     for r in resultados:
         camara_id, personas = r["id"], r["personas"]
         posicion, angulo = r["camara"].pose_m()
         camaras.append({"camera_id": camara_id, "name": r["cfg"]["nombre"], "fps": round(r["fps"], 3), "width_px": r["tam"][0], "height_px": r["tam"][1],
                         "timestamp_offset_s": 0.0, "homography": None, "position": posicion, "angle_deg": angulo})
-        por_numero = {}
-        for numero, pts in personas.values():
-            por_numero.setdefault(numero, []).extend(pts)
-        for numero, pts in por_numero.items():
-            identidades.append({"global_id": str(uuid.uuid5(ESPACIO, f"{sid}/g{numero}")), "public_number": numero,
-                                "first_seen": (inicio + timedelta(seconds=min(p[0] for p in pts))).isoformat(),
-                                "last_seen": (inicio + timedelta(seconds=max(p[0] for p in pts))).isoformat(), "n_cameras": 1,
-                                "gender": "SIN_DETERMINAR", "gender_confidence": None, "gender_votes": 0})
+        for numero, pts in personas.values():  # una persona vista por varias cámaras es una sola identidad
+            g = por_numero.setdefault(numero, {"pts": [], "camaras": set()})
+            g["pts"].extend(pts)
+            g["camaras"].add(camara_id)
         for i, (numero, pts) in personas.items():
             gid, tid = str(uuid.uuid5(ESPACIO, f"{sid}/g{numero}")), str(uuid.uuid5(ESPACIO, f"{sid}/{camara_id}/t{i}"))
             tracklets.append({"tracklet_id": tid, "global_id": gid, "camera_id": camara_id, "local_id": int(i),
@@ -237,6 +441,11 @@ def sesion_para_bd(resultados, config):
                     direccion = round(math.degrees(math.atan2(dy, dx)) % 360.0, 3) % 360.0 if math.hypot(dx, dy) > 0.02 else None
                 for col, v in zip(puntos, (gid, tid, camara_id, int(i), round(t, 4), round(x, 4), round(y, 4), velocidad, direccion, round(min(1.0, max(0.0, c)), 4))):
                     puntos[col].append(v)
+    for numero, g in sorted(por_numero.items()):
+        identidades.append({"global_id": str(uuid.uuid5(ESPACIO, f"{sid}/g{numero}")), "public_number": numero,
+                            "first_seen": (inicio + timedelta(seconds=min(p[0] for p in g["pts"]))).isoformat(),
+                            "last_seen": (inicio + timedelta(seconds=max(p[0] for p in g["pts"]))).isoformat(), "n_cameras": len(g["camaras"]),
+                            "gender": "SIN_DETERMINAR", "gender_confidence": None, "gender_votes": 0})
     nombre = f"Comedor · video {inicio.strftime('%d/%m %H:%M')}" if len(resultados) == 1 else f"Comedor · {len(resultados)} perspectivas"
     return {
         "session": {"session_id": sid, "name": nombre, "kind": "BUILD", "status": "DONE",
@@ -268,10 +477,10 @@ def publicar(archivo, url_web, sitio):
         sys.exit(f"La web rechazó la sesión ({error.code}): {error.read().decode('utf-8', 'replace')}")
 
 
-def procesar(camara_id, config, ruta, args, salida, base):
-    """Una cámara de video: detecta, ubica en el plano y dibuja su video. `base`: cuántas personas llevan las cámaras anteriores (sus números siguen)."""
+def analizar(camara_id, config, ruta, args, salida, embebedor):
+    """Una cámara de video: detecta, saca la apariencia de cada persona y la ubica en el plano (los números se afinan después, entre cámaras)."""
     cfg = config["camaras"][camara_id]
-    # La detección es lo lento: se guarda y se reutiliza al ajustar la pose de la cámara (--rehacer la vuelve a correr).
+    # Lo lento se guarda y se reutiliza al ajustar la pose o los umbrales (--rehacer lo vuelve a correr todo).
     guardado = salida / f"cuadros_{camara_id}.json"
     if guardado.exists() and not args.rehacer:
         cuadros, fps, tam = json.loads(guardado.read_text())
@@ -279,12 +488,19 @@ def procesar(camara_id, config, ruta, args, salida, base):
     else:
         cuadros, fps, tam = seguir(ruta, args.pesos, FPS_SALIDA)
         guardado.write_text(json.dumps([cuadros, fps, tam]))
+    guardado_emb = salida / f"apariencia_{camara_id}.npz"
+    if guardado_emb.exists() and not args.rehacer:
+        z = np.load(guardado_emb)
+        embs = {int(i): z["e"][z["ids"] == i] for i in np.unique(z["ids"])}
+    else:
+        embs = embeber(ruta, cuadros, tam, embebedor)
+        np.savez(guardado_emb, ids=np.repeat(list(embs), [len(v) for v in embs.values()]), e=np.concatenate(list(embs.values())) if embs else np.zeros((0, 1)))
     camara = Camara(cfg, *tam)
-    personas = {i: (numero + base, pts) for i, (numero, pts) in recorridos(cuadros, camara, tam).items()}
-    print(f"{camara_id}: {len(cuadros)} cuadros, {len({n for n, _ in personas.values()})} personas con recorrido")
-    video = f"comedor_{camara_id}_procesado.mp4"
-    dibujar(ruta, cuadros, personas, camara_id, salida / video, fps, tam)
-    return {"id": camara_id, "cfg": cfg, "camara": camara, "personas": personas, "duracion": cuadros[-1]["t"] if cuadros else 0.0, "fps": fps, "tam": tam, "video": video}
+    personas, vectores = recorridos(cuadros, camara, tam, embs)
+    crudas = len({i for c in cuadros for i, _, _ in c["gente"]})
+    print(f"{camara_id}: {len(cuadros)} cuadros, {crudas} IDs del seguidor → {len(vectores)} personas")
+    return {"id": camara_id, "cfg": cfg, "camara": camara, "cuadros": cuadros, "personas": personas, "vectores": vectores,
+            "duracion": cuadros[-1]["t"] if cuadros else 0.0, "fps": fps, "tam": tam, "ruta": ruta, "video": f"comedor_{camara_id}_procesado.mp4"}
 
 
 def main():
@@ -292,6 +508,9 @@ def main():
     ap.add_argument("--video", action="append", default=[], metavar="CAMARA=RUTA", help="una cámara de camaras_video.json y su video; se repite por cámara")
     ap.add_argument("--salida", default="comedor")
     ap.add_argument("--pesos", default="/app/Modelo/yolo26s.pt")
+    ap.add_argument("--reid", default="/app/Modelo/osnet_ain_x1_0_msmt17.onnx", help="el Re-ID corporal en ONNX (OSNet-AIN)")
+    ap.add_argument("--hoja", action="store_true", help="guarda hoja_<cámara>.jpg: recortes de cada persona para revisar a ojo")
+    ap.add_argument("--sin-video", action="store_true", help="solo afina las personas (cuenta y hojas): no dibuja los videos ni arma la sesión")
     ap.add_argument("--publicar", metavar="SESION_JSON", help="no procesa: envía una sesión ya armada a la web")
     ap.add_argument("--rehacer", action="store_true", help="vuelve a detectar aunque ya haya cuadros guardados")
     ap.add_argument("--web", default="http://127.0.0.1:8080")
@@ -302,11 +521,21 @@ def main():
     config = json.loads(CONFIG.read_text(encoding="utf-8"))
     salida = Path(args.salida)
     salida.mkdir(parents=True, exist_ok=True)
-    resultados, base = [], 0
+    embebedor = Embebedor(args.reid)
+    resultados = []
     for par in args.video:
         camara_id, ruta = par.split("=", 1)
-        resultados.append(procesar(camara_id, config, ruta, args, salida, base))
-        base = max([n for n, _ in resultados[-1]["personas"].values()] + [base])
+        resultados.append(analizar(camara_id, config, ruta, args, salida, embebedor))
+    unidos = unir_camaras(resultados) if len(resultados) > 1 else 0
+    total = len({n for r in resultados for n, _ in r["personas"].values()})
+    print(f"{total} personas en la sesión ({unidos} vistas por más de una cámara)")
+    for r in resultados:
+        if not args.sin_video:
+            dibujar(r["ruta"], r["cuadros"], r["personas"], r["id"], salida / r["video"], r["fps"], r["tam"])
+        if args.hoja:
+            hoja_contacto(r["ruta"], r["cuadros"], r["personas"], salida / f"hoja_{r['id']}.jpg")
+    if args.sin_video:
+        return
     carga = sesion_para_bd(resultados, config)
     (salida / "comedor_sesion.json").write_text(json.dumps(carga, ensure_ascii=False), encoding="utf-8")
     print("listo", salida)
