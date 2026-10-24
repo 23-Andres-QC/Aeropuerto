@@ -92,10 +92,17 @@ watch(capturasVersion, cargar);
     <div>
       <p class="eyebrow">{{ actual?.name ?? slug }} · REGISTROS</p>
       <h1>Registros de lo capturado</h1>
-      <p>
-        Cada vez que se usa el modo en vivo queda una captura guardada, con su fecha y su rango de hora. Elige una para ver sus Insights o para recorrerla en el
-        plano.
-      </p>
+    </div>
+    <div class="barra-acciones">
+      <div class="chips segmentado" role="group" aria-label="Tipo de registro">
+        <button type="button" :class="{ activo: tipo === 'LIVE' }" @click="tipo = 'LIVE'">Guardado en vivo</button>
+        <button type="button" :class="{ activo: tipo === 'BUILD' }" @click="tipo = 'BUILD'">Grabado (dataset)</button>
+        <button type="button" :class="{ activo: tipo === 'TODAS' }" @click="tipo = 'TODAS'">Todos</button>
+      </div>
+      <label class="dia"
+        >Día<input v-model="fecha" type="date" /></label
+      >
+      <button v-if="fecha" type="button" @click="fecha = ''">Quitar filtro</button>
     </div>
   </section>
 
@@ -110,18 +117,6 @@ watch(capturasVersion, cargar);
         <span class="pill">{{ totales.personas }} personas</span>
         <span v-if="modoVivo" class="pill en-vivo">● grabando ahora</span>
       </span>
-    </div>
-
-    <div class="filtros">
-      <div class="chips" role="group" aria-label="Tipo de registro">
-        <button type="button" :class="{ activo: tipo === 'LIVE' }" @click="tipo = 'LIVE'">Guardado en vivo</button>
-        <button type="button" :class="{ activo: tipo === 'BUILD' }" @click="tipo = 'BUILD'">Grabado (dataset)</button>
-        <button type="button" :class="{ activo: tipo === 'TODAS' }" @click="tipo = 'TODAS'">Todos</button>
-      </div>
-      <label class="dia"
-        >Día<input v-model="fecha" type="date" /></label
-      >
-      <button v-if="fecha" type="button" class="limpiar" @click="fecha = ''">Quitar filtro</button>
     </div>
 
     <div class="tabla-envoltorio">
@@ -154,10 +149,12 @@ watch(capturasVersion, cargar);
             <td>
               <span class="pill" :class="{ capturada: f.vivo }">{{ f.vivo ? "En vivo" : "Dataset" }}</span>
             </td>
-            <td class="acciones">
-              <RouterLink :to="{ path: `/sitios/${slug}/insights`, query: { sesion: f.id } }">Insights</RouterLink>
-              <RouterLink :to="{ path: `/sitios/${slug}/en-vivo`, query: { sesion: f.id } }">Mapear en el plano</RouterLink>
-              <button v-if="!f.vivo" type="button" class="corregir-boton" :aria-expanded="corrigiendo === f.id" @click="abrirCorreccion(f)">Corregir hora</button>
+            <td>
+              <div class="acciones">
+                <RouterLink :to="{ path: `/sitios/${slug}/insights`, query: { sesion: f.id } }">Insights</RouterLink>
+                <RouterLink :to="{ path: `/sitios/${slug}/en-vivo`, query: { sesion: f.id } }">Mapear en el plano</RouterLink>
+                <button v-if="!f.vivo" type="button" :aria-expanded="corrigiendo === f.id" @click="abrirCorreccion(f)">Corregir hora</button>
+              </div>
             </td>
           </tr>
           <tr v-if="corrigiendo === f.id" class="corregir">
@@ -192,68 +189,37 @@ watch(capturasVersion, cargar);
 </template>
 
 <style scoped>
-.filtros {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 18px;
-  padding: 14px 16px 4px;
-}
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.chips button {
-  padding: 9px 16px;
-  border-radius: 999px;
-  font-size: 14px;
-  font-weight: 600;
-}
-.chips button.activo {
-  color: #fff;
-  border-color: transparent;
-  background: linear-gradient(180deg, #4a95ff 0%, var(--blue-600) 100%);
-}
 .dia {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 14px;
+  gap: 6px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--ink-soft);
 }
 .dia input {
   width: auto;
-  min-height: 38px;
-  font-size: 14px;
-}
-.limpiar {
-  padding: 8px 14px;
-  border-radius: 999px;
-  font-size: 13px;
 }
 .tabla-envoltorio {
   overflow-x: auto;
-  padding: 8px 16px 16px;
+  padding: 2px 14px 10px;
 }
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 15px;
+  font-size: 12.5px;
 }
 th {
-  padding: 10px 12px;
+  padding: 8px 10px;
   text-align: left;
-  font-size: 12px;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 650;
   color: var(--ink-faint);
   border-bottom: 1px solid var(--glass-line);
   white-space: nowrap;
 }
 td {
-  padding: 13px 12px;
+  padding: 7px 10px;
   border-bottom: 1px solid var(--glass-line);
   vertical-align: middle;
 }
@@ -262,8 +228,8 @@ td small {
   display: block;
 }
 td small {
-  margin-top: 2px;
-  font-size: 12px;
+  margin-top: 1px;
+  font-size: 11px;
 }
 .num {
   text-align: right;
@@ -275,39 +241,37 @@ td small {
 }
 .acciones {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
-.acciones a {
-  padding: 7px 13px;
-  border-radius: 999px;
-  font-size: 13.5px;
+.acciones a,
+.acciones button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-s);
+  font-size: 12px;
   font-weight: 600;
-  text-decoration: none;
   white-space: nowrap;
-  color: var(--blue-700);
-  background: var(--pill-bg);
+  color: var(--accent-ink);
+  background: var(--glass-strong);
 }
 .acciones a:hover {
-  color: #fff;
-  background: var(--blue-600);
+  border-color: rgba(61, 139, 255, 0.55);
+}
+.acciones button {
+  color: var(--ink-soft);
 }
 .estimada {
   display: inline-block;
-  margin-top: 4px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
+  margin-top: 3px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 650;
   color: #6b4bb8;
   background: rgba(124, 92, 214, 0.14);
-  border: 1px solid rgba(124, 92, 214, 0.45);
-}
-.corregir-boton {
-  padding: 7px 13px;
-  border-radius: 999px;
-  font-size: 13.5px;
-  font-weight: 600;
 }
 .corregir td {
   background: var(--pill-bg);
@@ -339,14 +303,13 @@ td small {
 }
 .resultado {
   margin: 0 0 10px;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 650;
   color: var(--good, #0e9b74);
 }
 .capturada {
   color: #b3243d;
   background: rgba(217, 45, 74, 0.12);
-  border-color: rgba(217, 45, 74, 0.35);
 }
 .en-vivo {
   color: #fff;
@@ -355,8 +318,8 @@ td small {
 }
 .vacio {
   margin: 0;
-  padding: 22px 8px;
-  font-size: 15px;
+  padding: 18px 4px;
+  font-size: 12.5px;
   line-height: 1.5;
   color: var(--ink-soft);
 }

@@ -135,32 +135,32 @@ const lineas = (t: { items: { product: string; quantity: number; unit_price: num
 
     <section v-if="r" class="metrics" style="margin-bottom: 14px">
       <article class="panel metric">
-        <p><span class="metric-icon">⌖</span>VISITAS A LOCALES</p>
+        <p>VISITAS A LOCALES</p>
         <strong>{{ r.visits }}</strong>
         <small>estadías que vio la cámara</small>
       </article>
       <article class="panel metric" :class="{ vacio: !r.matched }">
-        <p><span class="metric-icon">✓</span>COMPRARON</p>
+        <p>COMPRARON</p>
         <strong>{{ r.matched }}</strong>
         <small>{{ r.without_purchase }} se fueron sin comprar</small>
       </article>
       <article class="panel metric" :class="{ vacio: r.conversion == null }">
-        <p><span class="metric-icon">%</span>CONVERSIÓN OBSERVADA</p>
+        <p>CONVERSIÓN OBSERVADA</p>
         <strong>{{ porcentaje(r.conversion, 0) }}</strong>
         <small>de quienes entraron, los que compraron</small>
       </article>
       <article class="panel metric" :class="{ vacio: !r.matched }">
-        <p><span class="metric-icon">S/</span>VENDIDO A PERSONAS VISTAS</p>
+        <p>VENDIDO A PERSONAS VISTAS</p>
         <strong>{{ dinero(r.matched_revenue) }}</strong>
         <small>de {{ dinero(r.revenue) }} vendidos en esas horas</small>
       </article>
       <article class="panel metric" :class="{ vacio: r.avg_confidence == null }">
-        <p><span class="metric-icon">≈</span>CONFIANZA MEDIA</p>
+        <p>CONFIANZA MEDIA</p>
         <strong>{{ porcentaje(r.avg_confidence, 0) }}</strong>
         <small>de las parejas encontradas</small>
       </article>
       <article class="panel metric" :class="{ vacio: !r.unmatched }">
-        <p><span class="metric-icon">?</span>VENTAS SIN PERSONA</p>
+        <p>VENTAS SIN PERSONA</p>
         <strong>{{ r.unmatched }}</strong>
         <small>nadie en la cámara las explica</small>
       </article>

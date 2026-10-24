@@ -97,37 +97,37 @@ const masTicketsQueVisitantes = computed(() => (total.value.conversion ?? 0) > 1
 
   <section class="metrics" style="margin-bottom: 14px">
     <article class="panel metric">
-      <p><span class="metric-icon">S/</span>INGRESOS</p>
+      <p>INGRESOS</p>
       <strong><CifraAnimada :valor="total.revenue" :formato="dineroCorto" /></strong>
       <small><CifraAnimada :valor="total.tickets" :formato="entero" /> {{ total.tickets === 1 ? "ticket" : "tickets" }}</small>
       <em v-if="cambios?.revenue" class="delta" :class="cambios.revenue.clase">{{ cambios.revenue.texto }} <span>{{ vsAntes }}</span></em>
     </article>
     <article class="panel metric" :class="{ vacio: total.avg_ticket == null }">
-      <p><span class="metric-icon">≈</span>TICKET PROMEDIO</p>
+      <p>TICKET PROMEDIO</p>
       <strong><CifraAnimada :valor="total.avg_ticket" :formato="dinero" /></strong>
       <small>lo que gasta cada compra</small>
       <em v-if="cambios?.ticket" class="delta" :class="cambios.ticket.clase">{{ cambios.ticket.texto }} <span>{{ vsAntes }}</span></em>
     </article>
     <article class="panel metric" :class="{ vacio: !total.visitors }">
-      <p><span class="metric-icon">⌖</span>VISITANTES</p>
+      <p>VISITANTES</p>
       <strong><CifraAnimada :valor="total.visitors" :formato="entero" /></strong>
       <small>personas que entraron a un local</small>
       <em v-if="cambios?.visitors" class="delta" :class="cambios.visitors.clase">{{ cambios.visitors.texto }} <span>{{ vsAntes }}</span></em>
     </article>
     <article class="panel metric" :class="{ vacio: total.conversion == null }">
-      <p><span class="metric-icon">%</span>CONVERSIÓN</p>
+      <p>CONVERSIÓN</p>
       <strong><CifraAnimada :valor="total.conversion" :formato="porcentaje1" /></strong>
       <small>tickets por visitante</small>
       <em v-if="cambios?.conversion" class="delta" :class="cambios.conversion.clase">{{ cambios.conversion.texto }} <span>{{ vsAntes }}</span></em>
     </article>
     <article class="panel metric" :class="{ vacio: total.revenue_per_visitor == null }">
-      <p><span class="metric-icon">↗</span>INGRESO POR VISITANTE</p>
+      <p>INGRESO POR VISITANTE</p>
       <strong><CifraAnimada :valor="total.revenue_per_visitor" :formato="dinero" /></strong>
       <small>lo que deja cada persona que entra</small>
       <em v-if="cambios?.porVisitante" class="delta" :class="cambios.porVisitante.clase">{{ cambios.porVisitante.texto }} <span>{{ vsAntes }}</span></em>
     </article>
     <article class="panel metric" :class="{ vacio: !total.matched }">
-      <p><span class="metric-icon">⇄</span>EMPAREJADOS</p>
+      <p>EMPAREJADOS</p>
       <strong><CifraAnimada :valor="total.matched" :formato="entero" /></strong>
       <small>tickets ligados a una persona del video</small>
     </article>

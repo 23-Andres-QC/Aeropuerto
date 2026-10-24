@@ -63,7 +63,6 @@ try {
   const estado = () => evalua(`(() => ({
     url: location.pathname,
     tarjeta: (document.querySelector('.sitio-boton') ?? document.querySelector('.airport-switch'))?.innerText?.replace(/\\s+/g, ' ').trim() ?? '',
-    pestanas: [...document.querySelectorAll('.sitio-tabs a')].map((a) => a.textContent.trim() + (a.classList.contains('activo') ? '*' : '')),
     opciones: [...document.querySelectorAll('.sitio-lista li')].map((li) => li.innerText.replace(/\\s+/g, ' ').trim()),
     abierto: !!document.querySelector('.sitio-lista'),
     titulo: (document.querySelector('main h1, main h2')?.textContent ?? '').trim(),
@@ -74,6 +73,14 @@ try {
     panelZonas: [...document.querySelectorAll('main h2, main h3')].some((h) => h.textContent.trim() === 'Zonas'),
   }))()`);
   const paso = async (texto, verifica) => { await esperar(2500); const e = await estado(); verifica(e); console.log(`✓ ${texto}`); };
+  // Cuántos sitios ofrece la tarjeta: abre su lista, los cuenta y la cierra.
+  const contarSitios = async () => {
+    await clic(`document.querySelector('.sitio-boton')`);
+    await esperar(300);
+    const n = await evalua(`document.querySelectorAll('.sitio-lista li').length`);
+    await tecla("Escape", 27);
+    return n;
+  };
   const iniciarSesion = async () => {
     await escribir("#username", USUARIO);
     await escribir("#password", CLAVE);
@@ -88,10 +95,9 @@ try {
   await esperar(1500);
   await iniciarSesion();
 
-  await paso("justo tras iniciar sesión ya están los sitios (tarjeta y pestañas)", (e) => {
+  await paso("justo tras iniciar sesión ya están los sitios en la tarjeta", (e) => {
     assert.doesNotMatch(e.tarjeta, /Cargando/, `la tarjeta sigue cargando: ${e.tarjeta}`);
     assert.match(e.tarjeta, /ESAN/);
-    assert.deepEqual(e.pestanas, ["ESAN*", "LAP · Jorge Chávez"]);
   });
 
   await clic(`document.querySelector('.sitio-boton')`);
@@ -124,9 +130,8 @@ try {
 
   // Abrir LAP directo (recarga completa con la cookie ya guardada): sitios, tarjeta y plano.
   await cdp("Page.navigate", { url: `${WEB}/sitios/lap/configuracion` });
-  await paso("abrir LAP directo, con la sesión ya guardada: tarjeta, pestañas y plano", (e) => {
+  await paso("abrir LAP directo, con la sesión ya guardada: tarjeta y plano", (e) => {
     assert.match(e.tarjeta, /LAP · Jorge Chávez/);
-    assert.deepEqual(e.pestanas, ["ESAN", "LAP · Jorge Chávez*"]);
     assert.equal(e.plano, "Plano · 546.4 × 978.4 m");
     assert.ok(e.capasDelPlano > 100);
   });
@@ -144,10 +149,14 @@ try {
 
   await cdp("Page.navigate", { url: `${WEB}/sitios/esan/insights` });
   await esperar(3000);
-  await clic(`[...document.querySelectorAll('.sitio-tabs a')].find((a) => /LAP/.test(a.textContent))`);
-  await paso("la pestaña LAP, estando en Insights de ESAN, abre la configuración de LAP", (e) => assert.equal(e.url, "/sitios/lap/configuracion"));
-  await clic(`[...document.querySelectorAll('.sitio-tabs a')].find((a) => /ESAN/.test(a.textContent))`);
-  await paso("la pestaña ESAN vuelve a ESAN", (e) => assert.equal(e.url, "/sitios/esan/configuracion"));
+  await clic(`document.querySelector('.sitio-boton')`);
+  await esperar(300);
+  await clic(`[...document.querySelectorAll('.sitio-lista li')].find((li) => /LAP/.test(li.innerText))`);
+  await paso("elegir LAP estando en Insights de ESAN abre la configuración de LAP", (e) => assert.equal(e.url, "/sitios/lap/configuracion"));
+  await clic(`document.querySelector('.sitio-boton')`);
+  await esperar(300);
+  await clic(`[...document.querySelectorAll('.sitio-lista li')].find((li) => /ESAN/.test(li.innerText))`);
+  await paso("elegir ESAN vuelve a ESAN", (e) => assert.equal(e.url, "/sitios/esan/configuracion"));
 
   // ESAN tiene dos zonas grabadas (el patio y el comedor del Edificio D) en UN solo mapa: el campus las muestra juntas y se puede ir a cada una.
   await cdp("Page.navigate", { url: `${WEB}/sitios/esan/configuracion` });
@@ -156,8 +165,8 @@ try {
   await paso("el campus de ESAN marca la segunda zona grabada sobre el croquis, sin botones de zona", (e) => {
     assert.equal(e.botonesDeZona, 0, "no hay botones «Ir a…» sobre el plano");
     assert.equal(e.marcasEnCampus, 1, "la segunda zona se marca sobre el campus");
-    assert.equal(e.pestanas.length, 2, "no hay un sitio aparte para la zona 2");
   });
+  assert.equal(await contarSitios(), 2, "no hay un sitio aparte para la zona 2");
   const tocarZona = (selector) => evalua(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('click', { bubbles: true })); 0`); // un <g> de SVG no tiene click()
   assert.equal(await evalua(`document.querySelectorAll('[data-prueba=etiqueta-zona]').length`), 0, "desde el campus las zonas se marcan sin nombres: no se pisan");
   await tocarZona("g.entrada-vecino[role=button]");
@@ -224,10 +233,8 @@ try {
   await clic(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Salir')`);
   await paso("Salir lleva al login", (e) => assert.equal(e.url, "/login"));
   await iniciarSesion();
-  await paso("al volver a entrar la lista de sitios se pide de nuevo", (e) => {
-    assert.doesNotMatch(e.tarjeta, /Cargando/);
-    assert.equal(e.pestanas.length, 2);
-  });
+  await paso("al volver a entrar la lista de sitios se pide de nuevo", (e) => assert.doesNotMatch(e.tarjeta, /Cargando/));
+  assert.equal(await contarSitios(), 2);
 
   await cdp("Page.navigate", { url: `${WEB}/sitios/esan/en-vivo` });
   await esperar(3000);

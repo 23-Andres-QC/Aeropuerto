@@ -194,9 +194,9 @@ const seg = (s: number) => `${Math.round(s)} s`;
   border-radius: 50%;
 }
 .cerrar {
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: 11.5px;
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 12px;
 }
 .cuerpo-rec {
   display: grid;

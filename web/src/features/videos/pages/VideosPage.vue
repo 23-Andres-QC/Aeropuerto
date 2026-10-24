@@ -243,15 +243,16 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <section class="page-title">
+    <div>
+      <p class="eyebrow">LAP · VIDEOS</p>
+      <h1>Videos procesados por el modelo</h1>
+    </div>
+  </section>
   <section class="panel subir">
     <input ref="entrada" type="file" accept="video/*" multiple hidden @change="elegidos" />
     <button class="primary-button" type="button" :disabled="subiendo || lleno" @click="entrada?.click()">Elegir videos…</button>
-    <p class="muted detalle">
-      Elige varios a la vez (desde un teléfono, de tu galería): se suben todos juntos y el modelo los procesa al mismo
-      tiempo, el cuadro de cada uno en la misma pasada del detector, y se ven uno al lado del otro con sus detecciones encima.
-      Los videos no se guardan: se borran al terminar y su resumen, al quitarlo.
-      <span v-if="lleno"><b>La lista está llena ({{ MAX_VIDEOS }}): quita alguno para subir otro.</b></span>
-    </p>
+    <p v-if="lleno" class="muted detalle"><b>La lista está llena ({{ MAX_VIDEOS }}): quita alguno para subir otro.</b></p>
     <span v-if="videos.length" class="heading-meta">
       <span v-if="enProceso" class="pill vivo">{{ enProceso }} procesándose</span>
       <span class="pill">{{ videos.length }} / {{ MAX_VIDEOS }}</span>
@@ -320,11 +321,8 @@ onUnmounted(() => {
     </template>
   </div>
   <section v-else class="panel vacio">
-    <p v-if="conectado">Elige uno o varios videos de tu computadora para ver cómo los procesa el modelo.</p>
+    <p v-if="conectado">Todavía no hay videos.</p>
     <p v-else><b>Esperando al servicio del modelo…</b></p>
-    <p v-if="!conectado" class="muted">
-      En la laptop: <code>python "Modelo/Test Modelo/camara_telefono.py"</code>. En el servidor corre solo (servicio modelo-vivo).
-    </p>
   </section>
 </template>
 
@@ -417,9 +415,6 @@ onUnmounted(() => {
 }
 .vacio p {
   margin: 0;
-}
-.vacio code {
-  font-size: 10.5px;
 }
 .vacio button {
   margin-top: 8px;

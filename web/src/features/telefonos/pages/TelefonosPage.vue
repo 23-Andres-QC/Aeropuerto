@@ -110,12 +110,16 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="panel enlace">
-    <a v-if="urlCamara" :href="urlCamara" target="_blank" rel="noopener">{{ urlCamara }}</a>
-    <span class="acciones">
-      <button v-if="urlCamara" class="button" type="button" @click="copiarEnlace">{{ copiado ? "✓ Copiado" : "Copiar enlace" }}</button>
+  <section class="page-title">
+    <div>
+      <p class="eyebrow">LAP · TELÉFONOS</p>
+      <h1>Cámaras de teléfono</h1>
+    </div>
+    <div class="barra-acciones">
+      <a v-if="urlCamara" class="enlace" :href="urlCamara" target="_blank" rel="noopener">{{ urlCamara }}</a>
+      <button v-if="urlCamara" type="button" @click="copiarEnlace">{{ copiado ? "Copiado" : "Copiar enlace" }}</button>
       <button class="danger-button" type="button" :disabled="olvidando || !memoria?.personas" @click="olvidarTodas">Olvidar a todos</button>
-    </span>
+    </div>
   </section>
   <p v-if="error" class="error" role="alert">{{ error }}</p>
   <UnirTelefonos :enlace="urlCamara" :telefonos="telefonos" @revocado="cargar" />
@@ -142,24 +146,11 @@ onUnmounted(() => {
 
 <style scoped>
 .enlace {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 12px 16px;
-  margin-bottom: 14px;
-}
-.enlace a {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent-ink);
   font-variant-numeric: tabular-nums;
   word-break: break-all;
-}
-.acciones {
-  display: flex;
-  gap: 8px;
-  margin-left: auto;
 }
 .vistas {
   display: grid;

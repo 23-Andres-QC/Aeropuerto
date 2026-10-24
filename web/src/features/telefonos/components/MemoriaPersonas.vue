@@ -28,14 +28,14 @@ function camaras(ids: string[]): string {
 <template>
   <section class="panel memoria">
     <div class="panel-heading">
-      <b>Memoria de personas</b>
+      <h2>Memoria de personas</h2>
       <span class="heading-meta">
         <span class="pill">{{ memoria?.personas ?? fichas.length }} en memoria</span>
         <span v-if="memoria" class="pill">próximo G{{ memoria.siguiente_id }}</span>
         <span v-if="memoria" class="pill">se olvida tras {{ memoria.retencion_horas }} h</span>
       </span>
     </div>
-    <p v-if="!fichas.length" class="vacia">Nadie en la memoria todavía: aparece aquí cada persona que el modelo identifica.</p>
+    <p v-if="!fichas.length" class="vacia">Nadie en memoria.</p>
     <table v-else class="tabla">
       <thead>
         <tr>
@@ -100,7 +100,7 @@ function camaras(ids: string[]): string {
 .id {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: 6px;
   border: 2px solid var(--color);
   color: var(--color);
 }

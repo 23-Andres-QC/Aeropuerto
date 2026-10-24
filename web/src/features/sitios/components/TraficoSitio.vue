@@ -214,7 +214,7 @@ const fechaHora = (iso: string | null | undefined) => (iso ? new Date(iso).toLoc
     <form class="controles" aria-label="Período, franja y datos" @submit.prevent="cargar">
       <div class="grupo" role="group" aria-label="Período">
         <span class="etiqueta">Período</span>
-        <div class="fichas">
+        <div class="fichas segmentado">
           <button v-for="p in PERIODOS" :key="p.id" type="button" class="ficha" :class="{ activa: periodo === p.id }" :aria-pressed="periodo === p.id" @click="elegirPeriodo(p.id)">{{ p.nombre }}</button>
         </div>
         <label class="fecha">Desde<input v-model="desde" type="date" :max="hasta || hoy" @input="cambioFecha" /></label>
@@ -222,7 +222,7 @@ const fechaHora = (iso: string | null | undefined) => (iso ? new Date(iso).toLoc
       </div>
       <div class="grupo" role="group" aria-label="Franja horaria">
         <span class="etiqueta">Franja (hora de Lima)</span>
-        <div class="fichas">
+        <div class="fichas segmentado">
           <button v-for="f in FRANJAS" :key="f.id" type="button" class="ficha" :class="{ activa: franjaId === f.id }" :aria-pressed="franjaId === f.id" @click="franjaId = f.id">{{ f.nombre }}</button>
           <button type="button" class="ficha" :class="{ activa: franjaId === 'otra' }" :aria-pressed="franjaId === 'otra'" @click="franjaId = 'otra'">Otra</button>
         </div>
@@ -233,7 +233,7 @@ const fechaHora = (iso: string | null | undefined) => (iso ? new Date(iso).toLoc
       </div>
       <div class="grupo" role="group" aria-label="Datos">
         <span class="etiqueta">Datos</span>
-        <div class="fichas">
+        <div class="fichas segmentado">
           <button type="button" class="ficha" :class="{ activa: datos === 'todos' }" :aria-pressed="datos === 'todos'" @click="datos = 'todos'">Todos</button>
           <button type="button" class="ficha" :class="{ activa: datos === 'real' }" :aria-pressed="datos === 'real'" @click="datos = 'real'">Reales</button>
           <button type="button" class="ficha" :class="{ activa: datos === 'simulado' }" :aria-pressed="datos === 'simulado'" @click="datos = 'simulado'">Simulados</button>
@@ -386,12 +386,11 @@ const fechaHora = (iso: string | null | undefined) => (iso ? new Date(iso).toLoc
   gap: 6px;
 }
 .insignia {
-  padding: 4px 10px;
-  border-radius: 999px;
+  padding: 2px 7px;
+  border-radius: 6px;
   font-size: 10.5px;
-  font-weight: 750;
-  letter-spacing: 0.4px;
-  border: 1px solid transparent;
+  font-weight: 650;
+  border: 0;
 }
 .insignia.simulado {
   color: #8a5a00;
@@ -418,8 +417,8 @@ const fechaHora = (iso: string | null | undefined) => (iso ? new Date(iso).toLoc
   flex-wrap: wrap;
   gap: 14px 22px;
   align-items: flex-end;
-  padding: 12px 14px;
-  border-radius: 14px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
   background: var(--glass);
   border: 1px solid var(--glass-line);
 }
@@ -434,21 +433,6 @@ const fechaHora = (iso: string | null | undefined) => (iso ? new Date(iso).toLoc
   font-size: 10.5px;
   font-weight: 700;
   color: var(--ink-soft);
-}
-.fichas {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.ficha {
-  padding: 5px 11px;
-  border-radius: 999px;
-  font-size: 11.5px;
-}
-.ficha.activa {
-  color: #fff;
-  border-color: transparent;
-  background: var(--blue-600);
 }
 .fecha {
   display: flex;

@@ -394,7 +394,6 @@ svg:focus-visible {
   z-index: 2;
   min-height: 0;
   padding: 1px 9px;
-  border-radius: 999px;
   font-size: 14px;
   line-height: 1.5;
   color: var(--ink-soft);

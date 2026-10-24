@@ -135,21 +135,8 @@ const soloSimulado = computed(() => resumen.value && resumen.value.counts.simula
       <div>
         <p class="eyebrow">{{ actual?.name ?? slug }} · VENTAS</p>
         <h1>Ventas, compradores y pronóstico</h1>
-        <p>
-          Cruza lo que se vende en cada local con las personas que el modelo vio entrar, para saber quién compró, qué y a qué precio, y proyecta cuánto se ganará en los próximos días.
-          Todo se guarda en la base de datos.
-        </p>
       </div>
-      <div v-if="resumen" class="heading-meta">
-        <span class="pill origen-real"><span><CifraAnimada :valor="resumen.counts.real" :formato="entero" /> reales</span></span>
-        <span class="pill origen-simulado"><span><CifraAnimada :valor="resumen.counts.simulated" :formato="entero" /> simulados</span></span>
-        <span class="pill"><span><CifraAnimada :valor="resumen.counts.matched" :formato="entero" /> emparejados</span></span>
-      </div>
-    </section>
-
-    <p v-if="error" class="error" role="alert">{{ error }}</p>
-
-    <div class="filtros" role="group" aria-label="Filtros de ventas">
+      <div class="filtros" role="group" aria-label="Filtros de ventas">
       <label
         >Período
         <select v-model.number="consulta.dias">
@@ -179,9 +166,10 @@ const soloSimulado = computed(() => resumen.value && resumen.value.counts.simula
       <button type="button" class="boton-plano" :class="{ activo: verPlano }" :aria-pressed="verPlano" @click="verPlano = !verPlano">
         {{ verPlano ? "Ocultar el plano" : "Elegir en el plano" }}
       </button>
-      <span class="espacio"></span>
-      <span v-if="cargando" class="muted">Actualizando…</span>
-    </div>
+      </div>
+    </section>
+
+    <p v-if="error" class="error" role="alert">{{ error }}</p>
 
     <SeleccionPlano v-if="verPlano && config" v-model="consulta.locales" :config="config" />
 
@@ -190,11 +178,19 @@ const soloSimulado = computed(() => resumen.value && resumen.value.counts.simula
       <template v-else><b>Se están mezclando datos reales y simulados.</b> Elige «Solo reales» en el filtro para ver únicamente lo que vendió la caja.</template>
     </p>
 
-    <nav class="pestanas" aria-label="Secciones de ventas">
-      <button v-for="p in PESTANAS" :key="p.id" type="button" :class="{ activo: pestana === p.id }" :aria-current="pestana === p.id ? 'page' : undefined" @click="pestana = p.id">
-        {{ p.nombre }}
-      </button>
-    </nav>
+    <div class="fila-pestanas">
+      <nav class="pestanas" aria-label="Secciones de ventas">
+        <button v-for="p in PESTANAS" :key="p.id" type="button" :class="{ activo: pestana === p.id }" :aria-current="pestana === p.id ? 'page' : undefined" @click="pestana = p.id">
+          {{ p.nombre }}
+        </button>
+      </nav>
+      <div v-if="resumen" class="heading-meta">
+        <span v-if="cargando" class="muted">Actualizando…</span>
+        <span class="pill origen-real"><span><CifraAnimada :valor="resumen.counts.real" :formato="entero" /> reales</span></span>
+        <span class="pill origen-simulado"><span><CifraAnimada :valor="resumen.counts.simulated" :formato="entero" /> simulados</span></span>
+        <span class="pill"><span><CifraAnimada :valor="resumen.counts.matched" :formato="entero" /> emparejados</span></span>
+      </div>
+    </div>
 
     <section v-if="resumen && !hayVentas && pestana !== 'datos' && pestana !== 'tickets'" class="panel">
       <div class="panel-heading"><h2>Todavía no hay ventas</h2></div>

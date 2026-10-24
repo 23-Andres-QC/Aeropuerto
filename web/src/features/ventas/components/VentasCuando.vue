@@ -106,7 +106,7 @@ const pocosDias = computed(() => diasConDatos.value > 0 && diasConDatos.value < 
   <div class="filtros">
     <label>
       Ver
-      <span class="grupo" role="group" aria-label="Qué mirar">
+      <span class="grupo segmentado" role="group" aria-label="Qué mirar">
         <button v-for="m in METRICAS" :key="m.id" type="button" :class="{ activo: metrica === m.id }" :aria-pressed="metrica === m.id" @click="metrica = m.id">{{ m.nombre }}</button>
       </span>
     </label>
@@ -230,7 +230,7 @@ const pocosDias = computed(() => diasConDatos.value > 0 && diasConDatos.value < 
       <div class="filtros" role="group" aria-label="Día del día típico">
         <label>
           Día típico
-          <span class="grupo">
+          <span class="grupo segmentado">
             <button type="button" :class="{ activo: dia === null }" :aria-pressed="dia === null" @click="dia = null">Todos</button>
             <button v-for="(n, d) in DIAS_CORTOS" :key="n" type="button" :disabled="dias[d] <= 0" :class="{ activo: dia === d }" :aria-pressed="dia === d" @click="dia = d">{{ n }}</button>
           </span>
@@ -242,23 +242,6 @@ const pocosDias = computed(() => diasConDatos.value > 0 && diasConDatos.value < 
 </template>
 
 <style scoped>
-.grupo {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.grupo button {
-  padding: 6px 13px;
-  border-radius: 999px;
-  font-size: 12.5px;
-  text-transform: none;
-  letter-spacing: 0;
-}
-.grupo button.activo {
-  color: #fff;
-  border-color: transparent;
-  background: linear-gradient(180deg, #4a95ff 0%, var(--blue-600) 100%);
-}
 .destacados {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));

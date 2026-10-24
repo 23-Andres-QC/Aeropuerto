@@ -13,10 +13,10 @@ import PanelAccesos from "../components/PanelAccesos.vue";
 const route = useRoute();
 const router = useRouter();
 const PESTANAS = [
-  { id: "cuentas", etiqueta: "Cuentas", icono: "👤" },
-  { id: "accesos", etiqueta: "Accesos", icono: "📈" },
-  { id: "bitacora", etiqueta: "Bitácora", icono: "🧾" },
-  { id: "privacidad", etiqueta: "Privacidad", icono: "🛡️" },
+  { id: "cuentas", etiqueta: "Cuentas" },
+  { id: "accesos", etiqueta: "Accesos" },
+  { id: "bitacora", etiqueta: "Bitácora" },
+  { id: "privacidad", etiqueta: "Privacidad" },
 ] as const;
 type Pestana = (typeof PESTANAS)[number]["id"];
 const pestana = ref<Pestana>(PESTANAS.find((p) => p.id === route.query.ver)?.id ?? "cuentas");
@@ -153,14 +153,13 @@ onMounted(cargar);
 </script>
 
 <template>
-  <main class="cuentas">
-    <header class="cabecera">
+  <div class="cuentas">
+    <section class="page-title">
       <div>
+        <p class="eyebrow">LAP · ADMINISTRACIÓN</p>
         <h1>Cuentas y privacidad</h1>
-        <p class="muted">Quién entra, qué ve cada rol y cuánto tiempo se guardan los datos · sesión de {{ sesion?.usuario }}</p>
       </div>
-      <RouterLink class="button" to="/privacidad">Ver aviso de privacidad</RouterLink>
-    </header>
+    </section>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
 
     <ul class="resumen" aria-label="Resumen de cuentas">
@@ -183,17 +182,13 @@ onMounted(cargar);
         :data-prueba="`pestana-${p.id}`"
         @click="pestana = p.id"
       >
-        <span aria-hidden="true">{{ p.icono }}</span>{{ p.etiqueta }}
+        {{ p.etiqueta }}
       </button>
     </nav>
 
     <Transition name="cambio" mode="out-in">
       <!-- Cuentas -->
       <section v-if="pestana === 'cuentas'" key="cuentas" class="panel" aria-label="Cuentas" role="tabpanel" aria-labelledby="pestana-cuentas">
-        <div class="panel-heading">
-          <h2>Cuentas</h2>
-          <span class="muted">superadmin ve y administra todo · seguridad y negocio ven solo sus módulos</span>
-        </div>
 
         <div v-if="entregada" class="entrega" role="status" data-prueba="clave-entregada">
           <b>{{ entregada.motivo }}: {{ entregada.usuario.usuario }}</b>
@@ -209,14 +204,14 @@ onMounted(cargar);
 
         <div class="barra">
           <input v-model="busqueda" type="search" class="buscar" placeholder="Buscar por usuario, nombre o correo…" aria-label="Buscar cuentas" data-prueba="buscar-cuenta" />
-          <div class="chips" role="group" aria-label="Filtrar por rol">
+          <div class="chips segmentado" role="group" aria-label="Filtrar por rol">
             <button type="button" class="chip" :class="{ activo: filtroRol === 'todos' }" data-prueba="rol-todos" @click="filtroRol = 'todos'">Todos <span class="cuenta">{{ porRol.todos }}</span></button>
             <button v-for="r in ROLES" :key="r" type="button" class="chip" :class="{ activo: filtroRol === r }" :data-prueba="`rol-${r}`" @click="filtroRol = r">
               <i :style="{ background: COLOR_ROL[r] }"></i>{{ NOMBRE_ROL[r].replace(' (Administración LAP)', '') }} <span class="cuenta">{{ porRol[r] ?? 0 }}</span>
             </button>
           </div>
           <button type="button" class="primary-button nueva" :aria-expanded="mostrarForm" data-prueba="abrir-nueva" @click="mostrarForm = !mostrarForm">
-            {{ mostrarForm ? "✕ Cerrar" : "＋ Nueva cuenta" }}
+            {{ mostrarForm ? "Cerrar" : "Nueva cuenta" }}
           </button>
         </div>
 
@@ -235,7 +230,6 @@ onMounted(cargar);
               </select>
             </label>
             <button class="primary-button" type="submit" data-prueba="crear-usuario" :disabled="creando">Crear cuenta</button>
-            <p class="muted">Se genera una contraseña temporal. No hay registro público: las cuentas las crea el superadmin.</p>
           </form>
         </Transition>
 
@@ -259,7 +253,8 @@ onMounted(cargar);
                   <span v-else class="pill ok">activa</span>
                 </td>
                 <td>{{ fecha(u.ultimo_ingreso) }}</td>
-                <td class="acciones">
+                <td>
+                  <div class="acciones">
                   <button class="button" type="button" :data-prueba="`restablecer-${u.usuario}`" @click="restablecer(u)">Restablecer clave</button>
                   <button
                     :class="u.activo ? 'danger-button' : 'button'"
@@ -280,6 +275,7 @@ onMounted(cargar);
                   >
                     Borrar
                   </button>
+                  </div>
                 </td>
               </tr>
               <tr v-if="!visibles.length"><td colspan="5" class="muted vacio">{{ usuarios.length ? "Ninguna cuenta coincide con lo que buscas." : "Todavía no hay cuentas." }}</td></tr>
@@ -321,28 +317,22 @@ onMounted(cargar);
         <p v-if="depurado" class="ok" role="status" data-prueba="depurado">{{ depurado }}</p>
       </section>
     </Transition>
-  </main>
+  </div>
 </template>
 
 <style scoped>
 .cuentas {
   display: grid;
   gap: 14px;
-  max-width: 1180px;
 }
-.cabecera {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-h1 {
+.cuentas > .page-title {
   margin: 0;
-  font-size: 24px;
 }
 .panel {
-  padding: 14px 16px;
+  padding: 12px 14px 14px;
+}
+.panel > .panel-heading {
+  margin: -12px -14px 12px;
 }
 .tabla-envoltura {
   overflow-x: auto;
@@ -350,13 +340,22 @@ h1 {
 .tabla {
   width: 100%;
   border-collapse: collapse;
+  font-size: 12.5px;
 }
 .tabla th,
 .tabla td {
   text-align: left;
-  padding: 7px 8px;
-  border-bottom: 1px solid var(--line, rgba(100, 116, 139, 0.25));
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--glass-line);
   vertical-align: middle;
+}
+.tabla th {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--ink-faint);
+}
+.tabla td small {
+  color: var(--ink-soft);
 }
 .tabla tr.inactivo td {
   opacity: 0.6;
@@ -366,9 +365,14 @@ h1 {
 }
 .acciones {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
   align-items: center;
+}
+.acciones button {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 12px;
 }
 .formulario,
 .fila {
@@ -381,7 +385,7 @@ h1 {
 .formulario h3 {
   flex: 1 0 100%;
   margin: 0;
-  font-size: 15px;
+  font-size: 13.5px;
 }
 .formulario > p {
   flex: 1 0 100%;
@@ -390,8 +394,9 @@ h1 {
 label {
   display: grid;
   gap: 4px;
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-weight: 600;
+  color: var(--ink-soft);
 }
 .entrega {
   margin: 12px 0;
@@ -435,18 +440,19 @@ label {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 10px 14px;
+  padding: 8px 14px;
   border: 1px solid var(--glass-line);
-  border-radius: var(--radius-s, 10px);
-  background: var(--glass-strong);
+  border-radius: var(--radius);
+  background: var(--glass);
+  box-shadow: var(--shadow-s);
 }
 .resumen b {
-  font-size: 24px;
+  font-size: 20px;
   font-variant-numeric: tabular-nums;
 }
 .resumen span {
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--ink-soft);
 }
 .resumen .bien b {
@@ -467,24 +473,28 @@ label {
 .pestana {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 9px 16px;
+  min-height: 34px;
+  margin-bottom: -1px;
+  padding: 6px 12px;
   border: 0;
-  border-bottom: 3px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: none;
   color: var(--ink-soft);
-  font-size: 13.5px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.2s, background 0.15s;
+  transition: color 0.15s, border-color 0.2s;
 }
-.pestana:hover {
+.pestana:hover:not(:disabled) {
   color: var(--ink);
-  background: rgba(37, 99, 235, 0.06);
+  border-color: transparent;
+  border-bottom-color: var(--line-control);
 }
-.pestana.activa {
-  color: var(--accent-color, #2563eb);
-  border-bottom-color: var(--accent-color, #2563eb);
+.pestana.activa,
+.pestana.activa:hover:not(:disabled) {
+  color: var(--accent-ink);
+  border-bottom-color: var(--blue-600);
 }
 .cambio-enter-active,
 .cambio-leave-active {
@@ -510,51 +520,26 @@ label {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 14px;
-  margin-bottom: 10px;
+  gap: 8px 10px;
+  margin-bottom: 8px;
 }
 .buscar {
   flex: 1 1 260px;
   max-width: 360px;
 }
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  flex: 1 1 auto;
-}
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 11px;
-  border-radius: 999px;
-  border: 1px solid var(--glass-line);
-  background: var(--glass);
-  color: var(--ink-soft);
-  font-size: 12px;
-  font-weight: 650;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, transform 0.15s;
-}
-.chip:hover {
-  transform: translateY(-1px);
+.nueva {
+  margin-left: auto;
 }
 .chip i {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
 }
-.chip.activo {
-  background: var(--accent-color, #2563eb);
-  border-color: var(--accent-color, #2563eb);
-  color: #fff;
-}
 .chip .cuenta {
-  font-size: 11px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: rgba(100, 116, 139, 0.18);
+  font-size: 10.5px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(100, 116, 139, 0.16);
   font-variant-numeric: tabular-nums;
 }
 .chip.activo .cuenta {
@@ -567,21 +552,21 @@ label {
 }
 .avatar {
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   display: grid;
   place-items: center;
   color: #fff;
-  font-weight: 800;
-  font-size: 14px;
+  font-weight: 700;
+  font-size: 11px;
 }
 .rol {
   display: inline-block;
-  padding: 2px 9px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 650;
   background: color-mix(in srgb, var(--tono) 14%, transparent);
   color: var(--tono);
 }
@@ -600,8 +585,7 @@ label {
   .cambio-leave-active,
   .desplegar-enter-active,
   .desplegar-leave-active,
-  .pestana,
-  .chip {
+  .pestana {
     transition: none;
   }
 }

@@ -137,8 +137,8 @@ const porRol = computed(() => Object.entries(datos.value?.ahora.por_rol ?? {}).m
         <h2>Cómo van los accesos</h2>
         <p class="muted nota">Desde {{ datos ? new Date(datos.desde).toLocaleDateString("es-PE", { timeZone: "America/Lima" }) : "…" }} (hora de Lima). Sin contraseñas, enlaces ni tokens.</p>
       </div>
-      <div class="rangos" role="group" aria-label="Periodo">
-        <button v-for="r in RANGOS" :key="r" type="button" class="rango" :class="{ activo: dias === r }" :data-prueba="`rango-${r}`" @click="dias = r">
+      <div class="rangos segmentado" role="group" aria-label="Periodo">
+        <button v-for="r in RANGOS" :key="r" type="button" :class="{ activo: dias === r }" :data-prueba="`rango-${r}`" @click="dias = r">
           {{ r }} días
         </button>
       </div>
@@ -235,29 +235,6 @@ h2 {
   margin: 0;
   font-size: 17px;
 }
-.rangos {
-  display: flex;
-  gap: 6px;
-}
-.rango {
-  padding: 5px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--glass-line);
-  background: var(--glass);
-  color: var(--ink-soft);
-  font-size: 12px;
-  font-weight: 650;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, transform 0.15s;
-}
-.rango:hover {
-  transform: translateY(-1px);
-}
-.rango.activo {
-  background: var(--accent-color, #2563eb);
-  border-color: var(--accent-color, #2563eb);
-  color: #fff;
-}
 .nota {
   margin: 2px 0 0;
   font-size: 12px;
@@ -341,14 +318,11 @@ figcaption {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 11px;
-  border-radius: 999px;
-  border: 1px solid var(--glass-line);
-  background: var(--glass);
+  min-height: 28px;
+  padding: 4px 10px;
   color: var(--ink-soft);
   font-size: 12px;
-  font-weight: 650;
-  cursor: pointer;
+  font-weight: 600;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .medida i {

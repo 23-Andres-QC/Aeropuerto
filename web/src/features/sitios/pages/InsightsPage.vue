@@ -117,7 +117,7 @@ const totalLocales = computed(() => {
 });
 const zonaPico = computed(() => [...(p3.value?.zonas ?? [])].sort((a, b) => b.densidad_max - a.densidad_max)[0]);
 
-type Tarjeta = { titulo: string; icono: string; valor: string; detalle: string; serie?: (number | null)[] };
+type Tarjeta = { titulo: string; valor: string; detalle: string; serie?: (number | null)[] };
 const tarjetas = computed<Tarjeta[]>(() => {
   if (analisis.value) return tarjetasVivo.value;
   const res = r.value;
@@ -133,42 +133,36 @@ const tarjetas = computed<Tarjeta[]>(() => {
   return [
     {
       titulo: "PERSONAS",
-      icono: "◍",
       valor: n(enZona ? z?.visitantes : res?.personas),
       detalle: res ? (enZona ? `de ${res.personas} en la sesión` : textoGenero(res.personas, g, res.genero_ocultos ?? 0) || "género no registrado") : "sin sesión",
       serie: serie.value?.personas,
     },
     {
       titulo: "VISITAS",
-      icono: "⬡",
       valor: n(enZona ? l?.visitas : conLocales ? totalLocales.value.visitas : null),
       detalle: enZona ? (l ? l.nombre : "zona sin local") : cantidad(a?.locales.length ?? 0, "local", "locales"),
       serie: serieDeLocales("visitas"),
     },
     {
       titulo: "EXPOSICIÓN",
-      icono: "⇥",
       valor: n(enZona ? l?.exposicion : conLocales ? totalLocales.value.exposicion : null),
       detalle: "pasan por el frente",
       serie: serieDeLocales("exposicion"),
     },
     {
       titulo: "PERMANENCIA",
-      icono: "◷",
       valor: enZona ? segundos(z?.permanencia_media_s) : segundos(res?.permanencia.media_s),
       detalle: `mediana ${enZona ? segundos(z?.permanencia_mediana_s) : segundos(res?.permanencia.mediana_s)}`,
       serie: enZona ? serie.value?.permanencia_s : undefined,
     },
     {
       titulo: "CAPTACIÓN",
-      icono: "◎",
       valor: tasa == null ? "—" : `${tasa.toFixed(0)} %`,
       detalle: expuestos(enZona ? l : conLocales ? totalLocales.value : null, enZona ? "zona sin local" : "sin locales"),
       serie: serieCaptacion,
     },
     {
       titulo: "DENSIDAD MÁX",
-      icono: "▦",
       valor: enZona ? (z ? z.densidad_max.toFixed(2) : "—") : zonaPico.value ? zonaPico.value.densidad_max.toFixed(2) : "—",
       detalle: enZona || !zonaPico.value ? "personas / m²" : `personas / m² · ${zonaPico.value.nombre}`,
       serie: serie.value?.densidad,
@@ -196,24 +190,21 @@ const tarjetasVivo = computed<Tarjeta[]>(() => {
   const permanencia = enZona ? (z?.permanencia ?? null) : res.permanenciaMedia;
   const pico = enZona ? (z?.densidad ?? 0) : (res.densidadMax?.valor ?? 0);
   return [
-    { titulo: "PERSONAS", icono: "◍", valor: hs.length.toLocaleString(), detalle: enZona ? `de ${res.personas} en vivo` : textoGenero(hs.length, priv.visibles, priv.ocultas) || "género no registrado" },
-    { titulo: "VISITAS", icono: "⬡", valor: hayLocales ? entraron.length.toLocaleString() : "—", detalle: hayLocales ? "entraron a un local" : "sin locales" },
-    { titulo: "EXPOSICIÓN", icono: "⇥", valor: hayLocales ? expuestos.length.toLocaleString() : "—", detalle: "pasan por el frente" },
+    { titulo: "PERSONAS", valor: hs.length.toLocaleString(), detalle: enZona ? `de ${res.personas} en vivo` : textoGenero(hs.length, priv.visibles, priv.ocultas) || "género no registrado" },
+    { titulo: "VISITAS", valor: hayLocales ? entraron.length.toLocaleString() : "—", detalle: hayLocales ? "entraron a un local" : "sin locales" },
+    { titulo: "EXPOSICIÓN", valor: hayLocales ? expuestos.length.toLocaleString() : "—", detalle: "pasan por el frente" },
     {
       titulo: "PERMANENCIA",
-      icono: "◷",
       valor: segundos(permanencia),
       detalle: enZona ? "tiempo en la zona" : `mediana ${segundos(res.permanenciaMediana)}`,
     },
     {
       titulo: "CAPTACIÓN",
-      icono: "◎",
       valor: expuestos.length ? `${((100 * captados.length) / expuestos.length).toFixed(0)} %` : "—",
       detalle: expuestos.length ? `${captados.length} de ${expuestos.length} expuestos` : "sin expuestos",
     },
     {
       titulo: "DENSIDAD MÁX",
-      icono: "▦",
       valor: pico ? pico.toFixed(2) : "—",
       detalle: enZona || !res.densidadMax ? "personas / m²" : `personas / m² · ${res.densidadMax.zona}`,
     },
@@ -542,18 +533,17 @@ onMounted(async () => {
           <option v-for="z in zonas" :key="z.zone_id" :value="z.zone_id">{{ z.name }}</option>
         </select></label
       >
-      <button type="button" class="pill ir-trafico" title="Tráfico del sitio por período y franja horaria" @click="irATrafico">Tráfico por franja y fecha ↓</button>
+      <button type="button" class="ir-trafico" title="Tráfico del sitio por período y franja horaria" @click="irATrafico">Tráfico por franja</button>
       <span v-if="modoVivo" class="pill en-vivo">● EN VIVO</span>
       <span v-if="analisisGuardado" class="pill capturada" title="Guardada del modo en vivo; sus métricas se calculan desde su recorrido">● Captura en vivo guardada</span>
       <span v-if="!modoVivo && analitica" class="pill" :title="`Calculado ${new Date(analitica.computed_at).toLocaleString('es-PE')}`">Parte III</span>
       <span v-if="!modoVivo && analitica?.stale" class="pill aviso-pill" :title="comando">zonas cambiadas · recalcular</span>
       <span v-else-if="!modoVivo && !analisis && sesionId && !cargando && !analitica" class="pill aviso-pill" :title="comando">Parte III sin calcular</span>
-    </div>
-    <div class="export-actions">
-      <button type="button" class="boton-primario" :disabled="!datos && !modoVivo" @click="exportarPDF">⤓ Exportar PDF</button>
-      <button type="button" :disabled="!datos && !modoVivo" @click="exportarCSV">⤓ Exportar Excel (CSV)</button>
-      <span v-if="modoVivo" class="muted mensaje-guardado">La captura se guarda con «Terminar y guardar» en En vivo.</span>
       <span v-if="modoVivo && mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
+      <span class="export-actions">
+        <button type="button" :disabled="!datos && !modoVivo" @click="exportarPDF">Exportar PDF</button>
+        <button type="button" :disabled="!datos && !modoVivo" @click="exportarCSV">Exportar CSV</button>
+      </span>
     </div>
   </section>
   <div v-if="modoVivo" class="resumen-sesion" aria-label="Resumen en vivo">
@@ -628,7 +618,7 @@ onMounted(async () => {
       </article>
       <div class="metrics">
         <article v-for="t in tarjetas" :key="t.titulo" class="panel metric" :class="{ vacio: esVacio(t.valor) }">
-          <p><span class="metric-icon">{{ t.icono }}</span>{{ t.titulo }}</p>
+          <p>{{ t.titulo }}</p>
           <strong>{{ t.valor }}</strong>
           <svg v-if="sparkline(t.serie)" class="sparkline" viewBox="0 0 72 22" preserveAspectRatio="none">
             <polygon :points="`2,20 ${sparkline(t.serie)} 70,20`" class="sparkline-area" />
@@ -814,33 +804,13 @@ onMounted(async () => {
 
 <style scoped>
 .ir-trafico {
-  cursor: pointer;
-  font-weight: 700;
-  color: var(--blue-600);
-}
-.replay-filters {
-  gap: 10px;
-}
-.replay-filters label {
-  gap: 9px;
-  font-size: 12px;
-  font-weight: 650;
+  color: var(--accent-ink);
 }
 .replay-filters select {
   max-width: 320px;
-  min-height: 32px;
-  padding: 5px 10px;
-  font-size: 12.5px;
-  font-weight: 560;
-  border-radius: 9px;
-}
-.replay-filters .pill {
-  padding: 5px 11px;
-  font-size: 11.5px;
 }
 .mensaje-guardado {
-  align-self: center;
-  font-size: 12.5px;
+  font-size: 12px;
 }
 .vacio-guardado p {
   margin: 0;

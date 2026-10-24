@@ -3,51 +3,56 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 18px;
-  margin: 0 0 14px;
-  padding: 10px 14px;
-  border: 1px solid var(--glass-line);
-  border-radius: var(--radius);
-  background: var(--glass);
-  box-shadow: var(--shadow-s);
+  gap: 8px;
 }
 .ventas .filtros label {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  font-weight: 640;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
   color: var(--ink-soft);
 }
 .ventas .filtros select {
   width: auto;
-  min-height: 32px;
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: 500;
-  font-size: 12.5px;
 }
-.ventas .filtros .espacio {
-  flex: 1;
+/* Pestañas subrayadas a la izquierda y las cifras de los datos a la derecha, sobre la misma línea. */
+.ventas .fila-pestanas {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  border-bottom: 1px solid var(--line-control);
+}
+.ventas .fila-pestanas .heading-meta {
+  padding-bottom: 7px;
 }
 .ventas .pestanas {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 14px;
 }
 .ventas .pestanas button {
-  padding: 8px 16px;
-  border-radius: 999px;
+  min-height: 34px;
+  margin-bottom: -1px;
+  padding: 6px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--ink-soft);
   font-size: 13px;
-  font-weight: 620;
+  font-weight: 600;
 }
-.ventas .pestanas button.activo {
-  color: #fff;
-  border-color: transparent;
-  background: linear-gradient(180deg, #4a95ff 0%, var(--blue-600) 100%);
+.ventas .pestanas button:hover:not(:disabled) {
+  color: var(--ink);
+  border-bottom-color: var(--line-control);
+}
+.ventas .pestanas button.activo,
+.ventas .pestanas button.activo:hover:not(:disabled) {
+  color: var(--accent-ink);
+  border-bottom-color: var(--blue-600);
 }
 .ventas .nota {
   margin: 0 0 12px;
@@ -76,20 +81,19 @@
 .ventas table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: 12.5px;
 }
 .ventas th {
-  padding: 9px 10px;
+  padding: 8px 10px;
   text-align: left;
   font-size: 11px;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
+  font-weight: 650;
   color: var(--ink-faint);
   border-bottom: 1px solid var(--glass-line);
   white-space: nowrap;
 }
 .ventas td {
-  padding: 10px;
+  padding: 7px 10px;
   border-bottom: 1px solid var(--glass-line);
   vertical-align: middle;
 }
@@ -103,8 +107,8 @@
 }
 .ventas td small {
   display: block;
-  margin-top: 2px;
-  font-size: 11.5px;
+  margin-top: 1px;
+  font-size: 11px;
   color: var(--ink-faint);
 }
 .ventas .barra {
@@ -135,17 +139,15 @@
 .ventas .origen-simulado {
   color: var(--warn);
   background: rgba(200, 121, 29, 0.12);
-  border-color: rgba(200, 121, 29, 0.35);
 }
 .ventas .origen-real {
   color: var(--good);
   background: rgba(14, 155, 116, 0.12);
-  border-color: rgba(14, 155, 116, 0.35);
 }
 .ventas .vacio {
   margin: 0;
-  padding: 22px 16px;
-  font-size: 14px;
+  padding: 16px 14px;
+  font-size: 12.5px;
   line-height: 1.55;
   color: var(--ink-soft);
 }
@@ -187,15 +189,11 @@
   margin-left: 4px;
 }
 .ventas .borrar {
-  padding: 4px 9px;
-  font-size: 11.5px;
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 12px;
   color: var(--danger);
   border-color: rgba(207, 64, 64, 0.3);
-}
-@media (max-width: 900px) {
-  .ventas .filtros .espacio {
-    display: none;
-  }
 }
 .ventas .dudosa {
   color: var(--warn);
@@ -205,13 +203,9 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.ventas .boton-plano {
-  padding: 6px 14px;
-  border-radius: 999px;
-  font-size: 12px;
-}
 .ventas .boton-plano.activo {
-  color: var(--blue-700);
+  color: var(--accent-ink);
+  border-color: rgba(61, 139, 255, 0.55);
   background: var(--pill-bg);
 }
 
@@ -263,9 +257,9 @@
 }
 /* Emparejamiento: el botón que abre el recorrido de la persona y la fila que se está viendo. */
 .ventas .ver-recorrido {
-  padding: 4px 11px;
-  border-radius: 999px;
-  font-size: 11.5px;
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 12px;
   white-space: nowrap;
 }
 .ventas tbody tr.elegida td {

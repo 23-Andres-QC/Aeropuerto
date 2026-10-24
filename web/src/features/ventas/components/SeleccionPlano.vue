@@ -77,10 +77,7 @@ const hayZonas = computed(() => zonas.value.some((z) => esArea(z) || z.local_id 
     <div class="cuerpo-sel" :class="{ sinplano: !mapa }">
       <div v-if="mapa" class="plano-col">
         <PlanoSitio :mapa="mapa" :zonas="zonas" :zona-activa="resaltada" :mostrar-camaras="false" :leyenda="false" inicio="sitio" @zona="clicEnPlano" @fondo="elegir([])" />
-        <p class="pie muted">
-          <template v-if="hayZonas">Haz clic en una tienda para ver solo esa, o en un área para ver todas las tiendas que tiene dentro. Un clic fuera de las zonas vuelve a «todos».</template>
-          <template v-else>Este plano todavía no tiene zonas dibujadas: dibújalas en Configuración para elegirlas aquí.</template>
-        </p>
+        <p v-if="!hayZonas" class="pie muted">Este plano todavía no tiene zonas dibujadas: dibújalas en Configuración para elegirlas aquí.</p>
         <p v-if="aviso" class="aviso-sel">{{ aviso }}</p>
       </div>
       <div class="lista-col">
@@ -117,9 +114,9 @@ const hayZonas = computed(() => zonas.value.some((z) => esArea(z) || z.local_id 
   margin: 0 0 14px;
 }
 .limpiar {
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: 11.5px;
+  min-height: 26px;
+  padding: 3px 10px;
+  font-size: 12px;
 }
 .cuerpo-sel {
   display: grid;
@@ -151,7 +148,7 @@ const hayZonas = computed(() => zonas.value.some((z) => esArea(z) || z.local_id 
 .lista-col {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   align-content: start;
   max-height: 520px;
   overflow: auto;
@@ -161,11 +158,14 @@ const hayZonas = computed(() => zonas.value.some((z) => esArea(z) || z.local_id 
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 9px 12px;
-  border-radius: var(--radius-s);
+  min-height: 32px;
+  padding: 5px 10px;
   text-align: left;
   justify-content: flex-start;
-  font-size: 13px;
+  font-size: 12.5px;
+}
+.fila b {
+  font-weight: 600;
 }
 .fila small {
   margin-left: auto;
@@ -175,8 +175,8 @@ const hayZonas = computed(() => zonas.value.some((z) => esArea(z) || z.local_id 
 }
 .fila.activo {
   color: #fff;
-  border-color: transparent;
-  background: linear-gradient(180deg, #4a95ff 0%, var(--blue-600) 100%);
+  border-color: var(--blue-600);
+  background: var(--blue-600);
 }
 .fila.activo small {
   color: rgba(255, 255, 255, 0.85);
@@ -190,25 +190,24 @@ const hayZonas = computed(() => zonas.value.some((z) => esArea(z) || z.local_id 
 .tiendas {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 0 6px 18px;
+  gap: 4px;
+  padding: 0 0 4px 0;
 }
 .chip {
-  padding: 5px 11px;
-  border-radius: 999px;
+  min-height: 28px;
+  padding: 4px 10px;
   font-size: 12px;
+  font-weight: 500;
 }
 .chip.activo {
   color: #fff;
-  border-color: transparent;
+  border-color: var(--blue-600);
   background: var(--blue-600);
 }
 .grupo {
-  margin: 8px 2px 0;
+  margin: 8px 2px 2px;
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
+  font-weight: 650;
   color: var(--ink-faint);
 }
 .vacio-sel {

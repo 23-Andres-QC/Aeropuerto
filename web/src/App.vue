@@ -49,9 +49,9 @@ const rolNombre = computed(() => NOMBRE_ROL[sesion.value?.rol ?? ""] ?? sesion.v
 const simple = computed(() => route.path === "/cambiar-clave" || route.path === "/privacidad");
 const videos = computed(() => route.path === "/videos");
 const title = computed(() => {
-  if (telefonos.value) return "Cámaras de teléfono · modelo final";
-  if (cuentas.value) return "Cuentas y privacidad";
-  if (videos.value) return "Videos · modelo final sin guardar nada";
+  if (telefonos.value) return "Teléfonos";
+  if (cuentas.value) return "Cuentas";
+  if (videos.value) return "Videos";
   const nombre = SECCIONES.find((s) => s.id === seccion.value)?.nombre ?? "";
   return `${actual.value?.name ?? slug.value} · ${nombre}`;
 });
@@ -105,9 +105,7 @@ function elegirSitio(s: Sitio) {
       >
       <div v-if="telefonos || videos || cuentas" class="airport-switch">
         <IconoNav class="airport-symbol" :nombre="telefonos ? 'telefonos' : cuentas ? 'cuentas' : 'videos'" />
-        <div v-if="telefonos"><b>Teléfonos</b><small>Modelo final en vivo · IDs estables</small></div>
-        <div v-else-if="cuentas"><b>Cuentas</b><small>Cuentas, accesos y privacidad</small></div>
-        <div v-else><b>Videos</b><small>Modelo final sobre un archivo · nada se guarda</small></div>
+        <div><b>{{ telefonos ? "Teléfonos" : cuentas ? "Cuentas" : "Videos" }}</b></div>
       </div>
       <SelectorSitio v-else :sitios="sitios" :slug="slug" :actual="actual" @elegir="elegirSitio" />
       <p class="nav-caption">ESPACIO DE TRABAJO</p>
@@ -126,12 +124,6 @@ function elegirSitio(s: Sitio) {
           ><IconoNav nombre="cuentas" /><span class="nav-label"><b class="nav-step">8.</b>Cuentas</span></RouterLink
         >
       </nav>
-      <div class="sidebar-bottom">
-        <span class="demo-indicator"></span>
-        <div>
-          <b>Modelo LAP01</b><small>{{ telefonos || videos ? "Procesamiento en memoria" : "Resultados reales guardados en la base" }}</small>
-        </div>
-      </div>
     </aside>
     <div class="workspace">
       <header class="workspace-header">
@@ -166,18 +158,9 @@ function elegirSitio(s: Sitio) {
         </div>
       </header>
       <main>
-        <nav v-if="seccion && sitios.length" class="config-tabs sitio-tabs" aria-label="Sitio">
-          <RouterLink v-for="s in sitios" :key="s.slug" :to="rutaAlElegir(s, seccion)" :class="{ activo: s.slug === slug }">{{
-            s.name
-          }}</RouterLink>
-        </nav>
         <RouterView :key="`${slug}:${seccion}`" />
       </main>
-      <!-- Teléfonos y Videos van sin textos: solo el enlace o el video y el modelo. -->
-      <footer v-if="!telefonos && !videos">
-        <span>Modelo LAP01 · YOLO26m + tracking + Re-ID + mapa 2D</span
-        ><span>Datos del modelo en PostgreSQL/PostGIS · <RouterLink to="/privacidad">Aviso de privacidad</RouterLink> · <RouterLink to="/cambiar-clave">Mi contraseña</RouterLink></span>
-      </footer>
+      <footer><RouterLink to="/privacidad">Aviso de privacidad</RouterLink><RouterLink to="/cambiar-clave">Mi contraseña</RouterLink></footer>
     </div>
   </div>
   <!-- A los 2 min sin actividad se cierra la sesión (10 s antes pregunta «¿sigues ahí?»); vale para todas las pantallas con sesión. -->
@@ -217,9 +200,5 @@ function elegirSitio(s: Sitio) {
 .simple-quien {
   font-size: 13px;
   color: var(--ink-3, #64748b);
-}
-.sitio-tabs a.activo {
-  color: white;
-  background: var(--blue-600);
 }
 </style>

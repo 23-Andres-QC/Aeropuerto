@@ -468,7 +468,7 @@ onUnmounted(() => {
 <template>
   <section ref="contenedor" class="panel sala">
     <div class="panel-heading">
-      <span></span>
+      <h2>Cámaras</h2>
       <button class="button icon-button" type="button" aria-label="Pantalla completa" title="Pantalla completa" @click="pantallaCompleta">⛶</button>
     </div>
     <div v-if="camaras.length" class="rejilla" :style="rejilla">
@@ -498,7 +498,7 @@ onUnmounted(() => {
         </button>
       </div>
     </div>
-    <div v-else class="vacia"></div>
+    <p v-else class="vacia">Ningún teléfono conectado.</p>
   </section>
 </template>
 
@@ -588,7 +588,7 @@ onUnmounted(() => {
 .vacia {
   display: grid;
   place-items: center;
-  min-height: 240px;
+  min-height: 120px;
   margin: 0;
   font-size: 12px;
   color: var(--ink-soft);

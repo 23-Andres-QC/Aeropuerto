@@ -111,14 +111,14 @@ const maxPaso = computed(() => Math.max(1, ...e.value.pasos.map((p) => Math.abs(
   margin-bottom: 14px;
 }
 .recetas button {
-  padding: 6px 12px;
-  border-radius: 999px;
+  min-height: 28px;
+  padding: 4px 10px;
   font-size: 12px;
 }
 .recetas button.activo {
   color: #fff;
-  border-color: transparent;
-  background: linear-gradient(180deg, #4a95ff 0%, var(--blue-600) 100%);
+  border-color: var(--blue-600);
+  background: var(--blue-600);
 }
 .recetas .quitar {
   color: var(--ink-soft);

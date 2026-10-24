@@ -124,7 +124,7 @@ const hace = (iso: string) => {
 
     <div class="filtros">
       <input v-model="busqueda" type="search" class="buscar" placeholder="Buscar por cuenta, IP, acción o detalle…" aria-label="Buscar en la bitácora" data-prueba="buscar-bitacora" />
-      <div class="chips" role="group" aria-label="Tipo de acción">
+      <div class="chips segmentado" role="group" aria-label="Tipo de acción">
         <button v-for="t in TIPOS" :key="t.id" type="button" class="chip" :class="{ activo: tipo === t.id }" :data-prueba="`tipo-${t.id}`" @click="tipo = t.id">
           {{ t.etiqueta }} <span class="cuenta">{{ cuenta[t.id] ?? 0 }}</span>
         </button>
@@ -179,20 +179,16 @@ const hace = (iso: string) => {
 }
 h2 {
   margin: 0;
-  font-size: 17px;
+  font-size: 13.5px;
 }
 .nota {
   margin: 2px 0 0;
   font-size: 12px;
 }
 .actualizar {
-  padding: 5px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--glass-line);
-  background: var(--glass);
+  min-height: 28px;
+  padding: 4px 10px;
   font-size: 12px;
-  font-weight: 650;
-  cursor: pointer;
 }
 .filtros {
   display: grid;
@@ -202,38 +198,11 @@ h2 {
   width: 100%;
   max-width: 420px;
 }
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 11px;
-  border-radius: 999px;
-  border: 1px solid var(--glass-line);
-  background: var(--glass);
-  color: var(--ink-soft);
-  font-size: 12px;
-  font-weight: 650;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, transform 0.15s;
-}
-.chip:hover {
-  transform: translateY(-1px);
-}
-.chip.activo {
-  background: var(--accent-color, #2563eb);
-  border-color: var(--accent-color, #2563eb);
-  color: #fff;
-}
 .chip .cuenta {
   font-size: 11px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: rgba(100, 116, 139, 0.18);
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(100, 116, 139, 0.16);
   font-variant-numeric: tabular-nums;
 }
 .chip.activo .cuenta {
@@ -286,10 +255,10 @@ h2 {
 }
 .insignia {
   display: inline-block;
-  padding: 2px 9px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 650;
   white-space: nowrap;
   background: rgba(100, 116, 139, 0.14);
   color: var(--ink-soft);

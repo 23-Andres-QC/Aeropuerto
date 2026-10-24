@@ -107,7 +107,7 @@ const errorTipico = (w: number | null | undefined) => (w == null ? "—" : porce
   <div class="filtros">
     <label>
       Predecir
-      <span class="grupo" role="group" aria-label="Paso del pronóstico">
+      <span class="grupo segmentado" role="group" aria-label="Paso del pronóstico">
         <button type="button" :class="{ activo: paso === 'dia' }" @click="cambiarPaso('dia')">Por día</button>
         <button type="button" :class="{ activo: paso === 'hora' }" @click="cambiarPaso('hora')">Por hora</button>
       </span>
@@ -128,27 +128,27 @@ const errorTipico = (w: number | null | undefined) => (w == null ? "—" : porce
   <template v-if="datos">
     <section v-if="resumen" class="metrics" style="margin-bottom: 14px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr))">
       <article class="panel metric">
-        <p><span class="metric-icon">S/</span>INGRESOS ESPERADOS · {{ horizonte }} {{ unidad.toUpperCase() }}</p>
+        <p>INGRESOS ESPERADOS · {{ horizonte }} {{ unidad.toUpperCase() }}</p>
         <strong><CifraAnimada :valor="resumen.ingresos.value" :formato="dineroCorto" /></strong>
         <small>probable entre <CifraAnimada :valor="resumen.ingresos.low" :formato="dineroCorto" /> y <CifraAnimada :valor="resumen.ingresos.high" :formato="dineroCorto" /></small>
       </article>
       <article class="panel metric" :class="{ vacio: !hayVisitas }">
-        <p><span class="metric-icon">⌖</span>VISITANTES ESPERADOS</p>
+        <p>VISITANTES ESPERADOS</p>
         <strong><CifraAnimada :valor="hayVisitas ? resumen.visitantes : null" :formato="entero" /></strong>
         <small>{{ hayVisitas ? "personas que entrarían a los locales" : "sin conteo de visitantes en este período" }}</small>
       </article>
       <article class="panel metric" :class="{ vacio: resumen.conversion == null }">
-        <p><span class="metric-icon">%</span>CONVERSIÓN ESPERADA</p>
+        <p>CONVERSIÓN ESPERADA</p>
         <strong><CifraAnimada :valor="resumen.conversion" :formato="porcentaje1" /></strong>
         <small><CifraAnimada :valor="resumen.tickets" :formato="entero" /> tickets esperados</small>
       </article>
       <article class="panel metric" :class="{ vacio: resumen.ticket == null }">
-        <p><span class="metric-icon">≈</span>TICKET PROMEDIO ESPERADO</p>
+        <p>TICKET PROMEDIO ESPERADO</p>
         <strong><CifraAnimada :valor="resumen.ticket" :formato="dinero" /></strong>
         <small>ingresos entre tickets proyectados</small>
       </article>
       <article class="panel metric">
-        <p><span class="metric-icon">±</span>ERROR TÍPICO DEL MODELO</p>
+        <p>ERROR TÍPICO DEL MODELO</p>
         <strong><CifraAnimada :valor="calidad?.wape" :formato="porcentajeEntero" /></strong>
         <small>al predecir un {{ paso === "dia" ? "día" : "hora" }} ya conocido a partir de los anteriores</small>
       </article>
@@ -277,22 +277,6 @@ const errorTipico = (w: number | null | undefined) => (w == null ? "—" : porce
 </template>
 
 <style scoped>
-.grupo {
-  display: inline-flex;
-  gap: 6px;
-}
-.grupo button {
-  padding: 6px 13px;
-  border-radius: 999px;
-  font-size: 12.5px;
-  text-transform: none;
-  letter-spacing: 0;
-}
-.grupo button.activo {
-  color: #fff;
-  border-color: transparent;
-  background: linear-gradient(180deg, #4a95ff 0%, var(--blue-600) 100%);
-}
 .tabla-pron summary {
   cursor: pointer;
   padding: 12px 16px;

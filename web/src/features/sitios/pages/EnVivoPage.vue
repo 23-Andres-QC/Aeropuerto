@@ -296,11 +296,6 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
     <div>
       <p class="eyebrow">{{ config?.site.name ?? slug }} · EN VIVO DEL MODELO<template v-if="modoVivo && zonaVivo"> · <b data-prueba="zona-en-vivo">{{ zonaVivo.toUpperCase() }}</b></template></p>
       <h1>Personas sobre el plano y cámaras sincronizadas</h1>
-      <p v-if="modoVivo">
-        Tracking en tiempo real: cada teléfono que se une en <RouterLink to="/telefonos">Teléfonos</RouterLink> toma una cámara del plano, en orden de llegada
-        (cam01, cam02), y sus personas se ubican con la posición de esa cámara.
-      </p>
-      <p v-else>Reproduce una sesión guardada en la base: posiciones en metros, IDs globales y los videos procesados, en el mismo reloj.</p>
     </div>
     <label class="selector-sesion">Sesión
       <select v-model="valorSesion">
@@ -483,12 +478,16 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
 
 <style scoped>
 .selector-sesion {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 10.5px;
-  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
   color: var(--ink-soft);
+}
+.selector-sesion select {
+  width: auto;
+  max-width: 340px;
 }
 .envivo-esan {
   display: grid;
@@ -521,9 +520,9 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   color: var(--ink-soft);
 }
 .opcion-zona {
-  padding: 4px 12px;
-  border: 1px solid var(--glass-line);
-  border-radius: 999px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--line-control);
   background: transparent;
   font-size: 12px;
   font-weight: 600;
@@ -683,14 +682,14 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   font-size: 12px;
 }
 .reiniciar-calor {
-  padding: 4px 10px;
-  font-size: 11.5px;
-  border-radius: 999px;
+  min-height: 26px;
+  padding: 3px 10px;
+  font-size: 12px;
 }
 .guardar {
   color: #fff;
-  border-color: transparent;
-  background: linear-gradient(180deg, #4a95ff 0%, var(--blue-600) 100%);
+  border-color: var(--blue-600);
+  background: var(--blue-600);
 }
 .mensaje-guardado {
   font-size: 11.5px;

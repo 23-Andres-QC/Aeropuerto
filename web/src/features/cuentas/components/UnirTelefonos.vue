@@ -86,7 +86,6 @@ onUnmounted(() => clearInterval(sondeo));
   <section class="panel unir" aria-label="Unir teléfonos como cámaras">
     <div class="panel-heading">
       <h2>Unir teléfonos</h2>
-      <span class="muted">solo con un código de unión · no vence · cualquier teléfono</span>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
 
@@ -96,7 +95,7 @@ onUnmounted(() => clearInterval(sondeo));
         <p v-else class="muted">Abre esta página con la IP o el dominio del servidor para que el QR lleve a la cámara.</p>
       </div>
       <div class="datos">
-        <p class="muted">Escanea el QR con el teléfono, o escribe este código en la página de cámara:</p>
+        <p class="muted">Código de unión</p>
         <p class="codigo" data-prueba="codigo-vigente">{{ vigente.codigo }}</p>
         <p class="cuenta">
           No vence · se usó en <b data-prueba="usos">{{ vigente.usos }}</b>
@@ -104,17 +103,16 @@ onUnmounted(() => clearInterval(sondeo));
         </p>
         <p v-if="enlace" class="muted enlace-texto">{{ enlace }}</p>
         <div class="acciones">
-          <button class="button" type="button" @click="copiar">{{ copiado ? "✓ Copiado" : "Copiar código" }}</button>
+          <button class="button" type="button" @click="copiar">{{ copiado ? "Copiado" : "Copiar código" }}</button>
+          <button class="primary-button" type="button" data-prueba="crear-codigo" :disabled="creando" @click="crear">Crear otro código</button>
           <button class="danger-button" type="button" data-prueba="revocar-codigo" @click="revocar(vigente)">Revocar código</button>
         </div>
       </div>
     </div>
     <div v-else class="sin-codigo">
-      <p class="muted">No hay un código vigente. Sin código nadie puede unirse como cámara.</p>
+      <p class="muted">No hay un código vigente.</p>
+      <button class="primary-button" type="button" data-prueba="crear-codigo" :disabled="creando" @click="crear">Crear código de unión</button>
     </div>
-    <button class="primary-button" type="button" data-prueba="crear-codigo" :disabled="creando" @click="crear">
-      {{ vigente ? "Crear otro código" : "Crear código de unión" }}
-    </button>
 
     <div v-if="telefonos.some((t) => !t.simulado)" class="unidos">
       <h3>Teléfonos unidos</h3>
@@ -139,32 +137,39 @@ onUnmounted(() => clearInterval(sondeo));
 
 <style scoped>
 .unir {
-  padding: 14px 16px;
+  padding: 12px 14px 14px;
   margin-bottom: 14px;
+}
+.unir > .panel-heading {
+  margin: -12px -14px 12px;
 }
 .vigente {
   display: flex;
   gap: 20px;
   flex-wrap: wrap;
   align-items: flex-start;
-  margin-bottom: 12px;
 }
 .qr-caja {
-  flex: 0 0 240px;
+  flex: 0 0 180px;
   max-width: 100%;
 }
 .datos {
   flex: 1 1 260px;
 }
+.datos .muted {
+  font-size: 11.5px;
+}
 .codigo {
-  font-size: 34px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
+  font-size: 26px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
   font-variant-numeric: tabular-nums;
-  margin: 4px 0;
+  margin: 2px 0;
 }
 .cuenta {
-  margin: 4px 0 8px;
+  margin: 2px 0 10px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
 }
 .enlace-texto {
   word-break: break-all;
@@ -176,7 +181,9 @@ onUnmounted(() => clearInterval(sondeo));
   flex-wrap: wrap;
 }
 .sin-codigo {
-  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 .anteriores {
   margin-top: 12px;
@@ -186,7 +193,7 @@ onUnmounted(() => clearInterval(sondeo));
 }
 .unidos h3 {
   margin: 0 0 6px;
-  font-size: 14px;
+  font-size: 12.5px;
 }
 .unidos ul {
   margin: 0;
