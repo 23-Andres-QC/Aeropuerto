@@ -113,13 +113,13 @@ func (p *Import) Validate() error {
 	if s.Status == "" {
 		s.Status = "DONE"
 	}
-	if s.Kind != "BUILD" && s.Kind != "LIVE" {
-		return Invalid("kind debe ser BUILD o LIVE")
+	if s.Kind != "BUILD" && s.Kind != "LIVE" && s.Kind != "VIDEO" {
+		return Invalid("kind debe ser BUILD, LIVE o VIDEO")
 	}
 	if s.Status != "RUNNING" && s.Status != "DONE" && s.Status != "FAILED" {
 		return Invalid("status debe ser RUNNING, DONE o FAILED")
 	}
-	if s.Kind == "LIVE" {
+	if s.Kind == "LIVE" || s.Kind == "VIDEO" {
 		s.StartDeclared = true
 	}
 	if s.Kind == "BUILD" && !s.StartDeclared {

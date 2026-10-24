@@ -53,6 +53,7 @@ const zonasAGrabar = computed(() => [
   ...(mapa.value?.capas?.length ? [{ clave: "general", nombre: "General · patio y comedor a la vez", activa: false }] : []),
 ]);
 const guardadasVivo = computed(() => sesiones.value.filter((s) => s.kind === "LIVE"));
+const deVideos = computed(() => sesiones.value.filter((s) => s.kind === "VIDEO"));
 const grabadas = computed(() => sesiones.value.filter((s) => s.kind === "BUILD"));
 
 /** Termina la captura (se guarda recién ahora) y recarga la lista para que aparezca en «Guardado en vivo». */
@@ -304,6 +305,11 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         </optgroup>
         <optgroup v-if="guardadasVivo.length" label="Guardado en vivo">
           <option v-for="s in guardadasVivo" :key="s.session_id" :value="s.session_id">
+            {{ s.name || s.session_id.slice(0, 8) }} · {{ s.identities }} personas
+          </option>
+        </optgroup>
+        <optgroup v-if="deVideos.length" label="Videos">
+          <option v-for="s in deVideos" :key="s.session_id" :value="s.session_id">
             {{ s.name || s.session_id.slice(0, 8) }} · {{ s.identities }} personas
           </option>
         </optgroup>

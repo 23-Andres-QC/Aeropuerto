@@ -19,10 +19,10 @@ const { sitios, slug, actual, recargar } = useSitios();
 
 const SECCIONES = [
   { id: "en-vivo", n: 1, modulo: "en_vivo", nombre: "En vivo" },
-  { id: "insights", n: 2, modulo: "insights", nombre: "Insights" },
-  { id: "ventas", n: 3, modulo: "ventas", nombre: "Ventas" },
-  { id: "registros", n: 4, modulo: "registros", nombre: "Registros" },
-  { id: "configuracion", n: 5, modulo: "configuracion", nombre: "Configuración" },
+  { id: "insights", n: 3, modulo: "insights", nombre: "Insights" },
+  { id: "ventas", n: 4, modulo: "ventas", nombre: "Ventas" },
+  { id: "registros", n: 5, modulo: "registros", nombre: "Registros" },
+  { id: "configuracion", n: 6, modulo: "configuracion", nombre: "Configuración" },
 ];
 // El menú muestra solo los módulos que el servidor deja abrir a este rol (la API vuelve a comprobarlo en cada pregunta).
 const puede = (modulo: string) => sesion.value?.modulos?.includes(modulo) ?? true;
@@ -110,16 +110,16 @@ function elegirSitio(s: Sitio) {
       <SelectorSitio v-else :sitios="sitios" :slug="slug" :actual="actual" @elegir="elegirSitio" />
       <p class="nav-caption">ESPACIO DE TRABAJO</p>
       <nav aria-label="Navegación principal">
-        <RouterLink
-          v-for="s in seccionesVisibles"
-          :key="s.id"
-          :to="`/sitios/${sitioNav}/${s.id}`"
-          :class="{ 'router-link-active': seccion === s.id }"
-          ><IconoNav :nombre="s.id" /><span class="nav-label"><b class="nav-step">{{ s.n }}.</b>{{ s.nombre }}</span></RouterLink
+        <template v-for="s in seccionesVisibles" :key="s.id"
+          ><RouterLink :to="`/sitios/${sitioNav}/${s.id}`" :class="{ 'router-link-active': seccion === s.id }"
+            ><IconoNav :nombre="s.id" /><span class="nav-label"><b class="nav-step">{{ s.n }}.</b>{{ s.nombre }}</span></RouterLink
+          ><RouterLink v-if="s.n === 1 && puede('videos')" to="/videos"
+            ><IconoNav nombre="videos" /><span class="nav-label"><b class="nav-step">2.</b>Videos</span></RouterLink
+          ></template
+        ><RouterLink v-if="!puede('en_vivo') && puede('videos')" to="/videos"
+          ><IconoNav nombre="videos" /><span class="nav-label"><b class="nav-step">2.</b>Videos</span></RouterLink
         ><RouterLink v-if="puede('telefonos')" to="/telefonos"
-          ><IconoNav nombre="telefonos" /><span class="nav-label"><b class="nav-step">6.</b>Teléfonos</span></RouterLink
-        ><RouterLink v-if="puede('videos')" to="/videos"
-          ><IconoNav nombre="videos" /><span class="nav-label"><b class="nav-step">7.</b>Videos</span></RouterLink
+          ><IconoNav nombre="telefonos" /><span class="nav-label"><b class="nav-step">7.</b>Teléfonos</span></RouterLink
         ><RouterLink v-if="esAdmin" to="/cuentas" data-prueba="ir-cuentas"
           ><IconoNav nombre="cuentas" /><span class="nav-label"><b class="nav-step">8.</b>Cuentas</span></RouterLink
         >

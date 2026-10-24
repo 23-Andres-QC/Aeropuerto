@@ -1,5 +1,6 @@
 // Convierte lo que el modo en vivo acumuló en una sesión que el backend guarda como cualquier otra
-// (POST /api/v1/sites/<sitio>/sessions, kind LIVE). Módulo puro, sin dependencias de la interfaz.
+// (POST /api/v1/sites/<sitio>/sessions, kind LIVE; los videos subidos usan lo mismo con kind VIDEO, ver videos/guardar.ts).
+// Módulo puro, sin dependencias de la interfaz.
 
 /** Una posición de una persona en el plano, con el instante y la cámara que mejor la veía. */
 export type TrazaViva = { t: number; x: number; y: number; cam: string };
@@ -54,7 +55,15 @@ export type CargaSesion = {
  */
 export function construirSesion(
   personas: PersonaGuardable[],
-  opciones: { sesionId: string; nombre: string; inicio: number; fin: number; conteoDireccion?: unknown },
+  opciones: {
+    sesionId: string;
+    nombre: string;
+    inicio: number;
+    fin: number;
+    conteoDireccion?: unknown;
+    kind?: "LIVE" | "VIDEO";
+    estado?: string;
+  },
 ): CargaSesion {
   const { sesionId, nombre, inicio, fin } = opciones;
   const iso = (ms: number) => new Date(ms).toISOString();
@@ -137,14 +146,14 @@ export function construirSesion(
     session: {
       session_id: sesionId,
       name: nombre,
-      kind: "LIVE",
+      kind: opciones.kind ?? "LIVE",
       status: "DONE",
       recording_start: iso(inicio),
       ended_at: iso(Math.max(fin, inicio)),
       // conteo_direccion: quién cruzó la línea de conteo de cada cámara, por sentido, género y con o sin ID (ver enVivo.ts).
       summary: {
         personas: identities.length,
-        estado: "Captura en vivo con teléfonos",
+        estado: opciones.estado ?? "Captura en vivo con teléfonos",
         puntos: p.t.length,
         ...(opciones.conteoDireccion ? { conteo_direccion: opciones.conteoDireccion } : {}),
       },

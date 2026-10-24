@@ -101,7 +101,7 @@ func TestImportValidate(t *testing.T) {
 	}
 }
 
-// A BUILD must say when the recording began; a LIVE session takes it from the clock. The message names INICIO_GRABACION.
+// A BUILD must say when the recording began; a LIVE or VIDEO session takes it from the clock. The message names INICIO_GRABACION.
 func TestImportStartDeclaration(t *testing.T) {
 	p := validImport()
 	p.Session.StartDeclared = false
@@ -113,6 +113,16 @@ func TestImportStartDeclaration(t *testing.T) {
 	live.Session.Kind, live.Session.StartDeclared = "LIVE", false
 	if err := live.Validate(); err != nil || !live.Session.StartDeclared {
 		t.Fatalf("una sesión en vivo no declara la hora y queda como declarada: %v %+v", err, live.Session)
+	}
+	video := validImport()
+	video.Session.Kind, video.Session.StartDeclared = "VIDEO", false
+	if err := video.Validate(); err != nil || !video.Session.StartDeclared {
+		t.Fatalf("una sesión de videos no declara la hora y queda como declarada: %v %+v", err, video.Session)
+	}
+	otro := validImport()
+	otro.Session.Kind = "OTRO"
+	if err := otro.Validate(); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("un tipo desconocido debe rechazarse: %v", err)
 	}
 }
 

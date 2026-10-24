@@ -136,7 +136,7 @@ export function mapaDelSitio(c: Config | null | undefined): Mapa | undefined {
 export type Sesion = {
   session_id: string;
   name: string;
-  kind: "BUILD" | "LIVE";
+  kind: "BUILD" | "LIVE" | "VIDEO";
   status: string;
   recording_start: string;
   /** false: nadie declaró cuándo empezó a grabarse (INICIO_GRABACION); recording_start es la hora en que se procesó. */

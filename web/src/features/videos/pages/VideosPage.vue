@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { socketPersistente } from "../../../core/http";
+import { json, request, socketPersistente } from "../../../core/http";
+import { ultimoSitio } from "../../sitios/useSitios";
 import { RELEVO_VIVO } from "../../telefonos/api";
 import { api, MAX_VIDEOS, subirVideo, type EstadoVideos, type VideoActivo, type VideoSubido } from "../api";
+import { gruposTerminados, sesionDeVideos } from "../guardar";
 import VistaVideo, { type RelojComun } from "../components/VistaVideo.vue";
 
 const entrada = ref<HTMLInputElement>();
@@ -211,6 +213,49 @@ async function quitarTerminados() {
   for (const v of videos.value.filter((v) => v.resumen)) await quitar(v.id);
 }
 
+// --- Guardado en la base ------------------------------------------------------------------------------------
+// Cada tanda (o video suelto) que el modelo termina se guarda sola como sesión VIDEO del último sitio visitado, igual
+// que las capturas en vivo. Se recuerda qué grupos ya se guardaron: si alguien borra la sesión en Registros, volver a
+// esta página no la crea de nuevo.
+const CLAVE_GUARDADOS = "videos-guardados";
+function leerGuardados(): string[] {
+  try {
+    const lista = JSON.parse(localStorage.getItem(CLAVE_GUARDADOS) ?? "[]");
+    return Array.isArray(lista) ? lista.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+const guardados = ref(new Set(leerGuardados()));
+const fallidos = new Set<string>();
+const enCurso = new Set<string>();
+const sitioGuardado = ultimoSitio();
+const guardadas = computed(() => gruposTerminados(videos.value).filter((g) => guardados.value.has(g.clave)).length);
+
+async function guardarTerminados() {
+  for (const g of gruposTerminados(videos.value)) {
+    if (guardados.value.has(g.clave) || fallidos.has(g.clave) || enCurso.has(g.clave)) continue;
+    const carga = sesionDeVideos(g);
+    if (!carga) continue;
+    enCurso.add(g.clave);
+    try {
+      await request(`/api/v1/sites/${encodeURIComponent(sitioGuardado)}/sessions`, json("POST", carga));
+      guardados.value = new Set([...guardados.value, g.clave]);
+      try {
+        localStorage.setItem(CLAVE_GUARDADOS, JSON.stringify([...guardados.value].slice(-100)));
+      } catch {
+        /* sin localStorage: en la próxima visita se vuelve a guardar la misma sesión (se reemplaza, no se duplica) */
+      }
+    } catch (e) {
+      fallidos.add(g.clave);
+      error.value = `No se pudo guardar ${g.videos.map((v) => v.nombre).join(", ")}: ${(e as Error).message}`;
+    } finally {
+      enCurso.delete(g.clave);
+    }
+  }
+}
+watch(videos, guardarTerminados);
+
 function alEstado(ev: MessageEvent) {
   try {
     servicio.value = JSON.parse(ev.data as string) as EstadoVideos;
@@ -256,6 +301,7 @@ onUnmounted(() => {
     <span v-if="videos.length" class="heading-meta">
       <span v-if="enProceso" class="pill vivo">{{ enProceso }} procesándose</span>
       <span class="pill">{{ videos.length }} / {{ MAX_VIDEOS }}</span>
+      <span v-if="guardadas" class="pill guardada">{{ guardadas === 1 ? "Guardada" : `${guardadas} guardadas` }} en {{ sitioGuardado.toUpperCase() }}</span>
       <button v-if="videos.some((v) => v.resumen)" class="icon-button" type="button" @click="quitarTerminados">
         Quitar terminados
       </button>
@@ -339,7 +385,8 @@ onUnmounted(() => {
   flex: 1 1 260px;
   margin: 0;
 }
-.pill.vivo {
+.pill.vivo,
+.pill.guardada {
   color: var(--good);
 }
 .reproduccion {

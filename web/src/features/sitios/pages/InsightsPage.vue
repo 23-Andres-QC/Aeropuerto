@@ -25,6 +25,7 @@ const cargando = ref(true);
 const capaCalor = ref<"ocupacion" | "visitantes">("ocupacion");
 const verFlujos = ref(true);
 const guardadasVivo = computed(() => sesiones.value.filter((s) => s.kind === "LIVE"));
+const deVideos = computed(() => sesiones.value.filter((s) => s.kind === "VIDEO"));
 
 /**
  * Una captura en vivo guardada no pasa por la Parte III: sus métricas se calculan aquí desde su reproducción para que se vea
@@ -515,6 +516,11 @@ onMounted(async () => {
           <optgroup label="Guardado en vivo">
             <option v-if="!guardadasVivo.length" :value="SESION_SIN_CAPTURAS">Sin capturas todavía</option>
             <option v-for="s in guardadasVivo" :key="s.session_id" :value="s.session_id">
+              {{ s.name || s.session_id.slice(0, 8) }} · {{ s.identities }} personas
+            </option>
+          </optgroup>
+          <optgroup v-if="deVideos.length" label="Videos">
+            <option v-for="s in deVideos" :key="s.session_id" :value="s.session_id">
               {{ s.name || s.session_id.slice(0, 8) }} · {{ s.identities }} personas
             </option>
           </optgroup>

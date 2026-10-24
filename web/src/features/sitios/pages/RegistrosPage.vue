@@ -10,7 +10,7 @@ const { slug, actual } = useSitios();
 const sesiones = ref<Sesion[]>([]);
 const cargando = ref(true);
 const error = ref("");
-const tipo = ref<"LIVE" | "BUILD" | "TODAS">("LIVE");
+const tipo = ref<Sesion["kind"] | "TODAS">("LIVE");
 /** Filtro por día (yyyy-mm-dd, en hora local); vacío = todos. */
 const fecha = ref("");
 // Corregir cuándo empezó a grabarse una sesión del dataset: se escribe la hora de Lima y se mueven todos sus tiempos.
@@ -71,10 +71,11 @@ const filas = computed(() =>
         inicioISO: s.recording_start,
         estimada: s.kind === "BUILD" && !s.recording_start_declared,
         nombre: s.name || s.session_id.slice(0, 8),
-        vivo: s.kind === "LIVE",
+        tipo: s.kind === "LIVE" ? "En vivo" : s.kind === "VIDEO" ? "Video" : "Dataset",
+        dataset: s.kind === "BUILD",
         fecha: inicio.toLocaleDateString("es-PE", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }),
         rango: `${hora(inicio)} – ${hora(fin)}`,
-        duracion: segundos(s.duration_s),
+        duracion: segundos(s.duration_s || (fin.getTime() - inicio.getTime()) / 1000),
         personas: s.identities,
         puntos: s.points,
       };
@@ -96,6 +97,7 @@ watch(capturasVersion, cargar);
     <div class="barra-acciones">
       <div class="chips segmentado" role="group" aria-label="Tipo de registro">
         <button type="button" :class="{ activo: tipo === 'LIVE' }" @click="tipo = 'LIVE'">Guardado en vivo</button>
+        <button type="button" :class="{ activo: tipo === 'VIDEO' }" @click="tipo = 'VIDEO'">Videos</button>
         <button type="button" :class="{ activo: tipo === 'BUILD' }" @click="tipo = 'BUILD'">Grabado (dataset)</button>
         <button type="button" :class="{ activo: tipo === 'TODAS' }" @click="tipo = 'TODAS'">Todos</button>
       </div>
@@ -147,13 +149,13 @@ watch(capturasVersion, cargar);
             <td class="num">{{ f.personas }}</td>
             <td class="num">{{ f.puntos.toLocaleString() }}</td>
             <td>
-              <span class="pill" :class="{ capturada: f.vivo }">{{ f.vivo ? "En vivo" : "Dataset" }}</span>
+              <span class="pill" :class="{ capturada: !f.dataset }">{{ f.tipo }}</span>
             </td>
             <td>
               <div class="acciones">
                 <RouterLink :to="{ path: `/sitios/${slug}/insights`, query: { sesion: f.id } }">Insights</RouterLink>
                 <RouterLink :to="{ path: `/sitios/${slug}/en-vivo`, query: { sesion: f.id } }">Mapear en el plano</RouterLink>
-                <button v-if="!f.vivo" type="button" :aria-expanded="corrigiendo === f.id" @click="abrirCorreccion(f)">Corregir hora</button>
+                <button v-if="f.dataset" type="button" :aria-expanded="corrigiendo === f.id" @click="abrirCorreccion(f)">Corregir hora</button>
               </div>
             </td>
           </tr>
