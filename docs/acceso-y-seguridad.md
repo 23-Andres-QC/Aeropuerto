@@ -44,12 +44,15 @@ con una ventaja: no hay un token de acceso que siga valiendo 15 minutos después
 
 ## Recuperación de contraseña por correo
 
-1. **¿Olvidaste tu contraseña?** (en el login) → se escribe el correo. La respuesta es **siempre la misma** (202), exista o no la cuenta, y tarda lo mismo.
+1. **¿Olvidaste tu contraseña?** (en el login) → se escribe el correo. Si no hay cuenta con ese correo la respuesta es la misma de siempre (202, «si el correo pertenece a una cuenta…»), sin revelar nada.
 2. Si el correo es de una cuenta activa: token de **32 bytes** (`crypto/rand`), en la base solo su **SHA-256**, **vence a los 30 minutos**, **un solo uso**; un
-   enlace nuevo anula los anteriores. Máximo 3 enlaces por hora por cuenta y 5 solicitudes por cuarto de hora por IP.
+   enlace nuevo anula los anteriores. **Máximo 3 enlaces por hora por cuenta** (sin límite por IP, para que una red compartida no bloquee a todos): al pedir el cuarto, la página avisa
+   «No se puede enviar otro enlace: el máximo es 3 por hora. Podrás pedirlo de nuevo a las HH:MM» (hora de Lima, una hora después del enlace más antiguo). Eso sí confirma que la cuenta existe; es una decisión consciente.
 3. Llega un correo HTML (marca LAP, en español) con `APP_BASE_URL/restablecer?token=…`.
 4. La página valida el enlace, pide la contraseña nueva con confirmación, aplica la política, gasta el enlace y **cierra todas las sesiones**. Una contraseña débil
    no gasta el enlace. El token sale de la barra de direcciones apenas se lee.
+5. **Aviso de cambio:** cada vez que alguien cambia su contraseña (desde su cuenta o con este enlace) le llega un correo que dice que se cambió con éxito, con la fecha
+   y hora de Lima y la indicación de avisar al administrador si no fue esa persona. No trae contraseñas ni enlaces. Si el correo falla, el cambio ya está hecho y solo queda en el registro del servidor.
 
 ### Configurar el correo (SMTP)
 

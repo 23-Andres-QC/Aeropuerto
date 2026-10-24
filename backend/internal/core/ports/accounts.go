@@ -42,8 +42,8 @@ type AccountRepository interface {
 	ResetToken(ctx context.Context, tokenHash []byte) (domain.ResetTokenRecord, error)
 	// UseResetToken spends a link: true only for the one call that finds it unused and not expired.
 	UseResetToken(ctx context.Context, tokenHash []byte, now time.Time) (bool, error)
-	// CountResetTokens is how many links an account asked for since the given moment.
-	CountResetTokens(ctx context.Context, userID string, since time.Time) (int, error)
+	// ResetTokenTimes is when an account asked for each of its links since the given moment, oldest first.
+	ResetTokenTimes(ctx context.Context, userID string, since time.Time) ([]time.Time, error)
 
 	AddAudit(ctx context.Context, e domain.AuditEntry) error
 	Audit(ctx context.Context, limit int) ([]domain.AuditEntry, error)

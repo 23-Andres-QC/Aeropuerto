@@ -72,6 +72,15 @@ export function problemaConClave(clave: string, usuario: string): string | null 
   return null;
 }
 
+/** Cada condición de la contraseña con si ya se cumple: la lista con checks que se ve mientras se escribe. */
+export function requisitosClave(clave: string): { id: string; texto: string; ok: boolean }[] {
+  return [
+    { id: "largo", texto: `Al menos ${MIN_CLAVE} caracteres`, ok: [...clave].length >= MIN_CLAVE },
+    { id: "mayuscula", texto: "Una letra mayúscula", ok: /\p{Lu}/u.test(clave) },
+    { id: "minuscula", texto: "Una letra minúscula", ok: /\p{Ll}/u.test(clave) },
+    { id: "numero", texto: "Un número", ok: /\p{Nd}/u.test(clave) },
+  ];
+}
 
 /** Lo que se escribe a mano en la cámara: mayúsculas, sin guion ni espacios. */
 export function normalizarCodigo(c: string): string {

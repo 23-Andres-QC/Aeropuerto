@@ -22,8 +22,8 @@ const TRAZOS: Record<string, string[]> = {
 <style scoped>
 .icono-nav {
   flex: none;
-  width: 17px;
-  height: 17px;
+  width: 20px;
+  height: 20px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;

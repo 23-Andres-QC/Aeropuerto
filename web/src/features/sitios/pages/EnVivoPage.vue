@@ -299,7 +299,8 @@ onMounted(async () => {
     const elegida = sesiones.value.find((s) => s.session_id === pedida);
     // Venir desde Registros con una captura elegida: se recorre esa en el plano, no lo que pasa ahora.
     if (elegida) fijarModoVivo(false);
-    const build = elegida ?? sesiones.value.find((s) => s.kind === "BUILD" && s.points > 0) ?? sesiones.value[0];
+    // Sin otra pedida, la del patio: el plano abre con todo el campus a la vista, donde solo están las sesiones del patio.
+    const build = elegida ?? sesiones.value.find((s) => zonaDe(s) === "sitio" && s.kind === "BUILD" && s.points > 0) ?? sesiones.value.find((s) => zonaDe(s) === "sitio") ?? sesiones.value[0];
     if (build) sesionId.value = build.session_id;
     else cargando.value = false;
   } catch (e) {

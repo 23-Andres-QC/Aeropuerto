@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"regexp"
 	"strings"
@@ -189,9 +190,25 @@ func TestPasswordResetInTheDatabase(t *testing.T) {
 	if err = svc.ValidateReset(ctx, older); err == nil {
 		t.Error("el enlace anterior debía quedar anulado")
 	}
+	t0 := now // the three links of this test were asked at this moment
 	now = now.Add(31 * time.Minute)
 	if err = svc.ValidateReset(ctx, newer); err == nil {
 		t.Error("el enlace debía vencer a los 30 minutos")
+	}
+	// Three links in the hour: the fourth is refused and says from when it can be asked again (an hour after the oldest).
+	var limited *services.ResetLimitedError
+	if err = svc.RequestReset(ctx, email, "198.51.100.1"); !errors.As(err, &limited) {
+		t.Fatalf("el cuarto enlace de la hora debía frenarse: %v", err)
+	}
+	if d := limited.Until.Sub(t0.Add(time.Hour)); d < -time.Second || d > time.Second {
+		t.Errorf("podrá pedir de nuevo una hora después del primero: %v", limited.Until)
+	}
+	if !strings.Contains(limited.Message(), "máximo es 3 por hora") {
+		t.Errorf("el aviso: %s", limited.Message())
+	}
+	now = t0.Add(61 * time.Minute)
+	if err = svc.RequestReset(ctx, email, "198.51.100.1"); err != nil {
+		t.Errorf("pasada la hora debía poder pedir otro: %v", err)
 	}
 }
 

@@ -526,15 +526,15 @@ func (a *Auth) forgot(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "Pedido inválido.")
 		return
 	}
-	ip, now := clientIP(r), time.Now()
-	if wait, blocked := a.resets.blocked(ip, now); blocked {
-		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
-		fail(w, http.StatusTooManyRequests, "Demasiados intentos. Espera unos minutos y vuelve a probar.")
-		return
-	}
-	a.resets.fail(ip, now) // every request counts: five per quarter of an hour from one address
+	// The limit is per account (3 links an hour, see services.ResetPerHour), not per address: a shared network must not block everyone.
 	if a.accounts != nil {
-		if err := a.accounts.RequestReset(r.Context(), in.Email, ip); err != nil {
+		var limited *services.ResetLimitedError
+		switch err := a.accounts.RequestReset(r.Context(), in.Email, clientIP(r)); {
+		case errors.As(err, &limited):
+			w.Header().Set("Retry-After", strconv.Itoa(int(time.Until(limited.Until).Seconds())+1))
+			fail(w, http.StatusTooManyRequests, limited.Message())
+			return
+		case err != nil:
 			slog.Error("recuperación: error interno", "error", err)
 		}
 	}

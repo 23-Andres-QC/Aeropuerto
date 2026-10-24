@@ -2,7 +2,8 @@
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { cambiarClave, sesion } from "../../../core/auth";
-import { MIN_CLAVE, problemaConClave } from "../../../core/roles";
+import { problemaConClave } from "../../../core/roles";
+import RequisitosClave from "../../../shared/RequisitosClave.vue";
 
 // Elegir una contraseña propia. Con una clave temporal (una cuenta nueva, o una que el administrador restableció) es lo único que se puede
 // hacer; después también se puede cambiar cuando se quiera. Los demás inicios de sesión de la cuenta se cierran.
@@ -15,8 +16,6 @@ const error = ref("");
 const listo = ref(false);
 const enviando = ref(false);
 const mostrar = ref(false);
-
-const aviso = computed(() => (nueva.value ? problemaConClave(nueva.value, sesion.value?.usuario ?? "") : null));
 
 async function guardar() {
   error.value = "";
@@ -60,11 +59,9 @@ async function guardar() {
         <input id="clave-actual" v-model="actual" :type="mostrar ? 'text' : 'password'" autocomplete="current-password" />
         <label for="clave-nueva">Contraseña nueva</label>
         <input id="clave-nueva" v-model="nueva" :type="mostrar ? 'text' : 'password'" autocomplete="new-password" aria-describedby="ayuda-clave" />
-        <p id="ayuda-clave" class="ayuda" :class="{ mal: aviso }">
-          {{ aviso ?? `Al menos ${MIN_CLAVE} caracteres: una frase larga sirve más que símbolos.` }}
-        </p>
         <label for="clave-repetida">Repite la contraseña nueva</label>
         <input id="clave-repetida" v-model="repetida" :type="mostrar ? 'text' : 'password'" autocomplete="new-password" />
+        <RequisitosClave id="ayuda-clave" :clave="nueva" :repetida="repetida" />
         <label class="mostrar"><input v-model="mostrar" type="checkbox" /> Mostrar las contraseñas</label>
 
         <p v-if="error" class="error" role="alert">{{ error }}</p>

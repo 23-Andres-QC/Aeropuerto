@@ -47,3 +47,26 @@ func TestConfigEnabled(t *testing.T) {
 		t.Error("con servidor, puerto y remitente se envía")
 	}
 }
+
+// A mail whose HTML shows Maru (cid:maru) carries her as an inline image, so it shows without loading anything from the web.
+func TestBuildMessageCarriesMaru(t *testing.T) {
+	from, _ := mail.ParseAddress("LAP <no-responder@lap.test>")
+	to, _ := mail.ParseAddress("ana@lap.test")
+	msg, err := build(from, to, "Hola", `<p><img src="cid:maru"></p>`, "hola")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(msg)
+	for _, want := range []string{"multipart/related", "multipart/alternative", "Content-ID: <maru>", "Content-Disposition: inline", "image/gif"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("falta %q en el mensaje con Maru", want)
+		}
+	}
+	if len(maru) < 1000 {
+		t.Errorf("Maru no viene incluida en el programa: %d bytes", len(maru))
+	}
+	plain, _ := build(from, to, "Hola", "<p>sin imagen</p>", "hola")
+	if strings.Contains(string(plain), "multipart/related") || strings.Contains(string(plain), "Content-ID") {
+		t.Error("un correo sin Maru no debe llevar la imagen")
+	}
+}

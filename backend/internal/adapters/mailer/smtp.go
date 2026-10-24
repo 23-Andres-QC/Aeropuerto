@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
+	_ "embed"
 	"errors"
 	"fmt"
 	"mime"
@@ -17,6 +18,14 @@ import (
 	"strings"
 	"time"
 )
+
+// maru is the LAP mascot, small enough to travel inside the mail: a message whose HTML says `<img src="cid:maru">` carries it as
+// an inline image (mail apps block remote images, and the web may not be reachable from the reader's network).
+//
+//go:embed maru.gif
+var maru []byte
+
+const maruRef = "cid:maru"
 
 // Config is the SMTP account. Empty Host disables sending.
 type Config struct {
@@ -71,6 +80,8 @@ func build(from, to *mail.Address, subject, htmlBody, text string) ([]byte, erro
 		return nil, err
 	}
 	boundary := "lap-" + hex.EncodeToString(b)
+	related := strings.Contains(htmlBody, maruRef)
+	outer := boundary + "-r"
 	var sb strings.Builder
 	w := func(k, v string) { sb.WriteString(k + ": " + v + "\r\n") }
 	w("From", from.String())
@@ -78,20 +89,33 @@ func build(from, to *mail.Address, subject, htmlBody, text string) ([]byte, erro
 	w("Subject", mime.QEncoding.Encode("utf-8", subject))
 	w("Date", time.Now().Format(time.RFC1123Z))
 	w("MIME-Version", "1.0")
-	w("Content-Type", `multipart/alternative; boundary="`+boundary+`"`)
-	sb.WriteString("\r\n")
-	part := func(ctype, body string) {
-		sb.WriteString("--" + boundary + "\r\nContent-Type: " + ctype + "; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n")
-		enc := base64.StdEncoding.EncodeToString([]byte(body))
+	if related {
+		w("Content-Type", `multipart/related; type="multipart/alternative"; boundary="`+outer+`"`)
+		sb.WriteString("\r\n--" + outer + "\r\nContent-Type: multipart/alternative; boundary=\"" + boundary + "\"\r\n\r\n")
+	} else {
+		w("Content-Type", `multipart/alternative; boundary="`+boundary+`"`)
+		sb.WriteString("\r\n")
+	}
+	lines := func(raw []byte) {
+		enc := base64.StdEncoding.EncodeToString(raw)
 		for len(enc) > 76 {
 			sb.WriteString(enc[:76] + "\r\n")
 			enc = enc[76:]
 		}
 		sb.WriteString(enc + "\r\n")
 	}
+	part := func(ctype, body string) {
+		sb.WriteString("--" + boundary + "\r\nContent-Type: " + ctype + "; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n")
+		lines([]byte(body))
+	}
 	part("text/plain", text)
 	part("text/html", htmlBody)
 	sb.WriteString("--" + boundary + "--\r\n")
+	if related {
+		sb.WriteString("\r\n--" + outer + "\r\nContent-Type: image/gif; name=\"maru.gif\"\r\nContent-Transfer-Encoding: base64\r\nContent-ID: <maru>\r\nContent-Disposition: inline; filename=\"maru.gif\"\r\n\r\n")
+		lines(maru)
+		sb.WriteString("--" + outer + "--\r\n")
+	}
 	return []byte(sb.String()), nil
 }
 

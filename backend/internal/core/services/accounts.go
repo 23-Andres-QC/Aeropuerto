@@ -222,8 +222,32 @@ func (s *AccountService) ChangePassword(ctx context.Context, p domain.Principal,
 	if err = s.repo.SetPassword(ctx, rec.ID, hash, false, true); err != nil {
 		return err
 	}
-	_, err = s.repo.RevokeUserSessions(ctx, rec.ID, tokenHash(token), s.now())
-	return err
+	if _, err = s.repo.RevokeUserSessions(ctx, rec.ID, tokenHash(token), s.now()); err != nil {
+		return err
+	}
+	s.notifyPasswordChanged(rec)
+	return nil
+}
+
+// notifyPasswordChanged tells the owner, by mail, that the password of the account was changed. It does nothing when there is no
+// mailer or the account has no address; the mail goes out apart, and a failure is only logged (the password is already changed).
+func (s *AccountService) notifyPasswordChanged(rec domain.UserRecord) {
+	if s.mailer == nil || rec.Email == "" {
+		return
+	}
+	name := rec.DisplayName
+	if name == "" {
+		name = rec.Username
+	}
+	when := s.now().In(limaZone()).Format("02/01/2006 15:04")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		html, text := PasswordChangedMail(name, when)
+		if err := s.mailer.Send(ctx, rec.Email, "Tu contraseña se cambió con éxito · LAP", html, text); err != nil {
+			slog.Error("no se pudo enviar el aviso de cambio de contraseña", "usuario", rec.Username, "error", err)
+		}
+	}()
 }
 
 func (s *AccountService) Users(ctx context.Context) ([]domain.User, error) { return s.repo.Users(ctx) }
@@ -348,9 +372,22 @@ const (
 
 var errResetLink = domain.Invalid("El enlace no es válido o ya venció. Pide uno nuevo.")
 
+// ResetLimitedError is returned when the account already asked for ResetPerHour links in the last hour: Until is the moment it can
+// ask again (the oldest link leaves the hour). It is the only per-account answer that tells the person to wait; the limit is by
+// account, not by address, so that a shared network does not block everyone.
+type ResetLimitedError struct{ Until time.Time }
+
+func (e *ResetLimitedError) Error() string { return "se pidieron demasiados enlaces de recuperación" }
+
+// Message is what the person reads: the maximum, and the hour (Lima, rounded up to the minute) from which a new link can be asked.
+func (e *ResetLimitedError) Message() string {
+	hora := e.Until.In(limaZone()).Add(time.Minute - time.Nanosecond).Truncate(time.Minute).Format("15:04")
+	return fmt.Sprintf("No se puede enviar otro enlace: el máximo es %d por hora. Podrás pedirlo de nuevo a las %s.", ResetPerHour, hora)
+}
+
 // RequestReset starts a recovery: when the address belongs to an active account it makes a one-use link (30 minutes) and
-// sends it by mail. It says nothing about whether the address exists; the caller answers the same either way. The mail
-// goes out apart, so the answer does not take longer for an account that exists.
+// sends it by mail. An address with no account answers nothing special. An account that already asked for ResetPerHour links in
+// the last hour gets a *ResetLimitedError with the hour it can ask again. The mail goes out apart.
 func (s *AccountService) RequestReset(ctx context.Context, email, ip string) error {
 	email = domain.NormalizeEmail(email)
 	if !domain.ValidEmail(email) {
@@ -364,11 +401,12 @@ func (s *AccountService) RequestReset(ctx context.Context, email, ip string) err
 		return err
 	}
 	now := s.now()
-	if n, err := s.repo.CountResetTokens(ctx, rec.ID, now.Add(-time.Hour)); err != nil {
+	if times, err := s.repo.ResetTokenTimes(ctx, rec.ID, now.Add(-time.Hour)); err != nil {
 		return err
-	} else if n >= ResetPerHour {
+	} else if len(times) >= ResetPerHour {
 		s.Audit(ctx, domain.Principal{User: rec.Username, Role: rec.Role}, ip, "recuperacion_limitada", rec.Username, "demasiadas solicitudes")
-		return nil
+		// Free again when enough of the links in the hour have aged out to leave ResetPerHour-1.
+		return &ResetLimitedError{Until: times[len(times)-ResetPerHour].Add(time.Hour)}
 	}
 	token, err := newToken()
 	if err != nil {
@@ -454,6 +492,7 @@ func (s *AccountService) ResetWithToken(ctx context.Context, token, next, ip str
 		return err
 	}
 	s.Audit(ctx, domain.Principal{User: rec.Username, Role: rec.Role}, ip, "clave_restablecida", rec.Username, "por correo")
+	s.notifyPasswordChanged(rec)
 	return nil
 }
 

@@ -367,20 +367,74 @@ func TestRecoveryLinkLifecycle(t *testing.T) {
 	}
 }
 
-// Five requests from one address in a quarter of an hour, then it waits.
+// The limit is per account, not per address: 3 links an hour, and the fourth says so and from what hour it can ask again. An address
+// with no account is never blocked and says nothing, and another account on the same network is not affected.
 func TestRecoveryRateLimit(t *testing.T) {
 	rg := newRig(t)
-	for i := 0; i < 5; i++ {
-		if w := forgot(rg, "nadie@lap.test", "198.51.100.9"); w.Code != http.StatusAccepted {
-			t.Fatalf("pedido %d: %d", i+1, w.Code)
+	mail := newFakeMailer()
+	rg.svc.SetMailer(mail, "http://app.test")
+	for _, u := range []string{"ana", "luis"} {
+		if _, _, err := rg.svc.CreateUser(context.Background(), domain.UserInput{Username: u, Email: u + "@lap.test", Role: domain.RoleBusiness}); err != nil {
+			t.Fatal(err)
 		}
 	}
-	w := forgot(rg, "nadie@lap.test", "198.51.100.9")
-	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") == "" {
-		t.Fatalf("el sexto debía frenarse: %d", w.Code)
+	const ip = "198.51.100.9" // the same address for everything: it must not matter
+	for i := 0; i < 3; i++ {
+		if w := forgot(rg, "ana@lap.test", ip); w.Code != http.StatusAccepted {
+			t.Fatalf("pedido %d: %d %s", i+1, w.Code, w.Body)
+		}
 	}
-	if w := forgot(rg, "nadie@lap.test", "198.51.100.10"); w.Code != http.StatusAccepted {
-		t.Errorf("otra dirección no se frena: %d", w.Code)
+	w := forgot(rg, "ana@lap.test", ip)
+	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") == "" {
+		t.Fatalf("el cuarto debía frenarse: %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "máximo es 3 por hora") || !regexp.MustCompile(`a las \d\d:\d\d`).MatchString(body) {
+		t.Errorf("el aviso debe decir el máximo y desde qué hora se puede: %s", body)
+	}
+	if w := forgot(rg, "luis@lap.test", ip); w.Code != http.StatusAccepted {
+		t.Errorf("otra cuenta desde la misma dirección no se frena: %d", w.Code)
+	}
+	for i := 0; i < 8; i++ {
+		if w := forgot(rg, "nadie@lap.test", ip); w.Code != http.StatusAccepted {
+			t.Fatalf("un correo sin cuenta no se frena (pedido %d): %d", i+1, w.Code)
+		}
+	}
+}
+
+// Changing the password, by hand or with the recovery link, tells the owner by mail that it worked; the mail never carries the
+// password.
+func TestPasswordChangedMail(t *testing.T) {
+	rg := newRig(t)
+	mail := newFakeMailer()
+	rg.svc.SetMailer(mail, "http://app.test")
+	_, temp, err := rg.svc.CreateUser(context.Background(), domain.UserInput{Username: "eva", Email: "eva@lap.test", Role: domain.RoleBusiness})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := rg.loginAs(t, "eva", temp)
+	if w := call(rg.h, "POST", "/api/v1/auth/password", map[string]string{"actual": temp, "nueva": "Clave-definitiva-9-eva"}, withCookie(c)); w.Code != http.StatusNoContent {
+		t.Fatalf("cambiar: %d %s", w.Code, w.Body)
+	}
+	to, html, text := mail.wait(t)
+	if to != "eva@lap.test" || !strings.Contains(html, "se cambió con éxito") || !strings.Contains(text, "se cambió con éxito") {
+		t.Fatalf("aviso de cambio: a %q, html %q", to, html)
+	}
+	if strings.Contains(html+text, "Clave-definitiva-9-eva") || strings.Contains(html+text, temp) {
+		t.Fatal("el aviso trae una contraseña")
+	}
+
+	// With the recovery link: first the link, then the confirmation.
+	if w := forgot(rg, "eva@lap.test", "198.51.100.7"); w.Code != http.StatusAccepted {
+		t.Fatalf("olvidé: %d", w.Code)
+	}
+	_, _, linkText := mail.wait(t)
+	token := tokenFrom(t, linkText)
+	if w := call(rg.h, "POST", "/api/v1/auth/restablecer", map[string]string{"token": token, "nueva": "Nueva-clave-2026"}, nil); w.Code != http.StatusNoContent {
+		t.Fatalf("restablecer: %d %s", w.Code, w.Body)
+	}
+	if to, _, text := mail.wait(t); to != "eva@lap.test" || !strings.Contains(text, "se cambió con éxito") {
+		t.Fatalf("aviso tras restablecer: a %q, %q", to, text)
 	}
 }
 

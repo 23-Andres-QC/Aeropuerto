@@ -129,10 +129,21 @@ func (r *AccountRepository) UseResetToken(ctx context.Context, h []byte, now tim
 	return err == nil && tag.RowsAffected() == 1, err
 }
 
-func (r *AccountRepository) CountResetTokens(ctx context.Context, userID string, since time.Time) (int, error) {
-	var n int
-	err := r.db.QueryRow(ctx, `SELECT count(*) FROM password_reset_tokens WHERE user_id = $1::text::uuid AND created_at >= $2`, userID, since).Scan(&n)
-	return n, err
+func (r *AccountRepository) ResetTokenTimes(ctx context.Context, userID string, since time.Time) ([]time.Time, error) {
+	rows, err := r.db.Query(ctx, `SELECT created_at FROM password_reset_tokens WHERE user_id = $1::text::uuid AND created_at >= $2 ORDER BY created_at`, userID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var times []time.Time
+	for rows.Next() {
+		var t time.Time
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		times = append(times, t)
+	}
+	return times, rows.Err()
 }
 
 func (r *AccountRepository) SetActive(ctx context.Context, id string, active bool) error {

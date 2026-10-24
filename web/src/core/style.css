@@ -373,7 +373,13 @@ button:disabled {
 .login-visual-footer { position: relative; z-index: 1; color: #d2e2f3; font-size: 9px; font-weight: 700; letter-spacing: 1.8px; }
 .login-visual-footer span { margin: 0 8px; color: #5ec2ff; }
 .login-panel { display: grid; place-items: center; padding: 40px clamp(24px, 6vw, 96px); background: transparent; }
-.login-card { width: min(100%, 420px); padding: 32px 36px 24px; border: 1px solid rgba(255, 255, 255, .7); border-radius: 16px; background: rgba(255, 255, 255, .94); box-shadow: 0 24px 60px rgba(3, 16, 38, .35); }
+.login-card { position: relative; width: min(100%, 420px); padding: 32px 36px 24px; border: 1px solid rgba(255, 255, 255, .7); border-radius: 16px; background: rgba(255, 255, 255, .94); box-shadow: 0 24px 60px rgba(3, 16, 38, .35); }
+/* Maru asoma por encima de la tarjeta del acceso. */
+.login-card > .maru.maru-acceso { position: absolute; top: -78px; right: 22px; width: 116px; filter: drop-shadow(0 6px 10px rgba(3, 16, 38, .35)); }
+/* Y acompaña al pie del menú lateral. */
+.maru-lateral { margin-top: auto; padding: 14px 6px 4px; display: grid; justify-items: center; gap: 4px; text-align: center; font-size: 11.5px; letter-spacing: .3px; color: #8fb4dc; }
+.maru-lateral-img { width: 150px; max-width: 100%; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .35)); }
+@media (max-height: 760px) { .maru-lateral { display: none; } }
 .login-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 27px; color: var(--ink-faint); font-size: 10px; font-weight: 650; letter-spacing: .4px; }
 .login-card-mark { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; color: var(--blue-600); background: var(--ice); }
 .login-card-heading { margin-bottom: 22px; text-align: center; }
@@ -401,7 +407,7 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .app-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-columns: 256px minmax(0, 1fr);
 }
 .sidebar {
   position: sticky;
@@ -410,7 +416,7 @@ input::-ms-reveal, input::-ms-clear { display: none; }
   display: flex;
   flex-direction: column;
   z-index: 21;
-  padding: 14px 12px;
+  padding: 18px 14px;
   color: #cfe2f7;
   background: #0b2246;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
@@ -419,15 +425,15 @@ input::-ms-reveal, input::-ms-clear { display: none; }
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 18px;
+  font-size: 21px;
   font-weight: 700;
   letter-spacing: 1.4px;
   color: #fff;
-  padding: 2px 4px 12px;
+  padding: 2px 4px 16px;
 }
 .brand small {
   display: block;
-  font-size: 9.5px;
+  font-size: 10.5px;
   letter-spacing: 2px;
   font-weight: 600;
   color: #7fb2e8;
@@ -436,18 +442,18 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .brand-icon {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  font-size: 16px;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  font-size: 18px;
   color: #fff;
   background: var(--blue-600);
 }
 .airport-switch {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 11px;
+  gap: 10px;
+  padding: 12px 14px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -461,7 +467,7 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 }
 .airport-switch b {
   display: block;
-  font-size: 14px;
+  font-size: 16px;
   color: #fff;
 }
 .airport-switch small {
@@ -474,24 +480,24 @@ input::-ms-reveal, input::-ms-clear { display: none; }
   white-space: nowrap;
 }
 .nav-caption {
-  font-size: 10px;
+  font-size: 11.5px;
   letter-spacing: 1.8px;
   color: #8fb4dc;
   font-weight: 700;
-  margin: 16px 6px 7px;
+  margin: 20px 6px 9px;
 }
 .sidebar nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 .sidebar nav a {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  border-radius: 6px;
-  font-size: 13px;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 8px;
+  font-size: 15px;
   font-weight: 500;
   color: #b6cee8;
   border: 1px solid transparent;
@@ -1061,11 +1067,11 @@ main table:not(.mapa-calor) thead th {
 /* ---------- responsive ---------- */
 @media (max-width: 1150px) {
   .app-shell {
-    grid-template-columns: 236px minmax(0, 1fr);
+    grid-template-columns: 256px minmax(0, 1fr);
   }
   .sidebar nav a {
-    font-size: 15px;
-    padding: 12px 12px;
+    font-size: 16px;
+    padding: 13px 13px;
   }
   .fila-top {
     grid-template-columns: minmax(0, 1fr);
@@ -1088,6 +1094,7 @@ main table:not(.mapa-calor) thead th {
   .airport-switch div,
   .nav-caption,
   .nav-label,
+  .maru-lateral,
   .sitio-flecha {
     display: none;
   }

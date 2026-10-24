@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Maru from "./shared/Maru.vue";
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { logout, sesion } from "./core/auth";
@@ -125,6 +126,10 @@ function elegirSitio(s: Sitio) {
           ><IconoNav nombre="cuentas" /><span class="nav-label"><b class="nav-step">8.</b>Cuentas</span></RouterLink
         >
       </nav>
+      <div class="maru-lateral">
+        <Maru class="maru-lateral-img" burbuja="derecha" />
+        <span>Maru, tu copiloto en LAP</span>
+      </div>
     </aside>
     <div class="workspace">
       <header class="workspace-header">

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Maru from "../../shared/Maru.vue";
+import RequisitosClave from "../../shared/RequisitosClave.vue";
 import { computed, onMounted, ref } from "vue";
 import VisualAcceso from "./VisualAcceso.vue";
 import { useRoute, useRouter } from "vue-router";
@@ -17,7 +19,6 @@ const repetida = ref("");
 const mostrar = ref(false);
 const error = ref("");
 const enviando = ref(false);
-const aviso = computed(() => (nueva.value ? problemaConClave(nueva.value, "") : null));
 
 onMounted(async () => {
   token.value = typeof route.query.token === "string" ? route.query.token : "";
@@ -58,6 +59,7 @@ async function guardar() {
     <VisualAcceso />
     <section class="login-panel">
       <div class="login-card">
+        <Maru class="maru-acceso" />
         <div class="login-card-heading">
           <div class="login-card-marca"><span class="brand-icon">✈</span>LAP</div>
           <h2>Elige una contraseña nueva</h2>
@@ -83,10 +85,9 @@ async function guardar() {
               {{ mostrar ? "Ocultar" : "Mostrar" }}
             </button>
           </div>
-          <p v-if="aviso" class="login-error" role="status">{{ aviso }}</p>
-          <p v-else class="muted ayuda">12 caracteres o más, con una mayúscula, una minúscula y un número.</p>
           <label for="repetida">Repite la contraseña</label>
           <input id="repetida" v-model="repetida" :type="mostrar ? 'text' : 'password'" autocomplete="new-password" data-prueba="clave-repetida" />
+          <RequisitosClave :clave="nueva" :repetida="repetida" />
           <p v-if="error" class="login-error" role="alert">{{ error }}</p>
           <button class="primary-button login-submit" type="submit" :disabled="enviando" data-prueba="guardar-clave">
             {{ enviando ? "Guardando…" : "Guardar contraseña" }}
@@ -105,6 +106,14 @@ async function guardar() {
   background: rgba(22, 163, 74, 0.12);
   color: #166534;
   font-weight: 600;
+  text-align: center;
+}
+/* Los botones que son enlaces (Ingresar, Pedir un enlace nuevo) van centrados en la tarjeta, con el ancho de su texto. */
+a.login-submit {
+  display: flex;
+  width: fit-content;
+  margin: 18px auto 0;
+  padding: 12px 32px;
 }
 .ayuda {
   margin: 4px 0 8px;

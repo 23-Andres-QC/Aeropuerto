@@ -314,16 +314,17 @@ func (r *AccountRepository) UseResetToken(_ context.Context, h []byte, now time.
 	return true, nil
 }
 
-func (r *AccountRepository) CountResetTokens(_ context.Context, userID string, since time.Time) (int, error) {
+func (r *AccountRepository) ResetTokenTimes(_ context.Context, userID string, since time.Time) ([]time.Time, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	n := 0
+	var times []time.Time
 	for _, t := range r.resets {
 		if t.userID == userID && !t.created.Before(since) {
-			n++
+			times = append(times, t.created)
 		}
 	}
-	return n, nil
+	sort.Slice(times, func(i, j int) bool { return times[i].Before(times[j]) })
+	return times, nil
 }
 
 func (r *AccountRepository) AccessSummary(_ context.Context, since, now time.Time) (domain.AccessSummary, error) {

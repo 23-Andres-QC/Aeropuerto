@@ -7,6 +7,7 @@ import {
   moduloDeRuta,
   normalizarCodigo,
   problemaConClave,
+  requisitosClave,
   resumenGenero,
   rutaPermitida,
   suprimirGenero,
@@ -54,6 +55,16 @@ assert.equal(problemaConClave("Ñandúñandúñandú1", ""), null, "los caracter
 assert.match(problemaConClave("todominusculas1234", ""), /mayúscula/, "exige mayúscula");
 assert.match(problemaConClave("TODOMAYUSCULAS1234", ""), /minúscula/, "exige minúscula");
 assert.match(problemaConClave("SinNumeroEnLaClave", ""), /número/, "exige número");
+
+// La lista de condiciones con checks: cada una se marca sola apenas se cumple.
+const cumplidos = (c) => requisitosClave(c).filter((r) => r.ok).map((r) => r.id);
+assert.deepEqual(cumplidos(""), [], "sin escribir no hay ninguna");
+assert.deepEqual(cumplidos("a"), ["minuscula"]);
+assert.deepEqual(cumplidos("aB"), ["mayuscula", "minuscula"]);
+assert.deepEqual(cumplidos("aB3"), ["mayuscula", "minuscula", "numero"]);
+assert.deepEqual(cumplidos("aB3aB3aB3aB3"), ["largo", "mayuscula", "minuscula", "numero"], "12 caracteres ya cuentan");
+assert.deepEqual(cumplidos("Ñandúñandú1"), ["mayuscula", "minuscula", "numero"], "11 caracteres con tilde: falta uno");
+assert.ok(requisitosClave("Una-clave-larga-1").every((r) => r.ok) && problemaConClave("Una-clave-larga-1", "") === null, "si todos los checks están, el servidor la acepta");
 
 // El código de unión.
 assert.equal(normalizarCodigo(" k7qm-2xpa "), "K7QM2XPA");
