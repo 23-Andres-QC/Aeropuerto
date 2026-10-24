@@ -19,8 +19,10 @@ sys.path.insert(0, str(TEST))
 import camara_telefono  # noqa: E402,F401  (prepara lap01 y sus rutas)
 import lap01  # noqa: E402
 from detector_pose import DetectorCuerpo  # noqa: E402
-from videos_subidos import (ASOCIACION_REID_GPU, ESTATICO_S, MUESTREO_CPU_S, REID_VIDEO_GPU, GrupoVideos,  # noqa: E402
-                            Quietud, Ritmo, VideoEnProceso, VideosSubidos, genero_por_votos, leer_hasta, motor_aparte)
+from reid_videos import ReIDCombinado  # noqa: E402
+from videos_subidos import (ASOCIACION_REID_GPU, ESTATICO_S, MUESTREO_CPU_S, PERSONVIT_VIDEO_GPU, REID_VIDEO_GPU,  # noqa: E402
+                            GrupoVideos, Quietud, Ritmo, VideoEnProceso, VideosSubidos, genero_por_votos, leer_hasta,
+                            motor_aparte)
 
 
 class RitmoTiempoReal(unittest.TestCase):
@@ -375,12 +377,69 @@ class Simultaneos(unittest.TestCase):
         self.assertEqual((sin.threshold, sin.average_threshold), (0.6, 0.55))
         self.assertEqual(sin.sample_s, MUESTREO_CPU_S)
         self.assertTrue((TEST / "Modelo" / REID_VIDEO_GPU).is_file(), "los pesos de OSNet-AIN van con el modelo")
+        self.assertTrue((TEST / "Modelo" / PERSONVIT_VIDEO_GPU).is_file(), "los pesos de PersonViT van con el modelo")
+
+    def test_con_gpu_cada_tramo_debe_parecerse_a_cada_uno_y_sin_gpu_como_antes(self):
+        asociacion = {"threshold": 0.6, "average_threshold": 0.55}
+        con = GrupoVideos(["a", "b"], lambda crops: np.empty((0, 512), np.float32), asociacion, gpu=True).asociador
+        sin = GrupoVideos(["a", "b"], lambda crops: np.empty((0, 512), np.float32), asociacion, gpu=False).asociador
+        self.assertEqual((con.window, con.reentry, con.transiciones[("a", "b")]["t_max_s"]), (90.0, 120.0, 60.0))
+        self.assertEqual(con.min_link_threshold, ASOCIACION_REID_GPU["min_link_threshold"])
+        self.assertEqual((sin.transiciones[("a", "b")]["t_max_s"], sin.min_link_threshold), (60.0, -1.0))
 
     def test_no_repite_los_hechos(self):
         v, descargas, _, _ = self.videos()
         v.hechos.add("b")
         v.revisar([{"id": "b", "nombre": "b", "bytes": 1, "modo": "tiempo_real", "resumen": None}])
         self.assertEqual(descargas, [])
+
+
+class FusionSinPersonaGenerica(unittest.TestCase):
+    """Una identidad no absorbe a quien se parece a su promedio pero no a cada uno de sus tramos."""
+
+    @staticmethod
+    def asociador(min_link):
+        config = {"mode": "visual_temporal", "units": "m", "cameras": {"a": {}, "b": {}}, "overlaps": [["a", "b"]],
+                  "association": {"threshold": 0.6, "average_threshold": 0.0, "same_camera_threshold": 0.6,
+                                  "min_link_threshold": min_link}}
+        return lap01.AsociadorMulticamara(lambda crops: np.empty((0, 3), np.float32), config)
+
+    @staticmethod
+    def tramo(a, uid, camara, vector):
+        t = lap01.Tracklet(uid, uid, camara, int(uid[-1]), 0.0, 1.0, a.siguiente)
+        a.tracklets[uid] = t
+        a.globales[a.siguiente] = {uid}
+        a.siguiente += 1
+        v = np.asarray(vector, np.float32) / np.linalg.norm(vector)
+        for _ in range(5):
+            t.guardar_vista("F", v)
+        return t.global_id
+
+    def test_quien_no_se_parece_a_cada_tramo_queda_aparte(self):
+        for min_link, unidos in ((-1.0, True), (0.6, False)):
+            a = self.asociador(min_link)
+            # Una identidad con dos tramos de la cámara a (personas parecidas a medias) y uno nuevo en b que se parece
+            # al promedio de los dos (0,71) pero poco al segundo (0,5).
+            g1 = self.tramo(a, "a/L1", "a", [1, 0, 0])
+            a.globales[g1].add("a/L2")
+            a.tracklets["a/L2"] = lap01.Tracklet("a/L2", "a/L2", "a", 2, 2.0, 3.0, g1)
+            for _ in range(5):
+                a.tracklets["a/L2"].guardar_vista("F", np.array([0, 1, 0], np.float32))
+            g2 = self.tramo(a, "b/L3", "b", [0.87, 0.5, 0])
+            a.vigentes, a.sucias, a.last_timestamp = {g1, g2}, {g2}, 3.0
+            a._asociar()
+            self.assertEqual(g2 not in a.globales, unidos, f"min_link {min_link}")
+
+
+class ReIDCombinadoPromedia(unittest.TestCase):
+    def test_el_parecido_es_el_promedio_de_los_parecidos(self):
+        e1 = lambda crops: np.array([[1, 0], [0, 1]], np.float32)  # noqa: E731
+        e2 = lambda crops: np.array([[1, 0, 0], [1, 0, 0]], np.float32)  # noqa: E731
+        e1.dimension, e2.dimension = 2, 3
+        v = ReIDCombinado([e1, e2])([np.zeros((4, 2, 3), np.uint8)] * 2)
+        self.assertEqual(v.shape, (2, 5))
+        self.assertAlmostEqual(float(v[0] @ v[0]), 1.0, places=6)
+        self.assertAlmostEqual(float(v[0] @ v[1]), 0.5, places=6, msg="(0 + 1) / 2")
 
 
 class GeneroPorVotos(unittest.TestCase):

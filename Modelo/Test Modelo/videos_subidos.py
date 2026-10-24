@@ -67,6 +67,16 @@ SIMULTANEOS = int(os.environ.get("VIDEOS_SIMULTANEOS") or 10)
 #   unir a dos personas distintas de cámaras distintas igual de poco que antes (~1 % de los tramos), y así une al doble
 #   de las mismas (59 % de los tramos, no 31 %). Con dos videos del mismo lugar subidos juntos, la misma persona vista a
 #   la vez en los dos llevaba el mismo ID el 14 % de las veces y ahora el 36 %. Sin GPU sigue el del Build;
+# - multitracking con GPU: OSNet-AIN junto con PersonViT ViT-S (MSMT17, Apache 2.0; ver reid_videos), el parecido es el
+#   promedio de los dos. En 5 pares del mismo lugar, contra todos los demás de la cámara 10 s después, el más parecido
+#   era la misma persona el 82,8 % de las veces (OSNet solo: 80,0 %; CLIP-ReID ViT-B: 81,2 % y el doble de lento) y
+#   acepta un 20 % menos de pares de personas distintas. Los umbrales pasan a su escala con la misma tasa de personas
+#   distintas aceptadas. Además una identidad ya no se come a otras personas: cada fusión equivocada corría el
+#   centroide hacia una persona genérica que después absorbía a cualquiera (IDs con 10–18 tramos de gente distinta en
+#   5 min). Ahora cada tramo debe parecerse a cada uno de la otra identidad (min_link_threshold). En un par de 5 min
+#   revisado recorte por recorte, de 60 % a 28 % de los IDs con más de una persona, con 135 y 139 personas por cámara
+#   (no 82 y 89: antes juntaba a varias en un ID). Unir solo a quien se vio en los últimos 30 s (no 60–120 s) partía
+#   a cada persona en más IDs (194 y 195), así que las ventanas quedan como antes;
 # - cruces: cuando dos personas se cruzan, el seguidor elegía casi solo por movimiento y los dos tracks se cambiaban de
 #   persona (la mayoría de los cambios de ID). Ahora el parecido pesa 0,8 en esa elección (no 0,22), cuenta con un 80 %
 #   del vector profundo (no 20 %: el color distingue poco a gente vestida parecida) y un track activo sigue a una caja sin
@@ -95,7 +105,9 @@ ASOCIACION_VIDEO = {"min_samples": 3, "min_query_samples": 3, "min_identity_dura
 # Con GPU (ver AJUSTES): OSNet-AIN x1.0 entrenado en MSMT17 (torchreid, licencia MIT), en ONNX con la normalización
 # adentro, y los umbrales del asociador para sus parecidos.
 REID_VIDEO_GPU = "osnet_ain_x1_0_msmt17.onnx"
-ASOCIACION_REID_GPU = {"threshold": 0.75, "average_threshold": 0.70, "same_camera_threshold": 0.78, "split_threshold": 0.6}
+PERSONVIT_VIDEO_GPU = "personvit_vit_s_msmt17.safetensors"
+ASOCIACION_REID_GPU = {"threshold": 0.765, "average_threshold": 0.715, "same_camera_threshold": 0.791,
+                       "split_threshold": 0.538, "min_link_threshold": 0.6}
 GENERO_VIDEO = {"min_votes": 1, "min_confidence": 0.0, "min_margin": 0.0, "min_height": 1.0,
                 "min_detection_confidence": 0.0, "sample_s": 1.0, "max_votes": 6}
 CAMBIO_GENERO = 0.6
@@ -311,7 +323,7 @@ class GrupoVideos:
                                    "min_direction_cos": -0.5} for a in ids for b in ids if a != b],
                   "association": {**asociacion, **ASOCIACION_VIDEO}}
         if gpu:
-            config["association"].update(ASOCIACION_REID_GPU)  # con GPU el Re-ID es OSNet-AIN (ver AJUSTES)
+            config["association"].update(ASOCIACION_REID_GPU)  # con GPU el Re-ID es OSNet-AIN + PersonViT (ver AJUSTES)
         else:
             config["association"]["sample_interval_s"] = MUESTREO_CPU_S
         self.asociador = lap01.AsociadorMulticamara(reid, config)

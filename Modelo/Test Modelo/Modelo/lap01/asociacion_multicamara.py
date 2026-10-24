@@ -334,7 +334,8 @@ class _FusionIdentidades:
     """Prototipos multivista, fusiones con emparejamiento mutuo y separación de tracklets en conflicto."""
 
     def _similitud(self, g1, g2):
-        """(centroide, promedio, umbral): prototipo multivista de cada identidad, enlace promedio y umbral aplicable."""
+        """(centroide, promedio, umbral, mínimo): prototipo multivista de cada identidad, enlace promedio, umbral
+        aplicable y el par de tracklets menos parecido."""
         if self._n_vistas(g1) < self._minimo(g1, g2) or self._n_vistas(g2) < self._minimo(g2, g1):
             return None
         grupo_a, grupo_b = self._con_vistas(g1), self._con_vistas(g2)
@@ -342,8 +343,8 @@ class _FusionIdentidades:
         umbral = self.same_camera_threshold if una_camara else self.threshold
         suma_a, suma_b = sum(t.suma for t in grupo_a), sum(t.suma for t in grupo_b)
         centroide = float(suma_a @ suma_b / (np.linalg.norm(suma_a) * np.linalg.norm(suma_b) + 1e-12))
-        promedio = float((np.stack([t.prototipo() for t in grupo_a]) @ np.stack([t.prototipo() for t in grupo_b]).T).mean())
-        return centroide, promedio, umbral
+        pares = np.stack([t.prototipo() for t in grupo_a]) @ np.stack([t.prototipo() for t in grupo_b]).T
+        return centroide, float(pares.mean()), umbral, float(pares.min())
 
     def _con_vistas(self, gid):
         """Tracklets que aportan al enlace promedio: los que tienen vistas suficientes o, si no hay, todos los que tienen alguna."""
@@ -364,7 +365,8 @@ class _FusionIdentidades:
                     continue
                 similitud = self._similitud(ga, gb)
                 if (similitud is None or similitud[0] < similitud[2]
-                        or similitud[1] < self.average_threshold + similitud[2] - self.threshold):
+                        or similitud[1] < self.average_threshold + similitud[2] - self.threshold
+                        or similitud[3] < self.min_link_threshold):
                     continue
                 if self._compatibles(self._miembros(ga), self._miembros(gb)):
                     candidatas.append((similitud[0], ga, similitud[1]))
@@ -515,6 +517,9 @@ class AsociadorMulticamara(_GaleriaCompartida, _ObservacionesReID, _GatingFisico
         self.threshold = float(settings.get("threshold", 0.60))
         self.average_threshold = float(settings.get("average_threshold", 0.55))
         self.same_camera_threshold = float(settings.get("same_camera_threshold", 0.70))
+        # Cada tracklet de una identidad debe parecerse a cada uno de la otra al menos esto (-1: sin exigirlo). Sin él,
+        # cada fusión equivocada corre el centroide hacia una persona genérica que después absorbe a cualquiera.
+        self.min_link_threshold = float(settings.get("min_link_threshold", -1.0))
         self.margin = float(settings.get("ambiguity_margin", 0.05))
         self.mutual = bool(settings.get("mutual_best", True))
         self.split_threshold = float(settings.get("split_threshold", 0.40))
@@ -533,7 +538,8 @@ class AsociadorMulticamara(_GaleriaCompartida, _ObservacionesReID, _GatingFisico
                                                        self.reentry, self.gap, self.tolerance, self.max_distance, self.max_speed)):
             raise ValueError("Parámetros temporales, de muestras o físicos inválidos.")
         if any(not np.isfinite(v) or not -1 <= v <= 1 for v in (
-                self.threshold, self.average_threshold, self.same_camera_threshold, self.margin, self.split_threshold)):
+                self.threshold, self.average_threshold, self.same_camera_threshold, self.margin, self.split_threshold,
+                self.min_link_threshold)):
             raise ValueError("Los umbrales de similitud deben estar entre -1 y 1.")
         self.areas = {}
         self.reiniciar()

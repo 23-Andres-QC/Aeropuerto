@@ -54,7 +54,9 @@ from detector_onnx import DetectorONNX
 from detector_pose import DetectorCuerpo, ajustar_cajas
 from memoria_identidades import AsociadorConMemoria, MemoriaIdentidades
 from ubicacion import Ubicador
-from videos_subidos import CANAL_ESTADO as CANAL_VIDEOS, REID_VIDEO_GPU, Quietud, VideosSubidos, genero_por_votos
+from reid_videos import ReIDCombinado, ReIDPersonViT
+from videos_subidos import (CANAL_ESTADO as CANAL_VIDEOS, PERSONVIT_VIDEO_GPU, REID_VIDEO_GPU, Quietud, VideosSubidos,
+                            genero_por_votos)
 
 CANAL_ESTADO = "telefonos"
 ANCHO_RELEVO = 640
@@ -1210,11 +1212,12 @@ def main():
     reid_sesion = ReIDMitadSuperior(reid, PARTE_SUPERIOR_REID) if PARTE_SUPERIOR_REID < 1 else reid
     sesion = SesionEnVivo(motor, reid_sesion, asociacion, memoria, ubicador)
     # Los videos subidos van con la asociación del Build, sin los ajustes para teléfonos, y con su propio Re-ID: con GPU,
-    # OSNet-AIN (reconoce mejor a la misma persona desde otra cámara, ver AJUSTES en videos_subidos); sin GPU, el del
-    # Build con todos los núcleos (en el servidor es lo que más tarda por frame): corre en el hilo principal, sin esperar
-    # al de los teléfonos, que usa el carril lento.
+    # OSNet-AIN y PersonViT juntos (reconocen mejor a la misma persona desde otra cámara, ver AJUSTES en videos_subidos);
+    # sin GPU, el del Build con todos los núcleos (en el servidor es lo que más tarda por frame): corre en el hilo
+    # principal, sin esperar al de los teléfonos, que usa el carril lento.
     if str(motor.device).startswith("cuda"):
-        reid_videos = ReIDPersonas(MODELO / REID_VIDEO_GPU, batch_size=16, device=motor.device)
+        reid_videos = ReIDCombinado([ReIDPersonas(MODELO / REID_VIDEO_GPU, batch_size=16, device=motor.device),
+                                     ReIDPersonViT(MODELO / PERSONVIT_VIDEO_GPU, device=motor.device)])
     else:
         encoder = config["multicamera_encoder"]
         reid_videos = ReIDPersonas(MODELO / encoder["weights"], imgsz=encoder.get("imgsz"),
