@@ -112,7 +112,6 @@ onUnmounted(() => {
 <template>
   <section class="page-title">
     <div>
-      <p class="eyebrow">LAP · TELÉFONOS</p>
       <h1>Cámaras de teléfono</h1>
     </div>
     <div class="barra-acciones">
@@ -154,7 +153,7 @@ onUnmounted(() => {
 }
 .vistas {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 .vistas.varias {
   grid-template-columns: repeat(2, minmax(0, 1fr));

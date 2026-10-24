@@ -56,7 +56,7 @@ const nombre = (id: number) => locales.value.find((l) => l.local_id === id)?.nam
 /** Qué se está viendo, en palabras. */
 const descripcion = computed(() => {
   const ids = elegidos.value;
-  if (!ids.length) return "Todos los locales del sitio";
+  if (!ids.length) return "";
   const area = areas.value.filter((a) => mismosLocales(a.locales.map((l) => l.local_id), ids)).pop();
   if (area) return `Área «${area.zona.name}» · ${ids.length} ${ids.length === 1 ? "local" : "locales"}`;
   if (ids.length === 1) return `Local «${nombre(ids[0])}»`;
@@ -70,7 +70,7 @@ const hayZonas = computed(() => zonas.value.some((z) => esArea(z) || z.local_id 
     <div class="panel-heading">
       <h2>Elegir en el plano</h2>
       <span class="heading-meta">
-        <span class="pill">{{ descripcion }}</span>
+        <span v-if="descripcion" class="pill">{{ descripcion }}</span>
         <button v-if="elegidos.length" type="button" class="limpiar" @click="elegir([])">Ver todos</button>
       </span>
     </div>
@@ -111,7 +111,7 @@ const hayZonas = computed(() => zonas.value.some((z) => esArea(z) || z.local_id 
 
 <style scoped>
 .seleccion {
-  margin: 0 0 14px;
+  margin: 0 0 10px;
 }
 .limpiar {
   min-height: 26px;
@@ -121,7 +121,7 @@ const hayZonas = computed(() => zonas.value.some((z) => esArea(z) || z.local_id 
 .cuerpo-sel {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(260px, 1fr);
-  gap: 14px;
+  gap: 10px;
   padding: 12px 14px 14px;
 }
 .cuerpo-sel.sinplano {

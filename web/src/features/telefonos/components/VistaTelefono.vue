@@ -172,7 +172,7 @@ onUnmounted(() => {
 <template>
   <section class="panel vista" :class="{ compacta }">
     <div class="panel-heading">
-      <h2>{{ nombre }}</h2>
+      <h2 class="dato">{{ nombre }}</h2>
       <span class="heading-meta">
         <span class="pill" :class="enVivo ? 'good' : 'warn'">{{ enVivo ? `${ultimo?.multitud ? `${ultimo.multitud.personas} en cuadro · grupo ${ultimo.multitud.grupo}` : `${ultimo?.people.length ?? 0} en cuadro`}` : "sin video" }}</span>
         <button v-if="!sinQuitar" class="danger-button icon-button" type="button" :aria-label="`Quitar ${nombre}`" @click="emit('quitar')">✕</button>

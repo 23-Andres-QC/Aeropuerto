@@ -70,7 +70,8 @@ const filas = computed(() =>
         id: s.session_id,
         inicioISO: s.recording_start,
         estimada: s.kind === "BUILD" && !s.recording_start_declared,
-        nombre: s.name || s.session_id.slice(0, 8),
+        // Las capturas en vivo se llaman «sitio · en vivo · fecha»: eso ya está en la fila, así que no se repite.
+        nombre: s.kind === "LIVE" ? "" : s.name || s.session_id.slice(0, 8),
         tipo: s.kind === "LIVE" ? "En vivo" : s.kind === "VIDEO" ? "Video" : "Dataset",
         dataset: s.kind === "BUILD",
         fecha: inicio.toLocaleDateString("es-PE", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }),
@@ -91,7 +92,6 @@ watch(capturasVersion, cargar);
 <template>
   <section class="page-title">
     <div>
-      <p class="eyebrow">{{ actual?.name ?? slug }} · REGISTROS</p>
       <h1>Registros de lo capturado</h1>
     </div>
     <div class="barra-acciones">
@@ -125,11 +125,11 @@ watch(capturasVersion, cargar);
       <table v-if="filas.length">
         <thead>
           <tr>
-            <th>Fecha</th>
-            <th>Rango de hora</th>
+            <th class="izq">Fecha</th>
+            <th>Hora</th>
             <th>Duración</th>
-            <th class="num">Personas</th>
-            <th class="num">Puntos</th>
+            <th>Personas</th>
+            <th>Puntos</th>
             <th>Tipo</th>
             <th>Ver</th>
           </tr>
@@ -137,9 +137,9 @@ watch(capturasVersion, cargar);
         <tbody>
           <template v-for="f in filas" :key="f.id">
           <tr>
-            <td>
+            <td class="izq">
               <b>{{ f.fecha }}</b>
-              <small class="muted">{{ f.nombre }}</small>
+              <small v-if="f.nombre" class="muted">{{ f.nombre }}</small>
             </td>
             <td class="rango">
               {{ f.rango }}
@@ -180,11 +180,7 @@ watch(capturasVersion, cargar);
         </tbody>
       </table>
       <p v-else-if="!cargando" class="vacio">
-        <template v-if="tipo === 'LIVE' && !fecha">
-          Todavía no hay capturas. Activa el modo en vivo y deja que alguien aparezca de cuerpo completo frente a un teléfono: pulsa «Iniciar captura» en En vivo y, al terminar,
-          la captura se guarda aquí.
-        </template>
-        <template v-else>No hay registros con ese filtro.</template>
+        {{ tipo === "LIVE" && !fecha ? "Todavía no hay capturas." : "No hay registros con ese filtro." }}
       </p>
     </div>
   </section>
@@ -204,26 +200,43 @@ watch(capturasVersion, cargar);
 }
 .tabla-envoltorio {
   overflow-x: auto;
-  padding: 2px 14px 10px;
 }
+/* Tabla con líneas en filas y columnas, cabecera con fondo y todo centrado salvo la fecha. */
 table {
   width: 100%;
   border-collapse: collapse;
   font-size: 12.5px;
 }
-th {
-  padding: 8px 10px;
-  text-align: left;
-  font-size: 11px;
-  font-weight: 650;
-  color: var(--ink-faint);
+th,
+td {
+  padding: 7px 12px;
+  text-align: center;
+  vertical-align: middle;
+  border-right: 1px solid var(--glass-line);
   border-bottom: 1px solid var(--glass-line);
+}
+th:last-child,
+td:last-child {
+  border-right: 0;
+}
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+th {
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--ink-soft);
+  background: var(--tabla-cabecera);
   white-space: nowrap;
 }
+tbody tr:not(.corregir):hover td {
+  background: var(--fila-hover);
+}
+.izq {
+  text-align: left;
+}
 td {
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--glass-line);
-  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
 }
 td b,
 td small {
@@ -234,7 +247,7 @@ td small {
   font-size: 11px;
 }
 .num {
-  text-align: right;
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
 .rango {
@@ -243,14 +256,15 @@ td small {
 }
 .acciones {
   display: flex;
+  justify-content: center;
   gap: 6px;
 }
 .acciones a,
 .acciones button {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 4px 10px;
+  min-height: 26px;
+  padding: 3px 10px;
   border: 1px solid var(--line-control);
   border-radius: var(--radius-s);
   font-size: 12px;
@@ -320,7 +334,7 @@ td small {
 }
 .vacio {
   margin: 0;
-  padding: 18px 4px;
+  padding: 14px 12px;
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--ink-soft);

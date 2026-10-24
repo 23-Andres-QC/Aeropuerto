@@ -290,7 +290,6 @@ onUnmounted(() => {
 <template>
   <section class="page-title">
     <div>
-      <p class="eyebrow">LAP · VIDEOS</p>
       <h1>Videos procesados por el modelo</h1>
     </div>
   </section>
@@ -379,7 +378,7 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 10px 12px;
   padding: 12px 16px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 .detalle {
   flex: 1 1 260px;
@@ -443,7 +442,7 @@ onUnmounted(() => {
 .grilla {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 10px;
   align-items: start;
 }
 .grilla.uno {

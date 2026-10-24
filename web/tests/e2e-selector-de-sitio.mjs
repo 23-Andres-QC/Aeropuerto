@@ -66,7 +66,8 @@ try {
     opciones: [...document.querySelectorAll('.sitio-lista li')].map((li) => li.innerText.replace(/\\s+/g, ' ').trim()),
     abierto: !!document.querySelector('.sitio-lista'),
     titulo: (document.querySelector('main h1, main h2')?.textContent ?? '').trim(),
-    plano: (document.querySelector('main')?.innerText ?? '').match(/Plano · [\\d.]+ × [\\d.]+ m/)?.[0] ?? null,
+    // El texto tal cual (innerText lo daría en mayúsculas, como se ven los títulos).
+    plano: [...document.querySelectorAll('main h2')].map((h) => h.textContent.replace(/\\s+/g, ' ').trim()).find((t) => /^Plano · [\\d.]+ × [\\d.]+ m$/.test(t)) ?? null,
     capasDelPlano: document.querySelectorAll('main svg *').length,
     botonesDeZona: document.querySelectorAll('.barra-campus, .alternar-campus').length,
     marcasEnCampus: document.querySelectorAll('g.entrada-vecino[role=button]').length,

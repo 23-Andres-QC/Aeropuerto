@@ -151,7 +151,7 @@ const etiqueta = (s: Sesion) => `${s.name || s.session_id.slice(0, 8)} · ${new 
 
 <style scoped>
 .contraste {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 .rejilla {
   display: grid;
@@ -212,10 +212,10 @@ const etiqueta = (s: Sesion) => `${s.name || s.session_id.slice(0, 8)} · ${new 
   display: block;
   height: 100%;
   border-radius: 4px;
-  background: linear-gradient(90deg, var(--blue-500), var(--cyan-400));
+  background: var(--blue-500);
 }
 .celda-ahora .barra span {
-  background: linear-gradient(90deg, #d92d4a, #ff7a8c);
+  background: #d92d4a;
 }
 @media (max-width: 900px) {
   .rejilla {

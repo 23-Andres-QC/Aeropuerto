@@ -177,7 +177,7 @@ const seg = (s: number) => `${Math.round(s)} s`;
 
 <style scoped>
 .recorrido {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   animation: recorrido-entra 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 @keyframes recorrido-entra {
@@ -240,7 +240,7 @@ const seg = (s: number) => `${Math.round(s)} s`;
 .lado {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   min-width: 0;
 }
 .etapas {
@@ -306,8 +306,6 @@ const seg = (s: number) => `${Math.round(s)} s`;
 .compra small:first-child {
   font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.9px;
-  text-transform: uppercase;
   color: var(--ink-faint);
 }
 .compra b {

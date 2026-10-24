@@ -103,11 +103,7 @@ function elegirSitio(s: Sitio) {
       <RouterLink class="brand" to="/"
         ><span class="brand-icon">✈</span><span>LAP<small>LIMA AIRPORT PARTNERS</small></span></RouterLink
       >
-      <div v-if="telefonos || videos || cuentas" class="airport-switch">
-        <IconoNav class="airport-symbol" :nombre="telefonos ? 'telefonos' : cuentas ? 'cuentas' : 'videos'" />
-        <div><b>{{ telefonos ? "Teléfonos" : cuentas ? "Cuentas" : "Videos" }}</b></div>
-      </div>
-      <SelectorSitio v-else :sitios="sitios" :slug="slug" :actual="actual" @elegir="elegirSitio" />
+      <SelectorSitio :sitios="sitios" :slug="sitioNav" :actual="actual ?? sitios.find((s) => s.slug === sitioNav)" @elegir="elegirSitio" />
       <p class="nav-caption">ESPACIO DE TRABAJO</p>
       <nav aria-label="Navegación principal">
         <template v-for="s in seccionesVisibles" :key="s.id"
@@ -190,7 +186,7 @@ function elegirSitio(s: Sitio) {
 .simple-cabecera {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   padding: 10px 18px;
   border-bottom: 1px solid var(--line, rgba(100, 116, 139, 0.25));
 }

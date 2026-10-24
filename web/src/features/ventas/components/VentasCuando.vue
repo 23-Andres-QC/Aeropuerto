@@ -243,7 +243,7 @@ const pocosDias = computed(() => diasConDatos.value > 0 && diasConDatos.value < 
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 .destacado {
   display: flex;
@@ -289,8 +289,6 @@ const pocosDias = computed(() => diasConDatos.value > 0 && diasConDatos.value < 
 .destacado small {
   font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
   color: var(--ink-faint);
 }
 .destacado b {

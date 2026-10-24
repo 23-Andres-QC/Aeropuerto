@@ -175,7 +175,7 @@ onBeforeUnmount(() => document.removeEventListener("mousedown", fuera));
   background: rgba(255, 255, 255, 0.12);
 }
 .sitio-lista li.actual {
-  background: linear-gradient(180deg, rgba(93, 164, 255, 0.42), rgba(22, 104, 227, 0.34));
+  background: rgba(61, 139, 255, 0.3);
 }
 .sitio-marca {
   position: absolute;

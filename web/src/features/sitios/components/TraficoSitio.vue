@@ -188,7 +188,6 @@ const num = (n: number) => n.toLocaleString("es-PE");
   <section id="trafico" class="trafico" aria-label="Tráfico del sitio por período">
     <div class="trafico-titulo">
       <div>
-        <p class="eyebrow">TRÁFICO POR PERÍODO</p>
         <h2>Tráfico del sitio</h2>
       </div>
       <div class="insignias" aria-live="polite">
@@ -628,7 +627,7 @@ const num = (n: number) => n.toLocaleString("es-PE");
   font-weight: 600;
 }
 .barra.paso {
-  background: linear-gradient(90deg, #7cc4ff, #1668e3);
+  background: var(--blue-500);
 }
 .barra.paso.pasan {
   background: #9cc9ff;

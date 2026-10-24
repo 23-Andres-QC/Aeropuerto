@@ -131,7 +131,6 @@ const hayVentas = computed(() => (resumen.value?.counts.real ?? 0) + (resumen.va
   <div class="ventas">
     <section class="page-title">
       <div>
-        <p class="eyebrow">{{ actual?.name ?? slug }} · VENTAS</p>
         <h1>Ventas, compradores y pronóstico</h1>
       </div>
       <div class="filtros" role="group" aria-label="Filtros de ventas">

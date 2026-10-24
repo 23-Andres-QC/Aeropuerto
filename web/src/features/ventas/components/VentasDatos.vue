@@ -176,7 +176,7 @@ async function borrar() {
 .conteo {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px;
+  gap: 10px;
 }
 .conteo > div {
   display: flex;

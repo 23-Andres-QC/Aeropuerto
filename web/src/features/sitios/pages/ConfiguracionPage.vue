@@ -413,7 +413,6 @@ onUnmounted(() => {
 <template>
   <section class="page-title">
     <div>
-      <p class="eyebrow">{{ config?.site.name ?? slug }} · CONFIGURACIÓN</p>
       <h1>Zonas, tiendas y cámaras</h1>
     </div>
   </section>
@@ -475,7 +474,7 @@ onUnmounted(() => {
 
       <section v-else-if="camaraSel" class="panel editor" aria-label="Cámara elegida">
         <div class="panel-heading">
-          <h2>Cámara · {{ camaraSel.camera_id }}</h2>
+          <h2>Cámara <span class="dato">· {{ camaraSel.camera_id }}</span></h2>
           <button class="icon-button" type="button" aria-label="Cerrar" title="Cerrar (Esc)" @click="soltarSeleccion">✕</button>
         </div>
         <div class="bloque">
@@ -662,7 +661,7 @@ onUnmounted(() => {
             </span>
           </template>
           <template v-else>
-            <h2>Plano · {{ (mapa.tam_px[0] / mapa.px_por_metro).toFixed(1) }} × {{ (mapa.tam_px[1] / mapa.px_por_metro).toFixed(1) }} m</h2>
+            <h2>Plano <span class="dato">· {{ (mapa.tam_px[0] / mapa.px_por_metro).toFixed(1) }} × {{ (mapa.tam_px[1] / mapa.px_por_metro).toFixed(1) }} m</span></h2>
             <span class="heading-meta">
               <span v-if="guardado" class="guardado" role="status">✓ {{ guardado }}</span>
               <button class="primary-button" type="button" @click="activarEdicion">✎ Editar</button>
@@ -701,7 +700,7 @@ onUnmounted(() => {
 .config-sitio {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
-  gap: 14px;
+  gap: 10px;
   align-items: start;
 }
 .plano-panel {
@@ -727,7 +726,7 @@ onUnmounted(() => {
 }
 .columna {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 .editor {
   border: 1.5px solid var(--blue-500, #3d8bff);

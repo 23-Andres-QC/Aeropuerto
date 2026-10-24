@@ -265,7 +265,7 @@ A-1001;2026-10-05 14:32:10;{{ locales[0]?.name ?? "Mi local" }};Sándwich;Comida
 .dos {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 10px;
   align-items: start;
 }
 @media (max-width: 1100px) {
@@ -280,8 +280,6 @@ A-1001;2026-10-05 14:32:10;{{ locales[0]?.name ?? "Mi local" }};Sándwich;Comida
   gap: 4px;
   font-size: 11px;
   font-weight: 640;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
   color: var(--ink-soft);
 }
 .fila-form {

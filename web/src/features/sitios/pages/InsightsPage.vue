@@ -133,37 +133,37 @@ const tarjetas = computed<Tarjeta[]>(() => {
   const n = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString());
   return [
     {
-      titulo: "PERSONAS",
+      titulo: "Personas",
       valor: n(enZona ? z?.visitantes : res?.personas),
       detalle: res ? (enZona ? `de ${res.personas} en la sesión` : textoGenero(res.personas, g, res.genero_ocultos ?? 0) || "género no registrado") : "sin sesión",
       serie: serie.value?.personas,
     },
     {
-      titulo: "VISITAS",
+      titulo: "Visitas",
       valor: n(enZona ? l?.visitas : conLocales ? totalLocales.value.visitas : null),
       detalle: enZona ? (l ? l.nombre : "zona sin local") : cantidad(a?.locales.length ?? 0, "local", "locales"),
       serie: serieDeLocales("visitas"),
     },
     {
-      titulo: "EXPOSICIÓN",
+      titulo: "Exposición",
       valor: n(enZona ? l?.exposicion : conLocales ? totalLocales.value.exposicion : null),
       detalle: "pasan por el frente",
       serie: serieDeLocales("exposicion"),
     },
     {
-      titulo: "PERMANENCIA",
+      titulo: "Permanencia",
       valor: enZona ? segundos(z?.permanencia_media_s) : segundos(res?.permanencia.media_s),
       detalle: `mediana ${enZona ? segundos(z?.permanencia_mediana_s) : segundos(res?.permanencia.mediana_s)}`,
       serie: enZona ? serie.value?.permanencia_s : undefined,
     },
     {
-      titulo: "CAPTACIÓN",
+      titulo: "Captación",
       valor: tasa == null ? "—" : `${tasa.toFixed(0)} %`,
       detalle: expuestos(enZona ? l : conLocales ? totalLocales.value : null, enZona ? "zona sin local" : "sin locales"),
       serie: serieCaptacion,
     },
     {
-      titulo: "DENSIDAD MÁX",
+      titulo: "Densidad máxima",
       valor: enZona ? (z ? z.densidad_max.toFixed(2) : "—") : zonaPico.value ? zonaPico.value.densidad_max.toFixed(2) : "—",
       detalle: enZona || !zonaPico.value ? "personas / m²" : `personas / m² · ${zonaPico.value.nombre}`,
       serie: serie.value?.densidad,
@@ -191,21 +191,21 @@ const tarjetasVivo = computed<Tarjeta[]>(() => {
   const permanencia = enZona ? (z?.permanencia ?? null) : res.permanenciaMedia;
   const pico = enZona ? (z?.densidad ?? 0) : (res.densidadMax?.valor ?? 0);
   return [
-    { titulo: "PERSONAS", valor: hs.length.toLocaleString(), detalle: enZona ? `de ${res.personas} en vivo` : textoGenero(hs.length, priv.visibles, priv.ocultas) || "género no registrado" },
-    { titulo: "VISITAS", valor: hayLocales ? entraron.length.toLocaleString() : "—", detalle: hayLocales ? "entraron a un local" : "sin locales" },
-    { titulo: "EXPOSICIÓN", valor: hayLocales ? expuestos.length.toLocaleString() : "—", detalle: "pasan por el frente" },
+    { titulo: "Personas", valor: hs.length.toLocaleString(), detalle: enZona ? `de ${res.personas} en vivo` : textoGenero(hs.length, priv.visibles, priv.ocultas) || "género no registrado" },
+    { titulo: "Visitas", valor: hayLocales ? entraron.length.toLocaleString() : "—", detalle: hayLocales ? "entraron a un local" : "sin locales" },
+    { titulo: "Exposición", valor: hayLocales ? expuestos.length.toLocaleString() : "—", detalle: "pasan por el frente" },
     {
-      titulo: "PERMANENCIA",
+      titulo: "Permanencia",
       valor: segundos(permanencia),
       detalle: enZona ? "tiempo en la zona" : `mediana ${segundos(res.permanenciaMediana)}`,
     },
     {
-      titulo: "CAPTACIÓN",
+      titulo: "Captación",
       valor: expuestos.length ? `${((100 * captados.length) / expuestos.length).toFixed(0)} %` : "—",
       detalle: expuestos.length ? `${captados.length} de ${expuestos.length} expuestos` : "sin expuestos",
     },
     {
-      titulo: "DENSIDAD MÁX",
+      titulo: "Densidad máxima",
       valor: pico ? pico.toFixed(2) : "—",
       detalle: enZona || !res.densidadMax ? "personas / m²" : `personas / m² · ${res.densidadMax.zona}`,
     },
@@ -504,7 +504,6 @@ onMounted(async () => {
 <template>
   <section class="page-title">
     <div>
-      <p class="eyebrow">{{ config?.site.name ?? slug }} · ANÁLISIS ESPACIAL</p>
       <h1>Comportamiento de personas</h1>
     </div>
     <div class="replay-filters">
@@ -539,7 +538,6 @@ onMounted(async () => {
       >
       <button type="button" class="ir-trafico" title="Tráfico del sitio por período y franja horaria" @click="irATrafico">Tráfico por franja</button>
       <span v-if="modoVivo" class="pill en-vivo">● EN VIVO</span>
-      <span v-if="analisisGuardado" class="pill capturada" title="Guardada del modo en vivo; sus métricas se calculan desde su recorrido">● Captura en vivo guardada</span>
       <span v-if="!modoVivo && analitica" class="pill" :title="`Calculado ${new Date(analitica.computed_at).toLocaleString('es-PE')}`">Parte III</span>
       <span v-if="!modoVivo && analitica?.stale" class="pill aviso-pill" :title="comando">zonas cambiadas · recalcular</span>
       <span v-else-if="!modoVivo && !analisis && sesionId && !cargando && !analitica" class="pill aviso-pill" :title="comando">Parte III sin calcular</span>
@@ -556,16 +554,13 @@ onMounted(async () => {
     <span><small>Duración</small><b>{{ segundos((vivo.ahora.value - vivo.inicio.value) / 1000) }}</b></span>
     <span><small>Personas</small><b>{{ vivo.resumen.value.personas.toLocaleString() }}</b></span>
     <span><small>Cámaras transmitiendo</small><b>{{ vivo.ranuras.value.filter((r) => r.activa).length }} de {{ vivo.ranuras.value.length }}</b></span>
-    <span><small>Alcance</small><b>{{ alcance }}</b></span>
   </div>
   <div v-else-if="sesion && !vistaSinCapturas" class="resumen-sesion" aria-label="Resumen de la sesión">
-    <span><small>Sesión</small><b>{{ sesion.name || sesion.session_id.slice(0, 8) }}</b></span>
     <span><small>Fecha</small><b>{{ new Date(sesion.recording_start).toLocaleDateString("es-PE", { day: "numeric", month: "short", year: "numeric" }) }}</b></span>
-    <span><small>Duración</small><b>{{ segundos(sesion.duration_s) }}</b></span>
+    <span><small>Duración</small><b>{{ segundos(sesion.duration_s || (sesion.ended_at ? (Date.parse(sesion.ended_at) - Date.parse(sesion.recording_start)) / 1000 : 0)) }}</b></span>
     <span><small>Personas</small><b>{{ sesion.identities.toLocaleString() }}</b></span>
     <span><small>Puntos de trayectoria</small><b>{{ sesion.points.toLocaleString() }}</b></span>
     <span><small>Cámaras</small><b>{{ config?.cameras.length ?? "—" }}</b></span>
-    <span><small>Alcance</small><b>{{ alcance }}</b></span>
   </div>
   <p v-if="modoVivo && vivo.sinUbicar.value" class="aviso-sin-ubicar" role="status">
     {{ vivo.sinUbicar.value }} de {{ vivo.resumen.value.personas }} sin ubicar en el plano: el teléfono no reconoce el patio.
@@ -587,7 +582,6 @@ onMounted(async () => {
       <article class="panel panel-genero">
         <div class="panel-heading">
           <h2>Hombres y mujeres</h2>
-          <span class="muted">{{ alcance }}</span>
         </div>
         <div class="generos">
           <div v-for="x in generos" :key="x.g" class="genero">
@@ -824,7 +818,7 @@ onMounted(async () => {
   list-style: none;
 }
 .plegable[open] summary {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 .capturada {
   color: #b3243d;
@@ -883,7 +877,7 @@ onMounted(async () => {
   color: var(--blue-600);
 }
 .zone-compare-list li.activa .zone-compare-bar {
-  background: linear-gradient(90deg, var(--blue-600), var(--blue-500));
+  background: var(--blue-500);
 }
 .ruta {
   font-weight: 600;

@@ -126,22 +126,22 @@ const errorTipico = (w: number | null | undefined) => (w == null ? "—" : porce
         <small>probable entre <CifraAnimada :valor="resumen.ingresos.low" :formato="dineroCorto" /> y <CifraAnimada :valor="resumen.ingresos.high" :formato="dineroCorto" /></small>
       </article>
       <article class="panel metric" :class="{ vacio: !hayVisitas }">
-        <p>VISITANTES ESPERADOS</p>
+        <p>Visitantes esperados</p>
         <strong><CifraAnimada :valor="hayVisitas ? resumen.visitantes : null" :formato="entero" /></strong>
         <small>{{ hayVisitas ? "personas que entrarían a los locales" : "sin conteo de visitantes en este período" }}</small>
       </article>
       <article class="panel metric" :class="{ vacio: resumen.conversion == null }">
-        <p>CONVERSIÓN ESPERADA</p>
+        <p>Conversión esperada</p>
         <strong><CifraAnimada :valor="resumen.conversion" :formato="porcentaje1" /></strong>
         <small><CifraAnimada :valor="resumen.tickets" :formato="entero" /> tickets esperados</small>
       </article>
       <article class="panel metric" :class="{ vacio: resumen.ticket == null }">
-        <p>TICKET PROMEDIO ESPERADO</p>
+        <p>Ticket promedio esperado</p>
         <strong><CifraAnimada :valor="resumen.ticket" :formato="dinero" /></strong>
         <small>ingresos entre tickets proyectados</small>
       </article>
       <article class="panel metric">
-        <p>ERROR TÍPICO DEL MODELO</p>
+        <p>Error típico del modelo</p>
         <strong><CifraAnimada :valor="calidad?.wape" :formato="porcentajeEntero" /></strong>
         <small>sobre {{ paso === "dia" ? "días" : "horas" }} ya conocidos</small>
       </article>

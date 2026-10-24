@@ -295,8 +295,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
 <template>
   <section class="page-title">
     <div>
-      <p class="eyebrow">{{ config?.site.name ?? slug }} · EN VIVO DEL MODELO<template v-if="modoVivo && zonaVivo"> · <b data-prueba="zona-en-vivo">{{ zonaVivo.toUpperCase() }}</b></template></p>
-      <h1>Personas sobre el plano y cámaras sincronizadas</h1>
+      <h1>Personas sobre el plano<template v-if="modoVivo && zonaVivo"> · <b data-prueba="zona-en-vivo">{{ zonaVivo.toUpperCase() }}</b></template></h1>
     </div>
     <label class="selector-sesion">Sesión
       <select v-model="valorSesion">
@@ -330,7 +329,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   <div v-if="mapa" class="envivo-esan" :class="{ vivo: modoVivo }">
     <section class="panel plano-panel">
       <div class="panel-heading">
-        <h2>Plano · {{ (mapa.tam_px[0] / mapa.px_por_metro).toFixed(0) }} × {{ (mapa.tam_px[1] / mapa.px_por_metro).toFixed(0) }} m</h2>
+        <h2>Plano <span class="dato">· {{ (mapa.tam_px[0] / mapa.px_por_metro).toFixed(0) }} × {{ (mapa.tam_px[1] / mapa.px_por_metro).toFixed(0) }} m</span></h2>
         <span v-if="modoVivo" class="heading-meta">
           <span v-if="capturaDePrueba" class="pill prueba" title="Hay un teléfono simulado: se ve, pero esta captura no se guarda en la base">PRUEBA · no se guarda</span>
           <span v-if="grabando && !capturaDePrueba" class="pill grabando">● GRABANDO</span><span class="pill en-vivo" data-prueba="pill-en-vivo">● EN VIVO{{ zonaVivo ? ` · ${zonaVivo.toUpperCase()}` : "" }}</span><span class="pill">{{ totalEnPlano }} en el plano</span>
@@ -410,7 +409,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
           </p>
           <article v-else class="panel ranura libre">
             <div class="panel-heading">
-              <h2>{{ r.camara }}</h2>
+              <h2 class="dato">{{ r.camara }}</h2>
               <span class="pill warn">libre</span>
             </div>
             <p class="ranura-datos muted">Esperando el {{ r.camara === "cam01" ? "primer" : "segundo" }} teléfono.</p>
@@ -454,7 +453,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   <section v-if="replay && camarasVideo.length" class="videos-esan">
     <article v-for="cid in camarasVideo" :key="cid" class="panel">
       <div class="panel-heading">
-        <h2>{{ cid }}</h2>
+        <h2 class="dato">{{ cid }}</h2>
         <span class="muted">desfase {{ (desfases[cid] ?? 0).toFixed(1) }} s</span>
       </div>
       <video
@@ -492,7 +491,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
 .envivo-esan {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;
-  gap: 14px;
+  gap: 10px;
   align-items: start;
 }
 /* En vivo: el plano comparte la fila con las cámaras (los dos teléfonos y, debajo, quién está ahora). */
@@ -702,7 +701,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
 .videos-esan {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 14px;
+  gap: 10px;
   margin-top: 14px;
 }
 .videos-esan video {

@@ -106,7 +106,7 @@ const maxPaso = computed(() => Math.max(1, ...e.value.pasos.map((p) => Math.abs(
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 .recetas button {
   min-height: 28px;
@@ -123,7 +123,7 @@ const maxPaso = computed(() => Math.max(1, ...e.value.pasos.map((p) => Math.abs(
 }
 .deslizador {
   display: block;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 .cabeza {
   display: flex;
@@ -159,8 +159,6 @@ const maxPaso = computed(() => Math.max(1, ...e.value.pasos.map((p) => Math.abs(
 .rotulo {
   font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.9px;
-  text-transform: uppercase;
   color: var(--ink-faint);
 }
 .grande {
@@ -223,10 +221,10 @@ const maxPaso = computed(() => Math.max(1, ...e.value.pasos.map((p) => Math.abs(
   background: color-mix(in srgb, var(--blue-500) 45%, transparent);
 }
 .riel i.nuevo {
-  background: linear-gradient(90deg, var(--blue-500), var(--cyan-400));
+  background: var(--blue-500);
 }
 .riel i.nuevo.baja {
-  background: linear-gradient(90deg, #e0852d, #d6483a);
+  background: #d6483a;
 }
 .pasos {
   display: flex;

@@ -91,7 +91,7 @@ try {
   }
   await entrarComo(CUENTA_A, temporalA);
   await t.hasta(`location.pathname === '/cambiar-clave'`, "con clave temporal, a elegir una propia");
-  assert.ok((await t.texto("h1")).includes("Elige tu contraseña"));
+  assert.match(await t.texto("h1"), /elige tu contraseña/i); // los títulos se ven en mayúsculas
   assert.ok(!(await t.existe(".sidebar")), "sin menú del análisis");
   // Todo lo demás lo cierra el servidor mientras la clave sea temporal.
   const cerrado = await t.api("GET", "/api/v1/sites/demo/trafico/embudo");

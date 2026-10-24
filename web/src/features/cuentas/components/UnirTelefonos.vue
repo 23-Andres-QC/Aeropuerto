@@ -137,7 +137,7 @@ onUnmounted(() => clearInterval(sondeo));
 <style scoped>
 .unir {
   padding: 12px 14px 14px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 .unir > .panel-heading {
   margin: -12px -14px 12px;

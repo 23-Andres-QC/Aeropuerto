@@ -241,7 +241,7 @@ const quien = computed(() => (props.dia == null ? "Un día cualquiera de la sema
 
 <style scoped>
 .pulso {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 .cuerpo-pulso {
   display: grid;

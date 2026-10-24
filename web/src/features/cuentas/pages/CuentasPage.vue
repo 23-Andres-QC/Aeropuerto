@@ -156,7 +156,6 @@ onMounted(cargar);
   <div class="cuentas">
     <section class="page-title">
       <div>
-        <p class="eyebrow">LAP · ADMINISTRACIÓN</p>
         <h1>Cuentas y privacidad</h1>
       </div>
     </section>
@@ -318,7 +317,7 @@ onMounted(cargar);
 <style scoped>
 .cuentas {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 .cuentas > .page-title {
   margin: 0;
@@ -429,20 +428,24 @@ label {
   padding: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius);
+  background: var(--glass);
+  box-shadow: var(--shadow-s);
+  overflow: hidden;
 }
 .resumen li {
   display: flex;
   align-items: baseline;
   gap: 8px;
   padding: 8px 14px;
-  border: 1px solid var(--glass-line);
-  border-radius: var(--radius);
-  background: var(--glass);
-  box-shadow: var(--shadow-s);
+  border-right: 1px solid var(--glass-line);
+}
+.resumen li:last-child {
+  border-right: 0;
 }
 .resumen b {
-  font-size: 20px;
+  font-size: 17px;
   font-variant-numeric: tabular-nums;
 }
 .resumen span {

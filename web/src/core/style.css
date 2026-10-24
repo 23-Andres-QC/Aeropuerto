@@ -19,24 +19,27 @@
   --good: #0e9b74;
   --warn: #c8791d;
 
-  --glass: rgba(255, 255, 255, 0.62);
-  --glass-strong: rgba(255, 255, 255, 0.8);
-  --glass-line: rgba(255, 255, 255, 0.72);
-  --line-control: rgba(86, 119, 154, 0.22);
-  --pill-bg: rgba(191, 230, 255, 0.55);
-  --pill-border: rgba(255, 255, 255, 0.8);
-  --pill-fg: var(--blue-700);
+  --glass: #ffffff;
+  --glass-strong: #ffffff;
+  --glass-line: #e2e8f0;
+  --line-control: #d0d9e4;
+  --pill-bg: #eef2f7;
+  --pill-border: #dfe6ee;
+  --pill-fg: #34506f;
+  /* Cabecera de las tablas y fila bajo el puntero. */
+  --tabla-cabecera: #f5f7fa;
+  --fila-hover: #f8fafc;
   --heading-glow-1: rgba(255, 255, 255, 0.55);
   --heading-glow-2: rgba(255, 255, 255, 0.15);
   --panel-brillo-1: rgba(255, 255, 255, 0.5);
   --panel-brillo-2: rgba(255, 255, 255, 0.08);
-  --glass-blur: blur(22px) saturate(170%);
-  --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  --shadow-s: 0 4px 14px rgba(10, 45, 92, 0.07);
-  --shadow-m: 0 12px 34px rgba(10, 45, 92, 0.12);
-  --shadow-l: 0 26px 70px rgba(6, 32, 68, 0.28);
-  --radius: 12px;
-  --radius-s: 8px;
+  --glass-blur: none;
+  --sheen: none;
+  --shadow-s: 0 1px 2px rgba(16, 32, 56, 0.05);
+  --shadow-m: 0 8px 24px rgba(16, 32, 56, 0.1);
+  --shadow-l: 0 20px 50px rgba(6, 32, 68, 0.22);
+  --radius: 8px;
+  --radius-s: 6px;
 
   /* Alias genéricos: ESANPage.vue se escribió con estos nombres sueltos
      (no definidos en ningún lado); apuntarlos a los tokens de arriba la
@@ -70,20 +73,22 @@
     --ink-soft: #c3d5ea;
     --ink-faint: #93adca;
     --danger-soft: rgba(207, 64, 64, 0.18);
-    --glass: rgba(11, 22, 40, 0.88);
-    --glass-strong: rgba(14, 28, 50, 0.94);
-    --glass-line: rgba(140, 180, 230, 0.2);
-    --line-control: rgba(140, 180, 230, 0.26);
-    --pill-bg: rgba(61, 139, 255, 0.22);
-    --pill-border: rgba(255, 255, 255, 0.14);
-    --pill-fg: #bcdcff;
+    --glass: #111b2c;
+    --glass-strong: #152136;
+    --glass-line: #24324a;
+    --line-control: #2f4160;
+    --pill-bg: #1c2a42;
+    --pill-border: #2a3a56;
+    --pill-fg: #c3d5ea;
+    --tabla-cabecera: #16233a;
+    --fila-hover: #152035;
     --accent-ink: #8fd0ff;
     --heading-glow-1: rgba(61, 139, 255, 0.1);
   --panel-brillo-1: rgba(255, 255, 255, 0.04);
   --panel-brillo-2: rgba(255, 255, 255, 0);
     --heading-glow-2: rgba(61, 139, 255, 0.02);
     --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    --shadow-s: 0 4px 14px rgba(0, 0, 0, 0.25);
+    --shadow-s: 0 1px 2px rgba(0, 0, 0, 0.3);
     --shadow-m: 0 12px 34px rgba(0, 0, 0, 0.32);
     --shadow-l: 0 26px 70px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
@@ -94,20 +99,22 @@
   --ink-soft: #c3d5ea;
   --ink-faint: #93adca;
   --danger-soft: rgba(207, 64, 64, 0.18);
-  --glass: rgba(11, 22, 40, 0.88);
-  --glass-strong: rgba(14, 28, 50, 0.94);
-  --glass-line: rgba(140, 180, 230, 0.2);
-  --line-control: rgba(140, 180, 230, 0.26);
-  --pill-bg: rgba(61, 139, 255, 0.22);
-  --pill-border: rgba(255, 255, 255, 0.14);
-  --pill-fg: #bcdcff;
+  --glass: #111b2c;
+  --glass-strong: #152136;
+  --glass-line: #24324a;
+  --line-control: #2f4160;
+  --pill-bg: #1c2a42;
+  --pill-border: #2a3a56;
+  --pill-fg: #c3d5ea;
+  --tabla-cabecera: #16233a;
+  --fila-hover: #152035;
   --accent-ink: #8fd0ff;
   --heading-glow-1: rgba(61, 139, 255, 0.1);
   --panel-brillo-1: rgba(255, 255, 255, 0.04);
   --panel-brillo-2: rgba(255, 255, 255, 0);
   --heading-glow-2: rgba(61, 139, 255, 0.02);
   --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  --shadow-s: 0 4px 14px rgba(0, 0, 0, 0.25);
+  --shadow-s: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-m: 0 12px 34px rgba(0, 0, 0, 0.32);
   --shadow-l: 0 26px 70px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
@@ -118,20 +125,15 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(1100px 680px at 6% -12%, #cde8ff 0%, transparent 62%),
-    radial-gradient(900px 560px at 102% -4%, #d8f2ff 0%, transparent 58%),
-    radial-gradient(820px 760px at 62% 112%, #cddfff 0%, transparent 60%),
-    linear-gradient(180deg, #eff7ff 0%, #e2eefc 100%);
-  background-attachment: fixed;
+  background: #f1f4f8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) body {
+    background: #0a1220;
+  }
 }
 :root[data-theme="dark"] body {
-  background:
-    radial-gradient(1100px 680px at 6% -12%, rgba(20, 60, 110, 0.35) 0%, transparent 62%),
-    radial-gradient(900px 560px at 102% -4%, rgba(20, 80, 110, 0.28) 0%, transparent 58%),
-    radial-gradient(820px 760px at 62% 112%, rgba(20, 40, 100, 0.3) 0%, transparent 60%),
-    linear-gradient(180deg, #0a1830 0%, #060f22 100%);
-  background-attachment: fixed;
+  background: #0a1220;
 }
 a {
   color: inherit;
@@ -142,6 +144,27 @@ h1 {
   font-weight: 680;
   letter-spacing: -0.3px;
   margin: 2px 0 4px;
+}
+/* Títulos de página y de panel en mayúsculas; todo lo de adentro (rótulos, tablas, filtros) en minúsculas. */
+main h1 {
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  margin: 0;
+}
+main h2 {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+/* Datos dentro de un título (medidas, cámaras, nombres de archivo): tal cual se escriben. */
+main h1 .dato,
+main h2 .dato,
+main h2.dato {
+  text-transform: none;
+  letter-spacing: 0;
 }
 h2 {
   font-size: 13px;
@@ -360,6 +383,8 @@ button:disabled {
 .login-card form > label { display: block; margin: 18px 0 7px; color: var(--ink); font-size: 12px; font-weight: 650; }
 .password-field { position: relative; }
 .password-field input { padding-right: 72px; }
+/* Edge agrega su propio ojito a las contraseñas: se quita, ya está el botón «Mostrar». */
+input::-ms-reveal, input::-ms-clear { display: none; }
 .password-toggle { position: absolute; top: 50%; right: 7px; min-height: 0; padding: 5px 7px; border: 0; background: transparent; box-shadow: none; color: var(--blue-700); font-size: 11px; transform: translateY(-50%); }
 .password-toggle:hover { transform: translateY(-50%); background: rgba(22, 104, 227, 0.08); }
 .login-error { margin-top: 13px; padding: 9px 11px; border: 1px solid rgba(207, 64, 64, .23); border-radius: 9px; background: var(--danger-soft); color: var(--danger); font-size: 12px; }
@@ -387,14 +412,8 @@ button:disabled {
   z-index: 21;
   padding: 14px 12px;
   color: #cfe2f7;
-  background: linear-gradient(
-    180deg,
-    rgba(9, 44, 96, 0.93) 0%,
-    rgba(6, 27, 62, 0.95) 100%
-  );
-  backdrop-filter: var(--glass-blur);
-  border-right: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 4px 0 30px rgba(6, 32, 68, 0.18);
+  background: #0b2246;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 .brand {
   display: flex;
@@ -419,23 +438,19 @@ button:disabled {
   place-items: center;
   width: 32px;
   height: 32px;
-  border-radius: 12px;
+  border-radius: 8px;
   font-size: 16px;
   color: #fff;
-  background: linear-gradient(150deg, #5aa6ff, #1668e3);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    0 6px 16px rgba(22, 104, 227, 0.45);
+  background: var(--blue-600);
 }
 .airport-switch {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 9px 11px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.09);
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 .airport-switch > div {
   min-width: 0;
@@ -474,9 +489,9 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 11px;
-  border-radius: 9px;
-  font-size: 13.5px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 13px;
   font-weight: 500;
   color: #b6cee8;
   border: 1px solid transparent;
@@ -507,8 +522,7 @@ button:disabled {
 }
 .sidebar nav .router-link-active {
   color: #fff;
-  background: rgba(93, 164, 255, 0.24);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.1);
   box-shadow: inset 3px 0 0 var(--cyan-400);
 }
 .workspace {
@@ -528,9 +542,7 @@ button:disabled {
   font-size: 12.5px;
   font-weight: 600;
   background: var(--glass-strong);
-  backdrop-filter: var(--glass-blur);
   border-bottom: 1px solid var(--glass-line);
-  box-shadow: 0 1px 12px rgba(10, 45, 92, 0.06);
 }
 .breadcrumb {
   color: var(--ink-faint);
@@ -553,8 +565,8 @@ button:disabled {
   gap: 6px;
   height: 30px;
   padding: 0 10px;
-  border-radius: 8px;
-  background: var(--pill-bg);
+  border-radius: 6px;
+  border: 1px solid var(--line-control);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -582,21 +594,20 @@ button:disabled {
   font-size: 10px;
   font-weight: 700;
   color: #fff;
-  background: linear-gradient(150deg, #5aa6ff, #1668e3);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  background: var(--blue-600);
 }
 main {
-  padding: 16px 20px 20px;
+  padding: 12px 16px 16px;
   max-width: 1800px;
   width: 100%;
 }
 main > .panel {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 footer {
   display: flex;
   justify-content: flex-end;
-  gap: 14px;
+  gap: 10px;
   margin-top: auto;
   padding: 10px 20px 16px;
   font-size: 11px;
@@ -611,7 +622,6 @@ footer a:hover {
   position: relative;
   border-radius: var(--radius);
   background: var(--glass);
-  backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-line);
   box-shadow: var(--shadow-s);
   overflow: hidden;
@@ -620,9 +630,9 @@ footer a:hover {
   position: relative;
 }
 .panel-heading h2 {
-  font-size: 13.5px;
-  font-weight: 650;
-  letter-spacing: -0.1px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
 }
 .panel-heading {
   display: flex;
@@ -630,8 +640,8 @@ footer a:hover {
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
-  min-height: 44px;
-  padding: 7px 14px;
+  min-height: 40px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--glass-line);
 }
 .heading-meta {
@@ -705,16 +715,36 @@ button.pill {
   justify-content: space-between;
   gap: 10px 16px;
   flex-wrap: wrap;
-  margin-bottom: 14px;
+  min-height: 34px;
+  margin-bottom: 10px;
 }
 .page-title h1 {
-  margin: 2px 0 0;
+  margin: 0;
 }
 .eyebrow {
   font-size: 10px;
   letter-spacing: 1.2px;
   font-weight: 700;
   color: var(--blue-600);
+}
+
+/* ---------- tablas ----------
+   Todas las tablas de datos con la misma regla: cabecera con fondo y líneas entre filas y columnas. */
+main table:not(.mapa-calor) {
+  border-collapse: collapse;
+}
+main table:not(.mapa-calor) th,
+main table:not(.mapa-calor) td {
+  border-right: 1px solid var(--glass-line);
+  border-bottom: 1px solid var(--glass-line);
+}
+main table:not(.mapa-calor) th:last-child,
+main table:not(.mapa-calor) td:last-child {
+  border-right: 0;
+}
+main table:not(.mapa-calor) thead th {
+  background: var(--tabla-cabecera);
+  color: var(--ink-soft);
 }
 
 /* ---------- plano ---------- */
@@ -805,13 +835,13 @@ button.pill {
 .spatial-insights {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   min-width: 0;
 }
 /* Cada fila reparte sus tarjetas una al lado de la otra; al estrecharse se apilan. */
 .fila {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   align-items: start;
   min-width: 0;
 }
@@ -828,7 +858,7 @@ button.pill {
 .fila-top {
   display: grid;
   grid-template-columns: minmax(280px, 0.85fr) minmax(0, 2.4fr);
-  gap: 14px;
+  gap: 10px;
   align-items: stretch;
   min-width: 0;
 }
@@ -842,15 +872,13 @@ button.pill {
 }
 .metric {
   padding: 10px 12px 9px;
-  border-top: 2px solid var(--blue-500);
 }
 .metric p {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 10.5px;
-  letter-spacing: 0.6px;
-  font-weight: 700;
+  font-size: 11.5px;
+  font-weight: 600;
   color: var(--ink-soft);
 }
 .metric strong {
@@ -869,9 +897,6 @@ button.pill {
   line-height: 1.4;
 }
 /* Sin dato: la tarjeta se atenua para que no compita con las que sí tienen. */
-.metric.vacio {
-  border-top-color: var(--glass-line);
-}
 .metric.vacio strong {
   color: var(--ink-faint);
 }
@@ -905,7 +930,7 @@ button.pill {
   display: flex;
   flex-wrap: wrap;
   gap: 0;
-  margin: 0 0 14px;
+  margin: 0 0 10px;
   border: 1px solid var(--glass-line);
   border-radius: var(--radius);
   background: var(--glass);
@@ -945,10 +970,10 @@ button.pill {
 .zone-compare-list {
   list-style: none;
   margin: 0;
-  padding: 6px 13px 14px;
+  padding: 8px 12px 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 .zone-compare-label {
   display: flex;
@@ -963,16 +988,16 @@ button.pill {
 }
 .zone-compare-bar-track {
   position: relative;
-  height: 24px;
-  border-radius: 7px;
-  background: rgba(120, 150, 190, 0.16);
+  height: 18px;
+  border-radius: 4px;
+  background: var(--pill-bg);
   overflow: hidden;
 }
 .zone-compare-bar {
   height: 100%;
   min-width: 3px;
-  border-radius: 7px;
-  background: linear-gradient(90deg, var(--blue-500), var(--cyan-400));
+  border-radius: 4px;
+  background: var(--blue-500);
 }
 .zone-compare-value {
   position: absolute;
@@ -1024,11 +1049,8 @@ button.pill {
 }
 .bar {
   width: 100%;
-  border-radius: 6px 6px 3px 3px;
-  background: linear-gradient(180deg, #7cc4ff, var(--blue-600));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    0 4px 10px rgba(22, 104, 227, 0.22);
+  border-radius: 3px 3px 0 0;
+  background: var(--blue-500);
 }
 
 /* ---------- responsive ---------- */
@@ -1136,7 +1158,7 @@ button.pill {
   }
   .print-header {
     display: block;
-    margin-bottom: 14px;
+    margin-bottom: 10px;
   }
   .print-header {
     padding-bottom: 10px;

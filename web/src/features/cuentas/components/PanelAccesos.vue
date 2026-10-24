@@ -222,7 +222,7 @@ const porRol = computed(() => Object.entries(datos.value?.ahora.por_rol ?? {}).m
 <style scoped>
 .panel-accesos {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 .encabezado {
   display: flex;
@@ -382,7 +382,7 @@ figcaption {
 .dos {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-  gap: 14px;
+  gap: 10px;
 }
 @media (max-width: 900px) {
   .dos {
