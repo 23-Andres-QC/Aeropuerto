@@ -46,6 +46,8 @@ const cuentas = computed(() => route.path === "/cuentas");
 const esAdmin = computed(() => sesion.value?.rol === ROL_ADMIN);
 const rolNombre = computed(() => NOMBRE_ROL[sesion.value?.rol ?? ""] ?? sesion.value?.rol ?? "");
 // El cambio de contraseña y el aviso de privacidad van en una pantalla sencilla, sin el menú del análisis.
+// Ingresar, olvidé mi contraseña y restablecerla: pantalla completa con la foto, sin el menú de la app.
+const pantallaAcceso = computed(() => ["/login", "/olvide", "/restablecer"].includes(route.path));
 const simple = computed(() => route.path === "/cambiar-clave" || route.path === "/privacidad");
 const videos = computed(() => route.path === "/videos");
 const title = computed(() => {
@@ -56,9 +58,11 @@ const title = computed(() => {
   return `${actual.value?.name ?? slug.value} · ${nombre}`;
 });
 
+// Salir cierra la sesión en el servidor y vuelve a cargar la página en el login: no queda nada en memoria (teléfonos,
+// modo en vivo, sitios) y el navegador no puede volver a una pantalla de adentro.
 async function salir() {
   await logout();
-  await router.replace("/login");
+  location.replace("/login");
 }
 
 // El motor del modo en vivo proyecta sobre el último sitio visitado: en Teléfonos y Videos (sin sitio en la ruta) se queda el de antes.
@@ -89,7 +93,8 @@ function elegirSitio(s: Sitio) {
 </script>
 
 <template>
-  <div v-if="route.path === '/login'"><RouterView /></div>
+  <div v-if="pantallaAcceso"><RouterView /></div>
+  <div v-else-if="!sesion && !route.meta.abierta"></div>
   <div v-else-if="simple" class="shell-simple">
     <header class="simple-cabecera">
       <RouterLink class="brand simple-marca" to="/"><span class="brand-icon">✈</span><span>LAP</span></RouterLink>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import VisualAcceso from "./VisualAcceso.vue";
 import { useRouter } from "vue-router";
 import { login as iniciarSesion } from "../../core/auth";
 import { CLAVE_AVISO_CIERRE } from "../../core/inactividad";
@@ -40,26 +41,13 @@ async function login() {
 
 <template>
   <main class="login-page">
-    <section class="login-visual" aria-label="Información del sistema">
-      <div class="login-brand-row">
-        <div class="login-brand"><span class="brand-icon">✈</span> LAP</div>
-        <span class="login-status"><span></span> Operación aérea</span>
-      </div>
-      <div class="login-visual-copy">
-        <span class="eyebrow">AEROPUERTO INTERNACIONAL</span>
-        <h1>Jorge Chávez<br /><em>Lima, Perú.</em></h1>
-        <p>Centro de control y monitoreo del terminal aéreo.</p>
-      </div>
-      <div class="login-visual-footer">LIMA AIRPORT PARTNERS <span>·</span> JORGE CHÁVEZ</div>
-    </section>
+    <VisualAcceso />
 
     <section class="login-panel">
       <div class="login-card">
-        <div class="login-card-top"><span class="login-card-mark">✈</span><span>Terminal · Nivel 3</span></div>
         <div class="login-card-heading">
-          <span class="login-kicker">ACCESO SEGURO</span>
+          <div class="login-card-marca"><span class="brand-icon">✈</span>LAP</div>
           <h2>Bienvenido</h2>
-          <p>Ingresa tus credenciales para continuar al centro de control.</p>
         </div>
 
         <form @submit.prevent="login" novalidate>
@@ -101,12 +89,11 @@ async function login() {
           <p v-if="error" class="login-error" role="alert">{{ error }}</p>
           <p class="olvide"><RouterLink to="/olvide" data-prueba="ir-olvide">¿Olvidaste tu contraseña?</RouterLink></p>
           <button class="primary-button login-submit" type="submit" :disabled="submitting">
-            <span>{{ submitting ? "Validando…" : "Ingresar al sistema" }}</span>
-            <span aria-hidden="true">→</span>
+            {{ submitting ? "Validando…" : "Ingresar al sistema" }}
           </button>
         </form>
 
-        <div class="login-security"><span>⌁</span> Sesión protegida · Acceso interno LAP · <RouterLink to="/privacidad">Aviso de privacidad</RouterLink></div>
+        <div class="login-security"><RouterLink to="/privacidad">Aviso de privacidad</RouterLink></div>
       </div>
     </section>
   </main>

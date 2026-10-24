@@ -16,7 +16,11 @@ ganchos.alNoAutorizado = () => {
 const entrada = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
 void (async () => {
   if (entrada?.type === "back_forward") await cerrarPorRegreso();
-  createApp(App).use(router).mount("#app");
+  // Se monta cuando el router ya resolvió la primera pantalla (y con ella, si hay sesión): sin sesión, lo primero que se
+  // ve es el login, nunca un instante de la plataforma antes de rebotar.
+  const app = createApp(App).use(router);
+  await router.isReady();
+  app.mount("#app");
 })();
 window.addEventListener("pageshow", (e) => {
   if (!e.persisted) return;

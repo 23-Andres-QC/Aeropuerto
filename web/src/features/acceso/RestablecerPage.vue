@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import VisualAcceso from "./VisualAcceso.vue";
 import { useRoute, useRouter } from "vue-router";
 import { restablecerClave, validarEnlace } from "../../core/auth";
 import { problemaConClave } from "../../core/roles";
@@ -53,12 +54,12 @@ async function guardar() {
 </script>
 
 <template>
-  <main class="login-page recuperar">
+  <main class="login-page">
+    <VisualAcceso />
     <section class="login-panel">
       <div class="login-card">
-        <div class="login-card-top"><span class="login-card-mark">✈</span><span>LAP · Lima Airport Partners</span></div>
         <div class="login-card-heading">
-          <span class="login-kicker">RESTABLECER CONTRASEÑA</span>
+          <div class="login-card-marca"><span class="brand-icon">✈</span>LAP</div>
           <h2>Elige una contraseña nueva</h2>
         </div>
 
@@ -66,12 +67,12 @@ async function guardar() {
 
         <template v-else-if="estado === 'invalido'">
           <p class="login-error" role="alert" data-prueba="enlace-invalido">{{ mensaje }}</p>
-          <RouterLink class="primary-button login-submit" to="/olvide"><span>Pedir un enlace nuevo</span><span aria-hidden="true">→</span></RouterLink>
+          <RouterLink class="primary-button login-submit" to="/olvide">Pedir un enlace nuevo</RouterLink>
         </template>
 
         <template v-else-if="estado === 'listo'">
           <p class="login-ok" role="status" data-prueba="clave-restablecida">Listo: tu contraseña cambió y se cerraron tus otras sesiones.</p>
-          <RouterLink class="primary-button login-submit" to="/login"><span>Ingresar</span><span aria-hidden="true">→</span></RouterLink>
+          <RouterLink class="primary-button login-submit" to="/login">Ingresar</RouterLink>
         </template>
 
         <form v-else novalidate @submit.prevent="guardar">
@@ -88,8 +89,7 @@ async function guardar() {
           <input id="repetida" v-model="repetida" :type="mostrar ? 'text' : 'password'" autocomplete="new-password" data-prueba="clave-repetida" />
           <p v-if="error" class="login-error" role="alert">{{ error }}</p>
           <button class="primary-button login-submit" type="submit" :disabled="enviando" data-prueba="guardar-clave">
-            <span>{{ enviando ? "Guardando…" : "Guardar contraseña" }}</span>
-            <span aria-hidden="true">→</span>
+            {{ enviando ? "Guardando…" : "Guardar contraseña" }}
           </button>
         </form>
       </div>
@@ -98,10 +98,6 @@ async function guardar() {
 </template>
 
 <style scoped>
-.recuperar {
-  grid-template-columns: 1fr;
-  justify-items: center;
-}
 .login-ok {
   margin: 8px 0 12px;
   padding: 10px 12px;

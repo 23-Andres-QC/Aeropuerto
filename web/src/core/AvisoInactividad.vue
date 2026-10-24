@@ -1,11 +1,9 @@
 <script setup lang="ts">
 // Vigila la inactividad mientras haya sesión: a los 2 min sin actividad cierra la sesión y manda al login; 10 s antes pregunta «¿sigues ahí?».
 import { nextTick, onUnmounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
 import { logout, sesion } from "./auth";
 import { CLAVE_AVISO_CIERRE, detener, segundosRestantes, sigoAqui, vigilarInactividad } from "./inactividad";
 
-const router = useRouter();
 const boton = ref<HTMLButtonElement>();
 
 async function cerrarPorInactividad() {
@@ -15,7 +13,8 @@ async function cerrarPorInactividad() {
     /* sin sessionStorage el login no explica el motivo, pero la sesión se cierra igual */
   }
   await logout();
-  await router.replace("/login");
+  // Como al salir: se recarga en el login para que no quede nada de la plataforma en memoria.
+  location.replace("/login");
 }
 
 watch(

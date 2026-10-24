@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import VisualAcceso from "./VisualAcceso.vue";
 import { solicitarRecuperacion } from "../../core/auth";
 
 // «Olvidé mi contraseña»: se escribe el correo y la respuesta es siempre la misma, tenga cuenta o no, para no revelar qué correos existen.
@@ -23,14 +24,13 @@ async function enviar() {
 </script>
 
 <template>
-  <main class="login-page recuperar">
+  <main class="login-page">
+    <VisualAcceso />
     <section class="login-panel">
       <div class="login-card">
-        <div class="login-card-top"><span class="login-card-mark">✈</span><span>LAP · Lima Airport Partners</span></div>
         <div class="login-card-heading">
-          <span class="login-kicker">RECUPERAR ACCESO</span>
+          <div class="login-card-marca"><span class="brand-icon">✈</span>LAP</div>
           <h2>¿Olvidaste tu contraseña?</h2>
-          <p>Escribe el correo de tu cuenta y te enviamos un enlace para elegir una nueva. Vale 30 minutos y se usa una sola vez.</p>
         </div>
 
         <p v-if="enviado" class="login-ok" role="status" data-prueba="recuperacion-enviada">{{ enviado }}</p>
@@ -39,22 +39,17 @@ async function enviar() {
           <input id="correo" v-model="correo" name="email" type="email" autocomplete="email" placeholder="nombre@empresa.com" autofocus data-prueba="correo-recuperar" />
           <p v-if="error" class="login-error" role="alert">{{ error }}</p>
           <button class="primary-button login-submit" type="submit" :disabled="enviando" data-prueba="enviar-recuperacion">
-            <span>{{ enviando ? "Enviando…" : "Enviarme el enlace" }}</span>
-            <span aria-hidden="true">→</span>
+            {{ enviando ? "Enviando…" : "Enviarme el enlace" }}
           </button>
         </form>
 
-        <div class="login-security"><RouterLink to="/login">← Volver a ingresar</RouterLink></div>
+        <div class="login-security"><RouterLink to="/login">Volver a ingresar</RouterLink></div>
       </div>
     </section>
   </main>
 </template>
 
 <style scoped>
-.recuperar {
-  grid-template-columns: 1fr;
-  justify-items: center;
-}
 .login-ok {
   margin: 8px 0 0;
   padding: 10px 12px;
