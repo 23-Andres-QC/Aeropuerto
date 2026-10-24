@@ -331,8 +331,8 @@ button:disabled {
 }
 
 /* ---------- acceso ---------- */
-/* El avión sobre las nubes cubre siempre toda la pantalla (fija, aunque la página se desplace); a la izquierda se
-   oscurece para que los títulos contrasten y a la derecha queda solo la tarjeta del acceso. */
+/* La foto del avión (FondoCarrusel.vue) cubre siempre toda la pantalla, fija aunque la página se desplace; encima, este
+   velo oscurece la izquierda para que los títulos contrasten. A la derecha queda solo la tarjeta del acceso. */
 .login-page {
   position: relative;
   isolation: isolate;
@@ -346,9 +346,7 @@ button:disabled {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background:
-    linear-gradient(90deg, rgba(3, 16, 38, 0.82) 0%, rgba(3, 16, 38, 0.55) 42%, rgba(3, 16, 38, 0.18) 100%),
-    url("/login-fondo.jpg") center / cover no-repeat;
+  background: linear-gradient(90deg, rgba(3, 16, 38, 0.82) 0%, rgba(3, 16, 38, 0.55) 42%, rgba(3, 16, 38, 0.18) 100%);
 }
 .login-visual {
   position: relative;

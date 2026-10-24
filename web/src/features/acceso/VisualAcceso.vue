@@ -1,5 +1,10 @@
 <!-- La mitad izquierda de las pantallas de acceso (ingresar, olvidé mi contraseña, restablecerla): los títulos sobre la foto. -->
+<script setup lang="ts">
+import FondoCarrusel from "./FondoCarrusel.vue";
+</script>
+
 <template>
+  <FondoCarrusel />
   <section class="login-visual" aria-label="Información del sistema">
     <div class="login-brand-row">
       <div class="login-brand"><span class="brand-icon">✈</span> LAP</div>
