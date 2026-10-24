@@ -85,10 +85,8 @@ const maxPaso = computed(() => Math.max(1, ...e.value.pasos.map((p) => Math.abs(
             <i :class="p.delta > 0 ? 'sube' : 'baja'" :style="{ width: (Math.abs(p.delta) / maxPaso) * 100 + '%' }"></i>
           </li>
         </ul>
-        <p v-else class="ayuda muted">Mueve un deslizador o elige una situación para ver cuánto cambiaría.</p>
       </div>
     </div>
-    <p class="chart-caption">Es una cuenta simple: ingresos = visitantes × conversión × ticket promedio. No adivina cómo reaccionaría la gente: úsala para comparar escenarios, no como promesa.</p>
   </section>
 </template>
 

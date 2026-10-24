@@ -167,12 +167,6 @@ function clase(b: { desde: number }): "pasa" | "detiene" | "interesa" {
   if (!u) return "pasa";
   return b.desde >= u.interesado_s ? "interesa" : b.desde >= u.se_detiene_s ? "detiene" : "pasa";
 }
-const umbralDentro = computed(() => {
-  const u = umbrales.value;
-  if (!u || !permanencia.value) return false;
-  const bordes = permanencia.value.bordes_s;
-  return !bordes.includes(u.se_detiene_s) || !bordes.includes(u.interesado_s);
-});
 const nombreDonde = computed(() => {
   const [tipo, id, parte] = donde.value.split(":");
   if (tipo === "local") return `${parte === "frente" ? "Frente" : "Interior"} de ${locales.value.find((l) => l.local_id === Number(id))?.name ?? "la tienda"}`;
@@ -188,7 +182,6 @@ function ancho(n: number, pasos: { n: number; falta: string | null }[]) {
   return `${Math.max(n > 0 ? 2 : 0, (100 * n) / max)}%`;
 }
 const num = (n: number) => n.toLocaleString("es-PE");
-const fechaHora = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString("es-PE") : "—");
 </script>
 
 <template>
@@ -196,7 +189,7 @@ const fechaHora = (iso: string | null | undefined) => (iso ? new Date(iso).toLoc
     <div class="trafico-titulo">
       <div>
         <p class="eyebrow">TRÁFICO POR PERÍODO</p>
-        <h2>Dónde estuvo la gente, cuánto se quedó y cuántos compran</h2>
+        <h2>Tráfico del sitio</h2>
       </div>
       <div class="insignias" aria-live="polite">
         <span v-if="fuentes && fuentes.simulados > 0" class="insignia simulado" :title="`${fuentes.simulados} días con datos simulados en lo que ves (generados para ejemplo; no son personas reales)`">SIMULADO · {{ fuentes.simulados }} días</span>
@@ -263,13 +256,9 @@ const fechaHora = (iso: string | null | undefined) => (iso ? new Date(iso).toLoc
         </div>
         <div class="cuerpo">
           <PlanoSitio v-if="mapa" :mapa="mapa" :zonas="config?.zones ?? []" :calor="celdasCalor" :celda-calor="1" :calor-max="escalaCalor" :mostrar-camaras="false" zoom inicio="sitio" />
-          <p v-else class="muted">Este sitio todavía no tiene plano: lo publica el Build del modelo.</p>
+          <p v-else class="muted">Este sitio todavía no tiene plano.</p>
           <p v-if="sinCalor && mapa" class="muted centrado">Sin presencia en esta franja y estas fechas.</p>
-          <p class="nota">
-            Cada celda de 1 m muestra cuántos segundos de presencia hubo, en promedio, por cada hora de la franja. La escala es la del día completo del mismo
-            período, así la mañana, la tarde y la noche se ven con la misma intensidad.
-            <template v-if="calorSel && calorSel.celdas.length"> Presencia total: {{ presenciaTotal }}.</template>
-          </p>
+          <p v-if="calorSel && calorSel.celdas.length" class="nota">Presencia total: {{ presenciaTotal }}</p>
         </div>
       </article>
 
@@ -315,11 +304,10 @@ const fechaHora = (iso: string | null | undefined) => (iso ? new Date(iso).toLoc
               <li><span class="muestra detiene"></span>Desde {{ permanencia.umbrales.se_detiene_s }} s: se detienen</li>
               <li><span class="muestra interesa"></span>Desde {{ permanencia.umbrales.interesado_s }} s: interesados</li>
             </ul>
-            <p v-if="umbralDentro" class="nota">Un umbral cae dentro de un tramo: el color cambia en el tramo siguiente; los porcentajes de arriba usan el valor exacto.</p>
           </template>
           <p v-else-if="permanencia" class="muted centrado">Nadie se quedó en «{{ nombreDonde }}» en este período y franja.</p>
           <details v-if="puedeEditar" class="umbrales-caja">
-            <summary>Cambiar los umbrales «se detiene» e «interesado»</summary>
+            <summary>Umbrales</summary>
             <UmbralesTrafico v-if="puedeEditar" :sitio="sitio" compacto @guardado="cargar" />
           </details>
         </div>
@@ -332,7 +320,7 @@ const fechaHora = (iso: string | null | undefined) => (iso ? new Date(iso).toLoc
           <span v-if="embudo" class="pill">{{ embudo.desde }} a {{ embudo.hasta }}</span>
         </div>
         <div class="cuerpo">
-          <p v-if="embudo && !embudos.length" class="muted centrado">Este sitio todavía no tiene tiendas: créalas en Configuración.</p>
+          <p v-if="embudo && !embudos.length" class="muted centrado">Este sitio todavía no tiene tiendas.</p>
           <section v-for="e in embudos" :key="e.local.local_id" class="tienda">
             <h3>{{ e.local.nombre }} <small v-if="e.local.categoria" class="muted">{{ e.local.categoria }}</small></h3>
             <ol class="pasos">
@@ -352,14 +340,12 @@ const fechaHora = (iso: string | null | undefined) => (iso ? new Date(iso).toLoc
               De los que entran, {{ num(e.local.interesados) }} ({{ Math.round((1000 * e.local.interesados) / e.local.entran) / 10 }} %) se quedan {{ embudo?.umbrales.interesado_s }} s o más.
             </p>
           </section>
-          <p v-if="embudo && embudos.length" class="nota">{{ embudo.nota_ventas }}</p>
           <p v-if="embudo?.datos === 'todos' && fuentes && fuentes.simulados > 0 && fuentes.reales > 0" class="nota">
-            Mezcla datos reales y simulados: cambia «Datos» a «Reales» o «Simulados» para verlos por separado.
+            Reales y simulados mezclados.
           </p>
         </div>
       </article>
     </div>
-    <p v-if="fuentes?.calculado" class="pie">Calculado {{ fechaHora(fuentes.calculado) }}. Cada ventana es de 5, 15 o 60 minutos; aquí se suman las de 60.</p>
   </section>
 </template>
 
@@ -673,11 +659,6 @@ const fechaHora = (iso: string | null | undefined) => (iso ? new Date(iso).toLoc
   margin: 0;
   font-size: 11px;
   color: var(--ink-soft);
-}
-.pie {
-  margin: 0;
-  font-size: 10.5px;
-  color: var(--ink-faint);
 }
 @media (max-width: 1100px) {
   .rejilla {

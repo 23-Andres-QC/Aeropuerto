@@ -82,7 +82,6 @@ try {
 
   await t.clicTexto(".lista li", /^Pasillo/);
   await t.evalua(`(() => { const s = document.querySelectorAll('.editor select')[0]; s.value = 'DESCANSO'; s.dispatchEvent(new Event('change', { bubbles: true })); return 1; })()`);
-  await t.hasta(`document.querySelector('.editor .ayuda')?.textContent.includes('se sienta o espera')`, "la ayuda del tipo descanso");
   await zonaGuardada(pasillo.zone_id, (x) => x.zone_type === "DESCANSO", "descanso, sin tienda");
   paso("el tipo «descanso» se elige y se guarda (sin tienda)");
   await t.evalua(`(() => { const s = document.querySelectorAll('.editor select')[0]; s.value = 'PASILLO'; s.dispatchEvent(new Event('change', { bubbles: true })); return 1; })()`);
@@ -223,7 +222,7 @@ try {
   await t.clicTexto("#trafico .ficha", /Todo el día/);
   await t.clicTexto("#trafico .grupo:last-child .ficha", /Todos/);
   await t.hasta(`/REAL/.test(document.querySelector('#trafico .insignias')?.innerText ?? '') && /SIMULADO/.test(document.querySelector('#trafico .insignias')?.innerText ?? '')`, "todo el día con datos reales y simulados");
-  assert.match(await t.texto("#trafico .embudo"), /Mezcla datos reales y simulados/);
+  assert.match(await t.texto("#trafico .embudo"), /Reales y simulados mezclados/);
   paso("el filtro «Datos» separa lo real de lo simulado y avisa cuando se mezclan");
   await foto("3-insights-todos");
 

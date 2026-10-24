@@ -467,15 +467,8 @@ onUnmounted(() => {
           <p v-if="requiereLocal && datosZona.local_id == null" class="aviso" role="alert">
             {{ config.locales.length ? "El interior y el frente de una tienda pertenecen a una: elige cuál." : "Primero crea la tienda en el panel «Tiendas»." }}
           </p>
-          <p v-else-if="datosZona.tipo === 'FRONTAGE'" class="ayuda">El frente es la franja por donde pasa la gente frente a la tienda: de ahí salen «pasan» y «se detienen».</p>
-          <p v-else-if="datosZona.tipo === 'INTERIOR'" class="ayuda">El interior es donde se entra a la tienda: de ahí salen «entran» y «interesados».</p>
-          <p v-else-if="datosZona.tipo === 'DESCANSO'" class="ayuda">Un lugar donde la gente se sienta o espera: se mide cuánto se queda, sin contarlo como tienda.</p>
           <p class="dato">{{ zonaSel.area_m2.toFixed(1) }} m² · {{ zonaSel.points.length }} puntos</p>
-          <p v-if="editando" class="ayuda">
-            Arrastra la zona para moverla entera · arrastra un punto para cambiar la forma · el punto chico de cada lado agrega uno · doble clic en un
-            punto lo quita.
-          </p>
-          <button v-else type="button" @click="activarEdicion">✎ Editar forma</button>
+          <button v-if="!editando" type="button" @click="activarEdicion">Editar forma</button>
           <button class="danger-button" type="button" @click="borrarZona(zonaSel)">Eliminar zona</button>
         </div>
       </section>
@@ -500,8 +493,7 @@ onUnmounted(() => {
             <label>Dirección (°)<input v-model.number="datosCamara.angulo" type="number" step="5" @change="guardarDatosCamara" /></label>
           </div>
           <label class="check"><input v-model="datosCamara.active" type="checkbox" @change="guardarDatosCamara" /> Activa</label>
-          <p v-if="editando" class="ayuda">Arrastra la cámara para moverla y el círculo punteado para girarla.</p>
-          <button v-else type="button" @click="activarEdicion">✎ Mover en el plano</button>
+          <button v-if="!editando" type="button" @click="activarEdicion">Mover en el plano</button>
           <button class="danger-button" type="button" @click="borrarCamara(camaraSel)">Eliminar cámara</button>
         </div>
       </section>
@@ -582,7 +574,7 @@ onUnmounted(() => {
               ><small class="muted">{{ l.category || "Sin categoría" }} · {{ zonasDeLocal(l.local_id).length }} zonas</small></span
             >
           </li>
-          <li v-if="!config.locales.length" class="vacia muted">Sin tiendas todavía: créalas aquí y dibuja su frente y su interior.</li>
+          <li v-if="!config.locales.length" class="vacia muted">Sin tiendas todavía.</li>
         </ul>
         <div class="bloque"><button type="button" @click="crearTienda">＋ Tienda</button></div>
       </section>
@@ -661,7 +653,7 @@ onUnmounted(() => {
             </span>
           </template>
           <template v-else-if="editando">
-            <span class="ayuda-barra">Editando · elige una zona o cámara para moverla</span>
+            <span class="ayuda-barra">Editando</span>
             <span class="heading-meta">
               <span v-if="guardado" class="guardado" role="status">✓ {{ guardado }}</span>
               <button class="primary-button" type="button" @click="empezarZona">＋ Zona</button>
@@ -700,7 +692,7 @@ onUnmounted(() => {
           @fondo="alFondo"
         />
       </template>
-      <p v-else class="empty">Este sitio todavía no tiene plano: lo publica el Build del modelo.</p>
+      <p v-else class="empty">Este sitio todavía no tiene plano.</p>
     </section>
   </div>
 </template>
@@ -822,12 +814,6 @@ onUnmounted(() => {
   font-size: 11.5px;
   font-weight: 650;
   text-decoration: underline;
-}
-.ayuda {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--ink-soft);
 }
 .lista {
   list-style: none;

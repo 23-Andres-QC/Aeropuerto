@@ -8,7 +8,7 @@ import { CELDA_CALOR, SESION_VIVO, capturasVersion, entradasPorIntervalo, fijarM
 import ContrasteSesiones from "../components/ContrasteSesiones.vue";
 import TraficoSitio from "../components/TraficoSitio.vue";
 import { desdeReplay, entradasPorIntervalo as entradasEntre, resumir, type HistoriaBasica, type ResumenVivo } from "../analisisVivo";
-import { GENEROS_ABREV, resumenGenero, suprimirGenero, textoGenero } from "../../../core/roles";
+import { GENEROS_ABREV, suprimirGenero, textoGenero } from "../../../core/roles";
 import { useSitios } from "../useSitios";
 
 const route = useRoute();
@@ -265,7 +265,6 @@ const filasConteo = computed<FilaConteo[]>(() => {
   }
   return filas;
 });
-const conteoOculto = computed(() => filasConteo.value.some((f) => f.genero.includes(null)));
 
 const minimoGenero = computed(() => (modoVivo.value ? (sitioActual.value?.min_group_size ?? 5) : (r.value?.genero_minimo ?? sitioActual.value?.min_group_size ?? 5)));
 const generoVisible = computed(() => {
@@ -287,7 +286,6 @@ const generos = computed(() => {
     return { g, nombre: GENEROS[g], n: n ?? null, pct: n != null && v.total ? Math.round((100 * n) / v.total) : 0 };
   });
 });
-const notaGenero = computed(() => (generoVisible.value.hay ? resumenGenero(generoVisible.value.total, generoVisible.value.visibles, generoVisible.value.ocultas).nota : ""));
 
 // --- Entradas por intervalo --------------------------------------------------
 const barras = computed(() => {
@@ -564,16 +562,11 @@ onMounted(async () => {
     <span><small>Alcance</small><b>{{ alcance }}</b></span>
   </div>
   <p v-if="modoVivo && vivo.sinUbicar.value" class="aviso-sin-ubicar" role="status">
-    {{ vivo.sinUbicar.value }} de {{ vivo.resumen.value.personas }} persona{{ vivo.resumen.value.personas === 1 ? "" : "s" }} con ID
-    {{ vivo.sinUbicar.value === 1 ? "no se ubicó" : "no se ubicaron" }} en el plano: su teléfono no reconoce el patio. Cuentan aquí, pero sin recorrido, zonas ni mapa de calor;
-    apunta el teléfono como en las fotos de referencia de su cámara (en <RouterLink :to="`/sitios/${slug}/en-vivo`">En vivo</RouterLink> se avisa qué cámara).
+    {{ vivo.sinUbicar.value }} de {{ vivo.resumen.value.personas }} sin ubicar en el plano: el teléfono no reconoce el patio.
   </p>
   <section v-if="vistaSinCapturas" class="panel vacio-guardado">
     <div class="panel-heading"><h2>Guardado en vivo</h2></div>
-    <p>
-      Todavía no hay capturas guardadas. Activa el modo en vivo y deja que alguien con el cuerpo completo aparezca frente a un teléfono: pulsa «Iniciar captura» en En vivo y,
-      al terminar, la captura se guarda y aparece aquí con su propio tablero.
-    </p>
+    <p>Todavía no hay capturas guardadas.</p>
   </section>
   <div class="print-header">
     <p class="print-marca">LAP · Lima Airport Partners</p>
@@ -611,10 +604,7 @@ onMounted(async () => {
         <div v-if="generos.some((x) => x.n)" class="barra-genero" aria-hidden="true">
           <span v-for="x in generos.filter((y) => y.n)" :key="x.g" :class="'g-' + x.g" :style="{ flex: x.n ?? 0 }"></span>
         </div>
-        <p v-if="minimoGenero < 5" class="nota-genero aviso-pruebas" role="note" data-prueba="aviso-pruebas">
-          Desglose con grupos pequeños: solo para pruebas (mínimo {{ minimoGenero }}).
-        </p>
-        <p v-if="notaGenero" class="muted nota-genero">{{ notaGenero }}</p>
+        <p v-if="minimoGenero < 5" class="nota-genero aviso-pruebas" role="note" data-prueba="aviso-pruebas">Modo pruebas · mínimo {{ minimoGenero }}</p>
       </article>
       <div class="metrics">
         <article v-for="t in tarjetas" :key="t.titulo" class="panel metric" :class="{ vacio: esVacio(t.valor) }">
@@ -770,7 +760,6 @@ onMounted(async () => {
   <section v-if="!vistaSinCapturas && conteoSentido" class="panel conteo-sentido">
     <div class="panel-heading">
       <h2>Conteo por sentido</h2>
-      <span class="muted">para validar · línea punteada a media altura de cada cámara</span>
     </div>
     <table>
       <thead>
@@ -787,15 +776,10 @@ onMounted(async () => {
         </tr>
       </tbody>
     </table>
-    <p class="muted nota-conteo">
-      «Suben»: cruzan la línea hacia arriba de la imagen (se alejan de la cámara); «regresan»: hacia abajo (vienen hacia ella).
-      Cuenta cada cruce de cada track del modelo, tenga o no ID y se sepa o no su género; quien sube y vuelve cuenta en los dos.
-      <template v-if="conteoOculto">Las cifras de género de menos de {{ minimoGenero }} se ocultan (se cambia en Configuración).</template>
-    </p>
   </section>
 
   <details v-if="!vistaSinCapturas" class="plegable">
-    <summary>⇄ Contraste · grabado, guardado en vivo y ahora</summary>
+    <summary>Contraste entre sesiones</summary>
     <ContrasteSesiones :sitio="slug" :sesiones="sesiones" :vivo-activo="modoVivo" />
   </details>
 
@@ -1056,9 +1040,5 @@ onMounted(async () => {
 .conteo-sentido td.oculto {
   color: var(--ink-soft);
   font-style: italic;
-}
-.nota-conteo {
-  margin: 8px 12px 12px;
-  font-size: 12px;
 }
 </style>

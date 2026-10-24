@@ -115,7 +115,6 @@ const etiqueta = (s: Sesion) => `${s.name || s.session_id.slice(0, 8)} · ${new 
   <section class="panel contraste" aria-label="Contraste entre lo grabado, lo guardado en vivo y lo que pasa ahora">
     <div class="panel-heading">
       <h2>Contraste</h2>
-      <span class="muted">grabado · guardado en vivo · ahora</span>
     </div>
     <div class="rejilla">
       <span></span>
@@ -131,12 +130,11 @@ const etiqueta = (s: Sesion) => `${s.name || s.session_id.slice(0, 8)} · ${new 
         <select v-if="guardadas.length" v-model="idGuardada" aria-label="Captura en vivo guardada">
           <option v-for="s in guardadas" :key="s.session_id" :value="s.session_id">{{ etiqueta(s) }}</option>
         </select>
-        <small v-else class="muted">Todavía no hay capturas: se guardan al terminar una captura en vivo</small>
+        <small v-else class="muted">Sin capturas todavía</small>
       </div>
       <div class="cabecera ahora">
         <b>● Ahora</b>
-        <small v-if="vivoActivo" class="muted">lo que ven los teléfonos</small>
-        <small v-else class="muted">Activa el modo en vivo</small>
+        <small v-if="!vivoActivo" class="muted">Modo en vivo apagado</small>
       </div>
 
       <template v-for="f in filas" :key="f.nombre">

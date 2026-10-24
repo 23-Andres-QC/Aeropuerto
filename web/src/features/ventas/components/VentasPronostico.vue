@@ -76,13 +76,6 @@ const base = computed<Base | null>(() => {
   if (!r || !hayVisitas.value || r.conversion == null || r.ticket == null || r.visitantes <= 0 || r.ingresos.value <= 0) return null;
   return { ingresos: r.ingresos.value, bajo: r.ingresos.low, alto: r.ingresos.high, visitantes: r.visitantes, conversion: r.conversion, ticket: r.ticket };
 });
-const metodo = computed(() => {
-  const q = calidad.value;
-  if (!q) return "";
-  if (q.method === "holt-winters") return `Holt-Winters: aprende el patrón de ${paso.value === "dia" ? "la semana" : "las 24 horas del día"} y la tendencia`;
-  if (q.method === "holt") return "Nivel y tendencia (falta historial para aprender el patrón semanal)";
-  return "";
-});
 
 const historialIngresos = computed(() => datos.value?.history.map((p) => ({ t: p.t, v: p.revenue })) ?? []);
 const historialVisitas = computed(() => datos.value?.history.map((p) => ({ t: p.t, v: p.visitors })) ?? []);
@@ -150,7 +143,7 @@ const errorTipico = (w: number | null | undefined) => (w == null ? "—" : porce
       <article class="panel metric">
         <p>ERROR TÍPICO DEL MODELO</p>
         <strong><CifraAnimada :valor="calidad?.wape" :formato="porcentajeEntero" /></strong>
-        <small>al predecir un {{ paso === "dia" ? "día" : "hora" }} ya conocido a partir de los anteriores</small>
+        <small>sobre {{ paso === "dia" ? "días" : "horas" }} ya conocidos</small>
       </article>
     </section>
 
@@ -160,7 +153,6 @@ const errorTipico = (w: number | null | undefined) => (w == null ? "—" : porce
         <span class="heading-meta"><span class="pill">{{ datos.history.length }} {{ unidad }} de historial</span></span>
       </div>
       <GraficoSerie nombre="Ingresos" :historial="historialIngresos" :pronostico="pronIngresos" :formato="dineroCorto" :paso="paso" :cargando="cargando" />
-      <p v-if="metodo" class="chart-caption">{{ metodo }}. La banda es el rango donde caería el 80 % de las veces.</p>
     </section>
 
     <SimuladorYSi v-if="base" :base="base" :horizonte="horizonte" :unidad="unidad" />
@@ -217,7 +209,6 @@ const errorTipico = (w: number | null | undefined) => (w == null ? "—" : porce
     <section v-if="datos.products.length && hayPronostico" class="panel" style="margin-bottom: 14px">
       <div class="panel-heading">
         <h2>Qué se venderá y a qué precio</h2>
-        <span class="heading-meta"><span class="pill">si cada producto mantiene su parte de las últimas 4 semanas</span></span>
       </div>
       <div class="tabla-envoltorio">
         <table class="anima-filas">

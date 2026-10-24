@@ -317,7 +317,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   </section>
   <p v-if="error" class="error" role="alert">{{ error }}</p>
   <p v-else-if="!cargando && config && !mapa" class="empty panel">
-    {{ config.site.name }} todavía no tiene plano: lo publica el Build junto con su primera sesión.
+    {{ config.site.name }} todavía no tiene plano.
   </p>
 
   <!-- El plano se muestra aunque el sitio aún no tenga sesiones (LAP): la reproducción aparece cuando haya una. -->
@@ -379,16 +379,10 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         >
           {{ vivo.modoMultitud.value.en_horario ? "Modo grupal por horario" : "Seguimiento individual" }} · grupal {{ vivo.modoMultitud.value.horarios.join(", ") }}
         </span>
-        <span v-if="!grabando" class="muted">Pulsa «Iniciar captura» para registrar esta escena; «Terminar y guardar» la deja en Registros.</span>
         <span v-if="mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
       </div>
       <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :personas="personas" :recorridos="recorridos" :calor="calorVivo" :celda-calor="CELDA_CALOR" :camaras="camarasPlano" :inicio="modoVivo ? 'sitio' : 'campus'" zoom :recordar="modoVivo" @lugar="lugar = $event" />
-      <p v-if="lugar === 'campus' && !modoVivo" class="aviso-zona" role="status" data-prueba="elegir-zona">
-        Haz clic en una zona grabada del croquis para ver sus videos.
-      </p>
-      <p v-else-if="otraZona && !modoVivo" class="aviso-zona" role="status" data-prueba="zona-sin-videos">
-        <b>{{ otraZona }}</b> todavía no tiene videos ni sesiones grabadas.
-      </p>
+      <p v-if="otraZona && !modoVivo" class="aviso-zona" role="status" data-prueba="zona-sin-videos"><b>{{ otraZona }}</b> sin videos grabados.</p>
       <div v-if="replay && !modoVivo && verGrabacion" class="controles">
         <button class="primary-button" type="button" @click="reproduciendo ? pausar() : reproducir()">{{ reproduciendo ? "❚❚ Pausa" : "▶ Reproducir" }}</button>
         <button type="button" @click="reiniciar">↺</button>
@@ -415,7 +409,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
             </div>
             <p class="ranura-datos muted">Esperando el {{ r.camara === "cam01" ? "primer" : "segundo" }} teléfono.</p>
           </article>
-          <p v-if="r.telefono && r.sinCalibracion" class="aviso-ranura">{{ r.camara }} no reconoce el patio en lo que ve: apunta el teléfono al piso del patio para ubicar a las personas.</p>
+          <p v-if="r.telefono && r.sinCalibracion" class="aviso-ranura">{{ r.camara }} no reconoce el patio: apunta el teléfono al piso.</p>
         </div>
         <aside class="panel presentes">
           <div class="panel-heading"><h2>Ahora mismo</h2><span class="pill">{{ vivo.vivas.value.lista.length }}</span></div>
@@ -423,19 +417,19 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
             <li v-for="p in vivo.vivas.value.lista" :key="p.clave">
               <span class="punto" :style="{ background: p.grupo != null ? '#a855f7' : p.id != null ? colorPersona(p.id) : '#8ba4bf' }"></span>
               <b>{{ p.grupo != null ? `Grupo ${p.grupo}` : p.id != null ? `G${p.id}` : "?" }}</b>
-              <span v-if="p.grupo != null" data-prueba="grupo-en-vivo">{{ p.cantidad }} personas contadas (sin seguir a cada una)</span>
+              <span v-if="p.grupo != null" data-prueba="grupo-en-vivo">{{ p.cantidad }} personas</span>
               <span v-else>{{ p.genero ?? "Sin determinar" }}<template v-if="p.conf"> · {{ Math.round(p.conf * 100) }}%</template></span>
               <small class="muted">{{ p.camaras.join(", ") }}</small>
             </li>
-            <li v-if="!vivo.vivas.value.lista.length" class="muted vacio">Nadie en el plano. Une teléfonos en Teléfonos y camina frente a ellos.</li>
+            <li v-if="!vivo.vivas.value.lista.length" class="muted vacio">Nadie en el plano.</li>
           </ul>
         </aside>
       </div>
       <p v-if="vivo.sobrantes.value.length" class="muted ranura-nota">
-        {{ vivo.sobrantes.value.length }} teléfono(s) más conectado(s) sin cámara libre: en vivo se usan dos (cam01 y cam02).
+        {{ vivo.sobrantes.value.length }} teléfono(s) sin cámara libre.
       </p>
       <p v-if="!vivo.servicioActivo.value" class="muted ranura-nota">
-        El modelo no está publicando. Con Docker: <code>docker compose --profile modelo up -d</code>.
+        El modelo no está publicando.
       </p>
     </div>
     <aside v-else class="panel presentes">
@@ -446,7 +440,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
           <b>G{{ p.numero }}</b>
           <small class="muted">{{ p.camaras.join(", ") }} · {{ segundos(p.fin_s - p.inicio_s) }}</small>
         </li>
-        <li v-if="!presentes.length" class="muted vacio">{{ !verGrabacion ? "Elige una zona del croquis." : replay ? "Nadie en el plano en este instante." : "Sin sesión para reproducir." }}</li>
+        <li v-if="!presentes.length" class="muted vacio">{{ replay || !verGrabacion ? "Nadie en el plano." : "Sin sesión." }}</li>
       </ul>
     </aside>
   </div>

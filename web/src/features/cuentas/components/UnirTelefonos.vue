@@ -90,9 +90,8 @@ onUnmounted(() => clearInterval(sondeo));
     <p v-if="error" class="error" role="alert">{{ error }}</p>
 
     <div v-if="vigente" class="vigente">
-      <div class="qr-caja">
-        <CodigoQR v-if="url" :texto="url" etiqueta="Código QR para unir un teléfono como cámara" />
-        <p v-else class="muted">Abre esta página con la IP o el dominio del servidor para que el QR lleve a la cámara.</p>
+      <div v-if="url" class="qr-caja">
+        <CodigoQR :texto="url" etiqueta="Código QR para unir un teléfono como cámara" />
       </div>
       <div class="datos">
         <p class="muted">Código de unión</p>

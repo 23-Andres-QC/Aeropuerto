@@ -60,17 +60,13 @@ assert.equal(normalizarCodigo(" k7qm-2xpa "), "K7QM2XPA");
 assert.equal(enlaceConCodigo("https://192.168.1.5:8444/", "K7QM-2XPA"), "https://192.168.1.5:8444/#c=K7QM2XPA");
 assert.equal(enlaceConCodigo("https://sitio/camara/#viejo", "ABCD2345"), "https://sitio/camara/#c=ABCD2345", "reemplaza el fragmento que hubiera");
 
-// Género: lo que no se muestra se dice sin dar la cifra de ninguna categoría pequeña.
-let g = resumenGenero(30, { MUJER: 20 }, 10);
+// Género: solo las categorías que se pueden mostrar, sin la cifra de ninguna categoría pequeña.
+let g = resumenGenero({ MUJER: 20 }, 10);
 assert.deepEqual(g.visibles, [["MUJER", 20]]);
-assert.match(g.nota, /10 personas en grupos de menos de 5/);
-g = resumenGenero(8, {}, 8);
+g = resumenGenero({}, 8);
 assert.deepEqual(g.visibles, []);
-assert.match(g.nota, /Con 8 personas no se muestra el género/);
-g = resumenGenero(26, { HOMBRE: 12, MUJER: 9, SIN_DETERMINAR: 5 }, 0);
+g = resumenGenero({ HOMBRE: 12, MUJER: 9, SIN_DETERMINAR: 5 }, 0);
 assert.equal(g.visibles.length, 3);
-assert.equal(g.nota, "");
-assert.match(resumenGenero(1, {}, 1).nota, /Con 1 persona no/);
 // El mismo criterio que el servidor (domain.PrivateGender): los casos de su prueba.
 const caso = (entrada, visibles, ocultas) => {
   const r = suprimirGenero(entrada);
@@ -96,7 +92,7 @@ for (let h = 0; h <= 12; h++)
     }
 assert.equal(textoGenero(26, { HOMBRE: 12, MUJER: 9, SIN_DETERMINAR: 5 }, 0), "12 H · 9 M · 5 s/d");
 assert.equal(textoGenero(30, { MUJER: 20 }, 10), "20 M · 10 sin desglosar");
-assert.equal(textoGenero(8, {}, 8), "género no desglosado (grupos de menos de 5)");
+assert.equal(textoGenero(8, {}, 8), "género oculto");
 assert.equal(textoGenero(0, {}, 0), "");
 // Con otro mínimo (el ajuste del sitio, solo para pruebas): 1 muestra todo; 2 oculta a los solitarios juntos.
 assert.deepEqual(suprimirGenero({ HOMBRE: 1, MUJER: 1, SIN_DETERMINAR: 1 }, 1), { visibles: { HOMBRE: 1, MUJER: 1, SIN_DETERMINAR: 1 }, ocultas: 0 });

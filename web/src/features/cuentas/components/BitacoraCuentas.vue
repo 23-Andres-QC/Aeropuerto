@@ -117,7 +117,7 @@ const hace = (iso: string) => {
     <div class="encabezado">
       <div>
         <h2>Bitácora</h2>
-        <p class="muted nota">Las últimas {{ TOPE }} acciones, de {{ POR_PAGINA }} en {{ POR_PAGINA }} · nunca lleva contraseñas, llaves ni enlaces</p>
+        <p class="muted nota">Últimas {{ TOPE }} acciones</p>
       </div>
       <button type="button" class="actualizar" :disabled="cargando" data-prueba="actualizar-bitacora" @click="cargar">{{ cargando ? "Actualizando…" : "↻ Actualizar" }}</button>
     </div>

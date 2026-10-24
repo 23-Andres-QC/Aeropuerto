@@ -168,7 +168,7 @@ const seg = (s: number) => `${Math.round(s)} s`;
           <span class="confianza">{{ desfase(match.offset_s) }} · confianza {{ porcentaje(match.confidence, 0) }}</span>
         </div>
         <p v-if="resumen.fueraDelLocal" class="aviso">
-          El ticket no cae mientras estaba dentro del local: es una pareja poco segura (la hora de la caja y la de la cámara pueden estar corridas).
+          Pareja poco segura: el ticket no cae mientras estaba dentro.
         </p>
       </div>
     </div>

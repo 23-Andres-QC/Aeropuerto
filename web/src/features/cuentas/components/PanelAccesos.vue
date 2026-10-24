@@ -135,7 +135,7 @@ const porRol = computed(() => Object.entries(datos.value?.ahora.por_rol ?? {}).m
     <div class="encabezado">
       <div>
         <h2>Cómo van los accesos</h2>
-        <p class="muted nota">Desde {{ datos ? new Date(datos.desde).toLocaleDateString("es-PE", { timeZone: "America/Lima" }) : "…" }} (hora de Lima). Sin contraseñas, enlaces ni tokens.</p>
+        <p class="muted nota">Desde {{ datos ? new Date(datos.desde).toLocaleDateString("es-PE", { timeZone: "America/Lima" }) : "…" }} (hora de Lima)</p>
       </div>
       <div class="rangos segmentado" role="group" aria-label="Periodo">
         <button v-for="r in RANGOS" :key="r" type="button" :class="{ activo: dias === r }" :data-prueba="`rango-${r}`" @click="dias = r">

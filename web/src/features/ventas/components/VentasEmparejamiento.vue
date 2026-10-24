@@ -119,18 +119,11 @@ const lineas = (t: { items: { product: string; quantity: number; unit_price: num
     </button>
   </div>
 
-  <p class="nota">
-    <b>Cómo se empareja.</b> Cada ticket tiene local y hora. La cámara sabe quién estaba dentro de ese local y entre qué segundos (eventos ENTER y EXIT de la Parte III). El ticket se
-    asigna a la persona cuya estadía cubre la hora de la venta, o terminó justo antes (se tolera hasta 90 s de diferencia entre los relojes). Cada persona paga una vez por visita, y
-    cada ticket tiene una sola persona. Es una inferencia: por eso cada pareja guarda su <b>confianza</b>, más baja cuando varias personas podían ser quienes compraron. No se guarda
-    nada personal ni del medio de pago.
-  </p>
-
   <p v-if="error" class="error" role="alert">{{ error }}</p>
 
   <template v-if="datos">
     <p v-if="!datos.computed_at" class="nota aviso">
-      Esta sesión todavía no se empareja. Pulsa <b>Emparejar ahora</b> para ligar los tickets de las mismas horas con las personas que el modelo vio entrar.
+      Esta sesión todavía no se empareja.
     </p>
 
     <section v-if="r" class="metrics" style="margin-bottom: 14px">
@@ -270,12 +263,9 @@ const lineas = (t: { items: { product: string; quantity: number; unit_price: num
           </tbody>
         </table>
       </div>
-      <p class="chart-caption">
-        Pueden ser clientes que el modelo no vio, compras en otra hora que la grabada o un reloj de caja muy desfasado.
-      </p>
     </section>
   </template>
   <p v-else-if="!cargando && !sesiones.length" class="nota aviso">
-    Este sitio no tiene sesiones del modelo. Procesa un video (Build) o captura en vivo; luego vuelve aquí para ligar las compras con las personas.
+    Este sitio no tiene sesiones del modelo.
   </p>
 </template>

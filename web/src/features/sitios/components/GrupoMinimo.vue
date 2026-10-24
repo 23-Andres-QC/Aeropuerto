@@ -40,10 +40,6 @@ async function guardar() {
 
 <template>
   <div class="grupo-minimo">
-    <p class="muted">
-      Las categorías de género con menos personas que este número no se muestran (y se oculta otra más si así se pudiera deducir restando). Con 5 (por
-      defecto) un grupo de 1 a 4 nunca se ve.
-    </p>
     <div class="fila">
       <label>
         Tamaño mínimo de grupo
@@ -54,7 +50,7 @@ async function guardar() {
       </button>
     </div>
     <p v-if="valor < 5 && !problema" class="atencion" data-prueba="aviso-grupo-minimo">
-      Con menos de 5 se verá el género de grupos pequeños: <b>solo para pruebas</b>. No lo dejes así en un sitio real.
+      Menos de 5: solo para pruebas.
     </p>
     <p v-if="problema" class="error" role="alert">{{ problema }}</p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>

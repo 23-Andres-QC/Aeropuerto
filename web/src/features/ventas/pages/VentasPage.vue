@@ -125,8 +125,6 @@ onMounted(async () => {
 watch(() => [consulta.dias, consulta.datos, consulta.locales.join(",")], cargarResumen);
 
 const hayVentas = computed(() => (resumen.value?.counts.real ?? 0) + (resumen.value?.counts.simulated ?? 0) > 0);
-const mezcla = computed(() => resumen.value && resumen.value.counts.real > 0 && resumen.value.counts.simulated > 0 && consulta.datos === "todos");
-const soloSimulado = computed(() => resumen.value && resumen.value.counts.simulated > 0 && resumen.value.counts.real === 0);
 </script>
 
 <template>
@@ -173,11 +171,6 @@ const soloSimulado = computed(() => resumen.value && resumen.value.counts.simula
 
     <SeleccionPlano v-if="verPlano && config" v-model="consulta.locales" :config="config" />
 
-    <p v-if="soloSimulado || mezcla" class="nota aviso">
-      <template v-if="soloSimulado"><b>Estás viendo datos simulados.</b> Sirven para probar la pantalla y el pronóstico; los números no son ventas reales.</template>
-      <template v-else><b>Se están mezclando datos reales y simulados.</b> Elige «Solo reales» en el filtro para ver únicamente lo que vendió la caja.</template>
-    </p>
-
     <div class="fila-pestanas">
       <nav class="pestanas" aria-label="Secciones de ventas">
         <button v-for="p in PESTANAS" :key="p.id" type="button" :class="{ activo: pestana === p.id }" :aria-current="pestana === p.id ? 'page' : undefined" @click="pestana = p.id">
@@ -195,10 +188,6 @@ const soloSimulado = computed(() => resumen.value && resumen.value.counts.simula
     <section v-if="resumen && !hayVentas && pestana !== 'datos' && pestana !== 'tickets'" class="panel">
       <div class="panel-heading"><h2>Todavía no hay ventas</h2></div>
       <div class="cuerpo">
-        <p class="vacio" style="padding-left: 0">
-          Para ver el resumen, los compradores y el pronóstico hace falta registrar compras de los locales. Puedes cargar los tickets de la caja (uno a uno o con un CSV) o generar ventas
-          simuladas para probar la pantalla.
-        </p>
         <div class="acciones">
           <button type="button" class="primary-button" @click="pestana = 'datos'">Generar ventas simuladas</button>
           <button type="button" @click="pestana = 'tickets'">Cargar tickets reales</button>

@@ -88,15 +88,8 @@ export function enlaceConCodigo(base: string, codigo: string): string {
  * Cuántas personas, de las que dejó ver la privacidad, hay por género y cuántas quedan ocultas. `genero` viene del servidor ya
  * con las categorías pequeñas fuera; `ocultas` son las personas de esas categorías. Nunca se rellena un faltante con un cero.
  */
-export function resumenGenero(personas: number, genero: Record<string, number>, ocultas: number): { visibles: [string, number][]; ocultas: number; nota: string } {
-  const visibles = Object.entries(genero).filter(([, n]) => n > 0);
-  const nota =
-    ocultas > 0
-      ? visibles.length > 0
-        ? `${ocultas} ${ocultas === 1 ? "persona" : "personas"} en grupos de menos de 5 no se desglosan, para que nadie pueda reconocerlas.`
-        : `Con ${personas} ${personas === 1 ? "persona" : "personas"} no se muestra el género: los grupos de menos de 5 se ocultan para que nadie pueda reconocerlas.`
-      : "";
-  return { visibles, ocultas, nota };
+export function resumenGenero(genero: Record<string, number>, ocultas: number): { visibles: [string, number][]; ocultas: number } {
+  return { visibles: Object.entries(genero).filter(([, n]) => n > 0), ocultas };
 }
 
 /** Las categorías de género, en el orden en que se muestran, con su abreviatura. */
@@ -134,8 +127,8 @@ export function suprimirGenero(conteos: Record<string, number>, k = 5): { visibl
 
 /** «12 H · 9 M · 5 s/d», o lo que se pueda decir sin dar la cifra de un grupo pequeño. */
 export function textoGenero(personas: number, genero: Record<string, number>, ocultas: number): string {
-  const { visibles } = resumenGenero(personas, genero, ocultas);
+  const { visibles } = resumenGenero(genero, ocultas);
   const partes = GENEROS_ABREV.filter(([g]) => (genero[g] ?? 0) > 0).map(([g, abrev]) => `${genero[g]} ${abrev}`);
-  if (!visibles.length) return ocultas > 0 ? "género no desglosado (grupos de menos de 5)" : "";
+  if (!visibles.length) return ocultas > 0 ? "género oculto" : "";
   return partes.join(" · ") + (ocultas > 0 ? ` · ${ocultas} sin desglosar` : "");
 }

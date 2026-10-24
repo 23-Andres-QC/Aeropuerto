@@ -32,7 +32,6 @@ function texto(v: number): string {
 
 type LocalPulso = { id: number; nombre: string; centro: Punto; perfil: (number | null)[] };
 const conZona = computed(() => props.patrones.locales.filter((l) => zonaDeLocal(props.config.zones, l.local_id)));
-const sinZona = computed(() => props.patrones.locales.length - conZona.value.length);
 /** Lado de las celdas del halo de cada tienda, en metros. */
 const LADO = 0.6;
 /** Radio del halo de una tienda a su máximo: grande si hay pocas tiendas, más chico si hay muchas para no apilar. */
@@ -187,14 +186,11 @@ const quien = computed(() => (props.dia == null ? "Un día cualquiera de la sema
       <span class="heading-meta"><span class="pill">{{ quien }} · {{ nombreMetrica.nombre.toLowerCase() }}{{ nombreMetrica.porDia ? ` ${nombreMetrica.porDia}` : "" }}</span></span>
     </div>
 
-    <p v-if="!rango" class="vacio">Todavía no hay ventas ni visitas en este período para dibujar un día.</p>
+    <p v-if="!rango" class="vacio">No hay ventas ni visitas en este período.</p>
     <div v-else class="cuerpo-pulso" :class="{ sinplano: !mapa }">
       <div v-if="mapa" class="plano-col">
         <PlanoSitio :mapa="mapa" :zonas="config.zones" :personas="pines" :calor="calor" :celda-calor="LADO" :calor-max="escala" :mostrar-camaras="false" :leyenda="false" inicio="sitio" />
         <div class="escala" aria-hidden="true"><span>menos</span><i class="rampa"></i><span>más</span></div>
-        <p v-if="sinZona" class="muted pie">
-          {{ sinZona }} {{ sinZona === 1 ? "local no tiene" : "locales no tienen" }} su zona dibujada en el plano (Configuración) y no se enciende{{ sinZona === 1 ? "" : "n" }}, pero sí cuenta{{ sinZona === 1 ? "" : "n" }} en el total.
-        </p>
       </div>
 
       <div class="lado">
@@ -278,11 +274,6 @@ const quien = computed(() => (props.dia == null ? "Un día cualquiera de la sema
   height: 8px;
   border-radius: 4px;
   background: linear-gradient(90deg, rgba(255, 200, 40, 0.2), rgba(255, 30, 40, 0.9));
-}
-.pie {
-  margin: 6px 0 0;
-  font-size: 11.5px;
-  line-height: 1.5;
 }
 .lado {
   display: flex;

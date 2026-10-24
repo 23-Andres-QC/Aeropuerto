@@ -182,7 +182,7 @@ try {
   // En vivo: no hay videos hasta que se hace clic en una zona del croquis; los grabados son del patio y el comedor no los tiene.
   await cdp("Page.navigate", { url: `${WEB}/sitios/esan/en-vivo` });
   await esperar(3500);
-  const vistaEnVivo = () => evalua(`({ videos: document.querySelectorAll('.videos-esan video').length, elegir: !!document.querySelector('[data-prueba=elegir-zona]'), sinVideos: !!document.querySelector('[data-prueba=zona-sin-videos]'), controles: !!document.querySelector('.controles'), botones: document.querySelectorAll('.barra-campus, .alternar-campus').length })`);
+  const vistaEnVivo = () => evalua(`({ videos: document.querySelectorAll('.videos-esan video').length, sinVideos: !!document.querySelector('[data-prueba=zona-sin-videos]'), controles: !!document.querySelector('.controles'), botones: document.querySelectorAll('.barra-campus, .alternar-campus').length })`);
   // Un clic en una zona del croquis muestra su nombre y el segundo la acerca. (Un <g> de SVG no tiene click().)
   const clicEnElPlano = async (selector) => {
     for (let i = 0; i < 2; i++) { await evalua(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('click', { bubbles: true })); 0`); await esperar(400); }
@@ -190,11 +190,11 @@ try {
   const leyenda = () => evalua(`[...document.querySelectorAll('.leyenda-plano li')].map((l) => l.textContent.trim())`);
   assert.ok(!(await leyenda()).some((l) => /^(Piso|Ascensores|Comedor|Cámara)/.test(l)), "con el campus entero no se listan las cosas de la zona");
   let ev = await vistaEnVivo();
-  assert.deepEqual(ev, { videos: 0, elegir: true, sinVideos: false, controles: false, botones: 0 }, "al abrir En vivo no hay videos ni botones de zona: se elige en el croquis");
+  assert.deepEqual(ev, { videos: 0, sinVideos: false, controles: false, botones: 0 }, "al abrir En vivo no hay videos ni botones de zona: se elige en el croquis");
   await clicEnElPlano("g.entrada-sitio[role=button]");
   await esperar(1500);
   ev = await vistaEnVivo();
-  assert.deepEqual(ev, { videos: 3, elegir: false, sinVideos: false, controles: true, botones: 0 }, "al hacer clic en el patio se ven sus 3 videos");
+  assert.deepEqual(ev, { videos: 3, sinVideos: false, controles: true, botones: 0 }, "al hacer clic en el patio se ven sus 3 videos");
   let ley = await leyenda();
   assert.ok(ley.some((l) => /^Ascensores/.test(l)) && ley.some((l) => /^Carpa azul/.test(l)), `acercado al patio, la leyenda lista lo que tiene el patio: ${ley}`);
   assert.ok(!ley.some((l) => /^(Comedor|SS\.HH)/.test(l)), "y no lo del comedor");
@@ -208,7 +208,7 @@ try {
   await clicEnElPlano("g.entrada-vecino[role=button]");
   await esperar(1500);
   ev = await vistaEnVivo();
-  assert.deepEqual(ev, { videos: 0, elegir: false, sinVideos: true, controles: false, botones: 0 }, "al hacer clic en el comedor no se ven los videos del patio");
+  assert.deepEqual(ev, { videos: 0, sinVideos: true, controles: false, botones: 0 }, "al hacer clic en el comedor no se ven los videos del patio");
   ley = await leyenda();
   assert.ok(ley.some((l) => /^Comedor/.test(l)) && ley.some((l) => /^SS\.HH\. hombres/.test(l)), `acercado al comedor, la leyenda lista lo que tiene el comedor: ${ley}`);
   assert.ok(!ley.some((l) => /^(Ascensores|Carpa azul|Piso)/.test(l)), "y no lo del patio");

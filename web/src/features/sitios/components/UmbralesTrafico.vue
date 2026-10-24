@@ -71,12 +71,10 @@ watch(() => props.sitio, cargar);
       <label
         >Se detiene (segundos)
         <input v-model.number="u.se_detiene_s" type="number" min="1" max="600" step="1" :disabled="cargando || guardando" @input="aviso = ''" />
-        <small>Quien se queda esto o más frente a una tienda ya no solo pasa.</small>
       </label>
       <label
         >Interesado (segundos)
         <input v-model.number="u.interesado_s" type="number" min="2" max="3600" step="1" :disabled="cargando || guardando" @input="aviso = ''" />
-        <small>Quien se queda esto o más dentro de la tienda cuenta como interesado.</small>
       </label>
     </div>
     <p v-if="problema" class="problema" role="alert">{{ problema }}</p>
@@ -86,10 +84,6 @@ watch(() => props.sitio, cargar);
       <button type="button" :disabled="guardando || (u.se_detiene_s === 5 && u.interesado_s === 30)" @click="restaurar">Valores de siempre (5 s y 30 s)</button>
       <span v-if="aviso" class="listo" role="status">✓ {{ aviso }}</span>
     </div>
-    <p v-if="!compacto" class="nota">
-      Valen para todo el sitio. Al guardarlos se recalculan los agregados de tráfico (el calor no cambia; sí cuántos se detienen y cuántos quedan interesados).
-      La Parte III (Python) usa su propio umbral de 5 s para los eventos DWELL.
-    </p>
   </form>
 </template>
 
@@ -114,12 +108,6 @@ label {
   font-weight: 650;
   color: var(--ink-soft);
 }
-label small {
-  font-weight: 500;
-  font-size: 10.5px;
-  line-height: 1.35;
-  color: var(--ink-faint);
-}
 .acciones {
   display: flex;
   flex-wrap: wrap;
@@ -135,12 +123,6 @@ label small {
   font-size: 11px;
   font-weight: 650;
   color: var(--green-600, #16a34a);
-}
-.nota {
-  margin: 0;
-  font-size: 10.5px;
-  line-height: 1.45;
-  color: var(--ink-faint);
 }
 @media (max-width: 700px) {
   .campos {

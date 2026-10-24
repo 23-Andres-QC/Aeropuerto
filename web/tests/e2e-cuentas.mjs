@@ -231,7 +231,6 @@ try {
   const minimoEsan = ((await t.api("GET", "/api/v1/sites")).cuerpo ?? []).find((x) => x.slug === "esan")?.min_group_size ?? 5;
   const cifras = [...generoPanel.matchAll(/(\d+)\s+(?:Hombre|Mujer|Sin determinar)\b/g)].map((m) => Number(m[1]));
   assert.ok(cifras.every((n) => n >= minimoEsan), `el género de ESAN no muestra grupos de menos de ${minimoEsan}: ${generoPanel}`);
-  assert.ok(minimoEsan < 5 || !generoPanel.includes("oculto") || new RegExp(`grupos de menos de ${minimoEsan}`).test(generoPanel), `lo que no se desglosa se explica: ${generoPanel}`);
   await t.ir("/cuentas?ver=privacidad", 2500);
   await t.hasta(`!!document.querySelector('[data-prueba=estado-retencion]')`, "el estado de la retención");
   const retencion = await t.texto("[aria-label='Retención de datos']");
@@ -274,7 +273,7 @@ try {
   await t.hasta(`!!document.querySelector('[data-prueba=grupo-minimo-guardado]')`, "guardar el mínimo").catch(async (e) => { throw new Error(e.message + " · " + (await t.evalua(`document.querySelector('.grupo-minimo')?.innerText`))); });
   panel = await panelGenero();
   assert.ok(await t.existe("[data-prueba=aviso-pruebas]"), "con menos de 5 el panel avisa");
-  assert.match(panel, /Desglose con grupos pequeños: solo para pruebas/);
+  assert.match(panel, /Modo pruebas · mínimo/);
   assert.match(panel, /6\s*Mujer/);
   assert.match(panel, /1\s*Hombre/);
   const bit = JSON.stringify((await t.api("GET", "/api/v1/auditoria?limite=100")).cuerpo);

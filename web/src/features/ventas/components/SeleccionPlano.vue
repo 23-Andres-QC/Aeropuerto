@@ -77,7 +77,7 @@ const hayZonas = computed(() => zonas.value.some((z) => esArea(z) || z.local_id 
     <div class="cuerpo-sel" :class="{ sinplano: !mapa }">
       <div v-if="mapa" class="plano-col">
         <PlanoSitio :mapa="mapa" :zonas="zonas" :zona-activa="resaltada" :mostrar-camaras="false" :leyenda="false" inicio="sitio" @zona="clicEnPlano" @fondo="elegir([])" />
-        <p v-if="!hayZonas" class="pie muted">Este plano todavía no tiene zonas dibujadas: dibújalas en Configuración para elegirlas aquí.</p>
+        <p v-if="!hayZonas" class="pie muted">Este plano todavía no tiene zonas.</p>
         <p v-if="aviso" class="aviso-sel">{{ aviso }}</p>
       </div>
       <div class="lista-col">
@@ -103,7 +103,7 @@ const hayZonas = computed(() => zonas.value.some((z) => esArea(z) || z.local_id 
             </button>
           </div>
         </template>
-        <p v-if="!locales.length" class="muted vacio-sel">Este sitio todavía no tiene locales: créalos en Configuración.</p>
+        <p v-if="!locales.length" class="muted vacio-sel">Este sitio todavía no tiene locales.</p>
       </div>
     </div>
   </section>

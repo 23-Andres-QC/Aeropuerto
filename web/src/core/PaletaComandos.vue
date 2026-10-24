@@ -191,7 +191,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", global));
               <small v-if="c.detalle">{{ c.detalle }}</small>
             </li>
           </template>
-          <li v-if="!visibles.length" class="vacio" role="presentation">Nada coincide con «{{ texto }}». Prueba con otra palabra: una sección, una tienda o «pronóstico».</li>
+          <li v-if="!visibles.length" class="vacio" role="presentation">Nada coincide con «{{ texto }}».</li>
         </ul>
         <div class="paleta-pie" aria-hidden="true"><span><kbd>↑</kbd><kbd>↓</kbd> elegir</span><span><kbd>Enter</kbd> abrir</span><span><kbd>Esc</kbd> cerrar</span></div>
       </div>

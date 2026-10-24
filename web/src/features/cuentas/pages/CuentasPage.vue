@@ -192,9 +192,7 @@ onMounted(cargar);
 
         <div v-if="entregada" class="entrega" role="status" data-prueba="clave-entregada">
           <b>{{ entregada.motivo }}: {{ entregada.usuario.usuario }}</b>
-          <p>
-            Contraseña temporal (se muestra <b>una sola vez</b>; la persona deberá elegir una propia al entrar):
-          </p>
+          <p>Contraseña temporal (se muestra una sola vez):</p>
           <p class="clave" data-prueba="clave-temporal">{{ entregada.clave_temporal }}</p>
           <div class="acciones">
             <button class="button" type="button" @click="copiarClave">{{ copiada ? "✓ Copiada" : "Copiar" }}</button>
@@ -218,8 +216,8 @@ onMounted(cargar);
         <Transition name="desplegar">
           <form v-if="mostrarForm" class="formulario" novalidate data-prueba="formulario-nueva" @submit.prevent="crearUsuario">
             <h3>Nueva cuenta</h3>
-            <label>Correo (para ingresar y recuperar la clave)<input v-model="nuevo.correo" data-prueba="nuevo-correo" type="email" autocomplete="off" placeholder="nombre@empresa.com" /></label>
-            <label>Usuario (opcional: por defecto, el correo)<input v-model="nuevo.usuario" data-prueba="nuevo-usuario" autocomplete="off" placeholder="gerencia.comercial" /></label>
+            <label>Correo<input v-model="nuevo.correo" data-prueba="nuevo-correo" type="email" autocomplete="off" placeholder="nombre@empresa.com" /></label>
+            <label>Usuario (opcional)<input v-model="nuevo.usuario" data-prueba="nuevo-usuario" autocomplete="off" placeholder="gerencia.comercial" /></label>
             <label>Nombre (opcional)<input v-model="nuevo.nombre" autocomplete="off" placeholder="Gerencia comercial" /></label>
             <label>
               Rol
@@ -301,17 +299,14 @@ onMounted(cargar);
           <RouterLink to="/privacidad">Aviso de privacidad</RouterLink>
         </div>
         <ul class="plazos">
-          <li><b>{{ politica.vectores_horas }} horas</b> la descripción de apariencia de cada persona (se borra sola en el servicio de cámaras).</li>
-          <li><b>{{ politica.puntos_dias }} días</b> las posiciones por persona; los conteos y promedios, {{ politica.agregados }}.</li>
-          <li><b>{{ politica.bitacora_dias }} días</b> la bitácora.</li>
-          <li>El género de una persona no se guarda: solo conteos por sesión, en grupos de 5 o más.</li>
+          <li><b>{{ politica.vectores_horas }} horas</b> apariencia de cada persona</li>
+          <li><b>{{ politica.puntos_dias }} días</b> posiciones por persona · conteos y promedios: {{ politica.agregados }}</li>
+          <li><b>{{ politica.bitacora_dias }} días</b> bitácora</li>
         </ul>
         <p class="muted" data-prueba="estado-retencion">
-          Ahora hay {{ politica.estado.puntos.toLocaleString("es-PE") }} posiciones guardadas
-          <template v-if="politica.estado.sesion_mas_antigua"> (la sesión más antigua con ellas es del {{ fecha(politica.estado.sesion_mas_antigua) }})</template>;
-          {{ politica.estado.sesiones_depuradas }} sesiones ya depuradas<template v-if="politica.estado.pendientes_de_agregar">
-            · {{ politica.estado.pendientes_de_agregar }} pasan de 90 días pero su tráfico aún no se contó, así que se conservan</template>.
-          La depuración corre sola una vez al día.
+          {{ politica.estado.puntos.toLocaleString("es-PE") }} posiciones guardadas<template v-if="politica.estado.sesion_mas_antigua">
+            · desde {{ fecha(politica.estado.sesion_mas_antigua) }}</template> · {{ politica.estado.sesiones_depuradas }} sesiones depuradas<template
+            v-if="politica.estado.pendientes_de_agregar"> · {{ politica.estado.pendientes_de_agregar }} pendientes de contar</template>
         </p>
         <button class="button" type="button" data-prueba="depurar" :disabled="depurando" @click="depurar">Depurar ahora</button>
         <p v-if="depurado" class="ok" role="status" data-prueba="depurado">{{ depurado }}</p>

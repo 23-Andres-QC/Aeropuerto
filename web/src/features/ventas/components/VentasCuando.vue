@@ -112,16 +112,14 @@ const pocosDias = computed(() => diasConDatos.value > 0 && diasConDatos.value < 
     </label>
     <span class="espacio"></span>
     <span v-if="cargando" class="muted">Calculando…</span>
-    <span v-else-if="datos && diasConDatos" class="muted">Promedio de un día, según {{ entero(diasConDatos) }} días con actividad · hora de Lima</span>
+    <span v-else-if="datos && diasConDatos" class="muted">Promedio de {{ entero(diasConDatos) }} días</span>
   </div>
 
   <p v-if="error" class="error" role="alert">{{ error }}</p>
-  <p v-if="pocosDias" class="nota aviso">
-    <b>Hay pocos días de datos ({{ diasConDatos }}).</b> Con menos de dos semanas, un solo día raro pesa mucho en el promedio de cada franja. Elige un período más largo para un patrón más confiable.
-  </p>
+  <p v-if="pocosDias" class="nota aviso">Pocos días de datos ({{ diasConDatos }}).</p>
 
   <template v-if="datos">
-    <p v-if="!rango" class="nota aviso">No hay ventas ni visitas en este período con estos filtros. Genera ventas simuladas o carga tickets en la pestaña Datos.</p>
+    <p v-if="!rango" class="nota aviso">No hay ventas ni visitas en este período.</p>
 
     <template v-else>
       <section v-if="resaltes" class="destacados" aria-label="Lo que destaca de la semana">
@@ -175,7 +173,6 @@ const pocosDias = computed(() => diasConDatos.value > 0 && diasConDatos.value < 
               <span>{{ lectura.ingresos }} · {{ lectura.visitantes }} visitantes · {{ lectura.tickets }} tickets · conversión {{ lectura.conversion }}</span>
               <small>promedio de {{ lectura.dias }} {{ lectura.dias === 1 ? "día" : "días" }}</small>
             </template>
-            <template v-else><span class="muted">Pasa el puntero por una franja para ver sus números.</span></template>
           </p>
           <div class="mapa-envoltorio">
             <table class="mapa-calor" :aria-label="`${nombre.nombre} por día de la semana y hora`">

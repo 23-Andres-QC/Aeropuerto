@@ -91,8 +91,7 @@ const masTicketsQueVisitantes = computed(() => (total.value.conversion ?? 0) > 1
 
 <template>
   <p v-if="masTicketsQueVisitantes" class="nota aviso">
-    <b>Hay más tickets que visitantes.</b> Las cámaras no están viendo entrar a todos los clientes de algún local (o sus zonas INTERIOR no cubren la entrada), así que la
-    conversión de abajo supera el 100 % y no es confiable en esos locales.
+    <b>Hay más tickets que visitantes:</b> la conversión no es confiable.
   </p>
 
   <section class="metrics" style="margin-bottom: 14px">
@@ -184,7 +183,7 @@ const masTicketsQueVisitantes = computed(() => (total.value.conversion ?? 0) > 1
           </tr>
         </tbody>
       </table>
-      <p v-else class="vacio">Todavía no hay locales: créalos en Configuración.</p>
+      <p v-else class="vacio">Todavía no hay locales.</p>
     </div>
   </section>
 

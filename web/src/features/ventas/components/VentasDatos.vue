@@ -101,20 +101,19 @@ async function borrar() {
   <section class="panel" style="margin-bottom: 14px">
     <div class="panel-heading">
       <h2>Qué hay guardado</h2>
-      <span class="heading-meta"><span class="pill">todo en la base de datos</span></span>
     </div>
     <div class="cuerpo conteo">
       <div>
         <strong>{{ entero(resumen?.counts.real ?? 0) }}</strong>
-        <span><span class="pill origen-real">Reales</span> tickets de la caja de los locales</span>
+        <span><span class="pill origen-real">Reales</span></span>
       </div>
       <div>
         <strong>{{ entero(resumen?.counts.simulated ?? 0) }}</strong>
-        <span><span class="pill origen-simulado">Simulados</span> generados para la demo</span>
+        <span><span class="pill origen-simulado">Simulados</span></span>
       </div>
       <div>
         <strong>{{ entero(resumen?.counts.matched ?? 0) }}</strong>
-        <span><span class="pill">Emparejados</span> ligados a una persona del video</span>
+        <span><span class="pill">Emparejados</span></span>
       </div>
     </div>
   </section>
@@ -122,17 +121,8 @@ async function borrar() {
   <section class="panel" style="margin-bottom: 14px">
     <div class="panel-heading">
       <h2>Generar ventas simuladas</h2>
-      <span class="heading-meta"><span class="pill origen-simulado">solo para ver los gráficos</span></span>
     </div>
     <div class="cuerpo">
-      <p class="texto">
-        Todavía no hay una caja conectada, así que esto crea semanas de ventas de ejemplo para cada local: visitantes por hora (más de día, menos en fin de semana), cuántos compran,
-        qué productos y a qué precio. Con eso se ven el resumen y el pronóstico. Además, a la mayoría de las personas que el modelo vio entrar en cada sesión grabada se les asigna un ticket
-        (y se agregan algunos que la cámara no vio) para que el emparejamiento tenga qué ligar.
-      </p>
-      <p class="texto">
-        <b>Todo queda marcado como «Simulado».</b> Puedes verlo, ocultarlo con el filtro «Datos» o borrarlo cuando conectes ventas reales. Nunca se mezcla con lo real sin avisar.
-      </p>
       <div class="acciones">
         <label class="campo"
           >Días de historia
@@ -148,7 +138,7 @@ async function borrar() {
         </button>
         <button type="button" class="danger-button" :disabled="trabajando || !resumen?.counts.simulated" @click="borrar">Borrar los simulados</button>
       </div>
-      <p v-if="!locales" class="nota aviso" style="margin-top: 12px">El sitio no tiene locales: créalos en Configuración y dibuja su zona INTERIOR.</p>
+      <p v-if="!locales" class="nota aviso" style="margin-top: 12px">El sitio no tiene locales.</p>
     </div>
   </section>
 
@@ -161,14 +151,6 @@ async function borrar() {
       </span>
     </div>
     <div class="cuerpo">
-      <p class="texto">
-        Lo mismo que las ventas simuladas, pero visto como gente: cuántos pasan por el frente de cada tienda, cuántos se detienen, cuántos entran, cuánto se quedan y dónde estuvo la
-        gente hora por hora. Sirve para ver en <b>Insights → Tráfico por franja y fecha</b> el mapa de calor, la permanencia y el embudo con semanas de datos antes de tener grabaciones largas.
-      </p>
-      <p class="texto">
-        Es coherente con las ventas simuladas: los que entran a cada tienda son sus visitantes de esa hora. <b>Todo queda marcado como «Simulado»</b> y se separa de lo real con el filtro
-        «Datos». Necesita que las tiendas tengan dibujado su frente o su interior en Configuración.
-      </p>
       <div class="acciones">
         <label class="campo"
           >Semanas
@@ -188,18 +170,6 @@ async function borrar() {
     </div>
   </section>
 
-  <section class="panel">
-    <div class="panel-heading">
-      <h2>Qué se guarda de cada compra</h2>
-      <span class="heading-meta"><span class="pill">sin datos personales</span></span>
-    </div>
-    <div class="cuerpo">
-      <p class="texto">
-        <b>Ticket:</b> local, fecha y hora, total y número de ticket de la caja. <b>Líneas:</b> producto, categoría, cantidad y precio unitario. <b>Emparejamiento:</b> el ticket, la
-        persona anónima del video (su número y no su cara), cuándo estuvo dentro del local y qué tan segura es la pareja. No se guarda nombre, tarjeta ni medio de pago.
-      </p>
-    </div>
-  </section>
 </template>
 
 <style scoped>
@@ -221,15 +191,6 @@ async function borrar() {
 .conteo span {
   font-size: 12.5px;
   color: var(--ink-soft);
-}
-.texto {
-  margin: 0 0 10px;
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: var(--ink-soft);
-}
-.texto b {
-  color: var(--ink);
 }
 .campo {
   display: inline-flex;
