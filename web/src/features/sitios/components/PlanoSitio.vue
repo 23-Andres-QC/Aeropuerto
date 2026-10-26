@@ -352,6 +352,58 @@ const e = computed(() => {
   return w && h ? Math.max(vista.value.w / w, vista.value.h / h) : vista.value.w / ancho.value;
 });
 
+/** Promedio móvil de VENTANA_SUAVE puntos (los extremos quedan): sin él, el temblor de la detección dibujaba zigzags que
+ * se cruzaban consigo mismos. */
+const VENTANA_SUAVE = 5;
+function suavizar(ps: Punto[]): Punto[] {
+  const m = Math.floor(VENTANA_SUAVE / 2);
+  if (ps.length <= 2 || m < 1) return ps;
+  return ps.map((p, i) => {
+    if (i === 0 || i === ps.length - 1) return p;
+    const r = Math.min(m, i, ps.length - 1 - i);
+    let [sx, sy] = [0, 0];
+    for (let j = i - r; j <= i + r; j++) [sx, sy] = [sx + ps[j][0], sy + ps[j][1]];
+    return [sx / (2 * r + 1), sy / (2 * r + 1)];
+  });
+}
+/** Cada cuántos px de pantalla va una flecha sobre un recorrido, y su largo. */
+const CADA_FLECHA = 70;
+const LARGO_FLECHA = 7;
+/** Recorridos suavizados y con flechas de su color hacia donde fue la persona (una cada CADA_FLECHA px y otra al final). */
+const trazos = computed(() =>
+  props.recorridos.map((r) => {
+    const ps: Punto[] = (r.hueco ? r.puntos : suavizar(r.puntos)).map(([x, y]) => [px(x), py(y)]);
+    const linea = ps.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+    if (r.hueco || ps.length < 2) return { r, linea, flechas: "" };
+    const [paso, l, a] = [CADA_FLECHA * e.value, LARGO_FLECHA * e.value, 4 * e.value];
+    const punta = (x: number, y: number, dx: number, dy: number) => {
+      const n = Math.hypot(dx, dy) || 1;
+      const [ux, uy] = [dx / n, dy / n];
+      const [bx, by] = [x - ux * l, y - uy * l];
+      return `M${x.toFixed(1)},${y.toFixed(1)}L${(bx - uy * a).toFixed(1)},${(by + ux * a).toFixed(1)}L${(bx + uy * a).toFixed(1)},${(by - ux * a).toFixed(1)}Z`;
+    };
+    const partes: string[] = [];
+    let falta = paso;
+    for (let i = 1; i < ps.length; i++) {
+      const [dx, dy] = [ps[i][0] - ps[i - 1][0], ps[i][1] - ps[i - 1][1]];
+      let tramo = Math.hypot(dx, dy);
+      let hecho = 0;
+      while (tramo - hecho >= falta) {
+        hecho += falta;
+        const f = hecho / tramo;
+        partes.push(punta(ps[i - 1][0] + dx * f, ps[i - 1][1] + dy * f, dx, dy));
+        falta = paso;
+      }
+      falta -= tramo - hecho;
+    }
+    // La última flecha marca dónde terminó; se busca un tramo que se mueva para darle dirección.
+    const fin = ps[ps.length - 1];
+    const antes = [...ps].reverse().find((q) => Math.hypot(fin[0] - q[0], fin[1] - q[1]) > l / 3);
+    if (antes) partes.push(punta(fin[0], fin[1], fin[0] - antes[0], fin[1] - antes[1]));
+    return { r, linea, flechas: partes.join("") };
+  }),
+);
+
 /** Mantiene la vista dentro de lo que hay para ver (con el giro de ese zoom); si sobra espacio en un eje, la centra. */
 function acotar(v: Vista): Vista {
   const w = Math.min(Math.max(v.w, ancho.value / 40), anchoMax.value);
@@ -814,13 +866,10 @@ watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
             <title>Arrastra para mover el punto · doble clic para quitarlo</title>
           </circle>
         </g>
-        <polyline
-          v-for="(r, i) in recorridos"
-          :key="'r' + i"
-          :points="puntos(r.puntos)"
-          :class="r.hueco ? 'hueco' : r.activo ? 'rastro' : 'recorrido'"
-          :style="{ stroke: r.color }"
-        />
+        <g v-for="(t, i) in trazos" :key="'r' + i">
+          <polyline :points="t.linea" :class="t.r.hueco ? 'hueco' : t.r.activo ? 'rastro' : 'recorrido'" :style="{ stroke: t.r.color }" />
+          <path v-if="t.flechas" :d="t.flechas" class="direccion" :class="{ activa: t.r.activo }" :style="{ fill: t.r.color }" data-prueba="flecha-recorrido" />
+        </g>
         <g v-if="(editarCamaras || editarZonas || dibujando) && capas.length" class="limites" aria-hidden="true" data-prueba="limites-zonas">
           <polygon v-for="(l, i) in limites" :key="'l' + i" :points="l.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')" class="limite-zona" />
         </g>
@@ -1159,6 +1208,13 @@ watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: 0.6;
+}
+.direccion {
+  stroke: none;
+  opacity: 0.75;
+}
+.direccion.activa {
+  opacity: 0.9;
 }
 .hueco {
   fill: none;
