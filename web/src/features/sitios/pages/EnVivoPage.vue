@@ -172,10 +172,7 @@ const trazos = computed(() => {
 const personas = computed(() => (modoVivo.value ? vivo.vivas.value.personas : !verGrabacion.value ? [] : trazos.value.personas));
 const recorridos = computed(() => (modoVivo.value ? vivo.vivas.value.recorridos : !verGrabacion.value ? [] : trazos.value.recorridos));
 const enPlano = computed(() => personas.value.filter((p) => p.estado !== "salio"));
-// En vivo cuenta a cada persona suelta y las cabezas de cada multitud (un grupo va al plano como un solo punto, con id < -1000).
-const totalEnPlano = computed(
-  () => enPlano.value.filter((p) => p.id > -1000).length + vivo.vivas.value.lista.reduce((n, p) => n + (p.grupo != null ? (p.cantidad ?? 0) : 0), 0),
-);
+const totalEnPlano = computed(() => enPlano.value.length);
 
 const presentes = computed(() => {
   if (!verGrabacion.value) return [];
@@ -367,15 +364,6 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <button v-else type="button" class="reiniciar-calor terminar" title="Deja de registrar y guarda la captura" :disabled="guardando || capturaDePrueba" @click="terminarYRefrescar()">
           {{ guardando ? "Guardando…" : "■ Terminar y guardar" }}
         </button>
-        <span
-          v-if="vivo.modoMultitud.value?.horarios.length"
-          class="pill"
-          :class="vivo.modoMultitud.value.en_horario ? 'warn' : ''"
-          data-prueba="modo-multitud"
-          :title="`Franjas en que el en vivo cuenta cabezas y le da un ID a todo el grupo, en vez de seguir a cada persona: ${vivo.modoMultitud.value.horarios.join(', ')} (hora de Lima)`"
-        >
-          {{ vivo.modoMultitud.value.en_horario ? "Modo grupal por horario" : "Seguimiento individual" }} · grupal {{ vivo.modoMultitud.value.horarios.join(", ") }}
-        </span>
         <span v-if="mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
       </div>
       <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :personas="personas" :recorridos="recorridos" :calor="calorVivo" :celda-calor="CELDA_CALOR" :camaras="camarasPlano" :inicio="modoVivo ? 'sitio' : 'campus'" zoom :recordar="modoVivo" @lugar="lugar = $event" />
@@ -435,10 +423,9 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
             <div class="panel-heading"><h2>Ahora mismo</h2><span class="pill">{{ vivo.vivas.value.lista.length }}</span></div>
             <ul>
               <li v-for="p in vivo.vivas.value.lista" :key="p.clave">
-                <span class="punto" :style="{ background: p.grupo != null ? '#a855f7' : p.id != null ? colorPersona(p.id) : '#8ba4bf' }"></span>
-                <b>{{ p.grupo != null ? `Grupo ${p.grupo}` : p.id != null ? `G${p.id}` : "?" }}</b>
-                <span v-if="p.grupo != null" data-prueba="grupo-en-vivo">{{ p.cantidad }} personas</span>
-                <span v-else>{{ p.genero ?? "Sin determinar" }}<template v-if="p.conf"> · {{ Math.round(p.conf * 100) }}%</template></span>
+                <span class="punto" :style="{ background: p.id != null ? colorPersona(p.id) : '#8ba4bf' }"></span>
+                <b>{{ p.id != null ? `G${p.id}` : "?" }}</b>
+                <span>{{ p.genero ?? "Sin determinar" }}<template v-if="p.conf"> · {{ Math.round(p.conf * 100) }}%</template></span>
                 <small class="muted">{{ p.camaras.join(", ") }}</small>
               </li>
               <li v-if="!vivo.vivas.value.lista.length" class="muted vacio">Nadie en el plano.</li>

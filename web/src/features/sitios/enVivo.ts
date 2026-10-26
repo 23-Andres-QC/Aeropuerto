@@ -74,10 +74,9 @@ export function fijarModoVivo(valor: boolean, limpiar = true, automatico = false
 }
 
 type Observacion = { clave: string; id: number | null; x: number; y: number; alto: number; genero: string | null; conf: number | null; cam: string };
-/** `multitud`: este teléfono ve una multitud: su grupo, cuántas cabezas cuenta y dónde cae el grupo en el plano (metros). */
-type Cuadro = { llegada: number; observaciones: Observacion[]; multitud?: { grupo: number; personas: number; x: number; y: number } };
+type Cuadro = { llegada: number; observaciones: Observacion[] };
 
-export type PersonaViva = { clave: string; id: number | null; genero: string | null; conf: number | null; camaras: string[]; grupo?: number; cantidad?: number };
+export type PersonaViva = { clave: string; id: number | null; genero: string | null; conf: number | null; camaras: string[] };
 
 /** Todo lo que se sabe de una persona con ID global desde que empezó el modo en vivo. */
 export type HistoriaViva = {
@@ -509,21 +508,6 @@ function alDetecciones(id: string, ev: MessageEvent) {
     return;
   }
   const observaciones: Observacion[] = [];
-  // Una multitud no se sigue persona por persona: el grupo entero va al plano como un solo punto (el centro de sus pies) con la cuenta de cabezas.
-  let multitud: Cuadro["multitud"];
-  if (m.multitud?.pies?.length) {
-    let [sx, sy, n] = [0, 0, 0];
-    for (const [fx, fy] of m.multitud.pies) {
-      if (fy >= m.frame_h - 3) continue;
-      const bruto = proyectarCalibrado(plano, fx, fy, m.frame_w);
-      if (!bruto) continue;
-      const punto = alPiso([bruto[0] + ajusteMapa.value.dx, bruto[1] + ajusteMapa.value.dy], config.value?.plano?.piso_m);
-      sx += punto[0];
-      sy += punto[1];
-      n++;
-    }
-    if (n) multitud = { grupo: m.multitud.grupo, personas: m.multitud.personas, x: sx / n, y: sy / n };
-  }
   for (const p of m.people ?? []) {
     // Solo quien tiene ID global va al plano: sin él, la misma persona que otra cámara ya identificó saldría dos veces.
     if (p.global_id == null) continue;
@@ -544,7 +528,7 @@ function alDetecciones(id: string, ev: MessageEvent) {
       cam: cid,
     });
   }
-  cuadros.set(id, { llegada: Date.now(), observaciones, multitud });
+  cuadros.set(id, { llegada: Date.now(), observaciones });
 }
 
 function sincronizarSockets() {
@@ -693,13 +677,6 @@ function componer() {
     if (r.puntos.length > 1) recorridos.push({ id: clave, color: r.color, puntos: [...r.puntos], activo: acumulado.has(clave) });
   }
   lista.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9));
-  // Las multitudes que ven los teléfonos ahora: un punto del grupo en el plano y una fila con la cuenta de cabezas.
-  for (const [tel, cuadro] of cuadros) {
-    if (!cuadro.multitud || t - cuadro.llegada > VIGENCIA_MS) continue;
-    const g = cuadro.multitud;
-    personas.push({ id: -1000 - g.grupo, x: g.x, y: g.y, color: "#a855f7", etiqueta: `Grupo ${g.grupo} · ${g.personas}`, estado: "visto" });
-    lista.push({ clave: `grupo${g.grupo}`, id: null, genero: null, conf: null, camaras: [camaraDe(tel) ?? ""].filter(Boolean), grupo: g.grupo, cantidad: g.personas });
-  }
   vivas.value = { personas, recorridos, lista };
   // El plano y Insights repintan todo lo acumulado: una vez por segundo basta.
   if (t - ultimoRepintado >= REPINTAR_MS) {
@@ -1077,7 +1054,4 @@ socketPersistente(`${RELEVO_VIVO}/telefonos/detections/watch`, false, (ev) => {
  */
 export const zonaVivo = computed(() => (config.value?.plano?.capas?.length ? "Patio" : null));
 
-/** Modo multitud del modelo (franjas de horario y si ahora es una), o null si el modelo no lo publica. */
-const modoMultitud = computed(() => servicio.value?.multitud ?? null);
-
-export const motorVivo = { modoMultitud, mapa, config, zonas, ranuras, sobrantes, vivas, calor, historias, sinUbicar, conteo, resumen, servicioActivo, error, inicio, ahora };
+export const motorVivo = { mapa, config, zonas, ranuras, sobrantes, vivas, calor, historias, sinUbicar, conteo, resumen, servicioActivo, error, inicio, ahora };

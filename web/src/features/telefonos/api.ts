@@ -1,5 +1,4 @@
 import { request } from "../../core/http";
-import type { MultitudCuadro } from "../../shared/personas";
 
 // Las cámaras en vivo tienen su propio backend (backend-vivo), separado del de los
 // sitios LAP y ESAN; nginx lo expone en /vivo/.
@@ -38,8 +37,6 @@ export type EstadoServicio = {
   /** Enlace para los teléfonos con la IP de la laptop en la red (lo publica el modelo, que corre en ella). */
   enlace?: string | null;
   memoria?: { personas: number; persistente: boolean };
-  /** Modo multitud: las franjas de horario («12:00-15:00», hora de Lima), si ahora es una, y desde cuántas personas se entra solo. */
-  multitud?: { horarios: string[]; en_horario: boolean; umbral: number };
   telefonos: Record<string, EstadoTelefono>;
 };
 
@@ -69,7 +66,7 @@ export type PersonaDetectada = {
 
 /** Dónde cae en el plano cada píxel de este cuadro: homografía (de a 3 por fila) de píxeles de un cuadro de `ancho` px a metros. */
 export type UbicacionPlano = { sitio: string; ancho: number; H: number[]; referencia?: string };
-export type Detecciones = { ts: number; frame_w: number; frame_h: number; people: PersonaDetectada[]; multitud?: MultitudCuadro | null; plano?: UbicacionPlano | null };
+export type Detecciones = { ts: number; frame_w: number; frame_h: number; people: PersonaDetectada[]; plano?: UbicacionPlano | null };
 
 export const api = {
   telefonos: () => request<Telefono[]>(`${VIVO}/telefonos`),
