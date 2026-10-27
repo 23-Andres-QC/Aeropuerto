@@ -52,7 +52,7 @@ from lap01.camaras_reid import ReIDPersonas
 from detector_onnx import DetectorONNX
 from detector_pose import DetectorCuerpo, ajustar_cajas
 from memoria_identidades import AsociadorConMemoria, MemoriaIdentidades
-from ubicacion import Ubicador
+from ubicacion import MIN_COINCIDENCIAS as U_MIN, Ubicador
 from reid_videos import ReIDCombinado, ReIDGrabado, ReIDPersonViT
 from videos_subidos import (CANAL_ESTADO as CANAL_VIDEOS, PERSONVIT_VIDEO_GPU, REID_VIDEO_GPU, Quietud, VideosSubidos,
                             genero_por_votos)
@@ -802,7 +802,15 @@ class SesionEnVivo:
                 seguidor.appearance_interval = max(1, round(self._ventanas["appearance_interval"] * k))
 
     def _ubicar(self, frames, ahora):
-        return {cid: self.ubicador.ubicar(cid, self.camaras.get(cid), frame, ahora) for cid, frame in frames.items()}
+        ubicaciones = {cid: self.ubicador.ubicar(cid, self.camaras.get(cid), frame, ahora) for cid, frame in frames.items()}
+        # Cada 5 s dice si el teléfono reconoce el lugar: sin eso, «no aparece en el mapa» no tiene explicación en el registro.
+        if ahora - getattr(self, "_aviso_ubicacion", 0.0) >= 5.0:
+            self._aviso_ubicacion = ahora
+            for cid, u in ubicaciones.items():
+                ref, n = self.ubicador.parecido.get(cid, (None, 0))
+                print(f"Ubicación {cid[:12]}: " + (f"reconoce la vista {u['referencia']} ({u['coincidencias']} puntos)" if u else
+                      f"NO reconoce el lugar (lo más parecido: {ref or 'nada'}, {n} puntos de {U_MIN} necesarios)"), flush=True)
+        return ubicaciones
 
     def _pedir_ubicacion(self, frames):
         """Si el hilo de ubicación está libre, ubica el cuadro del teléfono activo que lleva más tiempo sin ubicarse:

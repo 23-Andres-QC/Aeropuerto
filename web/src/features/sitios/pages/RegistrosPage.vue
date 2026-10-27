@@ -154,7 +154,7 @@ watch(capturasVersion, cargar);
             <td>
               <div class="acciones">
                 <RouterLink :to="{ path: `/sitios/${slug}/insights`, query: { sesion: f.id } }">Insights</RouterLink>
-                <RouterLink :to="{ path: `/sitios/${slug}/en-vivo`, query: { sesion: f.id } }">Mapear en el plano</RouterLink>
+                <RouterLink :to="{ path: `/sitios/${slug}/captura`, query: { sesion: f.id } }">Mapear en el plano</RouterLink>
                 <button v-if="f.dataset" type="button" :aria-expanded="corrigiendo === f.id" @click="abrirCorreccion(f)">Corregir hora</button>
               </div>
             </td>

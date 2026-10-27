@@ -63,6 +63,8 @@ export function construirSesion(
     conteoDireccion?: unknown;
     kind?: "LIVE" | "VIDEO";
     estado?: string;
+    /** La zona grabada donde se hizo («sitio» es el patio; el comedor, el nombre de su capa): decide en qué zona del plano se abre. */
+    zona?: string;
   },
 ): CargaSesion {
   const { sesionId, nombre, inicio, fin } = opciones;
@@ -155,6 +157,7 @@ export function construirSesion(
         personas: identities.length,
         estado: opciones.estado ?? "Captura en vivo con teléfonos",
         puntos: p.t.length,
+        ...(opciones.zona ? { zona: opciones.zona } : {}),
         ...(opciones.conteoDireccion ? { conteo_direccion: opciones.conteoDireccion } : {}),
       },
     },

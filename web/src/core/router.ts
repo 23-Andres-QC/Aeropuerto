@@ -16,6 +16,8 @@ export const router = createRouter({
     { path: "/restablecer", component: () => import("../features/acceso/RestablecerPage.vue"), meta: { abierta: true } },
     { path: "/sitios/:sitio/en-vivo", component: () => import("../features/sitios/pages/EnVivoPage.vue"), meta: { seccion: "en-vivo" } },
     { path: "/sitios/:sitio/insights", component: () => import("../features/sitios/pages/InsightsPage.vue"), meta: { seccion: "insights" } },
+    // Una captura guardada (desde Registros) se mira aparte, para que no se mezcle con En vivo; sigue siendo la sección Registros.
+    { path: "/sitios/:sitio/captura", component: () => import("../features/sitios/pages/EnVivoPage.vue"), meta: { seccion: "registros", captura: true } },
     { path: "/sitios/:sitio/ventas", component: () => import("../features/ventas/pages/VentasPage.vue"), meta: { seccion: "ventas" } },
     { path: "/sitios/:sitio/registros", component: () => import("../features/sitios/pages/RegistrosPage.vue"), meta: { seccion: "registros" } },
     {

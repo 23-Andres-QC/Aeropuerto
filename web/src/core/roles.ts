@@ -13,6 +13,7 @@ const SECCION_A_MODULO: Record<string, Modulo> = {
   insights: "insights",
   ventas: "ventas",
   registros: "registros",
+  captura: "registros",
   configuracion: "configuracion",
 };
 

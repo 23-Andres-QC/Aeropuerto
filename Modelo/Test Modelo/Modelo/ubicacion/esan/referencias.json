@@ -1,7 +1,7 @@
 {
  "sitio": "esan",
  "fecha": "2026-10-07",
- "nota": "Referencias de los teléfonos del patio de ESAN (edificios A y B). Cada una es un cuadro del relevo (640 px de ancho) con su homografía de píxeles a metros del plano. Cámara 1: balcón del oeste (izquierda del plano), mirando al este; A0 se calibró con el reciclaje, el tacho verde y las dos expendedoras y A1-A2 se alinearon con A0 por las baldosas. Cámara 2: balcón de la baranda roja al este (derecha del plano), mirando al oeste; B0-B1 se alinearon con A0 por las baldosas que ven las dos cámaras y B2 con B0.",
+ "nota": "Referencias de los teléfonos del patio de ESAN (edificios A y B). Cada una es un cuadro del relevo (640 px de ancho) con su homografía de píxeles a metros del plano. Cámara 1: balcón del oeste (izquierda del plano), mirando al este; A0 se calibró con el reciclaje, el tacho verde y las dos expendedoras y A1-A2 se alinearon con A0 por las baldosas. Cámara 2: balcón de la baranda roja al este (derecha del plano), mirando al oeste; B0-B1 se alinearon con A0 por las baldosas que ven las dos cámaras y B2 con B0. Cámaras 4 y 5 (comedor): cuadros de los videos de cam04 y cam05 (24/10), con la homografía del modelo de cámara de procesar_video.py (altura, distancia focal y horizonte de camaras_video.json); sirven si el teléfono se para donde estuvieron esas cámaras, mirando igual.",
  "referencias": [
   {
    "nombre": "A0",
@@ -102,6 +102,108 @@
     -4.442299132,
     -6.5837e-05,
     0.000906039,
+    1.0
+   ]
+  },
+  {
+   "nombre": "C0",
+   "camara": 4,
+   "imagen": "C0.jpg",
+   "origen": "cam04@0.15",
+   "H": [
+    -6.49572401722424e-05,
+    0.10791230855960435,
+    -45.49874683436593,
+    -0.003383170013566652,
+    -0.03521444370747658,
+    16.813582776470007,
+    -4.897262101585109e-11,
+    -0.002230769019100132,
+    1.0
+   ]
+  },
+  {
+   "nombre": "C1",
+   "camara": 4,
+   "imagen": "C1.jpg",
+   "origen": "cam04@0.5",
+   "H": [
+    -6.49572401722424e-05,
+    0.10791230855960435,
+    -45.49874683436593,
+    -0.003383170013566652,
+    -0.03521444370747658,
+    16.813582776470007,
+    -4.897262101585109e-11,
+    -0.002230769019100132,
+    1.0
+   ]
+  },
+  {
+   "nombre": "C2",
+   "camara": 4,
+   "imagen": "C2.jpg",
+   "origen": "cam04@0.85",
+   "H": [
+    -6.49572401722424e-05,
+    0.10791230855960435,
+    -45.49874683436593,
+    -0.003383170013566652,
+    -0.03521444370747658,
+    16.813582776470007,
+    -4.897262101585109e-11,
+    -0.002230769019100132,
+    1.0
+   ]
+  },
+  {
+   "nombre": "D0",
+   "camara": 5,
+   "imagen": "D0.jpg",
+   "origen": "cam05@0.15",
+   "H": [
+    5.256381783988235e-05,
+    0.12865552005494849,
+    -76.20996734622517,
+    0.002737533797894572,
+    -0.03180201989361296,
+    17.514124350305487,
+    -5.902666255104269e-12,
+    -0.0017328200046046504,
+    1.0
+   ]
+  },
+  {
+   "nombre": "D1",
+   "camara": 5,
+   "imagen": "D1.jpg",
+   "origen": "cam05@0.5",
+   "H": [
+    5.256381783988235e-05,
+    0.12865552005494849,
+    -76.20996734622517,
+    0.002737533797894572,
+    -0.03180201989361296,
+    17.514124350305487,
+    -5.902666255104269e-12,
+    -0.0017328200046046504,
+    1.0
+   ]
+  },
+  {
+   "nombre": "D2",
+   "camara": 5,
+   "imagen": "D2.jpg",
+   "origen": "cam05@0.85",
+   "H": [
+    5.256381783988235e-05,
+    0.12865552005494849,
+    -76.20996734622517,
+    0.002737533797894572,
+    -0.03180201989361296,
+    17.514124350305487,
+    -5.902666255104269e-12,
+    -0.0017328200046046504,
     1.0
    ]
   }

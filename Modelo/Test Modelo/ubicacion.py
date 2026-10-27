@@ -22,7 +22,7 @@ MIN_COINCIDENCIAS = 40    # puntos que deben cuadrar con la referencia para cree
 SOBRADAS = 150            # con tantos puntos no se prueba otra referencia (con menos se queda la mejor de las probadas)
 VIGENCIA_S = 3.0          # sin una comparación buena, la última ubicación vale este tiempo
 INTENTOS = 3              # referencias que se prueban por cuadro (la última que sirvió, luego las de su cámara)
-LIMITE_M = 60.0           # una homografía que manda el cuadro más lejos que esto del plano está mal
+LIMITE_M = 150.0          # una homografía que manda el cuadro más lejos que esto del origen del plano está mal (el comedor queda a ~75 m)
 
 _A_MEDIA = np.diag([ESCALA, ESCALA, 1.0])  # píxeles del relevo (640 de ancho) -> media resolución
 
@@ -71,6 +71,7 @@ class Ubicador:
                             for r in datos["referencias"]]
         self.ultima = {}  # teléfono -> (referencia, ubicación, hora)
         self.turno = {}   # teléfono -> desde qué referencia se sigue probando cuando ninguna sirve
+        self.parecido = {}  # teléfono -> (nombre de la referencia más parecida, coincidencias) del último cuadro: para saber por qué no se ubica
 
     @classmethod
     def cargar(cls, carpeta):
@@ -89,8 +90,11 @@ class Ubicador:
         ancho) de este cuadro a metros del plano; o la última si hace poco que no se reconoce la vista; o None."""
         puntos, descriptores = self.orb.detectAndCompute(a_media(frame), None)
         mejor = None
+        cercana = (None, 0)
         for referencia in self._orden(cid, camara)[:INTENTOS]:
             G, n = referencia.comparar(puntos, descriptores)
+            if n > cercana[1]:
+                cercana = (referencia.nombre, n)
             if G is None:
                 continue
             H = referencia.H @ np.linalg.inv(_A_MEDIA) @ G @ _A_MEDIA
@@ -98,6 +102,7 @@ class Ubicador:
                 mejor = (referencia, H, n)
                 if n >= SOBRADAS:
                     break
+        self.parecido[cid] = cercana if mejor is None else (mejor[0].nombre, mejor[2])
         if mejor is not None:
             referencia, H, n = mejor
             ubicacion = {"sitio": self.sitio, "ancho": ANCHO, "H": [float(v) for v in (H / H[2, 2]).ravel()],
@@ -110,9 +115,10 @@ class Ubicador:
 
     @staticmethod
     def _valida(H, frame):
-        """El centro y el pie del cuadro caen a una distancia razonable del plano."""
+        """Un punto a tres cuartos de la altura del cuadro y su pie caen a una distancia razonable del plano (el centro no: en una cámara
+        que mira casi horizontal cae en el horizonte, que se va al infinito)."""
         alto = frame.shape[0] * ANCHO / frame.shape[1]
-        p = np.array([[ANCHO / 2, alto / 2, 1.0], [ANCHO / 2, alto - 1, 1.0]]) @ H.T
+        p = np.array([[ANCHO / 2, alto * 0.75, 1.0], [ANCHO / 2, alto - 1, 1.0]]) @ H.T
         if np.any(np.abs(p[:, 2]) < 1e-9):
             return False
         xy = p[:, :2] / p[:, 2:]

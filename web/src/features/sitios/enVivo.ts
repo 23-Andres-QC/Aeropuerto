@@ -19,11 +19,11 @@ import { construirSesion, uuid, type CargaSesion, type PersonaGuardable, type Tr
 /** Valor de la opción «En vivo» en los desplegables de sesión. */
 export const SESION_VIVO = "__vivo__";
 /**
- * Cámaras del sitio que un teléfono puede tomar, por orden de llegada. Solo la 1 y la 2: son las que tienen referencias
- * para ubicar al teléfono en el plano (Modelo/Test Modelo/Modelo/ubicacion/esan: A0-A2 y B0-B2). cam03 es la del video
- * grabado (dataset) y en vivo no la toma ningún teléfono.
+ * Cámaras que toman los teléfonos según la zona del en vivo, por orden de llegada: en el patio la 1, luego la 2 y la 3; en el
+ * comedor la 4 y luego la 5. Para ubicar a la gente en el plano una cámara necesita referencias calibradas
+ * (Modelo/Test Modelo/Modelo/ubicacion/esan): hoy solo están las de cam01 y cam02. Un sitio sin zonas elegibles usa cam01 y cam02.
  */
-export const CAMARAS_VIVO = ["cam01", "cam02"];
+const CAMARAS_POR_ZONA: Record<"Patio" | "Comedor", string[]> = { Patio: ["cam01", "cam02", "cam03"], Comedor: ["cam04", "cam05"] };
 /** Una detección más vieja que esto ya no se dibuja. */
 const VIGENCIA_MS = 2000;
 /** Cuánto se conserva el rastro en pantalla de quien dejó de verse. */
@@ -235,9 +235,9 @@ function contarCruces(tel: string, cid: string, m: Detecciones) {
 
 const cuentaVacia = (): CuentaSentido => ({ total: 0, HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0, conId: 0, sinId: 0 });
 
-/** Lo contado por cámara (las de CAMARAS_VIVO, en su orden), con el género y el ID que cada track tiene ahora. */
+/** Lo contado por cámara (las de camarasVivo, en su orden), con el género y el ID que cada track tiene ahora. */
 function resumirConteo(): ConteoCamara[] {
-  const filas = new Map(CAMARAS_VIVO.map((camara) => [camara, { camara, sube: cuentaVacia(), regresa: cuentaVacia() }]));
+  const filas = new Map(camarasVivo.value.map((camara) => [camara, { camara, sube: cuentaVacia(), regresa: cuentaVacia() }]));
   for (const c of cruces) {
     const fila = filas.get(c.camara);
     if (!fila) continue;
@@ -372,10 +372,10 @@ let sondeoGuardado: ReturnType<typeof setInterval> | undefined;
 let cierraServicio: (() => void) | undefined;
 let corriendo = false;
 
-const camaraDe = (id: string) => CAMARAS_VIVO[asignacion.get(id) ?? -1];
+const camaraDe = (id: string) => camarasVivo.value[asignacion.get(id) ?? -1];
 const proyectores = computed(() => {
   const m = mapa.value;
-  return new Map(CAMARAS_VIVO.map((cid) => [cid, m ? proyectorAlcance(camaras.value?.find((c) => c.camera_id === cid), m) : null] as const));
+  return new Map(camarasVivo.value.map((cid) => [cid, m ? proyectorAlcance(camaras.value?.find((c) => c.camera_id === cid), m) : null] as const));
 });
 
 function asignar(lista: Telefono[]) {
@@ -388,7 +388,7 @@ function asignar(lista: Telefono[]) {
   // Cada teléfono va a la cámara de su número (por orden de ingreso: el primero cam01, a la izquierda; el segundo cam02, a la
   // derecha); uno sin número toma la primera libre.
   for (const t of lista) {
-    const propia = t.camara != null && t.camara >= 1 && t.camara <= CAMARAS_VIVO.length ? t.camara - 1 : -1;
+    const propia = t.camara != null && t.camara >= 1 && t.camara <= camarasVivo.value.length ? t.camara - 1 : -1;
     if (propia >= 0 && asignacion.get(t.id) === propia) continue;
     if (propia >= 0) {
       for (const [otro, i] of [...asignacion]) if (i === propia && otro !== t.id) asignacion.delete(otro);
@@ -397,7 +397,7 @@ function asignar(lista: Telefono[]) {
     }
     if (asignacion.has(t.id)) continue;
     const usadas = new Set(asignacion.values());
-    const libre = CAMARAS_VIVO.findIndex((_, i) => !usadas.has(i));
+    const libre = camarasVivo.value.findIndex((_, i) => !usadas.has(i));
     if (libre >= 0) asignacion.set(t.id, libre);
   }
   asignacionVersion.value++;
@@ -727,7 +727,7 @@ export function entradasPorIntervalo(zonaId: number | null): { v: number; hora: 
 
 const ranuras = computed<RanuraVivo[]>(() => {
   void asignacionVersion.value;
-  return CAMARAS_VIVO.map((camara, i) => {
+  return camarasVivo.value.map((camara, i) => {
     const telefono = telefonos.value.find((t) => asignacion.get(t.id) === i);
     const cuadro = telefono ? cuadros.get(telefono.id) : undefined;
     const vigente = !!cuadro && ahora.value - cuadro.llegada < VIGENCIA_MS;
@@ -745,7 +745,7 @@ const ranuras = computed<RanuraVivo[]>(() => {
     };
   });
 });
-/** Teléfonos conectados que no alcanzaron cámara (en vivo hay dos, ver CAMARAS_VIVO). */
+/** Teléfonos conectados que no alcanzaron cámara (en vivo hay dos o tres, ver camarasVivo). */
 const sobrantes = computed(() => {
   void asignacionVersion.value;
   return telefonos.value.filter((t) => !asignacion.has(t.id));
@@ -800,9 +800,12 @@ function prepararCaptura(): Pendiente | null {
   }
   if (!personas.length) return null;
   const hora = new Date(inicio.value).toLocaleString("es-PE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  const nombre = `${config.value?.site.name ?? quien} · en vivo · ${hora}`;
+  // En un sitio con más de una zona grabada la captura queda en la zona que se eligió al activar el en vivo (patio = «sitio»).
+  const capaComedor = config.value?.plano?.capas?.find((c) => /comedor/i.test(c.nombre))?.nombre;
+  const zona = zonaVivo.value === "Comedor" && capaComedor ? capaComedor : zonaVivo.value ? "sitio" : undefined;
+  const nombre = `${config.value?.site.name ?? quien} · en vivo${zonaVivo.value ? ` · ${zonaVivo.value}` : ""} · ${hora}`;
   const conteoDireccion = { linea: LINEA_CONTEO, camaras: resumirConteo() };
-  return { sitio: quien, carga: construirSesion(personas, { sesionId, nombre, inicio: inicio.value, fin: Date.now(), conteoDireccion }) };
+  return { sitio: quien, carga: construirSesion(personas, { sesionId, nombre, inicio: inicio.value, fin: Date.now(), conteoDireccion, zona }) };
 }
 
 /** Envía la captura como sesión LIVE del sitio: el backend reemplaza la anterior con el mismo identificador. */
@@ -1052,6 +1055,42 @@ socketPersistente(`${RELEVO_VIVO}/telefonos/detections/watch`, false, (ev) => {
  * Dónde se hace el en vivo. Hoy es el patio (la zona grabada 1: ahí están los teléfonos, la calibración y el modelo); el comedor y el
  * «general» (patio y comedor a la vez) vendrán después. Un sitio con una sola zona grabada no necesita decirlo (null).
  */
-export const zonaVivo = computed(() => (config.value?.plano?.capas?.length ? "Patio" : null));
+export type ZonaEnVivo = "Patio" | "Comedor";
+const CLAVE_ZONA = "zona-vivo";
+function leerZona(): ZonaEnVivo {
+  try {
+    return localStorage.getItem(CLAVE_ZONA) === "Comedor" ? "Comedor" : "Patio";
+  } catch {
+    return "Patio";
+  }
+}
+/** La zona que se eligió al activar el en vivo (se recuerda en el navegador). */
+export const zonaElegida = ref<ZonaEnVivo>(leerZona());
+/** Se está preguntando dónde se hace el en vivo (el aviso que sale al pulsar «Activar en vivo»). */
+export const preguntandoZona = ref(false);
+export const zonaVivo = computed(() => (config.value?.plano?.capas?.length ? zonaElegida.value : null));
+/** Las cámaras que toman los teléfonos en esta zona del en vivo, en el orden en que se van conectando. */
+export const camarasVivo = computed(() => (zonaVivo.value ? CAMARAS_POR_ZONA[zonaVivo.value] : ["cam01", "cam02"]));
+
+/** El botón «Activar en vivo»: si el sitio tiene más de una zona grabada pregunta cuál (patio o comedor); apagarlo no pregunta nada. */
+export async function alternarVivo() {
+  if (modoVivo.value) return fijarModoVivo(false);
+  if (!config.value) await cargarConfig(); // antes de prender, el plano aún no se había leído
+  if (!config.value?.plano?.capas?.length) return fijarModoVivo(true);
+  preguntandoZona.value = true;
+}
+/** Se eligió la zona: se prende el en vivo ahí. */
+export function elegirZonaVivo(z: ZonaEnVivo) {
+  zonaElegida.value = z;
+  try {
+    localStorage.setItem(CLAVE_ZONA, z);
+  } catch {
+    /* sin localStorage la zona no se recuerda tras recargar */
+  }
+  preguntandoZona.value = false;
+  asignacion.clear(); // los teléfonos vuelven a tomar cámara por orden, en las de esta zona
+  asignacionVersion.value++;
+  fijarModoVivo(true);
+}
 
 export const motorVivo = { mapa, config, zonas, ranuras, sobrantes, vivas, calor, historias, sinUbicar, conteo, resumen, servicioActivo, error, inicio, ahora };

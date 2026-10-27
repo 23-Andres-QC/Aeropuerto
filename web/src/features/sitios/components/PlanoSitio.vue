@@ -306,6 +306,21 @@ watch(vista, (v) => {
   }
   if (v.w > 0 && !(props.enlace && misma(props.enlace, v))) emit("update:enlace", { ...v });
 });
+// Con planos enlazados, si tras un momento sin cambios este quedó en otra vista que la compartida (una animación interrumpida, un plano que
+// restauró su vista recordada), vuelve a ella: los dos planos no pueden quedarse en lugares distintos.
+let reparar: ReturnType<typeof setTimeout> | undefined;
+function programarReparacion() {
+  clearTimeout(reparar);
+  reparar = setTimeout(() => {
+    const e = props.enlace;
+    if (!e || e.w <= 0 || misma(acotar(e), vista.value)) return;
+    cancelAnimationFrame(animacion);
+    sigueAlOtro = true;
+    vista.value = acotar(e);
+  }, 900);
+}
+watch([vista, () => props.enlace], () => props.enlace && programarReparacion());
+onUnmounted(() => clearTimeout(reparar));
 watch(
   () => props.enlace,
   (v) => {

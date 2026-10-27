@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, type Config, type Replay, type Sesion } from "../api";
 import VistaTelefono from "../../telefonos/components/VistaTelefono.vue";
 import PlanoSitio, { type PersonaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
-import { CAMARAS_VIVO, CELDA_CALOR, LINEA_CONTEO, SESION_VIVO, ajusteMapa, capturaDePrueba, capturasVersion, fijarUnion, unidasAhora, unirPorPosicion, grabando, iniciarGrabacion, terminarGrabacion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura, zonaVivo } from "../enVivo";
+import { camarasVivo, CELDA_CALOR, LINEA_CONTEO, SESION_VIVO, ajusteMapa, capturaDePrueba, capturasVersion, fijarUnion, unidasAhora, unirPorPosicion, grabando, iniciarGrabacion, terminarGrabacion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura, zonaVivo, zonaElegida } from "../enVivo";
 import type { VistaGuardada } from "../vistaPlano";
 import { useRoute } from "vue-router";
 import { useSitios } from "../useSitios";
 
 const route = useRoute();
+/** Esta misma pantalla abre también una captura guardada (desde Registros, «Mapear en el plano»): ahí nunca es en vivo, aunque el modo en vivo siga prendido. */
+const soloCaptura = route.meta.captura === true;
+const enVivo = computed(() => modoVivo.value && !soloCaptura);
 const { slug } = useSitios();
 const config = ref<Config>();
 const sesiones = ref<Sesion[]>([]);
@@ -27,15 +30,15 @@ let ultimaSincronia = 0;
 
 const sesion = computed(() => sesiones.value.find((s) => s.session_id === sesionId.value));
 const mapa = computed(() => mapaDelSitio(config.value));
-// En vivo el plano muestra solo las cámaras que toman los teléfonos (cam01 y cam02); una sesión grabada, todas las suyas.
+// En vivo el plano muestra solo las cámaras que toman los teléfonos (las de la zona: cam01 a cam03 en el patio, cam04 y cam05 en el comedor); una sesión grabada, todas las suyas.
 const camarasPlano = computed(() =>
-  modoVivo.value ? config.value?.cameras.filter((c) => CAMARAS_VIVO.includes(c.camera_id)) : config.value?.cameras,
+  enVivo.value ? config.value?.cameras.filter((c) => camarasVivo.value.includes(c.camera_id)) : config.value?.cameras,
 );
 // «En vivo» es un modo de todo el sistema (lo recuerda el navegador y sigue al cambiar de sección): los teléfonos
 // conectados son las cámaras del sitio (el primero cam01, luego cam02; cam03 es solo del video grabado). Elegir una
 // sesión guardada lo apaga.
 const valorSesion = computed({
-  get: () => (modoVivo.value ? SESION_VIVO : sesionId.value),
+  get: () => (enVivo.value ? SESION_VIVO : sesionId.value),
   set: (v: string) => {
     if (v === SESION_VIVO) {
       fijarModoVivo(true);
@@ -50,12 +53,28 @@ const vistaPlanos = ref<VistaGuardada | null>(null);
 const planoSeguimiento = ref<InstanceType<typeof PlanoSitio> | null>(null);
 /** Las zonas grabadas del sitio: el patio y las demás (el comedor), para ir a ellas con un solo clic. */
 const zonasGrabadas = computed(() => [{ clave: "sitio", nombre: "Patio" }, ...(mapa.value?.capas ?? []).map((c) => ({ clave: c.nombre, nombre: c.nombre.replace(/^Zona grabada \d+\s*·\s*/i, "").replace(/^./, (m) => m.toUpperCase()) }))]);
-// Zona que se graba en vivo. Hoy se prueba solo el patio (las cámaras, la calibración y el modelo son de esa zona); las demás zonas
-// grabadas del campus (el comedor) salen en la lista pero se activarán cuando tengan sus cámaras.
+// Al activar el en vivo se eligió patio o comedor: el plano se acerca a esa zona (también si se cambia con el modo ya activo).
+watch(
+  [zonaElegida, () => planoSeguimiento.value, () => mapa.value?.capas?.length],
+  async ([z, plano]) => {
+    if (!plano || !enVivo.value) return;
+    await nextTick();
+    const destino = zonasGrabadas.value.find((x) => x.nombre.toLowerCase() === z.toLowerCase());
+    if (!destino) return;
+    plano.ir(destino.clave);
+    // Si el plano se quedó en otra zona (restauró su vista recordada, o la animación se interrumpió), se vuelve a pedir.
+    setTimeout(() => {
+      if (enVivo.value && zonaElegida.value === z && lugar.value !== destino.clave) planoSeguimiento.value?.ir(destino.clave);
+    }, 1800);
+  },
+  { immediate: true },
+);
+// Zona que se graba en vivo: la que se eligió al activar el en vivo (patio o comedor). Para cambiarla se sale del en vivo y se vuelve a activar;
+// «general» (las dos a la vez) llegará después.
 const zonasAGrabar = computed(() => [
-  { clave: "sitio", nombre: mapa.value?.campus?.nombre || "Patio", activa: true },
-  ...(mapa.value?.capas ?? []).map((c) => ({ clave: c.nombre, nombre: c.nombre, activa: false })),
-  ...(mapa.value?.capas?.length ? [{ clave: "general", nombre: "General · patio y comedor a la vez", activa: false }] : []),
+  { clave: "sitio", nombre: "Patio", activa: true, elegida: zonaElegida.value === "Patio" },
+  ...(mapa.value?.capas ?? []).map((c) => ({ clave: c.nombre, nombre: c.nombre.replace(/^Zona grabada \d+\s*·\s*/i, "").replace(/^./, (m) => m.toUpperCase()), activa: true, elegida: zonaElegida.value === "Comedor" })),
+  ...(mapa.value?.capas?.length ? [{ clave: "general", nombre: "General · patio y comedor a la vez", activa: false, elegida: false }] : []),
 ]);
 /** Zona grabada de una sesión: la del comedor lo declara en su resumen (`zona`); todo lo demás es del patio. */
 const zonaDe = (s: Sesion) => (typeof s.summary?.zona === "string" ? s.summary.zona : "sitio");
@@ -99,7 +118,7 @@ function realzarCalor(celdas: [number, number, number][]): [number, number, numb
   return comprimidas.filter((c) => c[2] >= pico * 0.08);
 }
 const calorBase = computed<[number, number, number][]>(() => {
-  if (modoVivo.value) return vivo.calor.value;
+  if (enVivo.value) return vivo.calor.value;
   if (!verGrabacion.value || !replay.value) return [];
   const celdas = new Map<string, [number, number, number]>();
   for (const p of replay.value.personas) {
@@ -229,8 +248,8 @@ const trazos = computed(() => {
   }
   return { personas, recorridos };
 });
-const personas = computed(() => (modoVivo.value ? vivo.vivas.value.personas : !verGrabacion.value ? [] : trazos.value.personas));
-const recorridos = computed(() => (modoVivo.value ? vivo.vivas.value.recorridos : !verGrabacion.value ? [] : trazos.value.recorridos));
+const personas = computed(() => (enVivo.value ? vivo.vivas.value.personas : !verGrabacion.value ? [] : trazos.value.personas));
+const recorridos = computed(() => (enVivo.value ? vivo.vivas.value.recorridos : !verGrabacion.value ? [] : trazos.value.recorridos));
 const enPlano = computed(() => personas.value.filter((p) => p.estado !== "salio"));
 const totalEnPlano = computed(() => enPlano.value.length);
 
@@ -242,7 +261,7 @@ const presentes = computed(() => {
 
 async function cargarSesion() {
   if (!sesionId.value) return;
-  if (modoVivo.value) {
+  if (enVivo.value) {
     pausar();
     replay.value = undefined;
     cargando.value = false;
@@ -337,16 +356,27 @@ watch(velocidad, () => sincronizar(true));
 watch(sesionId, cargarSesion);
 // Al acercarse a otra zona grabada se elige una de sus sesiones (la que tenga recorridos primero).
 watch(lugar, (zona) => {
-  if (modoVivo.value || zona === "campus" || (sesion.value && zonaDe(sesion.value) === zona)) return;
+  if (enVivo.value || zona === "campus" || (sesion.value && zonaDe(sesion.value) === zona)) return;
   const propias = sesiones.value.filter((s) => zonaDe(s) === zona);
   const elegida = propias.find((s) => s.kind === "BUILD" && s.points > 0) ?? propias[0];
   if (elegida) sesionId.value = elegida.session_id;
 });
 // Al entrar o salir del modo en vivo: lo guardado se suelta o se vuelve a cargar.
-watch(modoVivo, cargarSesion);
+watch(enVivo, cargarSesion);
 // Cada captura en vivo que se guarda (sola o a pedido) aparece enseguida en el selector.
 watch(capturasVersion, async () => {
   sesiones.value = await api.sesiones(slug.value);
+});
+
+// Una captura pedida desde Registros abre el plano en la zona donde se grabó (el comedor, por ejemplo), no en el patio.
+let zonaInicial = "";
+watch(planoSeguimiento, async (plano) => {
+  if (!plano || !zonaInicial) return;
+  const zona = zonaInicial;
+  zonaInicial = "";
+  if (zona === "sitio") return;
+  await nextTick();
+  plano.ir(zona);
 });
 
 onMounted(async () => {
@@ -355,11 +385,12 @@ onMounted(async () => {
     const pedida = typeof route.query.sesion === "string" ? route.query.sesion : "";
     const elegida = sesiones.value.find((s) => s.session_id === pedida);
     // Venir desde Registros con una captura elegida: se recorre esa en el plano, no lo que pasa ahora.
-    if (elegida) fijarModoVivo(false);
+    if (elegida && !soloCaptura) fijarModoVivo(false);
     // Sin otra pedida, la del patio: el plano abre con todo el campus a la vista, donde solo están las sesiones del patio.
     const build = elegida ?? sesiones.value.find((s) => zonaDe(s) === "sitio" && s.kind === "BUILD" && s.points > 0) ?? sesiones.value.find((s) => zonaDe(s) === "sitio") ?? sesiones.value[0];
     if (build) sesionId.value = build.session_id;
     else cargando.value = false;
+    if (elegida) zonaInicial = zonaDe(elegida);
   } catch (e) {
     error.value = (e as Error).message;
     cargando.value = false;
@@ -375,18 +406,18 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   </p>
 
   <!-- El plano se muestra aunque el sitio aún no tenga sesiones (LAP): la reproducción aparece cuando haya una. -->
-  <div v-if="mapa" class="envivo-esan" :class="{ vivo: modoVivo }">
+  <div v-if="mapa" class="envivo-esan" :class="{ vivo: enVivo }">
     <section class="panel plano-panel" :class="{ 'en-campus': lugar === 'campus' }">
       <div class="panel-heading">
         <h2>Plano <span class="dato">· {{ (mapa.tam_px[0] / mapa.px_por_metro).toFixed(0) }} × {{ (mapa.tam_px[1] / mapa.px_por_metro).toFixed(0) }} m</span></h2>
-        <span v-if="modoVivo" class="heading-meta">
+        <span v-if="enVivo" class="heading-meta">
           <span v-if="capturaDePrueba" class="pill prueba" title="Hay un teléfono simulado: se ve, pero esta captura no se guarda en la base">PRUEBA · no se guarda</span>
           <span v-if="grabando && !capturaDePrueba" class="pill grabando">● GRABANDO</span><span class="pill en-vivo" data-prueba="pill-en-vivo">● EN VIVO{{ zonaVivo ? ` · ${zonaVivo.toUpperCase()}` : "" }}</span><span class="pill">{{ totalEnPlano }} en el plano</span>
         </span>
         <span v-else-if="replay" class="heading-meta"><span class="pill">{{ enPlano.length }} en el plano</span><span class="pill">{{ replay.personas.length }} personas</span></span>
         <span v-else-if="!cargando && !sesiones.length" class="pill">sin sesiones</span>
       </div>
-      <div v-if="modoVivo" class="barra-vivo">
+      <div v-if="enVivo" class="barra-vivo">
         <div v-if="zonasAGrabar.length > 1" class="zona-a-grabar" role="group" aria-label="Zona a grabar" data-prueba="zona-a-grabar">
           <span class="etiqueta-zona">Zona a grabar</span>
           <button
@@ -394,10 +425,10 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
             :key="z.clave"
             type="button"
             class="opcion-zona"
-            :class="{ elegida: z.clave === 'sitio' }"
-            :disabled="!z.activa"
-            :aria-pressed="z.clave === 'sitio'"
-            :title="z.activa ? 'Se graba esta zona' : z.clave === 'general' ? 'Próximamente: en vivo simultáneo en el patio y el comedor' : 'Próximamente: esta zona aún no tiene sus cámaras'"
+            :class="{ elegida: z.elegida }"
+            :disabled="true"
+            :aria-pressed="z.elegida"
+            :title="z.activa ? (z.elegida ? 'Se graba esta zona. Para cambiarla, sal del en vivo y actívalo de nuevo' : 'Para grabar esta zona, sal del en vivo y actívalo de nuevo') : z.clave === 'general' ? 'Próximamente: en vivo simultáneo en el patio y el comedor' : 'Próximamente: esta zona aún no tiene sus cámaras'"
             :data-prueba="z.activa ? 'zona-activa' : 'zona-proxima'"
           >
             {{ z.nombre }}<small v-if="!z.activa"> · próximamente</small>
@@ -433,15 +464,15 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
       <div class="planos-par">
         <div class="plano-caja">
           <h3 class="plano-titulo">Seguimiento</h3>
-          <PlanoSitio ref="planoSeguimiento" :mapa="mapa" :zonas="config?.zones ?? []" :personas="personas" :recorridos="recorridos" :camaras="camarasPlano" inicio="sitio" zoom :recordar="modoVivo" v-model:enlace="vistaPlanos" @lugar="lugar = $event" />
+          <PlanoSitio ref="planoSeguimiento" :mapa="mapa" :zonas="config?.zones ?? []" :personas="personas" :recorridos="recorridos" :camaras="camarasPlano" inicio="sitio" zoom :recordar="enVivo" v-model:enlace="vistaPlanos" @lugar="lugar = $event" />
         </div>
         <div class="plano-caja">
           <h3 class="plano-titulo">Mapa de calor</h3>
           <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :calor="calorPlano" :calor-max="calorTope" :celda-calor="CELDA_CALOR" :mostrar-camaras="false" inicio="sitio" zoom v-model:enlace="vistaPlanos" />
         </div>
       </div>
-      <p v-if="otraZona && !modoVivo" class="aviso-zona" role="status" data-prueba="zona-sin-videos"><b>{{ otraZona }}</b> sin videos grabados.</p>
-      <div v-if="replay && !modoVivo && verGrabacion" class="controles">
+      <p v-if="otraZona && !enVivo" class="aviso-zona" role="status" data-prueba="zona-sin-videos"><b>{{ otraZona }}</b> sin videos grabados.</p>
+      <div v-if="replay && !enVivo && verGrabacion" class="controles">
         <button class="primary-button" type="button" @click="reproduciendo ? pausar() : reproducir()">{{ reproduciendo ? "❚❚ Pausa" : "▶ Reproducir" }}</button>
         <button type="button" @click="reiniciar">↺</button>
         <input class="linea-tiempo" type="range" :min="ventana.inicio" :max="ventana.fin" step="0.05" :value="t" @input="buscar" aria-label="Tiempo de la sesión" />
@@ -476,7 +507,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
           </optgroup>
         </select>
       </label>
-      <div v-if="modoVivo" class="lado-vivo">
+      <div v-if="enVivo" class="lado-vivo">
         <div class="camaras-lado" aria-label="Teléfonos y cámaras del plano">
           <div v-for="r in vivo.ranuras.value" :key="r.camara" class="ranura-col">
             <VistaTelefono v-if="r.telefono" :id="r.telefono.id" :nombre="`${r.camara} · ${r.telefono.nombre}${r.telefono.simulado ? ' (prueba)' : ''}`" :estado="r.estado" :linea="LINEA_CONTEO" compacta sin-quitar />
@@ -655,6 +686,10 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
 .opcion-zona:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+.opcion-zona.elegida:disabled {
+  opacity: 1;
+  cursor: default;
 }
 .opcion-zona small {
   font-weight: 500;
