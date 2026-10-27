@@ -94,6 +94,23 @@ Consecuencia: mientras la tienda crea que con las ventas le alcanza, no paga. La
 
 3. En cada tienda, antes de mostrar nada, haz las 6 preguntas del guion de la sección 13 del plan y anota las respuestas textuales.
 
+## Evaluaciones anteriores del plan
+
+El plan completo, con todas las evaluaciones, está en [docs/plan-de-negocio-aerovision.md](../plan-de-negocio-aerovision.md). Resumen de cada una:
+
+| Evaluación | Resultado | Sección del plan |
+| --- | --- | --- |
+| Cadena lógica | 7 eslabones (problema → cliente → solución → valor → precio → costo → escala); ninguno probado con un cliente peruano | La lógica del negocio en una página |
+| Mercado | Mundial: ~US$ 1,450 millones en 2025, ~13% al año. Perú: ~10,900 tiendas posibles (~S/ 19.5 millones al año); meta 2031: 750 tiendas y 350 pantallas (~S/ 2.1 millones) | 5 |
+| Competencia | FootfallCam ya analiza pasillos con CCTV; V-Count cobra ~US$ 50 por sensor al mes; en la vía pública mide Outdoor Metrics; dentro de malls y aeropuertos no hay medición con cámaras | 5 |
+| Modelo Canvas | Propuesta: saber cuánta gente capta una tienda y cuánta ve una pantalla, con las cámaras existentes y sin hardware nuevo. Segmentos: tiendas primero, luego JCDecaux y anunciantes | 6 |
+| Precios | Tienda: diagnóstico S/ 900 + S/ 149 al mes. Publicidad: estudio S/ 4,000 + S/ 180 al mes por pantalla. Extra: valor de locales S/ 15,000 | 7 |
+| Costos | Procesar grabaciones por lotes en una PC propia: ~S/ 10 por cámara al mes, frente a ~S/ 73 en la nube a demanda y ~S/ 613 en vivo. Margen: 73–81% por tienda, 83–88% por pantalla | 8 |
+| Pronóstico | S/ 51 mil en 2027 → ~S/ 2 millones en 2031, 82% recurrente; con S/ 5,000 y medio tiempo la caja nunca baja de la reserva | 9 |
+| Prueba de estrés | Precio de tienda S/ 99, la mitad de tiendas, procesar al doble de costo o publicidad a la mitad: el negocio se sostiene y crece más lento | 9 |
+| FODA | Fuerte en producto, débil en tracción: sin clientes, precisión sin validar, equipo a medio tiempo; oportunidad en tiendas sin medición y audiencia indoor | 10 |
+| Riesgos y legal | Licencia AGPL del detector por resolver; Ley 29733 (sin rostros, encargo de tratamiento); ciclo de venta largo en grandes recintos | 15 |
+
 ## Lo que noté en cómo piensas
 
 - Corregiste la idea tú mismo: "evaluar si mi tienda capta personas de verdad" y "evaluar un lugar donde colocar publicidad". Esa corrección pesa más que todo lo que yo había escrito sobre rentas.
