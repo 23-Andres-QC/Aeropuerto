@@ -459,6 +459,37 @@ class RedGrabadaIgualALaRed(unittest.TestCase):
             self.assertTrue(torch.allclose(grabada(x), esperado, atol=1e-5), f"lote de {n}")
 
 
+@unittest.skipUnless(torch.cuda.is_available(), "sin GPU no hay NVDEC")
+class LectorGPUIgualAOpenCV(unittest.TestCase):
+    def test_mismos_cuadros_saltando_y_hasta_el_final(self):
+        from lector_gpu import LectorNVDEC, abrir_video
+        from videos_subidos import Ritmo, leer_hasta
+
+        with tempfile.TemporaryDirectory() as carpeta:
+            ruta = Path(carpeta) / "corto.mp4"
+            escritor = cv2.VideoWriter(str(ruta), cv2.VideoWriter_fourcc(*"mp4v"), 30, (320, 192))
+            for k in range(40):
+                cuadro = np.zeros((192, 320, 3), np.uint8)
+                cv2.circle(cuadro, (8 * k, 96), 30, (0, 200, 255), -1)
+                escritor.write(cuadro)
+            escritor.release()
+            _, primero = cv2.VideoCapture(str(ruta)).read()
+            gpu, cpu = abrir_video(ruta, primero, "cuda:0"), cv2.VideoCapture(str(ruta))
+            self.assertIsInstance(gpu, LectorNVDEC)
+            rg, rc, objetivo = Ritmo(30, "tiempo_real"), Ritmo(30, "tiempo_real"), 0
+            while True:
+                (fg, sg), (fc, sc) = leer_hasta(gpu, rg, objetivo), leer_hasta(cpu, rc, objetivo)
+                if fc is None:
+                    break
+                self.assertEqual(sg, sc)
+                self.assertLess(np.abs(fg.astype(np.int16) - fc).mean(), 1.0)
+                objetivo += 3
+            self.assertIsNone(fg)
+            self.assertEqual(rg.indice, rc.indice)
+            gpu.release()
+            cpu.release()
+
+
 class GeneroPorVotos(unittest.TestCase):
     def test_siempre_hay_etiqueta_con_un_voto_y_la_certeza_nunca_baja_del_50(self):
         self.assertEqual(genero_por_votos([]), (None, None))

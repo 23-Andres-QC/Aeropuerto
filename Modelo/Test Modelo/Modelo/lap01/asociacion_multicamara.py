@@ -333,18 +333,41 @@ class _GatingFisico:
 class _FusionIdentidades:
     """Prototipos multivista, fusiones con emparejamiento mutuo y separación de tracklets en conflicto."""
 
-    def _similitud(self, g1, g2):
+    def _similitud(self, g1, g2, datos=None):
         """(centroide, promedio, umbral, mínimo): prototipo multivista de cada identidad, enlace promedio, umbral
-        aplicable y el par de tracklets menos parecido."""
+        aplicable y el par de tracklets menos parecido. `datos`: los de _datos, si ya se calcularon."""
         if self._n_vistas(g1) < self._minimo(g1, g2) or self._n_vistas(g2) < self._minimo(g2, g1):
             return None
-        grupo_a, grupo_b = self._con_vistas(g1), self._con_vistas(g2)
-        una_camara = len({t.camera_id for t in grupo_a + grupo_b}) == 1
-        umbral = self.same_camera_threshold if una_camara else self.threshold
-        suma_a, suma_b = sum(t.suma for t in grupo_a), sum(t.suma for t in grupo_b)
-        centroide = float(suma_a @ suma_b / (np.linalg.norm(suma_a) * np.linalg.norm(suma_b) + 1e-12))
-        pares = np.stack([t.prototipo() for t in grupo_a]) @ np.stack([t.prototipo() for t in grupo_b]).T
+        datos = datos or self._datos((g1, g2))
+        (camaras_a, suma_a, norma_a, prototipos_a), (camaras_b, suma_b, norma_b, prototipos_b) = datos[g1], datos[g2]
+        umbral = self.same_camera_threshold if len(camaras_a | camaras_b) == 1 else self.threshold
+        centroide = float(suma_a @ suma_b / (norma_a * norma_b + 1e-12))
+        pares = prototipos_a @ prototipos_b.T
         return centroide, float(pares.mean()), umbral, float(pares.min())
+
+    def _datos(self, gids):
+        """Lo que _similitud usa de cada identidad: {gid: (cámaras, suma de vistas, su norma, prototipos apilados)}."""
+        datos = {}
+        for gid in gids:
+            grupo = self._con_vistas(gid)
+            if grupo:
+                suma = sum(t.suma for t in grupo)
+                datos[gid] = ({t.camera_id for t in grupo}, suma, np.linalg.norm(suma),
+                              np.stack([t.prototipo() for t in grupo]))
+        return datos
+
+    def _posibles(self, gb, listas, datos, sumas, normas, vistas, confirmadas):
+        """Las de `listas` que pueden pasar el centroide de _similitud con `gb`, todas en una cuenta: con muchas
+        cámaras y mucha gente, comparar par por par con cada identidad vigente se llevaba casi todo el paso."""
+        _, suma_b, norma_b, _ = datos[gb]
+        b_confirmada = gb in self.confirmadas
+        minimo_a = np.where(~confirmadas & b_confirmada, self.min_query_samples, self.min_samples)
+        minimo_b = np.where(confirmadas & (not b_confirmada), self.min_query_samples, self.min_samples)
+        centroides = sumas @ suma_b / (normas * norma_b + 1e-12)
+        # Con holgura: el centroide que decide es el de _similitud, par por par.
+        ok = ((vistas >= minimo_a) & (self._n_vistas(gb) >= minimo_b)
+              & (centroides >= min(self.threshold, self.same_camera_threshold) - 1e-3))
+        return [listas[i] for i in np.flatnonzero(ok) if listas[i] != gb]
 
     def _con_vistas(self, gid):
         """Tracklets que aportan al enlace promedio: los que tienen vistas suficientes o, si no hay, todos los que tienen alguna."""
@@ -357,13 +380,19 @@ class _FusionIdentidades:
         sucias, self.sucias = self.sucias, set()
         self.vigentes = {g for g in self.vigentes if g in self.globales and self._fin(g) >= self.last_timestamp - self.window}
         listas = [g for g in sorted(self.vigentes) if self._n_vistas(g) >= self.min_query_samples]
+        consultas = sorted(g for g in sucias if g in self.globales and self._n_vistas(g) >= self.min_query_samples)
+        datos = self._datos(set(listas) | set(consultas)) if listas and consultas else {}
+        listas = [g for g in listas if g in datos]
+        if listas:
+            sumas = np.stack([datos[g][1] for g in listas])
+            normas = np.array([datos[g][2] for g in listas])
+            vistas = np.array([self._n_vistas(g) for g in listas])
+            confirmadas = np.array([g in self.confirmadas for g in listas])
         propuestas = []
-        for gb in sorted(g for g in sucias if g in self.globales and self._n_vistas(g) >= self.min_query_samples):
+        for gb in consultas if listas else []:
             candidatas = []
-            for ga in listas:
-                if ga == gb:
-                    continue
-                similitud = self._similitud(ga, gb)
+            for ga in self._posibles(gb, listas, datos, sumas, normas, vistas, confirmadas) if gb in datos else []:
+                similitud = self._similitud(ga, gb, datos)
                 if (similitud is None or similitud[0] < similitud[2]
                         or similitud[1] < self.average_threshold + similitud[2] - self.threshold
                         or similitud[3] < self.min_link_threshold):

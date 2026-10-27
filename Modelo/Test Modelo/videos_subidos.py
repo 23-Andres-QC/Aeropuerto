@@ -33,6 +33,7 @@ import numpy as np
 
 import lap01
 from detector_pose import quitar_envolventes
+from lector_gpu import LectorNVDEC, abrir_video
 
 CANAL_ESTADO = "videos"
 # Ancho máximo del frame que ve la web; el modelo procesa el original.
@@ -82,6 +83,10 @@ SIMULTANEOS = int(os.environ.get("VIDEOS_SIMULTANEOS") or 10)
 #   seguidor van grabados en CUDA graphs (ver lap01.grafos) y los recortes se pasan a float en la GPU, con los mismos
 #   vectores. Con dos videos de 5 min del mismo lugar en tiempo real se procesa el 54 % de los cuadros, no el 36 %:
 #   el seguidor pierde menos a la gente y las cajas se mueven a pasos más cortos;
+# - muchas cámaras: con 7 cámaras de 1080p a 60 fps y ~25 personas en cada una, cada paso tardaba ~1,8 s (0,5 cuadros
+#   por segundo de cada video). Casi todo se iba en decodificar en la CPU los cuadros que se saltan y en comparar cada
+#   identidad con todas las vigentes, par por par. Ahora se decodifica en la GPU (ver lector_gpu), cada video en su
+#   hilo, y el asociador compara de una vez (con las mismas decisiones): ~0,85 s por paso;
 # - cruces: cuando dos personas se cruzan, el seguidor elegía casi solo por movimiento y los dos tracks se cambiaban de
 #   persona (la mayoría de los cambios de ID). Ahora el parecido pesa 0,8 en esa elección (no 0,22), cuenta con un 80 %
 #   del vector profundo (no 20 %: el color distingue poco a gente vestida parecida) y un track activo sigue a una caja sin
@@ -219,8 +224,20 @@ class Ritmo:
         return objetivo if objetivo > self.indice else None
 
 
+def _leer(video):
+    """(video.leer(), None), o (None, el error) si falló."""
+    try:
+        return video.leer(), None
+    except Exception as error:
+        return None, error
+
+
 def leer_hasta(cap, ritmo, objetivo):
     """(frame, saltados): lee hasta el frame `objetivo` pasando de largo los anteriores; frame None al acabarse."""
+    if isinstance(cap, LectorNVDEC):
+        frame, indice = cap.ir_a(objetivo)
+        saltados, ritmo.indice = indice - ritmo.indice - (frame is not None), indice
+        return frame, saltados
     saltados = 0
     while ritmo.indice < objetivo - 1:
         if not cap.grab():
@@ -364,9 +381,10 @@ class VideoEnProceso:
         total = self.cap.get(cv2.CAP_PROP_FRAME_COUNT)
         self.total = int(total) if math.isfinite(total) and total > 0 else None
         self.alto, self.ancho = primero.shape[:2]
-        # El primer frame ya se leyó para validar el archivo: se vuelve a abrir para empezar desde el 0.
+        # El primer frame ya se leyó para validar el archivo: se vuelve a abrir para empezar desde el 0, en la GPU si
+        # se puede (ver lector_gpu).
         self.cap.release()
-        self.cap = cv2.VideoCapture(str(ruta))
+        self.cap = abrir_video(ruta, primero, motor.device)
         self.motor = motor_aparte(motor)
         # El seguidor cuenta frames procesados, uno tras otro: con el número del frame en el video, los saltos del
         # tiempo real le hacían creer que cada persona había desaparecido un rato y la perdía.
@@ -514,6 +532,8 @@ class VideosSubidos:
         self.hechos = set()          # ids ya procesados, quitados o fallidos: no se repiten
         # Un hilo por video: el seguidor, el género y el Re-ID de cada uno corren a la vez (cada video tiene los suyos).
         self.hilos = ThreadPoolExecutor(max_workers=SIMULTANEOS, thread_name_prefix="video")
+        # Y otro por video para leerlo (ver _leer_y_detectar).
+        self.lectores = ThreadPoolExecutor(max_workers=SIMULTANEOS, thread_name_prefix="video-lectura")
         # El hilo que lee y detecta la próxima pasada (ver el módulo): deja a lo más una lista para el lazo principal.
         # `bloqueo` cuida `activos`: el lector no lee un video mientras el lazo lo abre, lo cierra o lo suelta.
         self.bloqueo, self.parar = threading.Lock(), threading.Event()
@@ -569,10 +589,14 @@ class VideosSubidos:
         son (id, estado, mensaje) de los que terminaron o fallaron al leerse."""
         lote, fines = [], []
         with self.bloqueo:
-            for vid, (video, _) in list(self.activos.items()):
-                try:
-                    leido = video.leer()
-                except Exception as error:
+            activos = [(vid, video) for vid, (video, _) in self.activos.items()]
+            # Cada video se lee en su hilo: en tiempo real, decodificar los cuadros que se saltan es casi todo el trabajo
+            # del lector, y NVDEC rinde más con varios a la vez (7 videos 1080p60: ~450 cuadros/s de a uno, ~660 juntos).
+            lectores = getattr(self, "lectores", None)
+            leidos = (list(lectores.map(_leer, [video for _, video in activos])) if len(activos) > 1 and lectores
+                      else [_leer(video) for _, video in activos])
+            for (vid, video), (leido, error) in zip(activos, leidos):
+                if error is not None:
                     fines.append((vid, "error", f"El modelo falló con este video: {error}"))
                     continue
                 if leido is None:
@@ -816,6 +840,7 @@ class VideosSubidos:
             cancelar.set()
         for video, _ in self.activos.values():
             video.cerrar()
-        if getattr(self, "hilos", None) is not None:
-            self.hilos.shutdown(wait=False)
+        for hilos in (getattr(self, "hilos", None), getattr(self, "lectores", None)):
+            if hilos is not None:
+                hilos.shutdown(wait=False)
         shutil.rmtree(self.carpeta, ignore_errors=True)
