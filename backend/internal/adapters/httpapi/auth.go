@@ -160,7 +160,8 @@ func (a *Auth) scope(w http.ResponseWriter, r *http.Request, p Principal) bool {
 	case RoleAdmin:
 		return true
 	case domain.RoleSecurity, domain.RoleBusiness:
-		if (r.Method == http.MethodGet && path == "/api/v1/auth/me") || (r.Method == http.MethodPost && path == "/api/v1/auth/password") {
+		// "Mi perfil" y sus solicitudes son de cada cuenta: cualquier rol con sesión propia puede usarlas.
+		if (r.Method == http.MethodGet && path == "/api/v1/auth/me") || (r.Method == http.MethodPost && path == "/api/v1/auth/password") || strings.HasPrefix(path, "/api/v1/mi/") {
 			return true
 		}
 		if m := domain.ModuleOf(r.Method, path); domain.Can(p.Role, m) {

@@ -48,6 +48,7 @@ PISO_PX = (110.0, 110.0, 1080.0, 747.0)  # el piso del comedor en el dibujo (u0,
 # SIM_SALTO si hubo un hueco, y SIM_CAMARAS para decir que dos cámaras ven a la misma persona.
 UNIR_S, VMAX, D0, MAX_SOLAPE = 120.0, 1.8, 1.5, 2
 SIM_MIN, SIM_CERCA, SIM_CAMARAS = 0.70, 0.62, 0.80
+DIST_MAX_M = 4.5  # (también es el margen de ubicación para el salto entre cámaras sin verse a la vez)  # dos cámaras que ven a la vez a la misma persona la ubican a menos de esto (mediana); más lejos = personas distintas
 EMB_CADA, EMB_ALTO, EMB_CONF, EMB_IOU = 2, 28, 0.3, 0.35  # un vector cada 2 cuadros procesados, de cajas de al menos 28 px de alto
 
 
@@ -357,8 +358,12 @@ def recorridos(cuadros, camara, tam, embs, mats=None):
     return personas, vectores
 
 
-def unir_camaras(resultados):
+def unir_camaras(resultados, forzadas=(), mismas=()):
     """La misma persona vista por dos cámaras lleva el mismo número: se une lo que se parece con mucha seguridad (Re-ID), de a una pareja.
+    `forzadas` (camaras_video.json → "equivalencias") son parejas confirmadas a ojo, como ["cam04:167", "cam05:135"] (cámara:ID del seguidor,
+    el número «L» de la etiqueta del video): se unen primero y esas personas ya no entran al emparejamiento automático.
+    `mismas` ("mismas_personas") junta DESPUÉS del emparejamiento automático los grupos finales de dos IDs del seguidor que son la misma persona
+    (el sistema les dio dos números, p. ej. G1 y G5): se unen con todo lo que cada grupo ya tenía, en cualquiera de las cámaras.
     Los números quedan únicos en toda la sesión (1, 2, 3… sin repetirse entre cámaras)."""
     padre = {}
 
@@ -372,11 +377,44 @@ def unir_camaras(resultados):
     for x in nodos:
         raiz(x)
     unidos = 0
+    por_id = {r["id"]: r for r in resultados}
+    fijas = set()
+    for par in forzadas:
+        try:
+            (ca, ia), (cb, ib) = (x.split(":") for x in par)
+            na, nb = por_id[ca]["personas"][int(ia)][0], por_id[cb]["personas"][int(ib)][0]
+        except (KeyError, ValueError):
+            print(f"equivalencia ignorada (no existe): {par}")
+            continue
+        padre[raiz((cb, nb))] = raiz((ca, na))
+        fijas |= {(ca, na), (cb, nb)}
+        unidos += 1
+    # Dónde estuvo cada persona (t, x, y) en cada cámara: dos que se ven a la vez a más de DIST_MAX_M no pueden ser la misma persona.
+    trayectos = {}
+    for r in resultados:
+        for i, (n, pts) in r["personas"].items():
+            trayectos.setdefault((r["id"], n), []).extend((q[0], q[1], q[2]) for q in pts)
+    trayectos = {k: np.array(sorted(v)) for k, v in trayectos.items()}
+
+    def compatible(ca, na, cb, nb):
+        pa, pb = trayectos.get((ca, na)), trayectos.get((cb, nb))
+        if pa is None or pb is None:
+            return True
+        d = [math.hypot(pb[j, 1] - x, pb[j, 2] - y) for t, x, y in pa for j in [int(np.argmin(np.abs(pb[:, 0] - t)))] if abs(pb[j, 0] - t) <= 0.5]
+        if len(d) >= 5:
+            return float(np.median(d)) <= DIST_MAX_M
+        # Sin verse a la vez: del último punto de una al primero de la otra no se puede haber ido más rápido que VMAX_PUNTO (más el error de ubicación).
+        dt = max(0.0, max(pa[0, 0], pb[0, 0]) - min(pa[-1, 0], pb[-1, 0]))
+        if dt > 0:
+            a, b = (pa, pb) if pa[-1, 0] <= pb[0, 0] else (pb, pa)
+            return math.hypot(b[0, 1] - a[-1, 1], b[0, 2] - a[-1, 2]) <= DIST_MAX_M + VMAX_PUNTO * dt
+        return True
+
     for a in range(len(resultados)):
         for b in range(a + 1, len(resultados)):
             ra, rb = resultados[a], resultados[b]
             cand = [(float(va["e"] @ vb["e"]), na, nb) for na, va in ra["vectores"].items() for nb, vb in rb["vectores"].items()
-                    if va["e"] is not None and vb["e"] is not None and va["n"] >= 3 and vb["n"] >= 3]
+                    if (ra["id"], na) not in fijas and (rb["id"], nb) not in fijas and compatible(ra["id"], na, rb["id"], nb) and va["e"] is not None and vb["e"] is not None and va["n"] >= 3 and vb["n"] >= 3]
             usados_a, usados_b = set(), set()
             for sim, na, nb in sorted(cand, reverse=True):
                 if sim < SIM_CAMARAS or na in usados_a or nb in usados_b:
@@ -385,6 +423,16 @@ def unir_camaras(resultados):
                 usados_b.add(nb)
                 padre[raiz((rb["id"], nb))] = raiz((ra["id"], na))
                 unidos += 1
+    for par in mismas:
+        try:
+            (ca, ia), (cb, ib) = (x.split(":") for x in par)
+            na, nb = por_id[ca]["personas"][int(ia)][0], por_id[cb]["personas"][int(ib)][0]
+        except (KeyError, ValueError):
+            print(f"mismas_personas ignorada (no existe): {par}")
+            continue
+        if raiz((ca, na)) != raiz((cb, nb)):
+            padre[raiz((cb, nb))] = raiz((ca, na))
+            unidos += 1
     numero, asignado = 0, {}
     for x in nodos:
         if raiz(x) not in asignado:
@@ -393,6 +441,75 @@ def unir_camaras(resultados):
     for r in resultados:
         r["personas"] = {i: (asignado[raiz((r["id"], n))], pts) for i, (n, pts) in r["personas"].items()}
     return unidos
+
+
+ALCANCE_M, VMAX_PUNTO, VENTANA_S, TAU_EMPALME_S = 16.0, 2.5, 1.2, 4.0
+
+
+def depurar_puntos(resultados):
+    """Una sola trayectoria por persona, antes de publicar (los IDs y las cajas del video no cambian):
+    1. se descarta lo que queda a más de ALCANCE_M de su cámara (lejos un píxel son metros);
+    2. cuando dos cámaras ven a la vez a la misma persona, su posición es el promedio de ambas, con más peso a la más cercana (error ~ distancia²);
+    3. cuando solo la ve una, se le suma la diferencia que había entre las dos justo antes (empalme), que se va desvaneciendo (TAU_EMPALME_S):
+       así, si una cámara salta o deja de ver, la otra sostiene el avance y el cambio de cámara no da brincos;
+    4. lo que implicaría correr a más de VMAX_PUNTO m/s se descarta, y una mediana de ±VENTANA_S s deja quieto a quien está quieto."""
+    centro = {r["id"]: r["camara"].pose_m()[0] for r in resultados}
+    por_numero, total = {}, 0
+    for r in resultados:
+        cx, cy = centro[r["id"]]
+        for i, (n, pts) in r["personas"].items():
+            total += len(pts)
+            for p in pts:
+                d = math.hypot(p[1] - cx, p[2] - cy)
+                if d <= ALCANCE_M:
+                    por_numero.setdefault(n, {}).setdefault(round(p[0] * FPS_SALIDA), {}).setdefault(r["id"], []).append((p, d, i))
+    validos = {}
+    for n, bins in por_numero.items():
+        serie, desfase = [], {}  # desfase[cámara] = (dx, dy, t): fusión − lo que ve esa cámara
+        for b in sorted(bins):
+            est = {}
+            for cam, lst in bins[b].items():
+                mejor = min(lst, key=lambda q: q[1])
+                est[cam] = (float(np.mean([q[0][1] for q in lst])), float(np.mean([q[0][2] for q in lst])), mejor[1], mejor[2], mejor[0])
+            t = float(np.mean([e[4][0] for e in est.values()]))
+            primaria = min(est, key=lambda c: est[c][2])
+            if len(est) > 1:
+                w = {c: 1.0 / (e[2] ** 2 + 1.0) for c, e in est.items()}
+                sw = sum(w.values())
+                x, y = (sum(w[c] * est[c][0] for c in est) / sw, sum(w[c] * est[c][1] for c in est) / sw)
+                for c, e in est.items():
+                    desfase[c] = (x - e[0], y - e[1], t)
+            else:
+                e = est[primaria]
+                x, y = e[0], e[1]
+                if primaria in desfase:
+                    dx, dy, t0 = desfase[primaria]
+                    f = math.exp(-(t - t0) / TAU_EMPALME_S)
+                    x, y = x + dx * f, y + dy * f
+            serie.append((t, x, y, est[primaria][4][3], est[primaria][4][4], primaria, est[primaria][3]))
+        fijos, ultimo, malos = [], None, 0
+        for q in serie:
+            if ultimo is not None:
+                dt = max(q[0] - ultimo[0], 1.0 / FPS_SALIDA)
+                if math.hypot(q[1] - ultimo[1], q[2] - ultimo[2]) / dt > VMAX_PUNTO and malos < 12:
+                    malos += 1
+                    continue
+            malos = 0
+            ultimo = q
+            fijos.append(q)
+        for q in fijos:
+            vec = [o for o in fijos if abs(o[0] - q[0]) <= VENTANA_S]
+            validos.setdefault((q[5], q[6]), []).append((q[0], float(np.median([o[1] for o in vec])), float(np.median([o[2] for o in vec])), q[3], q[4]))
+    quitados = 0
+    for r in resultados:
+        for i, (n, pts) in list(r["personas"].items()):
+            nuevos = sorted(validos.get((r["id"], i), []))
+            quitados += len(pts) - len(nuevos)
+            if len(nuevos) >= 2:
+                r["personas"][i] = (n, nuevos)
+            else:
+                del r["personas"][i]
+    print(f"depuración: {quitados} de {total} puntos descartados o fusionados (lejos, la otra cámara ya la veía o saltos imposibles)")
 
 
 def hoja_contacto(video, cuadros, personas, salida, n=6):
@@ -602,7 +719,7 @@ def main():
     for par in args.video:
         camara_id, ruta = par.split("=", 1)
         resultados.append(analizar(camara_id, config, ruta, args, salida, embebedor))
-    unidos = unir_camaras(resultados) if len(resultados) > 1 else 0
+    unidos = unir_camaras(resultados, config.get("equivalencias", []), config.get("mismas_personas", [])) if len(resultados) > 1 else 0
     total = len({n for r in resultados for n, _ in r["personas"].values()})
     print(f"{total} personas en la sesión ({unidos} vistas por más de una cámara)")
     for r in resultados:
@@ -612,6 +729,7 @@ def main():
             hoja_contacto(r["ruta"], r["cuadros"], r["personas"], salida / f"hoja_{r['id']}.jpg")
     if args.sin_video:
         return
+    depurar_puntos(resultados)
     carga = sesion_para_bd(resultados, config)
     (salida / "comedor_sesion.json").write_text(json.dumps(carga, ensure_ascii=False), encoding="utf-8")
     print("listo", salida)

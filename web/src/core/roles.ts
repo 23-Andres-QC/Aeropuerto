@@ -22,7 +22,7 @@ export function moduloDeRuta(ruta: string): Modulo | null {
   if (m) return SECCION_A_MODULO[m[1]] ?? null;
   if (ruta === "/telefonos") return "telefonos";
   if (ruta === "/videos") return "videos";
-  if (ruta === "/cuentas") return "usuarios";
+  if (ruta === "/cuentas" || ruta === "/solicitudes") return "usuarios";
   return null;
 }
 
@@ -30,7 +30,7 @@ export function moduloDeRuta(ruta: string): Modulo | null {
 const MODULO_A_SECCION: Partial<Record<Modulo, string>> = { en_vivo: "en-vivo", insights: "insights", ventas: "ventas", registros: "registros", configuracion: "configuracion" };
 
 /** Rutas que cualquiera con sesión puede ver, sea cual sea su rol. */
-const PARA_TODOS = ["/privacidad", "/cambiar-clave"];
+const PARA_TODOS = ["/privacidad", "/cambiar-clave", "/perfil"];
 
 /** Donde empieza cada rol: en el sitio que visitó por última vez, en su primer módulo. */
 export function inicioPara(rol: string | undefined, sitio: string, modulos?: readonly string[]): string {
@@ -49,7 +49,7 @@ export function inicioPara(rol: string | undefined, sitio: string, modulos?: rea
 /** ¿Puede este rol abrir esta ruta? El aviso de privacidad y el cambio de clave son de todos; Cuentas, solo del superadmin. */
 export function rutaPermitida(rol: string | undefined, ruta: string, modulos?: readonly string[]): boolean {
   if (PARA_TODOS.includes(ruta)) return true;
-  if (ruta === "/cuentas") return rol === ROL_ADMIN;
+  if (ruta === "/cuentas" || ruta === "/solicitudes") return rol === ROL_ADMIN;
   // Con la lista de módulos del servidor, cada rol abre solo los suyos (seguridad: En vivo, Teléfonos y Videos; negocio: Ventas e Insights).
   const m = moduloDeRuta(ruta);
   if (modulos && m && !modulos.includes(m)) return false;
@@ -57,6 +57,28 @@ export function rutaPermitida(rol: string | undefined, ruta: string, modulos?: r
 }
 
 export const NOMBRE_ROL: Record<string, string> = { superadmin: "Superadmin (Administración LAP)", seguridad: "Seguridad", negocio: "Negocio", maquina: "Scripts" };
+
+/** Qué puede hacer cada rol, en una frase (Mi perfil). */
+export const DESCRIPCION_ROL: Record<string, string> = {
+  superadmin: "Administración total: cuentas, configuración y todos los módulos.",
+  seguridad: "En vivo, Teléfonos y Videos.",
+  negocio: "Ventas e Insights, solo para mirar.",
+};
+
+/**
+ * Las iniciales del círculo de la cuenta: hasta 3 letras del usuario (el de la base de datos). Con una sola palabra («les», «lap») son sus
+ * primeras letras (LES, LAP); con varias («ana.perez», «ana@empresa.com»), la inicial de cada una (AP, ANA).
+ */
+export function inicialesDe(usuario: string): string {
+  const base = usuario.includes("@") ? usuario.split("@")[0] : usuario;
+  const palabras = base
+    .split(/[\s._-]+/)
+    .map((p) => p.replace(/[^\p{L}\p{N}]/gu, ""))
+    .filter(Boolean);
+  if (!palabras.length) return "?";
+  const letras = palabras.length > 1 ? palabras.slice(0, 3).map((p) => p[0]).join("") : palabras[0].slice(0, 3);
+  return letras.toLocaleUpperCase("es");
+}
 
 export const MIN_CLAVE = 12;
 export const MAX_CLAVE = 128;

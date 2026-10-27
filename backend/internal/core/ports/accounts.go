@@ -60,3 +60,25 @@ type PrivacyRepository interface {
 	// PointsState counts the raw positions kept, the oldest session that still has them and the sessions cleared so far.
 	PointsState(ctx context.Context) (domain.PointsState, error)
 }
+
+// RequestRepository keeps what the accounts ask of their administrator (change of e-mail, permission to export).
+type RequestRepository interface {
+	// CreateRequest files a request; domain.ErrConflict when the account already has one of that kind pending.
+	CreateRequest(ctx context.Context, userID, kind, newEmail, note string) (domain.AccountRequest, error)
+	// RequestsOf lists the latest requests of an account, newest first.
+	RequestsOf(ctx context.Context, userID string, limit int) ([]domain.AccountRequest, error)
+	// Requests lists the requests of every account, the pending ones first (only them with onlyPending).
+	Requests(ctx context.Context, onlyPending bool, limit int) ([]domain.AccountRequest, error)
+	RequestByID(ctx context.Context, id int64) (domain.AccountRequest, error)
+	// ResolveRequest answers a pending request (status approved or rejected); domain.ErrConflict when it was already answered.
+	ResolveRequest(ctx context.Context, id int64, status, by string, until *time.Time, now time.Time) (domain.AccountRequest, error)
+	// RevokeExport ends an approved export permission right now; domain.ErrNotFound when there is none running.
+	RevokeExport(ctx context.Context, id int64, now time.Time) (domain.AccountRequest, error)
+	// ExportUntil is when the running export permission of an account ends (nil: it has none).
+	ExportUntil(ctx context.Context, userID string, now time.Time) (*time.Time, error)
+}
+
+// AttachMailer sends an e-mail with one file attached (the PDF or the CSV of Insights). Implementations never log the body.
+type AttachMailer interface {
+	SendAttachment(ctx context.Context, to, subject, html, text, filename, contentType string, data []byte) error
+}

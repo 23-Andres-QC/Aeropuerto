@@ -1,11 +1,11 @@
 {
   "zona": "Zona grabada 2 · comedor",
-  "nota": "cam04: posicion_px y rumbo_deg salen de la cámara cam04 puesta en el plano (Configuración): -48,6 · 15,79 m, 178,9°. cam05: estimados a ojo (extremo de la cocina, mirando al lado contrario de cam04); muévela en Configuración y copia su pose aquí. La altura, la distancia focal y el horizonte también son estimados, no una calibración: si la gente cae donde no es, corrígelos y vuelve a correr procesar_video.py.",
+  "nota": "cam04: posicion_px y rumbo_deg salen de la cámara cam04 puesta en el plano (Configuración): -48,6 · 15,79 m, 178,9°. cam05: estimados a ojo (extremo de la cocina, mirando al lado contrario de cam04); muévela en Configuración y copia su pose aquí. La altura, la distancia focal y el horizonte también son estimados, no una calibración: si la gente cae donde no es, corrígelos y vuelve a correr procesar_video.py. Horizonte y altura de cámara recalibrados con los videos: cam04 y cam05 estuvieron quietas (posiciones del plano confirmadas); se ajustaron con la altura de la cabeza de las personas detectadas en cada cuadro.",
   "camaras": {
     "cam04": {
       "nombre": "cam04",
-      "video": "VIDEO-2026-10-13-18-40-13.mov",
-      "inicio": "2026-10-13T18:40:13-05:00",
+      "video": "segunda perspectiva.mp4",
+      "inicio": "2026-10-24T11:28:09-05:00",
       "posicion_px": [
         915.24,
         405.29
@@ -13,20 +13,32 @@
       "rumbo_deg": 262.8,
       "altura_m": 1.5,
       "f_px": 605,
-      "horizonte_px": 345
+      "horizonte_px": 325
     },
     "cam05": {
       "nombre": "cam05",
-      "video": "VIDEO-2026-10-24-11-28-09 - Nuevo2.mp4",
+      "video": "VIDEO-2026-10-24-11-28-09.mp4",
       "inicio": "2026-10-24T11:28:09-05:00",
       "posicion_px": [
         150,
         440
       ],
       "rumbo_deg": 82.8,
-      "altura_m": 1.5,
+      "altura_m": 1.58,
       "f_px": 520,
-      "horizonte_px": 357
+      "horizonte_px": 422
     }
-  }
+  },
+  "equivalencias": [
+    [
+      "cam04:167",
+      "cam05:135"
+    ]
+  ],
+  "mismas_personas": [
+    [
+      "cam04:238",
+      "cam04:285"
+    ]
+  ]
 }

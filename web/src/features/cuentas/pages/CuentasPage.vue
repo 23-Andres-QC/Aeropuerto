@@ -142,7 +142,8 @@ const fecha = (iso: string | null) => (iso ? new Date(iso).toLocaleString("es-PE
 
 async function cargar() {
   try {
-    [usuarios.value, politica.value] = await Promise.all([cuentas.usuarios(), cuentas.politica()]);
+    const [u, p] = await Promise.all([cuentas.usuarios(), cuentas.politica()]);
+    [usuarios.value, politica.value] = [u, p];
     error.value = "";
   } catch (e) {
     error.value = (e as Error).message;
@@ -467,6 +468,15 @@ label {
   gap: 4px;
   flex-wrap: wrap;
   border-bottom: 1px solid var(--glass-line);
+}
+.insignia {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: #f59e0b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
 }
 .pestana {
   display: inline-flex;

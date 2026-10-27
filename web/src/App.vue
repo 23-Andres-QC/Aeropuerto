@@ -3,16 +3,31 @@ import Maru from "./shared/Maru.vue";
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { logout, sesion } from "./core/auth";
-import { NOMBRE_ROL, ROL_ADMIN } from "./core/roles";
+
+import { NOMBRE_ROL, ROL_ADMIN, inicialesDe } from "./core/roles";
 import AvisoInactividad from "./core/AvisoInactividad.vue";
 import AvisoVersion from "./core/AvisoVersion.vue";
 import PaletaComandos from "./core/PaletaComandos.vue";
 import SelectorSitio from "./features/sitios/components/SelectorSitio.vue";
 import IconoNav from "./shared/IconoNav.vue";
+import { contarSolicitudesPendientes, solicitudesPendientes } from "./features/cuentas/pendientes";
 import { fijarModoVivo, modoVivo, usarSitioVivo, zonaVivo } from "./features/sitios/enVivo";
 import { rutaAlElegir } from "./features/sitios/selector";
 import type { Sitio } from "./features/sitios/api";
-import { recordarSitio, ultimoSitio, useSitios, vaciarSitios } from "./features/sitios/useSitios";
+import { recordarSitio, ultimoSitio, useSitios, vaciarSitios } from "./features/sitios/useSitios";
+
+/**
+ * El saludo de Maru en la barra lateral: «¡Hola, <usuario>!», con el nombre de usuario tal como está en la base de datos (si está todo en
+ * minúsculas se le pone la primera en mayúscula).
+ */
+const holaUsuario = computed(() => {
+  const usuario = (sesion.value?.usuario || "").trim();
+  const crudo = usuario.includes("@") ? usuario.split("@")[0] : usuario;
+  if (!crudo) return "¡Hola!";
+  const nombre = crudo === crudo.toLocaleLowerCase("es") ? crudo.charAt(0).toLocaleUpperCase("es") + crudo.slice(1) : crudo;
+  return `¡Hola, ${nombre.length > 16 ? nombre.slice(0, 15) + "…" : nombre}!`;
+});
+const iniciales = computed(() => inicialesDe(sesion.value?.usuario || sesion.value?.nombre || ""));
 
 const route = useRoute();
 const router = useRouter();
@@ -44,7 +59,10 @@ const seccion = computed(() => (route.meta.seccion as string | undefined) ?? "")
 const sitioNav = computed(() => slug.value || ultimoSitio());
 const telefonos = computed(() => route.path === "/telefonos");
 const cuentas = computed(() => route.path === "/cuentas");
+const solicitudesRuta = computed(() => route.path === "/solicitudes");
 const esAdmin = computed(() => sesion.value?.rol === ROL_ADMIN);
+// La insignia de Solicitudes se pone al día al entrar y al cambiar de página.
+watch(() => [esAdmin.value, route.path], () => esAdmin.value && void contarSolicitudesPendientes(), { immediate: true });
 const rolNombre = computed(() => NOMBRE_ROL[sesion.value?.rol ?? ""] ?? sesion.value?.rol ?? "");
 // El cambio de contraseña y el aviso de privacidad van en una pantalla sencilla, sin el menú del análisis.
 // Ingresar, olvidé mi contraseña y restablecerla: pantalla completa con la foto, sin el menú de la app.
@@ -54,6 +72,8 @@ const videos = computed(() => route.path === "/videos");
 const title = computed(() => {
   if (telefonos.value) return "Teléfonos";
   if (cuentas.value) return "Cuentas";
+  if (solicitudesRuta.value) return "Solicitudes";
+  if (route.path === "/perfil") return "Mi perfil";
   if (videos.value) return "Videos";
   const nombre = SECCIONES.find((s) => s.id === seccion.value)?.nombre ?? "";
   return `${actual.value?.name ?? slug.value} · ${nombre}`;
@@ -98,7 +118,7 @@ function elegirSitio(s: Sitio) {
   <div v-else-if="!sesion && !route.meta.abierta"></div>
   <div v-else-if="simple" class="shell-simple">
     <header class="simple-cabecera">
-      <RouterLink class="brand simple-marca" to="/"><span class="brand-icon">✈</span><span>LAP</span></RouterLink>
+      <RouterLink class="brand simple-marca" to="/"><span class="brand-icon">✈</span><span>AEROVISION</span></RouterLink>
       <span v-if="sesion" class="simple-quien" data-prueba="quien">{{ sesion.nombre || sesion.usuario }} · {{ NOMBRE_ROL[sesion.rol] ?? sesion.rol }}</span>
       <button v-if="sesion" class="logout-button" type="button" @click="salir">Salir</button>
     </header>
@@ -107,7 +127,7 @@ function elegirSitio(s: Sitio) {
   <div v-else class="app-shell">
     <aside class="sidebar">
       <RouterLink class="brand" to="/"
-        ><span class="brand-icon">✈</span><span>LAP<small>LIMA AIRPORT PARTNERS</small></span></RouterLink
+        ><span class="brand-icon">✈</span><span>AEROVISION<small>LIMA AIRPORT PARTNERS</small></span></RouterLink
       >
       <SelectorSitio :sitios="sitios" :slug="sitioNav" :actual="actual ?? sitios.find((s) => s.slug === sitioNav)" @elegir="elegirSitio" />
       <p class="nav-caption">ESPACIO DE TRABAJO</p>
@@ -124,16 +144,19 @@ function elegirSitio(s: Sitio) {
           ><IconoNav nombre="telefonos" /><span class="nav-label"><b class="nav-step">7.</b>Teléfonos</span></RouterLink
         ><RouterLink v-if="esAdmin" to="/cuentas" data-prueba="ir-cuentas"
           ><IconoNav nombre="cuentas" /><span class="nav-label"><b class="nav-step">8.</b>Cuentas</span></RouterLink
+        ><RouterLink v-if="esAdmin" to="/solicitudes" data-prueba="ir-solicitudes"
+          ><IconoNav nombre="solicitudes" /><span class="nav-label"><b class="nav-step">9.</b>Solicitudes</span
+          ><span v-if="solicitudesPendientes" class="nav-insignia" data-prueba="pendientes">{{ solicitudesPendientes }}</span></RouterLink
         >
       </nav>
       <div class="maru-lateral">
-        <Maru class="maru-lateral-img" burbuja="derecha" />
-        <span>Maru, tu copiloto en LAP</span>
+        <Maru class="maru-lateral-img" burbuja="derecha" :saludo="holaUsuario" :repite="holaUsuario" />
+        <span>Maru, tu copiloto en AeroVision</span>
       </div>
     </aside>
     <div class="workspace">
       <header class="workspace-header">
-        <div class="titulo-cab"><span class="breadcrumb">LAP /</span> {{ title }}</div>
+        <div class="titulo-cab"><span class="breadcrumb">AEROVISION /</span> {{ title }}</div>
         <div class="workspace-meta">
           <PaletaComandos :oscuro="theme === 'dark'" :vivo="modoVivo" :alternar-tema="toggleTheme" :alternar-vivo="() => fijarModoVivo(!modoVivo)" :salir="salir" />
           <button
@@ -159,7 +182,7 @@ function elegirSitio(s: Sitio) {
             </svg>
           </button>
           <span class="sesion-usuario"
-            ><span class="avatar" title="Sesión LAP">LAP</span><button class="logout-button" type="button" @click="salir">Salir</button></span
+            ><RouterLink class="avatar" to="/perfil" :title="`Mi perfil · ${sesion?.nombre || sesion?.usuario || ''} (${sesion?.usuario || ''})`" aria-label="Mi perfil" data-prueba="avatar">{{ iniciales }}</RouterLink><button class="logout-button" type="button" @click="salir">Salir</button></span
           >
         </div>
       </header>

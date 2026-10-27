@@ -679,4 +679,8 @@ const num = (n: number) => n.toLocaleString("es-PE");
     display: none;
   }
 }
+:global(html.modo-pdf .controles),
+:global(html.modo-pdf .umbrales-caja) {
+  display: none;
+}
 </style>

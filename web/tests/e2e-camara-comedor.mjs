@@ -38,9 +38,7 @@ try {
   await t.ir("/sitios/esan/configuracion", 3000);
   await t.clic(`button[aria-label="Ver todo el campus"]`);
   await esperar(1200);
-  await tocar("g.entrada-vecino[role=button]");
-  await esperar(500);
-  await tocar("g.entrada-vecino[role=button]");
+  await tocar("g.entrada-vecino[role=button]"); // un solo clic acerca a la zona
   await esperar(1500);
   const enComedor = await donde();
   assert.ok(enComedor, "la cámara se dibuja en el plano");
@@ -51,9 +49,7 @@ try {
   // El patio: la cámara del comedor no es suya.
   await t.clic(`button[aria-label="Ver todo el campus"]`);
   await esperar(1200);
-  await tocar("g.entrada-sitio[role=button]");
-  await esperar(500);
-  await tocar("g.entrada-sitio[role=button]");
+  await tocar("g.entrada-sitio[role=button]"); // un solo clic acerca a la zona
   await esperar(1500);
   const otras = await t.evalua(`[...document.querySelectorAll('g.camara')].map((c) => c.textContent)`);
   assert.ok(otras.some((c) => c.includes("cam01")), "el patio sigue con sus cámaras");

@@ -182,15 +182,13 @@ const capaEnVista = computed(() => {
   return c?.nombre ?? null;
 });
 /**
- * Desde el campus las zonas grabadas se marcan sin texto (con varias, los nombres se pisarían): un clic en una zona muestra su nombre y un
- * segundo clic acerca a ella. Un clic en otro lado, o acercarse, la suelta.
+ * Desde el campus las zonas grabadas se marcan sin texto (con varias, los nombres se pisarían): un solo clic acerca a la zona. El nombre
+ * se ve al pasar el cursor.
  */
 const elegida = ref<string | null>(null);
-function tocar(clave: string, acercar: () => void) {
-  if (elegida.value === clave) {
-    elegida.value = null;
-    acercar();
-  } else elegida.value = clave;
+function tocar(_clave: string, acercar: () => void) {
+  elegida.value = null;
+  acercar();
 }
 /** ¿Se ve la zona grabada del sitio (el patio)? Sin campus, siempre; con campus, no desde lejos ni sobre otra zona grabada. */
 const veSitio = computed(() => !campus.value || (!enCampus.value && !capaEnVista.value));
@@ -297,16 +295,26 @@ function iniciarVista() {
 watch(claveVista, iniciarVista, { immediate: true });
 const misma = (a: Vista, b: Vista) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
 // Cada cambio de zoom o de desplazamiento se recuerda para la próxima vez que se abra el plano y pasa a los planos enlazados.
+// El plano que sigue a otro no le devuelve su vista: ese eco (con un redondeo distinto) hacía que el primero cancelara su propia animación
+// a mitad de camino y los planos quedaran en vistas distintas.
+let sigueAlOtro = false;
 watch(vista, (v) => {
   if (props.zoom && props.recordar && v.w > 0) recordarVista(claveVista.value, v);
+  if (sigueAlOtro) {
+    sigueAlOtro = false;
+    return;
+  }
   if (v.w > 0 && !(props.enlace && misma(props.enlace, v))) emit("update:enlace", { ...v });
 });
 watch(
   () => props.enlace,
   (v) => {
     if (!v || misma(v, vista.value)) return;
+    const nueva = acotar(v);
+    if (misma(nueva, vista.value)) return;
     cancelAnimationFrame(animacion);
-    vista.value = acotar(v);
+    sigueAlOtro = true;
+    vista.value = nueva;
   },
 );
 
@@ -330,6 +338,15 @@ function irA(destino: Vista) {
   animacion = requestAnimationFrame(cuadro);
 }
 const entrarAlSitio = () => irA(vistaSitio.value);
+/** Ir de un salto (con la animación de siempre) a una zona grabada: «sitio» (el patio) o el nombre de una capa (el comedor). */
+defineExpose({
+  ir(clave: string) {
+    if (clave === "campus") return verTodo();
+    if (clave === "sitio") return entrarAlSitio();
+    const i = capas.value.findIndex((c) => c.nombre === clave);
+    if (i >= 0) irACapa(i);
+  },
+});
 const verTodo = () => (campus.value ? irA(vistaTodo.value) : reiniciarVista());
 // Tamaño del plano en pantalla: el SVG se ajusta a su caja manteniendo la proporción (meet).
 const pantalla = ref({ w: 0, h: 0 });
@@ -480,8 +497,14 @@ const camaras = computed(() => {
     // Sin campus la hoja es todo lo que se ve: una cámara fuera de ella se pega al borde para no perderse. Con campus (y otras zonas
     // grabadas, como el comedor) se ve más que la hoja del sitio, y la cámara va donde está.
     const margen = 14 * e.value;
-    const x = campus.value ? px(pos[0]) : Math.min(Math.max(px(pos[0]), margen), ancho.value - margen);
-    const y = campus.value ? py(pos[1]) : Math.min(Math.max(py(pos[1]), margen), alto.value - margen);
+    let x = campus.value ? px(pos[0]) : Math.min(Math.max(px(pos[0]), margen), ancho.value - margen);
+    let y = campus.value ? py(pos[1]) : Math.min(Math.max(py(pos[1]), margen), alto.value - margen);
+    // Al editar, una cámara que quedó fuera de las hojas del plano (ya no se puede arrastrar hasta allá) se muestra pegada al borde de la
+    // hoja más cercana: así se ve y se puede agarrar, y al soltarla queda dentro.
+    if (props.editarCamaras && !a) {
+      const q = limitar(new DOMPoint(x, y));
+      [x, y] = [q.x, q.y];
+    }
     const rad = (angulo * Math.PI) / 180;
     const alcance = 46 * e.value;
     const etiqueta = c.altura != null ? `${c.id} · ${c.altura.toFixed(1)} m` : c.id;

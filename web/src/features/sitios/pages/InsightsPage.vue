@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { cantidad, colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, GENEROS, type Analitica, type Config, type Insights, type Punto, type Replay, type Sesion } from "../api";
@@ -10,6 +10,9 @@ import TraficoSitio from "../components/TraficoSitio.vue";
 import { desdeReplay, entradasPorIntervalo as entradasEntre, resumir, type HistoriaBasica, type ResumenVivo } from "../analisisVivo";
 import { GENEROS_ABREV, suprimirGenero, textoGenero } from "../../../core/roles";
 import { useSitios } from "../useSitios";
+import { perfil } from "../../cuentas/api";
+import { cargarPermisoExportar, puedeExportar, textoPermisoExportar } from "../../cuentas/permisos";
+import { aBase64, aCsv, aPdfPagina, descargar, type TablaReporte } from "../reporte";
 import type { VistaGuardada } from "../vistaPlano";
 
 const route = useRoute();
@@ -402,56 +405,102 @@ const sankey = computed(() => {
   };
 });
 
-// --- Exportación: PDF con la impresión del navegador, Excel como CSV ------------
+// --- Exportación: PDF, CSV y envío por correo ------------------------------------
+// Descargar y enviar los reportes necesita el permiso de quien administra (el rol Negocio lo pide en Mi perfil y vale por un tiempo). El
+// servidor vuelve a comprobarlo al enviar por correo, que es lo que sale de la plataforma.
 const generado = ref("");
-function exportarPDF() {
+const hoy = () => new Date().toISOString().slice(0, 10);
+const nombreArchivo = (ext: string) => `insights-${slug.value}-${hoy()}.${ext}`;
+
+const encabezadoReporte = computed<string[][]>(() => [
+  [`Insights · ${config.value?.site.name ?? slug.value}`],
+  [`Sesión: ${sesion.value?.name ?? "—"}`, `Zona: ${alcance.value}`],
+]);
+
+/** Lo que muestra el tablero, en tablas: el CSV y el PDF salen de aquí. */
+const tablasReporte = computed<TablaReporte[]>(() => [
+  {
+    titulo: "Indicadores",
+    cabecera: ["Indicador", "Valor", "Detalle"],
+    filas: [
+      ...tarjetas.value.map((t) => [t.titulo, t.valor, t.detalle]),
+      ...generos.value.map((g) => [g.nombre, g.n ?? "no se muestra (grupo de menos de 5)", g.n == null ? "" : `${g.pct} %`]),
+    ],
+  },
+  {
+    titulo: "Comparación entre zonas",
+    cabecera: ["Zona", "Personas", "Permanencia media (s)", "Densidad máx (pers/m²)"],
+    filas: comparacion.value.map((z) => [z.nombre, z.personas, z.permanencia, z.densidad]),
+  },
+  { titulo: "Flujo entre zonas", cabecera: ["Origen", "Destino", "Personas"], filas: flujos.value.map((f) => [f.desde_nombre, f.hacia_nombre, f.personas]) },
+  {
+    titulo: "Rutas frecuentes",
+    cabecera: ["Ruta frecuente", "Personas", "%"],
+    filas: rutas.value.map((ruta) => [ruta.secuencia.join(" → "), ruta.frecuencia, ruta.porcentaje]),
+  },
+  { titulo: "Entradas por intervalo", cabecera: ["Hora", "Entradas"], filas: barras.value.map((b) => [b.hora, b.v]) },
+  {
+    titulo: "Conteo por sentido",
+    tituloCsv: "Conteo por sentido (línea a media altura de cada cámara)",
+    cabecera: ["Cámara", "Sentido", "Total", "Hombre", "Mujer", "Sin determinar", "Con ID", "Sin ID"],
+    filas: filasConteo.value.map((f) => [f.camara, f.sentido.replace(/^[↑↓] /, ""), f.c.total, ...f.genero.map((n) => n ?? "oculto"), f.c.conId, f.c.sinId]),
+  },
+]);
+
+const sinPermiso = computed(() => !puedeExportar.value);
+const sinDatos = computed(() => !datos.value && !modoVivo.value);
+
+/** El PDF del tablero con los mapas, igual que la hoja de impresión. Es el mismo archivo que se descarga y el que se envía por correo. */
+async function pdfDelTablero(): Promise<Uint8Array> {
   generado.value = new Date().toLocaleString("es-PE");
-  window.print();
+  await nextTick();
+  const raiz = document.querySelector("main");
+  if (!raiz) throw new Error("No se pudo preparar el reporte.");
+  return aPdfPagina(raiz as HTMLElement);
 }
-const celda = (v: string | number | null | undefined) => {
-  const s = v == null ? "" : String(v);
-  return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
+const generandoPdf = ref(false);
+async function exportarPDF() {
+  if (!puedeExportar.value || generandoPdf.value) return;
+  generandoPdf.value = true;
+  mensajeEnvio.value = "";
+  try {
+    descargar(nombreArchivo("pdf"), (await pdfDelTablero()) as BlobPart, "application/pdf");
+  } catch (e) {
+    errorEnvio.value = true;
+    mensajeEnvio.value = (e as Error).message;
+  } finally {
+    generandoPdf.value = false;
+  }
+}
 function exportarCSV() {
-  const filas: (string | number | null | undefined)[][] = [
-    [`Insights · ${config.value?.site.name ?? slug.value}`],
-    [`Sesión: ${sesion.value?.name ?? "—"}`, `Zona: ${alcance.value}`],
-    [],
-    ["Indicador", "Valor", "Detalle"],
-    ...tarjetas.value.map((t) => [t.titulo, t.valor, t.detalle]),
-    ...generos.value.map((g) => [g.nombre, g.n ?? "no se muestra (grupo de menos de 5)", g.n == null ? "" : `${g.pct} %`]),
-    [],
-    ["Zona", "Personas", "Permanencia media (s)", "Densidad máx (pers/m²)"],
-    ...comparacion.value.map((z) => [z.nombre, z.personas, z.permanencia, z.densidad]),
-    [],
-    ["Origen", "Destino", "Personas"],
-    ...flujos.value.map((f) => [f.desde_nombre, f.hacia_nombre, f.personas]),
-    [],
-    ["Ruta frecuente", "Personas", "%"],
-    ...rutas.value.map((ruta) => [ruta.secuencia.join(" → "), ruta.frecuencia, ruta.porcentaje]),
-    [],
-    ["Hora", "Entradas"],
-    ...barras.value.map((b) => [b.hora, b.v]),
-    ...(filasConteo.value.length
-      ? [
-          [],
-          ["Conteo por sentido (línea a media altura de cada cámara)"],
-          ["Cámara", "Sentido", "Total", "Hombre", "Mujer", "Sin determinar", "Con ID", "Sin ID"],
-          ...filasConteo.value.map((f) => [f.camara, f.sentido.replace(/^[↑↓] /, ""), f.c.total, ...f.genero.map((n) => n ?? "oculto"), f.c.conId, f.c.sinId]),
-        ]
-      : []),
-  ];
-  const csv = filas.map((f) => f.map(celda).join(",")).join("\r\n");
-  // BOM: Excel detecta UTF-8 (tildes, ñ) solo si el archivo empieza con él.
-  const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `insights-${slug.value}-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  if (!puedeExportar.value) return;
+  descargar(nombreArchivo("csv"), aCsv(encabezadoReporte.value, tablasReporte.value), "text/csv;charset=utf-8;");
 }
+
+const enviando = ref<"" | "pdf" | "csv">("");
+const mensajeEnvio = ref("");
+const errorEnvio = ref(false);
+async function enviarPorCorreo(formato: "pdf" | "csv") {
+  if (!puedeExportar.value || enviando.value) return;
+  enviando.value = formato;
+  mensajeEnvio.value = "";
+  errorEnvio.value = false;
+  try {
+    const bytes =
+      formato === "csv"
+        ? new TextEncoder().encode(aCsv(encabezadoReporte.value, tablasReporte.value))
+        : await pdfDelTablero();
+    const r = await perfil.enviarReporte(formato, nombreArchivo(formato), aBase64(bytes));
+    mensajeEnvio.value = `Enviado a ${r.enviado_a}`;
+  } catch (e) {
+    errorEnvio.value = true;
+    mensajeEnvio.value = (e as Error).message;
+    void cargarPermisoExportar();
+  } finally {
+    enviando.value = "";
+  }
+}
+onMounted(cargarPermisoExportar);
 
 // --- Carga ------------------------------------------------------------------------
 function irATrafico() {
@@ -545,9 +594,15 @@ onMounted(async () => {
       <span v-else-if="!modoVivo && !analisis && sesionId && !cargando && !analitica" class="pill aviso-pill" :title="comando">Parte III sin calcular</span>
       <span v-if="modoVivo && mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
       <span class="export-actions">
-        <button type="button" :disabled="!datos && !modoVivo" @click="exportarPDF">Exportar PDF</button>
-        <button type="button" :disabled="!datos && !modoVivo" @click="exportarCSV">Exportar CSV</button>
+        <button type="button" :disabled="sinPermiso || sinDatos || generandoPdf" :title="sinPermiso ? textoPermisoExportar : 'Descarga el tablero completo en PDF, con los mapas'" data-prueba="exportar-pdf" @click="exportarPDF">{{ generandoPdf ? "Generando…" : "Exportar PDF" }}</button>
+        <button type="button" :disabled="sinPermiso || sinDatos" :title="sinPermiso ? textoPermisoExportar : 'Tablas para Excel'" data-prueba="exportar-csv" @click="exportarCSV">Exportar CSV</button>
+        <button type="button" :disabled="sinPermiso || sinDatos || !!enviando" :title="sinPermiso ? textoPermisoExportar : 'Te manda el mismo PDF que se descarga a tu correo'" data-prueba="enviar-pdf" @click="enviarPorCorreo('pdf')">{{ enviando === "pdf" ? "Enviando…" : "✉ Enviar PDF" }}</button>
+        <button type="button" :disabled="sinPermiso || sinDatos || !!enviando" :title="sinPermiso ? textoPermisoExportar : 'Te manda las tablas en CSV a tu correo'" data-prueba="enviar-csv" @click="enviarPorCorreo('csv')">{{ enviando === "csv" ? "Enviando…" : "✉ Enviar CSV" }}</button>
       </span>
+      <span v-if="textoPermisoExportar" class="permiso-exportar" :class="{ vigente: puedeExportar }" data-prueba="permiso-exportar">
+        {{ textoPermisoExportar }}<RouterLink v-if="sinPermiso" to="/perfil"> · Pedir permiso</RouterLink>
+      </span>
+      <span v-if="mensajeEnvio" class="mensaje-envio" :class="{ error: errorEnvio }" role="status" data-prueba="mensaje-envio">{{ mensajeEnvio }}</span>
     </div>
   </section>
   <div v-if="modoVivo" class="resumen-sesion" aria-label="Resumen en vivo">
@@ -572,7 +627,7 @@ onMounted(async () => {
     <p>Todavía no hay capturas guardadas.</p>
   </section>
   <div class="print-header">
-    <p class="print-marca">LAP · Lima Airport Partners</p>
+    <p class="print-marca">AEROVISION · Lima Airport Partners</p>
     <h1>{{ config?.site.name ?? slug }} · Comportamiento de personas</h1>
     <p>Sesión: {{ sesion?.name ?? "—" }} · Zona: {{ alcance }}</p>
     <p>Generado {{ generado }}</p>
@@ -837,6 +892,21 @@ onMounted(async () => {
 .aviso-pill {
   background: rgba(245, 158, 11, 0.2);
   cursor: help;
+}
+.permiso-exportar {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.permiso-exportar.vigente {
+  color: var(--good, #0e9b74);
+  font-weight: 650;
+}
+.mensaje-envio {
+  font-size: 12.5px;
+  color: var(--good, #0e9b74);
+}
+.mensaje-envio.error {
+  color: #dc2626;
 }
 .heading-meta {
   display: flex;

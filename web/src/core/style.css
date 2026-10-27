@@ -383,7 +383,9 @@ button:disabled {
 /* Y acompaña al pie del menú lateral. */
 .maru-lateral { margin-top: auto; padding: 14px 6px 4px; display: grid; justify-items: center; gap: 4px; text-align: center; font-size: 11.5px; letter-spacing: .3px; color: #8fb4dc; }
 .maru-lateral-img { width: 150px; max-width: 100%; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .35)); }
-@media (max-height: 760px) { .maru-lateral { display: none; } }
+/* Con poca altura Maru se achica (sin la frase de abajo) para que quepa; solo desaparece en ventanas muy bajas. */
+@media (max-height: 760px) { .maru-lateral { padding: 6px 6px 2px; } .maru-lateral > span { display: none; } .maru-lateral-img { width: 96px; } }
+@media (max-height: 520px) { .maru-lateral { display: none; } }
 .login-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 27px; color: var(--ink-faint); font-size: 10px; font-weight: 650; letter-spacing: .4px; }
 .login-card-mark { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; color: var(--blue-600); background: var(--ice); }
 .login-card-heading { margin-bottom: 22px; text-align: center; }
@@ -1254,5 +1256,112 @@ main table:not(.mapa-calor) thead th {
   }
 }
 
+/* ---------- el mismo diseño de la hoja, para armar el PDF que se exporta y se envía por correo ----------
+   El PDF se dibuja desde una copia de la página con la clase «modo-pdf» (ver reporte.ts): lleva lo mismo que la impresión del navegador. */
+html.modo-pdf,
+html.modo-pdf[data-theme="dark"] {
+    --ink: #0a2540;
+    --ink-soft: #56779a;
+    --ink-faint: #8ba4bf;
+    --glass: #fff;
+    --glass-strong: #fff;
+    --glass-line: #d8e4f0;
+    --pill-bg: #dceeff;
+    --pill-fg: #0f52b8;
+    --pill-border: #bcdcff;
+    --heading-glow-1: transparent;
+    --heading-glow-2: transparent;
+    --sheen: none;
+    color-scheme: light;
+  }
+html.modo-pdf * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+html.modo-pdf body {
+    background: #fff !important;
+  }
+html.modo-pdf .sidebar,
+html.modo-pdf .workspace-header,
+html.modo-pdf .replay-filters,
+html.modo-pdf .export-actions,
+html.modo-pdf footer {
+    display: none !important;
+  }
+html.modo-pdf .app-shell {
+    display: block;
+  }
+html.modo-pdf main {
+    padding: 0;
+    max-width: none;
+  }
+html.modo-pdf .print-header {
+    display: block;
+    margin-bottom: 10px;
+  }
+html.modo-pdf .print-header {
+    padding-bottom: 10px;
+    border-bottom: 3px solid var(--blue-600);
+  }
+html.modo-pdf .print-marca {
+    font-size: 9px !important;
+    font-weight: 700;
+    letter-spacing: 1.8px;
+    text-transform: uppercase;
+    color: var(--blue-600) !important;
+  }
+html.modo-pdf .print-header h1 {
+    font-size: 22px;
+    margin-bottom: 4px;
+  }
+html.modo-pdf .resumen-sesion {
+    box-shadow: none;
+    break-inside: avoid;
+    margin-bottom: 12px;
+  }
+html.modo-pdf .metric {
+    break-inside: avoid;
+  }
+html.modo-pdf .print-header p {
+    font-size: 10px;
+    color: var(--ink-soft);
+    margin: 2px 0;
+  }
+html.modo-pdf .page-title {
+    display: none;
+  }
+html.modo-pdf .spatial-insights {
+    display: block;
+  }
+html.modo-pdf .fila {
+    display: block;
+  }
+html.modo-pdf .fila-top {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 2fr);
+    margin-bottom: 12px;
+  }
+html.modo-pdf .fila-2,
+html.modo-pdf .fila-3 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+html.modo-pdf .panel {
+    box-shadow: none;
+    border: 1px solid var(--glass-line);
+    break-inside: avoid;
+    margin-bottom: 12px;
+    backdrop-filter: none;
+  }
+html.modo-pdf .metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-bottom: 12px;
+  }
+
+
 .olvide { margin: 10px 0 0; font-size: 12px; text-align: right; }
 .olvide a { color: var(--accent, #2563eb); font-weight: 600; }
+a.avatar { text-decoration: none; transition: box-shadow .15s, transform .15s; }
+a.avatar:hover, a.avatar:focus-visible { box-shadow: 0 0 0 3px rgba(37, 99, 235, .35); transform: translateY(-1px); }
+
+.nav-insignia { margin-left: auto; min-width: 20px; padding: 1px 7px; border-radius: 99px; background: #f59e0b; color: #fff; font-size: 11px; font-weight: 800; text-align: center; }

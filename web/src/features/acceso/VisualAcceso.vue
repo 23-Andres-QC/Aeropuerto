@@ -2,7 +2,7 @@
 <template>
   <section class="login-visual" aria-label="Información del sistema">
     <div class="login-brand-row">
-      <div class="login-brand"><span class="brand-icon">✈</span> LAP</div>
+      <div class="login-brand"><span class="brand-icon">✈</span> AEROVISION</div>
     </div>
     <div class="login-visual-copy">
       <span class="eyebrow">AEROPUERTO INTERNACIONAL</span>

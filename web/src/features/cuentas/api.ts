@@ -54,6 +54,57 @@ export type ResultadoDepurar = { sesiones: number; puntos: number; sesiones_de_l
 
 export type DatosUsuario = { usuario: string; correo: string; nombre: string; rol: string };
 
+/** Lo que una cuenta le pide a quien administra: cambiar su correo o poder exportar los reportes de Insights por un tiempo. */
+export type Solicitud = {
+  id: number;
+  usuario: string;
+  nombre?: string;
+  rol: string;
+  tipo: "cambio_correo" | "exportacion";
+  estado: "pendiente" | "aprobada" | "rechazada";
+  correo_nuevo?: string;
+  motivo?: string;
+  creada: string;
+  resuelta?: string;
+  resuelta_por?: string;
+  /** Exportación aprobada: hasta cuándo vale el permiso. */
+  vigente_hasta?: string;
+};
+
+export type EstadoExportacion = {
+  estado: "no_aplica" | "ninguna" | "pendiente" | "vigente" | "vencida" | "rechazada";
+  hasta?: string;
+  necesita_permiso: boolean;
+};
+
+/** «Mi perfil»: los datos de la cuenta con sesión, su correo, el permiso de exportación y sus últimas solicitudes. */
+export type Perfil = {
+  usuario: string;
+  nombre?: string;
+  rol: string;
+  correo?: string;
+  envio_disponible: boolean;
+  exportacion: EstadoExportacion;
+  solicitudes: Solicitud[];
+  horas_permitidas?: number[];
+};
+
+export const perfil = {
+  ver: () => request<Perfil>("/api/v1/mi/perfil"),
+  pedirCambioCorreo: (correo: string) => request<Solicitud>("/api/v1/mi/cambio-correo", json("POST", { correo })),
+  pedirExportacion: (motivo: string) => request<Solicitud>("/api/v1/mi/exportacion/solicitar", json("POST", { motivo })),
+  /** Envía por correo (a la dirección de la cuenta) un reporte hecho en la web: `contenido` va en base64. */
+  enviarReporte: (formato: "pdf" | "csv", nombre: string, contenido: string) =>
+    request<{ enviado_a: string }>("/api/v1/mi/exportacion/enviar", json("POST", { formato, nombre, contenido })),
+};
+
+export const solicitudes = {
+  listar: () => request<{ solicitudes: Solicitud[]; horas_permitidas: number[] }>("/api/v1/usuarios/solicitudes"),
+  aprobar: (id: number, horas = 0) => request<Solicitud>(`/api/v1/usuarios/solicitudes/${id}/resolver`, json("POST", { accion: "aprobar", horas })),
+  rechazar: (id: number) => request<Solicitud>(`/api/v1/usuarios/solicitudes/${id}/resolver`, json("POST", { accion: "rechazar" })),
+  quitarPermiso: (id: number) => request<Solicitud>(`/api/v1/usuarios/solicitudes/${id}/quitar`, { method: "POST" }),
+};
+
 export const cuentas = {
   usuarios: () => request<Usuario[]>("/api/v1/usuarios"),
   crearUsuario: (d: DatosUsuario) => request<ConClaveTemporal>("/api/v1/usuarios", json("POST", d)),

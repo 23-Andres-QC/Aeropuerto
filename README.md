@@ -203,6 +203,8 @@ Todas las rutas de sitio siguen `/api/v1/sites/<sitio>/…`:
 | Método y ruta | Uso |
 |---|---|
 | `POST /api/v1/auth/login` · `POST /auth/logout` · `GET /auth/me` · `POST /auth/password` | inicio y cierre de sesión (cookie HttpOnly), quién está conectado y elegir una contraseña propia; ver «Seguridad». **Todas las demás rutas piden sesión o llave de API** |
+| `GET /api/v1/mi/perfil` · `POST /mi/cambio-correo` · `POST /mi/exportacion/solicitar` · `POST /mi/exportacion/enviar` | **Mi perfil** (cualquier rol con sesión propia): usuario, rol y correo; pedir el cambio de correo; pedir el permiso temporal de exportar los reportes de Insights (rol Negocio); y enviar por correo un PDF o CSV (`formato`, `nombre`, `contenido` en base64) **solo a la dirección de la cuenta** y solo con el permiso vigente (el administrador siempre puede). Máx. 8 MB |
+| `GET /api/v1/usuarios/solicitudes` · `POST /usuarios/solicitudes/{id}/resolver` (`accion`: aprobar/rechazar, `horas` para exportación) · `POST /usuarios/solicitudes/{id}/quitar` | (solo superadmin) lo que las cuentas piden: aprobar un cambio de correo lo aplica; aprobar una exportación abre el permiso por 1, 8, 24, 72 o 168 h y se puede quitar antes. Todo queda en la bitácora |
 | `GET/POST /usuarios` · `POST /usuarios/{id}/clave` · `PUT /usuarios/{id}/activo` · `DELETE /usuarios/{id}` · `GET /auditoria` | cuentas (la clave temporal se entrega una vez), restablecer, activar/desactivar, borrar y la bitácora. **Solo superadmin** |
 | `GET /privacidad` · `POST /privacidad/depurar` | la retención vigente y su estado, y aplicarla ahora. Solo superadmin |
 | `POST /demo` · `DELETE /demo?confirmar=<nombre>` | crea y borra el sitio Demo (todo SIMULADO). Solo superadmin |

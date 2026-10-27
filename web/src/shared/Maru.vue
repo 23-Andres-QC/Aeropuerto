@@ -6,9 +6,9 @@ import { ref } from "vue";
 
 // `inicioBurbuja` y `finBurbuja` (segundos desde que carga la página) fijan cuándo aparece y cuándo se va el primer globo; así las mascotas
 // pueden decir una frase entre todas, una después de otra. Al pasarle el ratón dice siempre «¡Hola!».
-const props = withDefaults(defineProps<{ saludo?: string; burbuja?: "izquierda" | "derecha"; entrada?: boolean; inicioBurbuja?: number; finBurbuja?: number }>(), { saludo: "¡Hola!", burbuja: "izquierda", entrada: false });
+const props = withDefaults(defineProps<{ saludo?: string; burbuja?: "izquierda" | "derecha"; entrada?: boolean; inicioBurbuja?: number; finBurbuja?: number; vuelo?: number; repite?: string }>(), { vuelo: 2.6, repite: "¡Hola!", saludo: "¡Hola!", burbuja: "izquierda", entrada: false });
 
-const ENTRADA_MS = 2600; // lo que dura el vuelo con la voltereta (--vuelo en el estilo)
+const ENTRADA_MS = props.vuelo * 1000; // lo que dura el vuelo con la voltereta (`vuelo`, en segundos; --vuelo en el estilo)
 
 // Cada saludo reinicia las animaciones: cambiar la clave vuelve a montar la imagen.
 const vez = ref(0);
@@ -36,8 +36,8 @@ if (entrando.value) window.setTimeout(() => (entrando.value = false), ENTRADA_MS
 </script>
 
 <template>
-  <span class="maru" :class="[burbuja, { entra: entrando }]" data-prueba="maru" @mouseenter="saludar" @click="saludar">
-    <span v-if="saludando" :key="'b' + vez" class="maru-burbuja" :class="{ tarde: conEntrada && vez === 0, escalonada: escalonada && vez === 0 }" :style="vez === 0 ? estiloBurbuja : undefined" role="status">{{ vez === 0 ? saludo : "¡Hola!" }}</span>
+  <span class="maru" :class="[burbuja, { entra: entrando }]" :style="{ '--vuelo': `${vuelo}s` }" data-prueba="maru" @mouseenter="saludar" @click="saludar">
+    <span v-if="saludando" :key="'b' + vez" class="maru-burbuja" :class="{ tarde: conEntrada && vez === 0, escalonada: escalonada && vez === 0 }" :style="vez === 0 ? estiloBurbuja : undefined" role="status">{{ vez === 0 ? saludo : repite }}</span>
     <span class="maru-vuelo"
       ><img :key="'i' + vez" class="maru-img" :class="{ saludando, tarde: conEntrada && vez === 0 }" src="/maru.png" alt="Maru, la mascota de LAP" draggable="false"
     /></span>
@@ -107,6 +107,9 @@ if (entrando.value) window.setTimeout(() => (entrando.value = false), ENTRADA_MS
   animation-delay: var(--vuelo);
 }
 .maru-burbuja.escalonada {
+  padding: 7px 15px;
+  border-radius: 14px;
+  font-size: 18px;
   animation:
     maru-burbuja-sale 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) var(--b-ini) 1 both,
     maru-burbuja-se-va 0.6s ease-in var(--b-fin) 1 forwards;

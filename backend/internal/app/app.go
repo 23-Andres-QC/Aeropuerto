@@ -58,6 +58,10 @@ func New(db *pgxpool.Pool, cfg config.Config, opts ...Option) http.Handler {
 	if err := accounts.EnsureSeed(context.Background(), cfg.AdminUser, cfg.AdminPassword); err != nil {
 		slog.Error("no se pudo preparar la cuenta semilla", "error", err)
 	}
+	requests := services.NewRequestService(postgres.NewRequestRepository(db), accounts)
+	if mc := (mailer.Config{Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Pass: cfg.SMTPPass, From: cfg.SMTPFrom}); mc.Enabled() {
+		requests.SetAttachMailer(mailer.NewSMTP(mc))
+	}
 	privacy := services.NewPrivacyService(postgres.NewPrivacyRepository(db), accounts)
 	if !o.manualTraffic {
 		go privacy.Run(context.Background())
@@ -68,6 +72,7 @@ func New(db *pgxpool.Pool, cfg config.Config, opts ...Option) http.Handler {
 		Sales:    sales,
 		Traffic:  traffic,
 		Accounts: accounts,
+		Requests: requests,
 		Privacy:  privacy,
 		Demo:     services.NewDemoService(sites, sessions, sales, traffic),
 	}, httpapi.Options{

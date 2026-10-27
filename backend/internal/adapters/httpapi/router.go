@@ -19,6 +19,8 @@ type Services struct {
 	Accounts *services.AccountService
 	Privacy  *services.PrivacyService
 	Demo     *services.DemoService
+	// Requests are the profile of each account and what it asks of the administrator (nil: not served).
+	Requests *services.RequestService
 }
 
 // Options configure the parts of the API that are not use cases.
@@ -39,6 +41,9 @@ func NewRouter(s Services, o Options) http.Handler {
 	trafficHandler{s.Traffic}.routes(m)
 	if s.Accounts != nil {
 		accountHandler{accounts: s.Accounts, sites: s.Sites, privacy: s.Privacy, demo: s.Demo}.routes(m)
+	}
+	if s.Requests != nil {
+		requestHandler{svc: s.Requests}.routes(m)
 	}
 	if o.Auth != nil {
 		o.Auth.routes(m)

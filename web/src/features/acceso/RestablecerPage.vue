@@ -61,9 +61,9 @@ async function guardar() {
     <section class="login-panel">
       <div class="login-card">
         <!-- Entre las tres dicen «Bienvenido a AeroVision», una después de otra: el otorongo, el cóndor y Maru. -->
-        <Maru class="maru-acceso" entrada saludo="AeroVision" :inicio-burbuja="5.8" :fin-burbuja="12" />
-        <Amigo class="amigo-ave" tipo="ave" src="/amigo-ave.png" alt="Cóndor piloto, otra mascota de LAP" :retraso="2.7" texto="a" :inicio-texto="4.6" :fin-texto="12" lado="arriba" />
-        <Amigo class="amigo-jaguar" tipo="felino" src="/amigo-jaguar.png" alt="Otorongo piloto, otra mascota de LAP" :retraso="3.0" texto="Bienvenido" :inicio-texto="3.4" :fin-texto="12" lado="izquierda" />
+        <Maru class="maru-acceso" entrada saludo="AeroVision" :inicio-burbuja="2.9" :fin-burbuja="6.5" />
+        <Amigo class="amigo-ave" tipo="ave" src="/amigo-ave.png" alt="Cóndor piloto, otra mascota de AeroVision" :retraso="0.7" texto="a" :inicio-texto="2.0" :fin-texto="6.5" lado="arriba" />
+        <Amigo class="amigo-jaguar" tipo="felino" src="/amigo-jaguar.png" alt="Otorongo piloto con un cartel de AeroVision" cartel="AEROVISION" :retraso="0.9" texto="Bienvenido" :inicio-texto="1.2" :fin-texto="6.5" lado="izquierda" />
         <div class="login-card-heading">
           <div class="login-card-marca"><span class="brand-icon">✈</span>AeroVision</div>
           <h2>Elige una contraseña nueva</h2>

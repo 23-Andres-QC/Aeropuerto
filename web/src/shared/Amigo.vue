@@ -8,7 +8,7 @@
 import { ref } from "vue";
 
 const props = withDefaults(
-  defineProps<{ src: string; alt: string; tipo: "ave" | "felino"; retraso?: number; texto?: string; inicioTexto?: number; finTexto?: number; lado?: "izquierda" | "arriba" }>(),
+  defineProps<{ src: string; alt: string; tipo: "ave" | "felino"; retraso?: number; texto?: string; inicioTexto?: number; finTexto?: number; lado?: "izquierda" | "arriba"; cartel?: string }>(),
   { retraso: 2.8, inicioTexto: 3.4, finTexto: 12, lado: "izquierda" },
 );
 
@@ -21,6 +21,8 @@ const estilo = { "--retraso": `${props.retraso}s`, "--b-ini": `${props.inicioTex
   <span class="amigo" :class="[tipo, lado]" :style="estilo" @mouseenter="vez++" @click="vez++">
     <span v-if="texto" class="amigo-burbuja" role="status">{{ texto }}</span>
     <img :key="vez" class="amigo-img" :class="{ ahora: vez > 0 }" :src="src" :alt="alt" draggable="false" />
+    <!-- Un cartelito fijo (no se va como el globo): la mascota «lo sostiene» abajo. -->
+    <span v-if="cartel" class="amigo-cartel">{{ cartel }}</span>
   </span>
 </template>
 
@@ -31,6 +33,27 @@ const estilo = { "--retraso": `${props.retraso}s`, "--b-ini": `${props.inicioTex
   line-height: 0;
   cursor: pointer;
   user-select: none;
+}
+.amigo-cartel {
+  position: absolute;
+  left: 50%;
+  bottom: 6%;
+  z-index: 3;
+  transform: translateX(-50%) rotate(-4deg);
+  padding: 3px 9px;
+  border: 2px solid #1d4ed8;
+  border-radius: 6px;
+  background: #fff;
+  color: #0b2246;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: 0 3px 8px rgba(3, 16, 38, 0.35);
+  pointer-events: none;
+  /* Aparece junto con la mascota (mismo retraso y mismo saltito), no antes. */
+  animation: amigo-cartel-aparece 0.75s cubic-bezier(0.3, 1.5, 0.5, 1) var(--retraso) 1 backwards;
 }
 .amigo-img {
   display: block;
@@ -43,11 +66,11 @@ const estilo = { "--retraso": `${props.retraso}s`, "--b-ini": `${props.inicioTex
 .amigo-burbuja {
   position: absolute;
   z-index: 4;
-  padding: 5px 11px;
-  border-radius: 12px;
+  padding: 7px 15px;
+  border-radius: 14px;
   background: #fff;
   color: #0b2246;
-  font-size: 13px;
+  font-size: 18px;
   font-weight: 700;
   line-height: 1.3;
   white-space: nowrap;
@@ -70,6 +93,11 @@ const estilo = { "--retraso": `${props.retraso}s`, "--b-ini": `${props.inicioTex
   right: 70%;
   transform-origin: 100% 100%;
 }
+/* El otorongo: el globo va arriba a la izquierda de la cabeza, para no taparle la cara. */
+.felino.izquierda .amigo-burbuja {
+  top: -34px;
+  right: 56%;
+}
 .izquierda .amigo-burbuja::after {
   right: 12px;
 }
@@ -84,7 +112,26 @@ const estilo = { "--retraso": `${props.retraso}s`, "--b-ini": `${props.inicioTex
 }
 
 /* ---- Cóndor: planeo, aleteo y picada (translate, rotate y scale por separado para que se sumen) ---- */
-.ave .amigo-img {
+.ave .amigo-cartel {
+  position: absolute;
+  left: 50%;
+  bottom: 6%;
+  z-index: 3;
+  transform: translateX(-50%) rotate(-4deg);
+  padding: 3px 9px;
+  border: 2px solid #1d4ed8;
+  border-radius: 6px;
+  background: #fff;
+  color: #0b2246;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: 0 3px 8px rgba(3, 16, 38, 0.35);
+  pointer-events: none;
+}
+.amigo-img {
   animation:
     amigo-aparece 0.75s cubic-bezier(0.3, 1.5, 0.5, 1) var(--retraso) 1 backwards,
     amigo-planeo 5.2s ease-in-out calc(var(--retraso) + 0.75s) infinite,
@@ -98,7 +145,26 @@ const estilo = { "--retraso": `${props.retraso}s`, "--b-ini": `${props.inicioTex
 }
 
 /* ---- Otorongo: respira y, de vez en cuando, se agacha y da un zarpazo ---- */
-.felino .amigo-img {
+.felino .amigo-cartel {
+  position: absolute;
+  left: 50%;
+  bottom: 6%;
+  z-index: 3;
+  transform: translateX(-50%) rotate(-4deg);
+  padding: 3px 9px;
+  border: 2px solid #1d4ed8;
+  border-radius: 6px;
+  background: #fff;
+  color: #0b2246;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: 0 3px 8px rgba(3, 16, 38, 0.35);
+  pointer-events: none;
+}
+.amigo-img {
   animation:
     amigo-aparece 0.75s cubic-bezier(0.3, 1.5, 0.5, 1) var(--retraso) 1 backwards,
     amigo-otorongo 9s ease-in-out calc(var(--retraso) + 0.75s) infinite;
@@ -109,6 +175,10 @@ const estilo = { "--retraso": `${props.retraso}s`, "--b-ini": `${props.inicioTex
     amigo-otorongo 9s ease-in-out 1.1s infinite;
 }
 
+@keyframes amigo-cartel-aparece {
+  0% { opacity: 0; translate: 0 24px; scale: 0.2; }
+  100% { opacity: 1; translate: none; scale: none; }
+}
 @keyframes amigo-aparece {
   0% { opacity: 0; transform: translateY(24px) scale(0.2); }
   100% { opacity: 1; transform: none; }
@@ -163,6 +233,9 @@ const estilo = { "--retraso": `${props.retraso}s`, "--b-ini": `${props.inicioTex
   }
   .amigo-burbuja {
     display: none;
+  }
+  .amigo-cartel {
+    animation: none;
   }
 }
 </style>

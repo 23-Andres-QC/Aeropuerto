@@ -5,6 +5,7 @@ import { api, mapaDelSitio, tramos, type Config, type Replay, type Sesion } from
 import VistaTelefono from "../../telefonos/components/VistaTelefono.vue";
 import PlanoSitio, { type PersonaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
 import { CAMARAS_VIVO, CELDA_CALOR, LINEA_CONTEO, SESION_VIVO, ajusteMapa, capturaDePrueba, capturasVersion, fijarUnion, unidasAhora, unirPorPosicion, grabando, iniciarGrabacion, terminarGrabacion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura, zonaVivo } from "../enVivo";
+import type { VistaGuardada } from "../vistaPlano";
 import { useRoute } from "vue-router";
 import { useSitios } from "../useSitios";
 
@@ -44,7 +45,11 @@ const valorSesion = computed({
     sesionId.value = v;
   },
 });
-const verCalor = ref(true);
+// Los dos planos (seguimiento y calor) comparten zoom y desplazamiento.
+const vistaPlanos = ref<VistaGuardada | null>(null);
+const planoSeguimiento = ref<InstanceType<typeof PlanoSitio> | null>(null);
+/** Las zonas grabadas del sitio: el patio y las demás (el comedor), para ir a ellas con un solo clic. */
+const zonasGrabadas = computed(() => [{ clave: "sitio", nombre: "Patio" }, ...(mapa.value?.capas ?? []).map((c) => ({ clave: c.nombre, nombre: c.nombre.replace(/^Zona grabada \d+\s*·\s*/i, "").replace(/^./, (m) => m.toUpperCase()) }))]);
 // Zona que se graba en vivo. Hoy se prueba solo el patio (las cámaras, la calibración y el modelo son de esa zona); las demás zonas
 // grabadas del campus (el comedor) salen en la lista pero se activarán cuando tengan sus cámaras.
 const zonasAGrabar = computed(() => [
@@ -65,7 +70,62 @@ const grabadas = computed(() => sesionesZona.value.filter((s) => s.kind === "BUI
 async function terminarYRefrescar() {
   if (await terminarGrabacion()) sesiones.value = await api.sesiones(slug.value);
 }
-const calorVivo = computed(() => (modoVivo.value && verCalor.value ? vivo.calor.value : []));
+// Mapa de calor al lado del seguimiento, en vivo y en una sesión grabada: en vivo es lo acumulado de la captura; grabada, lo acumulado hasta
+// el instante de la reproducción (cuántos puntos dejó cada persona en cada celda).
+/**
+ * Hace legible el calor: cada celda reparte su valor a las vecinas (una persona ocupa más que un punto, no un cuadrito suelto) y se
+ * comprime con raíz cuadrada, así un lugar muy concurrido no apaga a los demás. Solo cambia el dibujo; los datos no se tocan.
+ */
+const RADIO_CALOR = 2;
+const CAP_CELDA = 40;
+function realzarCalor(celdas: [number, number, number][]): [number, number, number][] {
+  const peso = (d: number) => Math.exp(-(d * d) / (2 * 0.8 * 0.8));
+  const salida = new Map<string, [number, number, number]>();
+  for (const [x, y, n] of celdas) {
+    const [ci, cj] = [Math.round(x / CELDA_CALOR), Math.round(y / CELDA_CALOR)];
+    for (let a = -RADIO_CALOR; a <= RADIO_CALOR; a++) {
+      for (let b = -RADIO_CALOR; b <= RADIO_CALOR; b++) {
+        const w = peso(Math.hypot(a, b));
+        const clave = `${ci + a},${cj + b}`;
+        const celda = salida.get(clave) ?? [(ci + a) * CELDA_CALOR, (cj + b) * CELDA_CALOR, 0];
+        celda[2] += n * w;
+        salida.set(clave, celda);
+      }
+    }
+  }
+  // Compresión suave (potencia 0,7, no raíz) y sin los halos tenues: lo que queda por debajo del 8 % del pico no se dibuja.
+  const comprimidas = [...salida.values()].map(([x, y, n]) => [x, y, n ** 0.7] as [number, number, number]);
+  const pico = comprimidas.reduce((m, c) => Math.max(m, c[2]), 0);
+  return comprimidas.filter((c) => c[2] >= pico * 0.08);
+}
+const calorBase = computed<[number, number, number][]>(() => {
+  if (modoVivo.value) return vivo.calor.value;
+  if (!verGrabacion.value || !replay.value) return [];
+  const celdas = new Map<string, [number, number, number]>();
+  for (const p of replay.value.personas) {
+    const ultimo = ultimoPunto(p, t.value);
+    // Una persona quieta no debe dominar la escala: cada una aporta como máximo CAP_CELDA puntos (unos 8 s) por celda, así el calor refleja
+    // cuánta gente pasó por ahí y no solo cuánto rato se quedó una sola.
+    const propios = new Map<string, number>();
+    for (let i = 0; i <= ultimo; i++) {
+      const [ci, cj] = [Math.floor(p.x[i] / CELDA_CALOR), Math.floor(p.y[i] / CELDA_CALOR)];
+      const clave = `${ci},${cj}`;
+      const usados = propios.get(clave) ?? 0;
+      if (usados >= CAP_CELDA) continue;
+      propios.set(clave, usados + 1);
+      const celda = celdas.get(clave) ?? [ci * CELDA_CALOR, cj * CELDA_CALOR, 0];
+      celda[2] += 1;
+      celdas.set(clave, celda);
+    }
+  }
+  return [...celdas.values()];
+});
+const calorPlano = computed(() => realzarCalor(calorBase.value));
+const calorTope = computed(() => {
+  const maximo = calorPlano.value.reduce((m, c) => Math.max(m, c[2]), 0);
+  // El rojo máximo se alcanza casi en el pico (no antes): con tanta gente que se ve en todo el patio, solo lo más concurrido se pone rojo.
+  return Math.max(1, maximo * 0.85);
+});
 // Los videos de una sesión grabada: los del Build del patio (`camXX_procesado.mp4`) o, en la zona del comedor, los que declara su resumen.
 const archivosVideo = computed<Record<string, string>>(() => {
   const propios = sesion.value?.summary?.videos;
@@ -343,7 +403,6 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
             {{ z.nombre }}<small v-if="!z.activa"> · próximamente</small>
           </button>
         </div>
-        <label class="check"><input v-model="verCalor" type="checkbox" /> Mapa de calor</label>
         <label class="check" title="Si dos cámaras distintas ubican a dos IDs casi en el mismo lugar, se muestran como una sola persona (por si el modelo les dio IDs distintos)">
           <input :checked="unirPorPosicion" type="checkbox" @change="fijarUnion(($event.target as HTMLInputElement).checked)" /> Unir personas muy cercanas
           <span v-if="unidasAhora" class="pill good">{{ unidasAhora }} unida{{ unidasAhora === 1 ? "" : "s" }}</span>
@@ -366,7 +425,21 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         </button>
         <span v-if="mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
       </div>
-      <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :personas="personas" :recorridos="recorridos" :calor="calorVivo" :celda-calor="CELDA_CALOR" :camaras="camarasPlano" :inicio="modoVivo ? 'sitio' : 'campus'" zoom :recordar="modoVivo" @lugar="lugar = $event" />
+      <div class="ir-a" role="group" aria-label="Ir a una zona del plano">
+        <span class="muted">Ir a</span>
+        <button v-for="z in zonasGrabadas" :key="z.clave" type="button" class="primary-button" :data-prueba="`ir-${z.clave}`" @click="planoSeguimiento?.ir(z.clave)">{{ z.nombre }}</button>
+        <button type="button" @click="planoSeguimiento?.ir('campus')">Todo el campus</button>
+      </div>
+      <div class="planos-par">
+        <div class="plano-caja">
+          <h3 class="plano-titulo">Seguimiento</h3>
+          <PlanoSitio ref="planoSeguimiento" :mapa="mapa" :zonas="config?.zones ?? []" :personas="personas" :recorridos="recorridos" :camaras="camarasPlano" inicio="sitio" zoom :recordar="modoVivo" v-model:enlace="vistaPlanos" @lugar="lugar = $event" />
+        </div>
+        <div class="plano-caja">
+          <h3 class="plano-titulo">Mapa de calor</h3>
+          <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :calor="calorPlano" :calor-max="calorTope" :celda-calor="CELDA_CALOR" :mostrar-camaras="false" inicio="sitio" zoom v-model:enlace="vistaPlanos" />
+        </div>
+      </div>
       <p v-if="otraZona && !modoVivo" class="aviso-zona" role="status" data-prueba="zona-sin-videos"><b>{{ otraZona }}</b> sin videos grabados.</p>
       <div v-if="replay && !modoVivo && verGrabacion" class="controles">
         <button class="primary-button" type="button" @click="reproduciendo ? pausar() : reproducir()">{{ reproduciendo ? "❚❚ Pausa" : "▶ Reproducir" }}</button>
@@ -505,9 +578,45 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   gap: 8px;
   align-items: start;
 }
-/* En vivo: el plano comparte la fila con las cámaras (los dos teléfonos y, debajo, quién está ahora). */
+/* En vivo: el plano (seguimiento y calor, lado a lado) ocupa todo el ancho y las cámaras de los teléfonos quedan debajo. */
+.ir-a {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 0;
+}
+.ir-a button {
+  padding: 7px 16px;
+  font-weight: 700;
+}
+.planos-par {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.plano-caja {
+  min-width: 0;
+}
+/* Los dos planos ocupan el alto que queda en la pantalla (cabecera, controles, leyenda y línea de tiempo aparte), no solo el de su proporción. */
+.planos-par :deep(.lienzo-plano) {
+  height: clamp(440px, calc(100vh - 330px), 900px);
+  max-height: none;
+  background: rgba(127, 140, 160, 0.06);
+}
+.plano-titulo {
+  margin: 4px 2px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+@media (max-width: 1100px) {
+  .planos-par {
+    grid-template-columns: 1fr;
+  }
+}
 .envivo-esan.vivo {
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 .barra-vivo {
   display: flex;

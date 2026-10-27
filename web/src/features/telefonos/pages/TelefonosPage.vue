@@ -27,9 +27,27 @@ const conectado = computed(() => ahora.value - ultimoEstado.value < 6000 && serv
 // El enlace con la IP real lo publica el modelo (corre en la laptop); si no corre y la web se abrió por la
 // IP de la red o la pública, sirve esa; desde localhost la IP no se conoce. En los puertos estándar (servidor,
 // donde solo 80/443 pasan el firewall) la cámara va por el nginx de la web en /camara/; en la laptop, por el 8444.
+// Desde localhost la IP no se conoce: se escribe una vez y queda recordada en este navegador.
+const esLocal = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+const ipManual = ref("");
+try {
+  ipManual.value = localStorage.getItem("camara-ip") ?? "";
+} catch {
+  /* sin almacenamiento: se vuelve a escribir */
+}
+function guardarIp() {
+  ipManual.value = ipManual.value.trim();
+  try {
+    localStorage.setItem("camara-ip", ipManual.value);
+  } catch {
+    /* ídem */
+  }
+}
 const urlCamara = computed(() => {
   if (conectado.value && servicio.value?.enlace) return servicio.value.enlace;
-  if (["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) return null;
+  if (esLocal) {
+    return /^[\w.-]+$/.test(ipManual.value) ? `https://${ipManual.value}:8444` : null;
+  }
   return location.port ? `https://${location.hostname}:8444` : `https://${location.hostname}/camara/`;
 });
 const copiado = ref(false);
@@ -115,6 +133,10 @@ onUnmounted(() => {
       <h1>Cámaras de teléfono</h1>
     </div>
     <div class="barra-acciones">
+      <label v-if="!conectado && esLocal" class="ip-laptop">
+        IP de la laptop
+        <input v-model="ipManual" type="text" inputmode="decimal" placeholder="172.20.10.2" @change="guardarIp" />
+      </label>
       <a v-if="urlCamara" class="enlace" :href="urlCamara" target="_blank" rel="noopener">{{ urlCamara }}</a>
       <button v-if="urlCamara" type="button" @click="copiarEnlace">{{ copiado ? "Copiado" : "Copiar enlace" }}</button>
       <button class="danger-button" type="button" :disabled="olvidando || !memoria?.personas" @click="olvidarTodas">Olvidar a todos</button>
@@ -150,6 +172,15 @@ onUnmounted(() => {
   color: var(--accent-ink);
   font-variant-numeric: tabular-nums;
   word-break: break-all;
+}
+.ip-laptop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+.ip-laptop input {
+  width: 130px;
 }
 .vistas {
   display: grid;
