@@ -468,7 +468,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         </div>
         <div class="plano-caja">
           <h3 class="plano-titulo">Mapa de calor</h3>
-          <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :calor="calorPlano" :calor-max="calorTope" :celda-calor="CELDA_CALOR" :mostrar-camaras="false" inicio="sitio" zoom v-model:enlace="vistaPlanos" />
+          <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :calor="calorPlano" :calor-max="calorTope" :celda-calor="CELDA_CALOR" :mostrar-camaras="false" inicio="sitio" zoom :recordar="enVivo" v-model:enlace="vistaPlanos" />
         </div>
       </div>
       <p v-if="otraZona && !enVivo" class="aviso-zona" role="status" data-prueba="zona-sin-videos"><b>{{ otraZona }}</b> sin videos grabados.</p>
