@@ -3,7 +3,7 @@
 Sesión de validación con el método /office-hours (gstack, Y Combinator), 27 de octubre de 2026.
 Rama: claude/funny-sagan-bz89x1 · Repo: 23-Andres-QC/Aeropuerto
 
-El plan de negocio completo (problema, clientes, solución, mercado, FODA, Canvas, precios, costo por cámara, pronóstico, plan de validación, cronograma y riesgos) está en [docs/plan-de-negocio-aerovision.md](../plan-de-negocio-aerovision.md). Este documento registra solo el resultado de la sesión y el plan de validación que se acordó.
+El plan de negocio completo (problema, clientes, solución, mercado, FODA, Canvas, precios, costo por cámara, pronóstico, plan de validación y cronograma) está en [docs/plan-de-negocio-aerovision.md](../plan-de-negocio-aerovision.md). Este documento registra solo el resultado de la sesión y el plan de validación que se acordó.
 
 ## Estado al 27 de octubre de 2026
 

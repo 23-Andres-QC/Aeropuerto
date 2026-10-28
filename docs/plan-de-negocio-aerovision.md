@@ -315,24 +315,7 @@ Hipótesis del plan, prueba y criterio con que se dan por validadas:
 | 1 sep – 17 dic 2027 | Primera cadena de tiendas |
 | 31 dic 2027 | Meta: 10 tiendas y 10 pantallas |
 
-## 13. Riesgos y aspectos legales
-
-El riesgo más grande no es técnico: es que el ciclo de venta sea más largo que la caja disponible. Por eso el plan cobra cada estudio con adelanto y no contrata personal fijo hasta tener ingresos recurrentes.
-
-| Riesgo | Probabilidad | Impacto | Mitigación |
-| --- | --- | --- | --- |
-| Ciclo de venta largo (malls, aeropuerto) | Alta | Alto | Empezar por tiendas (venta corta); LAP y JCDecaux en paralelo; estudios cortos con adelanto |
-| Precisión insuficiente con multitudes o cámaras viejas | Media | Alto | Conteo manual de referencia en cada estudio; publicar el error medido; vender solo métricas validadas |
-| La PC procesa menos de 10 cámaras | Media | Alto | Medir en el primer diagnóstico; modo liviano para tiendas; optimizar con TensorRT |
-| Datos personales (Ley 29733 y su Reglamento, D.S. 016-2024-JUS) | Media | Alto | Sin rostros ni imágenes; contrato de encargado de tratamiento; aviso de videovigilancia; evaluación de impacto; asesoría legal antes del primer contrato |
-| Un gran proveedor baja precios o regala analítica en sus cámaras | Media | Medio | Diferenciar con el recorrido completo (se detienen, entran, compran), la prueba de vitrina y el soporte en Lima |
-| Dependencia de LAP y de pocos clientes | Alta en 2027 | Medio | Ningún cliente > 40% del ingreso desde 2028 |
-| Equipo de estudiantes con poca disponibilidad | Media | Alto | Acuerdo de socios con dedicación, vesting a 4 años y roles claros |
-| Propiedad intelectual y licencias de modelos | Baja | Alto | Cambiar a un detector con licencia libre antes de cobrar; registrar la marca en INDECOPI |
-
-**Requisitos legales antes de facturar:** constituir la empresa (S.A.C. en régimen MYPE), registrar la marca AeroVision, inscribir el banco de datos ante la ANPD si corresponde, y tener modelos de contrato de estudio, suscripción y encargo de tratamiento.
-
-## 14. Fuentes y supuestos
+## 13. Fuentes y supuestos
 
 Cifras de fuentes públicas consultadas el 27 de octubre de 2026. Los montos marcados como estimados (constitución, PC, horas de trabajo) y las tasas de conversión son supuestos del plan.
 
