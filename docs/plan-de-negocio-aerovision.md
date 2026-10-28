@@ -6,7 +6,7 @@ Los gráficos del documento original aparecen aquí como tablas.
 
 ## Resumen ejecutivo
 
-**Problema:** en un mall o un aeropuerto hay dos preguntas de dinero que nadie responde con datos: (1) una tienda no sabe cuántas de las personas que pasan por su puerta entran, ni cuántas compran; (2) quien vende o compra publicidad no sabe cuánta gente ve realmente cada pantalla o espacio.
+**Problema:** en cualquier lugar con público (tiendas a la calle o en galerías, malls, supermercados, farmacias, estaciones, terminales y aeropuertos) hay dos preguntas de dinero que nadie responde con datos: (1) una tienda no sabe cuántas de las personas que pasan por su puerta entran, ni cuántas compran; (2) quien vende o compra publicidad no sabe cuánta gente ve realmente cada pantalla o espacio.
 
 **Idea:** AeroVision usa las cámaras que ya existen y una PC que procesa las grabaciones de noche para medir dos cosas: la **captación de una tienda** (pasan → se detienen frente a la vitrina → entran → compran) y la **audiencia de un lugar** (cuántos lo ven y cuánto tiempo). Se vende como estudio puntual y como informe mensual.
 
@@ -15,15 +15,15 @@ Los gráficos del documento original aparecen aquí como tablas.
 | Producto 1: Captación de tienda | "¿Mi tienda capta a la gente que pasa?" Diagnóstico de 2 semanas S/ 900; prueba de vitrina S/ 1,200; monitoreo S/ 149 al mes por tienda |
 | Producto 2: Audiencia para publicidad | "¿Cuánta gente ve este lugar?" Estudio S/ 4,000 por lugar; certificación S/ 180 al mes por pantalla |
 | Extra para el operador | Valor de los locales (renta sugerida) para LAP o un mall: S/ 15,000 por estudio |
-| Primeros clientes | Tiendas dentro de LAP y de un mall (venta rápida, cámara propia); JCDecaux, que opera la publicidad del terminal, a través del contacto en LAP |
-| Costo | \~S/ 30–40 al mes por tienda o pantalla, procesando grabaciones en PC propia; margen bruto en 2027 de 73% por tienda y 83% por pantalla |
+| Primeros clientes | Tiendas a la calle, en galerías, en malls y en el terminal de LAP (venta rápida, cámara propia); JCDecaux, que opera la publicidad del terminal, a través del contacto en LAP |
+| Costo | \~S/ 40 al mes por tienda y \~S/ 33 por pantalla, procesando grabaciones en PC propia; margen bruto en 2027 de 73% por tienda y 82% por pantalla |
 | Números | S/ 51 mil en 2027 → \~S/ 2 millones en 2031; 82% recurrente |
 | Capital | S/ 5,000 de reserva, sin gastar nada antes de vender; la caja nunca baja de esa reserva |
 | Riesgo principal | Disposición de las tiendas a pagar S/ 149 al mes y precisión del conteo en la puerta (meta ≥ 95%) |
 
 ## 1. El problema: dos preguntas sin respuesta
 
-En un mall o un aeropuerto se toman dos decisiones de dinero sin medir a la gente: si una tienda está aprovechando a quienes pasan por su puerta, y dónde poner publicidad.
+En cualquier lugar con público (una tienda a la calle, una galería, un mall, un supermercado, una estación, un terminal o un aeropuerto) se toman dos decisiones de dinero sin medir a la gente: si una tienda está aprovechando a quienes pasan por su puerta, y dónde poner publicidad.
 
 ### Problema 1: ¿mi tienda capta a la gente que pasa?
 
@@ -32,7 +32,7 @@ Una tienda sabe cuánto vendió, pero no cuántas personas pasaron por su puerta
 - Es lo que más se compra en el mundo del conteo de personas: los contadores se instalan sobre todo en las entradas de tiendas, y proveedores como [FootfallCam](https://www.footfallcam.com/kiosk/) venden a cadenas para comparar tiendas por tráfico y ventas.
 - Son indicadores estándar del retail: la **captación** compara a quienes pasan con quienes entran ([Crosscan](https://crosscan.com/en/blog/crosscan-data-insights-blog-2/site-optimization-through-people-counting-12)), y la **conversión** = compras / visitantes, que en tienda física suele estar entre 20% y 40% ([GrowthFactor](https://www.growthfactor.ai/blog-posts/how-to-measure-foot-traffic-in-store), dato de un proveedor).
 - La vitrina pesa en la captación: una captación baja puede deberse a que la vitrina no llama la atención aunque pase mucha gente ([Ariadne](https://www.ariadne.inc/resources/blogs/window-conversion-rate/)), y [RetailNext](https://retailnext.net/resources/product-briefs/brief-passby-traffic) ya mide con video a quienes pasan y entran para evaluar vitrinas y letreros.
-- En Perú hay más de 9,000 comercios dentro de los 88 malls de ACCEP, 475 supermercados y 1,436 tiendas de conveniencia.
+- En Perú el problema está en todo el comercio, no solo en los malls: más de 9,000 comercios en los 88 malls de ACCEP; más de 20,000 tiendas en 180–200 galerías de Gamarra ([Perú Retail](https://www.peru-retail.com/?p=406301)); 475 supermercados y 1,436 tiendas de conveniencia; \~2,800 boticas de Inkafarma y Mifarma ([Gestión](https://gestion.pe/economia/boticas-peru-duplica-su-stock-por-el-nino-y-reorden-su-red-con-foco-en-provincias-noticia/)); 1,142 tiendas Mass.
 
 **Cuánto vale saberlo (ejemplo con supuestos):** frente a una tienda pasan 2,000 personas al día; entra el 10% (200) y compra el 25% (50 tickets de S/ 60 = S/ 3,000 al día). Si la captación sube de 10% a 11%, entran 20 más, compran 5 más y la tienda vende \~S/ 9,000 más al mes. El monitoreo cuesta S/ 149 al mes.
 
@@ -40,23 +40,24 @@ Una tienda sabe cuánto vendió, pero no cuántas personas pasaron por su puerta
 
 - En el nuevo Jorge Chávez, JCDecaux diseña y opera la publicidad por 10 años y dice llegar al 100% del flujo de pasajeros ([Mercado Negro](https://www.mercadonegro.pe/medios/outdoor/jcdecaux-ofrece-una-innovadora-oferta-comercial-para-el-nuevo-aeropuerto-jorge-chavez/)). Pero el flujo del aeropuerto no es la audiencia de cada pantalla: depende de por dónde pasa la gente y cuánto se detiene.
 - En la vía pública ya hay medición de audiencia sindicada, como Outdoor Metrics y Clear Channel ([Mercado Negro](https://mercadonegro.pe/via-publica/nueva-herramienta-sindicada-de-medicion-ooh-reafirma-liderazgo-de-clear-channel)), y los medios empiezan a vender pantallas "medibles" ([Citymedia, octubre 2026](https://www.mercadonegro.pe/actualidad/lanzamientos/citymedia-lanza-el-primer-circuito-de-pantallas-led-moviles-medibles-en-peru/)). Dentro de malls y aeropuertos no encontramos medición con cámaras: ese es el hueco.
-- Pagan el dueño del medio (JCDecaux en el aeropuerto, administradores de pantallas en malls), para vender por audiencia, y la marca o agencia que quiere elegir dónde poner su aviso antes de pagarlo.
+- Los espacios de publicidad con mucho público están en todas partes: la Línea 1 del Metro movió 203.9 millones de pasajeros en 2025 en 26 estaciones ([Energiminas](https://energiminas.com/?p=44929)) y Gama Moda Plaza, en Gamarra, recibió 10.4 millones de visitantes. Pagan el dueño del medio (JCDecaux en el aeropuerto, administradores de pantallas en malls, estaciones y galerías), para vender por audiencia, y la marca o agencia que quiere elegir dónde poner su aviso antes de pagarlo.
 
 ## 2. Quién paga y cómo lo resuelve hoy
 
 | Cliente | Producto | Su pregunta | Cómo lo resuelve hoy | Por qué pagaría |
 | --- | --- | --- | --- | --- |
-| Cadena de tiendas (jefe zonal, gerente comercial) | Captación | ¿Qué tiendas captan poco y por qué? | Ventas y, a veces, un contador que solo cuenta entradas | Compara tiendas y actúa sobre vitrina, personal y horarios |
-| Tienda en un mall o en el aeropuerto | Captación | ¿Mi vitrina funciona? ¿Vale la pena este local? | A ojo | Decide cambiar vitrina o personal, o renovar el local |
-| Dueño de medios (JCDecaux en LAP, pantallas de malls) | Audiencia | ¿Cuánto vale cada pantalla? | El flujo total del recinto | Vende por audiencia medida y cobra más por los mejores espacios |
+| Cadena de tiendas, supermercados, conveniencia o farmacias (jefe zonal, gerente comercial) | Captación | ¿Qué locales captan poco y por qué? | Ventas y, a veces, un contador que solo cuenta entradas | Compara locales y actúa sobre vitrina, personal y horarios |
+| Tienda a la calle, en una galería, un mall o el aeropuerto | Captación | ¿Mi vitrina funciona? ¿Vale la pena este local? | Mira sus ventas | Decide cambiar vitrina o personal, o renovar el local |
+| Dueño de medios (JCDecaux en LAP, pantallas en malls, estaciones y galerías) | Audiencia | ¿Cuánto vale cada pantalla? | El flujo total del recinto | Vende por audiencia medida y cobra más por los mejores espacios |
 | Marca o agencia de medios | Audiencia | ¿Dónde pongo mi aviso? | Lo que dice el medio | Deja de pagar por lugares que no rinden |
-| Operador (LAP, mall) | Extra: valor de locales | ¿Cuánto cobrar por cada local? | Experiencia | Sustento para renovar rentas |
+| Operador del recinto (mall, galería, terminal, estación, aeropuerto) | Extra: valor de locales | ¿Cuánto cobrar por cada local o espacio? | Experiencia | Sustento para fijar y renovar rentas |
+| Otros lugares con público (universidades, clínicas, bancos, municipalidades, ferias) | Captación o audiencia | ¿Cuánta gente pasa, entra y se queda, y a qué hora? | Conteos a mano o nada | Ajusta personal, horarios y uso de espacios |
 
 El orden en que se busca a cada cliente está en la sección 11.
 
 ## 3. La solución: dos productos con la misma tecnología
 
-Las cámaras que ya existen y una PC que procesa las grabaciones de noche dan dos productos. Los precios están en la sección 8.
+Las cámaras que ya existen y una PC que procesa las grabaciones de noche dan dos productos. Funcionan en cualquier lugar con una cámara que vea la entrada o el espacio a medir. Los precios están en la sección 8.
 
 |  | Captación de tienda | Audiencia para publicidad |
 | --- | --- | --- |
@@ -83,14 +84,14 @@ Con los mismos datos se calcula, como extra para el operador, el valor de cada l
 
 ## 4. Por qué podemos resolverlo: lo que ya está construido
 
-AeroVision ya funciona como plataforma: el repositorio [23-Andres-QC/Aeropuerto](https://github.com/23-Andres-QC/Aeropuerto) suma 107 commits entre el 14 y el 26 de octubre de 2026, de dos desarrolladores principales.
+AeroVision ya funciona como plataforma: el repositorio [23-Andres-QC/Aeropuerto](https://github.com/23-Andres-QC/Aeropuerto) suma 121 commits en la rama principal entre el 14 y el 28 de octubre de 2026, de tres autores.
 
 | Capa | Qué hace hoy | Valor comercial |
 | --- | --- | --- |
 | Modelo de visión (Python, GPU) | Detecta y sigue personas (YOLO26s + ByteTrack), Re-ID entre cámaras (OSNet-AIN + PersonViT), proyecta cada persona sobre un plano 2D calibrado | Mide recorridos de punta a punta, no solo cruces de puerta |
 | Insights (Parte III) | Visitas, exposición, tasa de captación, permanencia, densidad, congestión, colas, mapas de calor, rutas frecuentes, origen-destino | Las métricas que compran retail, malls y operaciones |
 | Ventas | Carga tickets de caja (CSV), conversión visitante → compra por local, patrones por hora, pronóstico y simulador "¿y si?" | Diferenciador: une tráfico con ingresos |
-| En vivo y Videos | Teléfonos como cámaras, video subido, aforo en tiempo real | Demo inmediata en cualquier local, sin instalar nada |
+| En vivo y Videos | Teléfonos como cámaras; Videos procesa hasta 10 grabaciones a la vez con IDs compartidos entre cámaras; aforo en tiempo real | Demo inmediata en cualquier local, sin instalar nada |
 | Plataforma | API en Go, PostgreSQL/PostGIS y pgvector, web Vue, roles (superadmin, seguridad, negocio), contraseñas argon2id, bitácora | Base seria para vender a empresas |
 | Privacidad | Sin reconocimiento facial, sin guardar imágenes, IDs seudónimos, vectores Re-ID borrados a los 7 días | Argumento de venta frente a la Ley 29733 |
 
@@ -98,7 +99,7 @@ AeroVision ya funciona como plataforma: el repositorio [23-Andres-QC/Aeropuerto]
 
 **Desarrollo previo al lanzamiento (noviembre 2026 – febrero 2027):**
 
-1. **Leer grabaciones del NVR** por fecha y hora y procesarlas por lotes en la PC propia (hoy el flujo es dataset o teléfono).
+1. **Leer grabaciones del NVR** por fecha y hora y procesarlas por lotes, sin saltar cuadros. El procesamiento de grabaciones ya existe: Videos procesa hasta 10 a la vez y \`procesar\_video.py\` publica en el plano la sesión de varias cámaras; la configuración de cámaras ya acepta fuentes rtsp://.
 2. **Evento "se detiene frente a la vitrina"** (≥ 2 s en el frente del local a ≤ 0.5 m/s): mismo cálculo con el que hoy se detecta una cola.
 3. **Modo liviano para tiendas:** detector y conteo por línea, sin Re-ID entre cámaras, para procesar todas las horas de apertura.
 4. **Zona de visión por pantalla** en el plano, igual que hoy se marca el frente de un local (producto de audiencia).
@@ -112,15 +113,15 @@ Fase 2 (2028): medir si la persona *mira* la vitrina, con la orientación de la 
 
 El mercado mundial de sistemas de conteo de personas vale unos US$ 1,450 millones en 2025 y crecería \~13% al año hasta US$ 2,670 millones en 2030 ([Mordor Intelligence](https://www.marketresearch.com/Mordor-Intelligence-LLP-v4018/People-Counting-System-Share-Trends-42574237); Grand View y Polaris dan cifras parecidas). El hardware aún concentra el 63% del ingreso, pero los servicios gestionados son lo que más crece: es justo el espacio de un software que reutiliza cámaras.
 
-**Mercado en Perú (dimensionado por tiendas, supuesto de trabajo):**
+**Mercado en Perú (dimensionado por locales comerciales, supuesto de trabajo):**
 
 | Nivel | Cálculo | Unidades | Ingreso recurrente anual potencial |
 | --- | --- | --- | --- |
-| TAM Perú (tiendas) | 9,000+ comercios en malls de ACCEP + 1,911 supermercados y tiendas de conveniencia | \~10,900 tiendas | \~S/ 19.5 millones (a S/ 149 al mes) |
-| SAM (Lima, cadenas y tiendas con cámara IP, \~30%) | 30% del TAM | \~3,300 tiendas | \~S/ 5.9 millones |
-| SOM a 2031 (meta del plan) | Pronóstico | 750 tiendas + 350 pantallas | \~S/ 2.1 millones |
+| TAM Perú (locales) | 9,000+ comercios en malls de ACCEP + 20,000+ tiendas en galerías de Gamarra + 1,911 supermercados y tiendas de conveniencia + \~2,800 boticas de cadena + 1,142 tiendas Mass | \~34,900 locales | \~S/ 62.4 millones (a S/ 149 al mes) |
+| SAM (Lima, locales con cámara IP, \~30%) | 30% del TAM | \~10,500 locales | \~S/ 18.7 millones |
+| SOM a 2031 (meta del plan) | Pronóstico | 750 locales + 350 pantallas | \~S/ 2.1 millones |
 
-El número de pantallas publicitarias dentro de malls y aeropuertos se obtiene en las reuniones con JCDecaux y los administradores de malls. El 30% de tiendas con cámara IP utilizable es un supuesto del plan.
+El TAM no incluye bodegas (\~535 mil en el país), universidades, clínicas ni bancos, que también pueden usar el servicio. El número de pantallas publicitarias en malls, galerías, estaciones y aeropuertos se obtiene en las reuniones con sus administradores. El 30% de locales con cámara IP utilizable es un supuesto del plan.
 
 ### Competidores
 
@@ -142,13 +143,13 @@ Usar el CCTV existente ya no es una ventaja única ([FootfallCam](https://www.fo
 | | Ayuda | Perjudica |
 | --- | --- | --- |
 | **Interno** | **Fortalezas:** producto funcional de punta a punta; Re-ID multicámara y plano 2D que mide recorridos; módulo de ventas y conversión ya construido; usa el CCTV existente, sin hardware nuevo; privacidad por diseño (sin rostros ni imágenes); equipo técnico que itera muy rápido | **Debilidades:** sin clientes pagadores ni caso de éxito; precisión no validada por terceros; instalación y calibración manuales; poca experiencia comercial B2B; licencia del detector (AGPL) por resolver; equipo a medio tiempo en 2027 |
-| **Externo** | **Oportunidades:** mercado mundial crece ~13% al año; 91 malls y 60+ millones de visitas al mes en Perú; contacto en LAP, y JCDecaux opera la publicidad del terminal; tiendas que no miden su captación; no hay medición de audiencia con cámaras dentro de recintos; fondos de innovación (ProInnóvate) | **Amenazas:** Outdoor Metrics y medidores de vía pública; FootfallCam ya analiza pasillos con CCTV; exigencias de la Ley 29733 y su Reglamento; ciclos de compra largos en grandes recintos; cámaras viejas o mal ubicadas; precio de GPU y de nube |
+| **Externo** | **Oportunidades:** mercado mundial crece ~13% al año; malls, galerías, estaciones y terminales sin medición; contacto en LAP, y JCDecaux opera la publicidad del terminal; tiendas que no miden su captación; no hay medición de audiencia con cámaras dentro de recintos; fondos de innovación (ProInnóvate) | **Amenazas:** Outdoor Metrics y medidores de vía pública; FootfallCam ya analiza pasillos con CCTV; exigencias de la Ley 29733 y su Reglamento; ciclos de compra largos en grandes recintos; cámaras viejas o mal ubicadas; precio de GPU y de nube |
 
 **Estrategias cruzadas:**
 
 | Cruce | Estrategia |
 | --- | --- |
-| FO (usar fortalezas para oportunidades) | Usar el contacto en LAP para llegar a las tiendas del terminal y a JCDecaux, y llevar esos casos a los malls |
+| FO (usar fortalezas para oportunidades) | Usar el contacto en LAP para llegar a las tiendas del terminal y a JCDecaux, y llevar esos casos a malls, galerías y cadenas |
 | DO (corregir debilidades con oportunidades) | Usar ProInnóvate e incubadoras para financiar la validación independiente de precisión mientras el equipo trabaja a medio tiempo |
 | FA (fortalezas contra amenazas) | Vender privacidad por diseño y procesamiento dentro de la red del cliente como respuesta a la Ley 29733 |
 | DA (minimizar debilidades y amenazas) | Estudios cortos y pagados con métricas firmadas; resolver la licencia del detector antes del primer contrato |
@@ -161,9 +162,9 @@ El Canvas tiene dos lados. El lado del cliente es distinto para cada producto; e
 
 | Bloque | Captación de tienda | Audiencia para publicidad |
 | --- | --- | --- |
-| **1. Segmentos** | Tiendas independientes y franquicias en malls de Lima y en el terminal de LAP, con cámara IP en la entrada; decide el dueño o administrador. Después, cadenas de 10+ tiendas (jefe zonal o gerente comercial) | JCDecaux, que opera la publicidad del terminal de LAP por 10 años; administradores de pantallas en malls; agencias de medios y marcas que compran espacios |
+| **1. Segmentos** | Tiendas a la calle, en galerías (como Gamarra), en malls y en el terminal de LAP, con cámara IP en la entrada; decide el dueño o administrador. Después, cadenas de 10+ locales: tiendas, supermercados, conveniencia y farmacias (jefe zonal o gerente comercial). También universidades, clínicas y bancos que quieren medir flujo | JCDecaux, que opera la publicidad del terminal de LAP por 10 años; administradores de pantallas en malls, galerías y estaciones; agencias de medios y marcas que compran espacios |
 | **2. Propuesta de valor** | Saber en qué paso pierde clientes (pasan → se detienen → entran → compran), por hora, y si una vitrina nueva funciona; con su propia cámara y sin comprar equipos | Audiencia medida de cada pantalla (personas que la tuvieron a la vista ≥ 2 s, por hora y día) para vender o comprar por audiencia y no por espacio |
-| **3. Canales** | Visita en persona con demo en el teléfono (módulo En vivo); presentación del contacto de LAP a tiendas del terminal; integradores de CCTV con 20% de comisión el primer año; LinkedIn con casos | Presentación del contacto de LAP a JCDecaux; charla en ACCEP; agencias de medios con el caso del aeropuerto |
+| **3. Canales** | Visita en persona con demo en el teléfono (módulo En vivo); presentación del contacto de LAP a tiendas del terminal; asociaciones de comerciantes y galerías (como Gamarra); integradores de CCTV con 20% de comisión el primer año; LinkedIn con casos | Presentación del contacto de LAP a JCDecaux; charla en ACCEP; agencias de medios con el caso del aeropuerto |
 | **4. Relación** | Diagnóstico con conteo manual de control; luego informe mensual automático, alertas y una llamada al mes | Cuenta dedicada; certificación mensual por pantalla; revisión trimestral |
 | **5. Fuentes de ingreso** | Diagnóstico S/ 900 (50% al firmar); prueba de vitrina S/ 1,200; monitoreo S/ 149 al mes por tienda (S/ 129 desde 10 tiendas). \~58% del ingreso en 2031 | Estudio S/ 4,000 por lugar; certificación S/ 180 al mes por pantalla. \~37% del ingreso en 2031 |
 
@@ -176,7 +177,7 @@ Extra para el operador (LAP o un mall): estudio de valor de locales a S/ 15,000,
 | **6. Recursos clave** | Software ya construido (Insights: exposición, entradas, permanencia, captación; Ventas: tickets y conversión); la PC del equipo con RTX 4060 y una PC con GPU de 16 GB en 2027; 3 fundadores a medio tiempo (visión por computadora, backend y venta); contacto en LAP |
 | **7. Actividades clave** | Exportar grabaciones del NVR y procesarlas de noche; calibrar la puerta y el frente de cada tienda o la zona de visión de cada pantalla (\~1 hora); control de calidad con conteo manual de 15 minutos; redactar el informe con una recomendación; contactar 30 tiendas por trimestre |
 | **8. Socios clave** | LAP (acceso a tiendas del terminal y a JCDecaux); integradores de CCTV (acceso a cámaras y referidos); ESAN (prueba de precisión e incubadora); contador y asesoría legal en Ley 29733; tiendas de PC en Lima |
-| **9. Estructura de costos** | Variables: S/ 40 al mes por tienda y S/ 30 por pantalla (2027), \~10% del precio de cada estudio en caja. Fijos: contador S/ 150 y nube central S/ 100 al mes, luz extra \~S/ 65. Inversión: PC de S/ 5,500 en 2027 y S/ 4,500 por PC adicional, solo con contratos. Una vez: S.A.C. S/ 1,500, contratos S/ 1,000, marca y web \~S/ 1,035. Equipo: S/ 1,500 por fundador al mes desde junio de 2027, solo si hay caja |
+| **9. Estructura de costos** | Variables: S/ 40 al mes por tienda y S/ 33 por pantalla (2027), \~10% del precio de cada estudio en caja. Fijos: contador S/ 150 y nube central S/ 100 al mes, luz extra \~S/ 65. Inversión: PC de S/ 5,500 en 2027 y S/ 4,500 por PC adicional, solo con contratos. Una vez: S.A.C. S/ 1,500, contratos S/ 1,000, marca y web \~S/ 1,035. Equipo: S/ 1,500 por fundador al mes desde junio de 2027, solo si hay caja |
 
 ## 8. Precio contra valor para el cliente
 
@@ -201,7 +202,7 @@ Cada producto se vende con un estudio corto para entrar y un informe mensual par
 
 ## 9. Costos: procesar grabaciones en una PC propia
 
-El procesamiento es por lotes, no en vivo. Una PC propia toma las grabaciones que el NVR del recinto ya guarda y procesa solo las horas que importan, sin apuro y de noche. Así, procesar una cámara de pantalla (3 horas pico al día) cuesta \~S/ 10 al mes en vez de \~S/ 73 en la nube a demanda, o \~S/ 613 en la nube en vivo, siempre que la PC rinda lo que ya se midió en el repositorio.
+El procesamiento es por lotes, no en vivo. Una PC propia toma las grabaciones que el NVR del recinto ya guarda y procesa solo las horas que importan, sin apuro y de noche. Así, procesar una cámara de pantalla (3 horas pico al día) cuesta \~S/ 13 al mes en vez de \~S/ 97 en la nube a demanda, o \~S/ 817 en la nube en vivo, siempre que la PC rinda lo que ya se midió en el repositorio.
 
 ### Cómo funciona
 
@@ -215,13 +216,14 @@ El producto son **informes diarios y mensuales**, que es lo que necesitan la tie
 
 ### Qué tan rápido procesa el modelo (repositorio)
 
-| Medición | Cuadros por segundo | Cámaras-hora por hora de PC (a 5 cuadros/s) |
+| Medición (repositorio, RTX 4060) | Cuadros por segundo | Cámaras-hora por hora de PC (a 5 cuadros/s) |
 | --- | --- | --- |
-| Mall lleno, ajustes de máxima sensibilidad, RTX 4060 (README) | 3–4 | 0.7 |
+| Un video de un mall lleno, ajustes de máxima sensibilidad (README) | 3–4 | 0.7 |
+| 7 cámaras 1080p con \~25 personas cada una (commit del 27 oct 2026) | \~12 (1.7 por video) | 2.4 |
 | Dos videos en tiempo real, 54% de cuadros procesados (commit 80731e5; si los videos eran de 15 cuadros/s) | \~16 | 3.2 |
 | Con TensorRT y 960 px (sin medir) | \~40 (supuesto) | 8 |
 
-El escenario base usa \~16 cuadros por segundo; la cifra se verifica con grabación real en la validación (hipótesis 7).
+Para pantallas se usa la medición con multitud (\~12 cuadros por segundo); para tiendas, el modo liviano sobre la medición de \~16. Ambas cifras se verifican con grabación real en la validación (hipótesis 7).
 
 ### Costo de la PC
 
@@ -236,34 +238,34 @@ El escenario base usa \~16 cuadros por segundo; la cifra se verifica con grabaci
 
 ### Procesar una cámara de pantalla al mes, según dónde (90 horas de video: 3 h pico × 30 días)
 
-| Dónde se procesa | Rendimiento medio (16 cuadros/s) | Rendimiento bajo (3.5 cuadros/s) | Cámaras que atiende una máquina (medio) |
+| Dónde se procesa | Con multitud (12 cuadros/s) | Rendimiento bajo (3.5 cuadros/s) | Cámaras que atiende una máquina (12 cuadros/s) |
 | --- | --- | --- | --- |
-| **PC propia, por lotes** | **S/ 10** | S/ 46 | 26 |
-| Nube Spot (\~US$ 0.18 por hora) | S/ 25 | S/ 113 | — |
-| Nube a demanda (US$ 0.526 por hora) | S/ 73 | S/ 331 | — |
-| Nube en vivo las 24 h | \~S/ 613 | — | \~2 por GPU |
+| **PC propia, por lotes** | **S/ 13** | S/ 46 | 19 |
+| Nube Spot (\~US$ 0.18 por hora) | S/ 33 | S/ 113 | — |
+| Nube a demanda (US$ 0.526 por hora) | S/ 97 | S/ 331 | — |
+| Nube en vivo las 24 h | \~S/ 817 | — | \~1.7 por GPU |
 
-Supuesto: una GPU T4 de nube rinde 70% de una RTX 4060. Para el mismo trabajo que hace una PC al mes, la nube a demanda costaría \~S/ 1,870: **la PC se paga sola en menos de 3 meses**. Procesar en vivo no sirve como producto base: las mediciones del repositorio dan \~2 cámaras en vivo por GPU.
+Supuesto: una GPU T4 de nube rinde 70% de una RTX 4060. Para el mismo trabajo que hace una PC al mes, la nube a demanda costaría \~S/ 1,870: **la PC se paga sola en menos de 3 meses**. Procesar en vivo no sirve como producto base: con multitud, las mediciones del repositorio dan \~1.7 cámaras en vivo por GPU.
 
 ### Dónde vive la PC
 
 | Opción | Cuándo | Ventaja | Desventaja |
 | --- | --- | --- | --- |
 | PC central + disco | Estudios | No se instala nada en la red del cliente; la venta es más rápida | Hay que recoger y devolver el disco; el video sale del recinto (cifrado y contrato) |
-| PC central + subida de noche | Monitoreo, si el recinto tiene buena internet | Una PC sirve a varios clientes | 2.1–4.2 TB al mes por cada 26 cámaras: \~13–26 Mbps durante 12 horas de noche y permiso de TI |
-| PC dentro del recinto | Monitoreo, si TI no deja sacar el video | El video nunca sale | Una PC por sitio; usando solo la noche atiende \~13 cámaras |
+| PC central + subida de noche | Monitoreo, si el recinto tiene buena internet | Una PC sirve a varios clientes | 1.5–3.1 TB al mes por cada 19 cámaras: \~10–19 Mbps durante 12 horas de noche y permiso de TI |
+| PC dentro del recinto | Monitoreo, si TI no deja sacar el video | El video nunca sale | Una PC por sitio; usando solo la noche atiende \~10 cámaras |
 
 ### Costo y margen mensual por producto
 
 | Concepto | Tienda 2027 | Tienda 2031 | Pantalla 2027 | Pantalla 2031 |
 | --- | --- | --- | --- | --- |
-| Procesamiento en PC por lotes | S/ 15 | S/ 10 | S/ 10 | S/ 6 |
+| Procesamiento en PC por lotes | S/ 15 | S/ 10 | S/ 13 | S/ 8 |
 | Traslado del video (internet de noche o disco) | S/ 5 | S/ 3 | S/ 3 | S/ 2 |
 | Soporte y control de calidad | S/ 15 | S/ 12 | S/ 14 | S/ 11 |
 | Nube central (web, base, respaldos) | S/ 5 | S/ 3 | S/ 3 | S/ 3 |
-| **Costo total** | **S/ 40** | **S/ 28** | **S/ 30** | **S/ 22** |
+| **Costo total** | **S/ 40** | **S/ 28** | **S/ 33** | **S/ 24** |
 | Precio | S/ 149 | S/ 149 | S/ 180 | S/ 180 |
-| **Margen bruto** | **73%** | **81%** | **83%** | **88%** |
+| **Margen bruto** | **73%** | **81%** | **82%** | **87%** |
 
 Tienda: 1.5 cámaras × 12 horas × 30 días en modo liviano, \~4 veces más rápido que el modo completo (supuesto que se verifica en la hipótesis 7). Pantalla: 90 horas al mes en modo completo. La calibración (\~1 hora por tienda o pantalla) va dentro del diagnóstico o del estudio.
 
@@ -276,10 +278,10 @@ Con S/ 5,000 de reserva y los fundadores a medio tiempo, **no se gasta nada hast
 | Año | Ingresos | Caja disponible para pagar al equipo |
 | --- | --- | --- |
 | 2027 | S/ 51 mil | S/ 31.5 mil |
-| 2028 | S/ 206 mil | S/ 119 mil |
-| 2029 | S/ 525 mil | S/ 319 mil |
-| 2030 | S/ 1.11 M | S/ 688 mil |
-| 2031 | S/ 1.99 M | S/ 1.28 M |
+| 2028 | S/ 206 mil | S/ 118 mil |
+| 2029 | S/ 525 mil | S/ 316 mil |
+| 2030 | S/ 1.11 M | S/ 685 mil |
+| 2031 | S/ 1.99 M | S/ 1.27 M |
 
 Capital inicial S/ 5,000; fundadores a medio tiempo hasta que el negocio pague tiempo completo; soles sin IGV.
 
@@ -321,15 +323,15 @@ Los meses que no aparecen siguen el mismo ritmo. En 2027 entran \~S/ 51 mil, se 
 
 ### Cómo crece después, sin capital externo
 
-| Año | Tiendas en monitoreo | Pantallas certificadas | Ingresos | Caja para el equipo | Equivale a |
+| Año | Locales en monitoreo | Pantallas certificadas | Ingresos | Caja para el equipo | Equivale a |
 | --- | --- | --- | --- | --- | --- |
 | 2027 | 10 | 10 | S/ 51 mil | S/ 31.5 mil | S/ 1,500 al mes por fundador desde junio |
-| 2028 | 60 | 40 | S/ 206 mil | S/ 119 mil | \~S/ 3,300 al mes por fundador, a medio tiempo |
-| 2029 | 180 | 100 | S/ 525 mil | S/ 319 mil | \~4 personas a tiempo completo (S/ 4,500 + cargas) |
-| 2030 | 400 | 200 | S/ 1.11 M | S/ 688 mil | \~8 personas a tiempo completo |
-| 2031 | 750 | 350 | S/ 1.99 M | S/ 1.28 M | \~15 personas a tiempo completo |
+| 2028 | 60 | 40 | S/ 206 mil | S/ 118 mil | \~S/ 3,300 al mes por fundador, a medio tiempo |
+| 2029 | 180 | 100 | S/ 525 mil | S/ 316 mil | \~4 personas a tiempo completo (S/ 4,500 + cargas) |
+| 2030 | 400 | 200 | S/ 1.11 M | S/ 685 mil | \~8 personas a tiempo completo |
+| 2031 | 750 | 350 | S/ 1.99 M | S/ 1.27 M | \~15 personas a tiempo completo |
 
-En 2031 el ingreso vendría en \~58% de tiendas (S/ 1.16 M), \~37% de publicidad (S/ 734 mil) y \~5% de estudios de locales (S/ 90 mil), con 82% recurrente. Supuestos: tienda S/ 149 al mes y S/ 900 por diagnóstico (12 en 2027 a 150 en 2031); estudio de audiencia S/ 4,000 (3 a 35 al año); pantalla S/ 180 al mes; 1–6 estudios de locales al año a S/ 15,000; costo de S/ 40 a S/ 28 por tienda y de S/ 30 a S/ 22 por pantalla al mes; PCs de 1 a 40; 15% de lo que queda se guarda como reserva.
+En 2031 el ingreso vendría en \~58% de tiendas (S/ 1.16 M), \~37% de publicidad (S/ 734 mil) y \~5% de estudios de locales (S/ 90 mil), con 82% recurrente. Supuestos: tienda S/ 149 al mes y S/ 900 por diagnóstico (12 en 2027 a 150 en 2031); estudio de audiencia S/ 4,000 (3 a 35 al año); pantalla S/ 180 al mes; 1–6 estudios de locales al año a S/ 15,000; costo de S/ 40 a S/ 28 por tienda y de S/ 33 a S/ 24 por pantalla al mes; PCs de 1 a 40; 15% de lo que queda se guarda como reserva.
 
 **Capacidad del equipo:** Tres fundadores a 15–20 horas por semana son \~2,400 horas al año. En 2027 el trabajo estimado es \~800 horas (\~6 por diagnóstico, \~40 por estudio de audiencia, \~80 el estudio de LAP, monitoreo y \~10 por semana de venta). En 2028 cabe; en 2029 ya no, y es justo cuando el negocio puede pagar tiempo completo.
 
@@ -337,11 +339,11 @@ En 2031 el ingreso vendría en \~58% de tiendas (S/ 1.16 M), \~37% de publicidad
 
 | Qué sale mal | Caja para el equipo en 2028 | En 2031 | Lectura |
 | --- | --- | --- | --- |
-| Nada (base) | S/ 119 mil | S/ 1.28 M | — |
-| Las tiendas pagan S/ 99 y no S/ 149 | S/ 101 mil | S/ 985 mil | Se sostiene |
-| Se consigue la mitad de tiendas | S/ 99 mil | S/ 923 mil | Se sostiene, más lento |
-| Procesar cuesta el doble | S/ 99 mil | S/ 1.05 M | Se sostiene |
-| La publicidad vende la mitad | S/ 87 mil | S/ 1.0 M | Se sostiene con las tiendas |
+| Nada (base) | S/ 118 mil | S/ 1.27 M | — |
+| Los locales pagan S/ 99 y no S/ 149 | S/ 100 mil | S/ 979 mil | Se sostiene |
+| Se consigue la mitad de locales | S/ 98 mil | S/ 918 mil | Se sostiene, más lento |
+| Procesar cuesta el doble | S/ 98 mil | S/ 1.04 M | Se sostiene |
+| La publicidad vende la mitad | S/ 87 mil | S/ 1.0 M | Se sostiene con los locales |
 | Nadie compra en 2027 | — | — | No se gastó nada: la reserva sigue intacta |
 
 Tener dos productos reparte el riesgo: si uno vende la mitad, el otro sostiene el negocio y solo se crece más lento.
@@ -354,11 +356,11 @@ Dos ventas distintas: la de tiendas es corta y por volumen (el dueño decide en 
 
 **Orden de clientes:**
 
-1. **Tiendas del terminal de LAP y de un mall:** demo en la propia tienda con un teléfono (el módulo En vivo lo permite hoy) y diagnóstico pagado de S/ 900 con la grabación de su cámara de entrada; al entregar, oferta de monitoreo.
+1. **Tiendas a la calle, en galerías, en malls y en el terminal de LAP:** demo en la propia tienda con un teléfono (el módulo En vivo lo permite hoy) y diagnóstico pagado de S/ 900 con la grabación de su cámara de entrada; al entregar, oferta de monitoreo.
 2. **JCDecaux, presentado por el contacto en LAP:** estudio de audiencia de una zona del terminal (S/ 4,000) y luego certificación mensual de sus pantallas.
-3. **Administradores de pantallas en malls y agencias de medios:** con el caso del aeropuerto.
+3. **Administradores de pantallas en malls, galerías y estaciones, y agencias de medios:** con el caso del aeropuerto.
 4. **Cadenas de retail** (zonales y gerentes comerciales) cuando haya 10 tiendas con resultados.
-5. **LAP y malls como operadores:** estudio de valor de locales, como extra.
+5. **Operadores de recintos (LAP, malls, galerías, terminales):** estudio de valor de locales, como extra.
 
 **Embudo trimestral de tiendas:** 30 tiendas contactadas → 10 demos → 5 diagnósticos pagados → 3 pasan a monitoreo. Se revisa cada mes; si una etapa convierte menos de la mitad de lo previsto, se cambia el mensaje.
 
@@ -396,11 +398,11 @@ Antes de escalar, el plan prueba ocho hipótesis con clientes reales, en orden: 
 
 | # | Hipótesis | Prueba | Criterio para continuar | Alternativa si no se cumple |
 | --- | --- | --- | --- | --- |
-| 1 | A dueños y jefes de tienda les importa su captación y no la tienen | 10 entrevistas a tiendas del terminal y de un mall, sin mostrar el producto | 7 de 10 confirman y cuentan una decisión que tomaron sin datos | La publicidad pasa a ser el producto principal |
+| 1 | A dueños y jefes de tienda les importa su captación y no la tienen | 10 entrevistas a tiendas a la calle, de galerías, de malls y del terminal, sin mostrar el producto | 7 de 10 confirman y cuentan una decisión que tomaron sin datos | La publicidad pasa a ser el producto principal |
 | 2 | Las tiendas pagan S/ 900 por el diagnóstico y S/ 149 al mes | Ofrecer el diagnóstico pagado; preguntar cuánto pagarían antes de mostrar precios | 5 diagnósticos pagados y 3 pasan a monitoreo | Precio de S/ 99 o solo diagnósticos |
 | 3 | El conteo en la puerta es preciso | 3 tramos de 15 minutos contados a mano por 2 personas | Error ≤ 5% en entradas, ≤ 10% en personas que pasan y ≥ 90% de acierto en "se detiene" | Conversión y atracción de vitrina fuera del informe hasta corregir el modelo |
 | 4 | A las tiendas les importa probar su vitrina | En los 3 primeros diagnósticos, mostrar la atracción de vitrina y ofrecer la prueba de S/ 1,200 | 1 de 3 la contrata cuando cambia su vitrina | La atracción queda como dato del diagnóstico, sin cobro aparte |
-| 5 | JCDecaux o un mall quiere audiencia medida por pantalla | Reunión por el contacto en LAP + 2 administradores de pantallas en malls | 1 estudio de audiencia pagado | La publicidad queda como extra |
+| 5 | JCDecaux o un mall quiere audiencia medida por pantalla | Reunión por el contacto en LAP + 2 administradores de pantallas en malls, galerías o estaciones | 1 estudio de audiencia pagado | La publicidad queda como extra |
 | 6 | La audiencia medida cambia lo que paga un anunciante | Entregar 1 mes de audiencia a 2 anunciantes o agencias | Al menos 1 la usa para comprar o fijar tarifa | Solo estudios de lugar, sin certificación mensual |
 | 7 | La grabación se puede obtener y procesar a bajo costo | Exportar 10 días de video del NVR de 3 tiendas y medir cuánto tarda la PC | 3 de 3 tiendas la entregan; ≥ 12 tiendas por PC | PC dentro del sitio o solo horas pico |
 | 8 | La tienda y el operador aceptan el tratamiento de datos | Contrato de encargo de tratamiento + aviso de videovigilancia existente | Firmado en los 3 primeros clientes | Sin estimación de género y con menos datos guardados |

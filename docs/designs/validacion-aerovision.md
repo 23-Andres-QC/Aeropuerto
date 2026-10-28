@@ -14,6 +14,19 @@ El plan de negocio completo (problema, clientes, solución, mercado, FODA, Canva
 | Cliente concreto | No hay todavía una persona identificada por nombre. |
 | Producto | El software calcula exposición frente al local, entradas, permanencia, captación y conversión con tickets. |
 
+## Contraste con el repositorio (28 de octubre de 2026)
+
+| Afirmación del plan | Evidencia en `main` | Estado |
+| --- | --- | --- |
+| Plataforma construida | 121 commits entre el 14 y el 28 de octubre, de tres autores | Confirmado |
+| Captación, permanencia, colas y regreso | Eventos EXPOSURE, ENTER, DWELL, EXIT, RETURN y QUEUE en Insights | Confirmado |
+| Conversión con tickets y pronóstico | Módulo Ventas: carga de tickets CSV, conversión y pronóstico Holt-Winters | Confirmado |
+| Procesar grabaciones por lotes | Videos procesa hasta 10 grabaciones con IDs compartidos; `procesar_video.py` publica sesiones multicámara en el plano | Confirmado; falta leer del NVR por fecha y hora |
+| Conectar cámaras IP | `site.go` acepta fuentes `rtsp://` | Confirmado |
+| Rendimiento para el costo | 7 cámaras 1080p con \~25 personas: \~1.7 cuadros/s por video, \~12 en total; costo por pantalla S/ 33 al mes y margen 82% | Ajustado en el plan |
+| Evento "se detiene frente a la vitrina" | No existe todavía | Por construir (desarrollo 2 del plan) |
+| Licencia del detector | El modelo usa `ultralytics` (AGPL) | Por reemplazar antes de cobrar |
+
 ## Premisas acordadas
 
 1. El plan de negocio se valida con clientes reales antes de escalar.
@@ -53,6 +66,7 @@ Las ocho hipótesis completas, con prueba, criterio y alternativa, están en la 
 ## Requisitos previos
 
 - Detector con licencia libre (RF-DETR o D-FINE) antes de cobrar.
+- Evento "se detiene frente a la vitrina" en Insights, para medir la atracción de vitrina del diagnóstico.
 - Plantilla de informe de 1 página: pasan, se detienen, entran y captación por hora, con una recomendación.
 - Plantilla de permiso y encargo de tratamiento para la tienda.
 
