@@ -4,6 +4,7 @@
 // calibración de esa cámara y su pose actual, y va acumulando lo que En vivo e Insights muestran: posiciones,
 // rastros, mapa de calor, tiempo en cada zona, rutas y flujos.
 import { computed, ref, shallowRef, watch } from "vue";
+import { sesion } from "../../core/auth";
 import { json, request, socketPersistente } from "../../core/http";
 import { colorPersona } from "../../shared/format";
 import { api as apiVivo, RELEVO_VIVO, type Detecciones, type EstadoServicio, type EstadoTelefono, type Telefono, type UbicacionPlano } from "../telefonos/api";
@@ -1039,17 +1040,29 @@ watch(
 // es lo que ven los teléfonos, no una sesión guardada. Solo al pasar de ningún teléfono a alguno (si después se sale a mano,
 // no vuelve a entrar mientras sigan los mismos) y no si se está mirando a propósito una captura (?sesion=). Es una grabación
 // nueva y el modelo empieza de cero, salvo si la pestaña se abrió con los teléfonos ya transmitiendo (null: aún no se sabía).
+// Se escucha solo con una sesión que puede abrir En vivo: en el login (o con un rol sin ese módulo) el relevo respondería 401
+// o 403 y el navegador reintentaría cada 2 s.
 let habiaTelefonos: boolean | null = null;
-socketPersistente(`${RELEVO_VIVO}/telefonos/detections/watch`, false, (ev) => {
-  try {
-    const e = JSON.parse(ev.data as string) as EstadoServicio;
-    const hay = Object.values(e.telefonos ?? {}).some((t) => t.estado === "procesando");
-    if (hay && !habiaTelefonos && !modoVivo.value && !location.search.includes("sesion=")) fijarModoVivo(true, habiaTelefonos === false, true);
-    habiaTelefonos = hay;
-  } catch {
-    /* un mensaje que no es del servicio: se ignora */
-  }
-});
+let cierraAvisoTelefonos: (() => void) | undefined;
+watch(
+  () => !!sesion.value && (!sesion.value.modulos || sesion.value.modulos.includes("en_vivo")),
+  (puede) => {
+    cierraAvisoTelefonos?.();
+    cierraAvisoTelefonos = undefined;
+    if (!puede) return;
+    cierraAvisoTelefonos = socketPersistente(`${RELEVO_VIVO}/telefonos/detections/watch`, false, (ev) => {
+      try {
+        const e = JSON.parse(ev.data as string) as EstadoServicio;
+        const hay = Object.values(e.telefonos ?? {}).some((t) => t.estado === "procesando");
+        if (hay && !habiaTelefonos && !modoVivo.value && !location.search.includes("sesion=")) fijarModoVivo(true, habiaTelefonos === false, true);
+        habiaTelefonos = hay;
+      } catch {
+        /* un mensaje que no es del servicio: se ignora */
+      }
+    });
+  },
+  { immediate: true },
+);
 
 /**
  * Dónde se hace el en vivo. Hoy es el patio (la zona grabada 1: ahí están los teléfonos, la calibración y el modelo); el comedor y el
