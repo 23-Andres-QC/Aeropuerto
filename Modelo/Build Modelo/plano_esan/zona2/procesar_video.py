@@ -700,6 +700,16 @@ def analizar(camara_id, config, ruta, args, salida, embebedor):
             "duracion": cuadros[-1]["t"] if cuadros else 0.0, "fps": fps, "tam": tam, "ruta": ruta, "video": f"{prefijo(config)}{camara_id}_procesado.mp4"}
 
 
+def recortar(resultados):
+    """Todas las cámaras terminan en el segundo del video más corto: los videos dibujados y los recorridos duran lo mismo."""
+    fin = min(r["duracion"] for r in resultados)
+    for r in resultados:
+        r["cuadros"] = [c for c in r["cuadros"] if c["t"] <= fin]
+        r["personas"] = {i: (n, [p for p in pts if p[0] <= fin]) for i, (n, pts) in r["personas"].items() if pts[0][0] <= fin}
+        r["vectores"] = {n: v for n, v in r["vectores"].items() if any(m == n for m, _ in r["personas"].values())}
+        r["duracion"] = fin
+
+
 def prefijo(config):
     """Cómo empiezan los archivos de una grabación: `comedor_` la primera, `comedor_<grabacion>_` las demás."""
     return f"comedor_{config['grabacion']}_" if config.get("grabacion") else "comedor_"
@@ -730,6 +740,7 @@ def main():
     for par in args.video:
         camara_id, ruta = par.split("=", 1)
         resultados.append(analizar(camara_id, config, ruta, args, salida, embebedor))
+    recortar(resultados)
     unidos = unir_camaras(resultados, config.get("equivalencias", []), config.get("mismas_personas", [])) if len(resultados) > 1 else 0
     total = len({n for r in resultados for n, _ in r["personas"].values()})
     print(f"{total} personas en la sesión ({unidos} vistas por más de una cámara)")

@@ -1,16 +1,16 @@
 {
   "zona": "Zona grabada 2 · comedor",
   "grabacion": "27oct",
-  "nota": "Segunda grabación del comedor: CAM1.mp4 es cam04 y CAM2.mp4 es cam05. posicion_px y rumbo_deg salen de cam04 (-44,7 · 14,62 m, 182°) y cam05 (-69,05 · 16,46 m, 15,8°) como están puestas en el plano (Configuración). Los videos no traen la hora de grabación: inicio es la hora en que se guardó CAM1 menos su duración. La altura y la distancia focal son las de la primera grabación; el horizonte se ajustó con la altura de la cabeza de las personas detectadas en cada video.",
+  "nota": "Segunda grabación del comedor: CAM1.mp4 es cam04 y CAM2.mp4 es cam05. posicion_px y rumbo_deg salen de cam04 (-44,7 · 14,62 m, 182°) y cam05 (-69,05 · 16,46 m, 15,8°) como están puestas en el plano (Configuración). Los videos no traen la hora de grabación: inicio es la hora en que se guardó CAM1 menos su duración. El horizonte se ajustó con la altura de la cabeza de las personas detectadas en cada video. La distancia focal y el rumbo salen de que cada cámara ve a quien sostiene la otra y de los dos que caminan, vistos por ambas: con la focal de la primera grabación (605 y 520) cada una ubicaba a la otra a ~14 m en vez de 24 y a los mismos caminantes a ~11 m entre sí, y nunca se unían. Los videos van sincronizados (el mejor ajuste de los caminantes es a menos de 0,5 s).",
   "camaras": {
     "cam04": {
       "nombre": "cam04",
       "video": "CAM1.mp4",
       "inicio": "2026-10-27T21:58:09-05:00",
       "posicion_px": [1034.88, 422.96],
-      "rumbo_deg": 259.7,
+      "rumbo_deg": 273.8,
       "altura_m": 1.5,
-      "f_px": 605,
+      "f_px": 970,
       "horizonte_px": 260
     },
     "cam05": {
@@ -18,9 +18,9 @@
       "video": "CAM2.mp4",
       "inicio": "2026-10-27T21:58:09-05:00",
       "posicion_px": [311.37, 473.28],
-      "rumbo_deg": 65.9,
+      "rumbo_deg": 79.3,
       "altura_m": 1.58,
-      "f_px": 520,
+      "f_px": 935,
       "horizonte_px": 355
     }
   },
