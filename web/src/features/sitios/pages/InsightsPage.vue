@@ -361,40 +361,55 @@ watch(
     if (rangoMapa.value != null && rangoMapa.value >= n) rangoMapa.value = null;
   },
 );
-const porRango = computed(() =>
-  conRangos.value && replay.value
-    ? rangos.value
-        .map((o, i) => ({ i, personas: recortar(replay.value!, o).personas.filter(enZonaElegida) }))
-        .filter((r) => rangoMapa.value == null || r.i === rangoMapa.value)
-    : null,
+/** Las personas de cada rango (en la zona elegida). */
+const personasPorRango = computed(() =>
+  conRangos.value && replay.value ? rangos.value.map((o) => recortar(replay.value!, o).personas.filter(enZonaElegida)) : [],
 );
 
 // Un trazo por tramo continuo: no se une a una persona a través de un hueco en el que no se la vio.
+const trazos = (p: Recorrido, color: string) =>
+  tramos(p, replay.value?.paso_s ?? 0.2)
+    .filter((puntos) => puntos.length > 1)
+    .map((puntos) => ({ id: p.numero, color, puntos }));
+
+/** Lo que muestran los mapas para un caso con rangos: todos (`sel` null, cada rango con su color) o uno solo. */
+function casoMapa(sel: number | null) {
+  const elegidos = personasPorRango.value.flatMap((ps, i) => (sel == null || sel === i ? [{ i, ps }] : []));
+  return {
+    recorridos: elegidos.flatMap(({ i, ps }) => ps.flatMap((p) => trazos(p, COLORES[i]))),
+    personas: new Set(elegidos.flatMap(({ ps }) => ps.map((p) => p.numero))).size,
+    calor: sel == null ? (analisis.value?.calor ?? []) : desdeReplay(recortar(replay.value!, rangos.value[sel]), 0, zonas.value).calor,
+  };
+}
+const casoActual = computed(() => (conRangos.value && replay.value ? casoMapa(rangoMapa.value) : null));
+
 const recorridos = computed<RecorridoPlano[]>(() => {
   if (modoVivo.value)
     return historiasDe(zonaId.value)
       .filter((h) => h.puntos.length > 1)
       .map((h) => ({ id: h.id, color: colorPersona(h.id), puntos: h.puntos }));
-  const paso = replay.value?.paso_s ?? 0.2;
-  const trazos = (p: Recorrido, color: string) =>
-    tramos(p, paso)
-      .filter((puntos) => puntos.length > 1)
-      .map((puntos) => ({ id: p.numero, color, puntos }));
-  if (porRango.value) return porRango.value.flatMap((r) => r.personas.flatMap((p) => trazos(p, COLORES[r.i])));
+  if (casoActual.value) return casoActual.value.recorridos;
   return personasMapa.value.flatMap((p) => trazos(p, colorPersona(p.numero)));
 });
 
 const nRecorridos = computed(() =>
-  modoVivo.value
-    ? recorridos.value.length
-    : porRango.value
-      ? new Set(porRango.value.flatMap((r) => r.personas.map((p) => p.numero))).size
-      : personasMapa.value.length,
+  modoVivo.value ? recorridos.value.length : casoActual.value ? casoActual.value.personas : personasMapa.value.length,
+);
+
+/** En el PDF con rangos, los mapas van una vez por caso: todos los rangos y cada uno por separado. */
+const mapasPdf = ref(false);
+const casosPdf = computed(() =>
+  mapasPdf.value && conRangos.value && replay.value
+    ? [null, ...rangos.value.map((_, i) => i)].map((sel) => ({
+        sel,
+        titulo: sel == null ? "Todos los rangos" : `${LETRAS[sel]} · ${relativo(rangos.value[sel].desde)}–${relativo(rangos.value[sel].hasta)}`,
+        ...casoMapa(sel),
+      }))
+    : [],
 );
 
 const celdasKDE = computed<[number, number, number][]>(() => {
-  if (conRangos.value && rangoMapa.value != null && replay.value)
-    return desdeReplay(recortar(replay.value, rangos.value[rangoMapa.value]), 0, zonas.value).calor;
+  if (casoActual.value) return casoActual.value.calor;
   if (analisis.value) return analisis.value.calor;
   const k = p3.value?.kde;
   if (!k) return datos.value?.calor.celdas ?? [];
@@ -511,10 +526,17 @@ const sinDatos = computed(() => !datos.value && !modoVivo.value);
 /** El PDF del tablero con los mapas, igual que la hoja de impresión. Es el mismo archivo que se descarga y el que se envía por correo. */
 async function pdfDelTablero(): Promise<Uint8Array> {
   generado.value = new Date().toLocaleString("es-PE");
-  await nextTick();
-  const raiz = document.querySelector("main");
-  if (!raiz) throw new Error("No se pudo preparar el reporte.");
-  return aPdfPagina(raiz as HTMLElement);
+  mapasPdf.value = conRangos.value;
+  try {
+    await nextTick();
+    // Los mapas de cada caso recién montados: un momento para que dibujen su plano.
+    if (mapasPdf.value) await new Promise((listo) => setTimeout(listo, 600));
+    const raiz = document.querySelector("main");
+    if (!raiz) throw new Error("No se pudo preparar el reporte.");
+    return await aPdfPagina(raiz as HTMLElement);
+  } finally {
+    mapasPdf.value = false;
+  }
 }
 const generandoPdf = ref(false);
 async function exportarPDF() {
@@ -611,6 +633,12 @@ onMounted(async () => {
 </script>
 
 <template>
+  <Teleport to="body">
+    <div v-if="generandoPdf || enviando === 'pdf'" class="generando-pdf" data-html2canvas-ignore role="status" aria-live="polite" aria-busy="true" data-prueba="generando-pdf">
+      <span class="ruedita" aria-hidden="true"></span>
+      <b>{{ enviando === "pdf" ? "Enviando PDF…" : "Generando PDF…" }}</b>
+    </div>
+  </Teleport>
   <section class="page-title">
     <div>
       <h1>Comportamiento de personas</h1>
@@ -751,7 +779,35 @@ onMounted(async () => {
       @tablas="tablasLinea = $event"
     />
 
-    <section class="fila fila-2">
+    <section v-for="c in casosPdf" :key="String(c.sel)" class="fila fila-2" data-prueba="mapas-caso">
+      <article class="panel">
+        <div class="panel-heading">
+          <h2>Mapa de movimiento · {{ c.titulo }}</h2>
+          <span class="pill">{{ cantidad(c.personas, "recorrido") }}</span>
+        </div>
+        <PlanoSitio v-if="mapa" class="plano-tablero" :mapa="mapa" :zonas="zonas" :recorridos="c.recorridos" :zona-activa="zonaId" :mostrar-camaras="false" zoom v-model:enlace="vistaPlanos" />
+      </article>
+      <article class="panel">
+        <div class="panel-heading">
+          <h2>Mapa de calor · {{ c.titulo }}</h2>
+        </div>
+        <PlanoSitio
+          v-if="mapa"
+          class="plano-tablero"
+          :mapa="mapa"
+          :zonas="zonas"
+          :calor="c.calor"
+          :celda-calor="CELDA_CALOR"
+          :flechas="c.sel == null ? flechas : []"
+          :zona-activa="zonaId"
+          :mostrar-camaras="false"
+          zoom
+          v-model:enlace="vistaPlanos"
+        />
+      </article>
+    </section>
+
+    <section v-if="!casosPdf.length" class="fila fila-2">
       <article class="panel">
         <div class="panel-heading">
           <h2>Mapa de movimiento</h2>
@@ -951,6 +1007,38 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.generando-pdf {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  background: rgba(10, 37, 64, 0.35);
+  cursor: wait;
+  user-select: none;
+}
+.generando-pdf b {
+  padding: 4px 12px;
+  border-radius: var(--radius-s);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--glass-strong);
+}
+.ruedita {
+  width: 46px;
+  height: 46px;
+  border: 5px solid rgba(255, 255, 255, 0.45);
+  border-top-color: var(--blue-600);
+  border-radius: 50%;
+  animation: girar 0.8s linear infinite;
+}
+@keyframes girar {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .rangos-mapa > button {
   min-height: 22px;
   padding: 2px 8px;
