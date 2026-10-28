@@ -12,11 +12,11 @@ Los gráficos del documento original aparecen aquí como tablas.
 
 | Punto | Respuesta |
 | --- | --- |
-| Producto 1: Captación de tienda | "¿Mi tienda capta a la gente que pasa?" Diagnóstico de 2 semanas S/ 900; prueba de vitrina S/ 1,200; monitoreo S/ 149 al mes por tienda |
+| Producto 1: Captación de tienda | "¿Mi tienda capta a la gente que pasa?" Diagnóstico de 2 semanas S/ 900; prueba de vitrina S/ 1,200; monitoreo S/ 149 al mes por tienda con hasta 2 cámaras (S/ 75 por cámara adicional) |
 | Producto 2: Audiencia para publicidad | "¿Cuánta gente ve este lugar?" Estudio S/ 4,000 por lugar; certificación S/ 180 al mes por pantalla |
 | Extra para el operador | Valor de los locales (renta sugerida) para LAP o un mall: S/ 15,000 por estudio |
 | Primeros clientes | Tiendas a la calle, en galerías, en malls y en el terminal de LAP (venta rápida, cámara propia); JCDecaux, que opera la publicidad del terminal, a través del contacto en LAP |
-| Costo | \~S/ 40 al mes por tienda y \~S/ 33 por pantalla, procesando grabaciones en PC propia; margen bruto en 2027 de 73% por tienda y 82% por pantalla |
+| Costo | \~S/ 27 al mes por cámara de tienda y \~S/ 33 por cámara de pantalla, procesando grabaciones en PC propia; el costo de cada cliente crece con su número de cámaras. Margen bruto en 2027: 73% en tiendas y 82% en pantallas |
 | Números | S/ 51 mil en 2027 → \~S/ 2 millones en 2031; 82% recurrente |
 | Capital | S/ 5,000 de reserva, sin gastar nada antes de vender; la caja nunca baja de esa reserva |
 | Riesgo principal | Disposición de las tiendas a pagar S/ 149 al mes y precisión del conteo en la puerta (meta ≥ 95%) |
@@ -144,7 +144,7 @@ El Canvas tiene dos lados. El lado del cliente es distinto para cada producto; e
 | **2. Propuesta de valor** | Saber en qué paso pierde clientes (pasan → se detienen → entran → compran), por hora, y si una vitrina nueva funciona; con su propia cámara y sin comprar equipos | Audiencia medida de cada pantalla (personas que la tuvieron a la vista ≥ 2 s, por hora y día) para vender o comprar por audiencia y no por espacio |
 | **3. Canales** | Visita en persona con demo en el teléfono (módulo En vivo); presentación del contacto de LAP a tiendas del terminal; asociaciones de comerciantes y galerías (como Gamarra); integradores de CCTV con 20% de comisión el primer año; LinkedIn con casos | Presentación del contacto de LAP a JCDecaux; charla en ACCEP; agencias de medios con el caso del aeropuerto |
 | **4. Relación** | Diagnóstico con conteo manual de control; luego informe mensual automático, alertas y una llamada al mes | Cuenta dedicada; certificación mensual por pantalla; revisión trimestral |
-| **5. Fuentes de ingreso** | Diagnóstico S/ 900 (50% al firmar); prueba de vitrina S/ 1,200; monitoreo S/ 149 al mes por tienda (S/ 129 desde 10 tiendas). \~58% del ingreso en 2031 | Estudio S/ 4,000 por lugar; certificación S/ 180 al mes por pantalla. \~37% del ingreso en 2031 |
+| **5. Fuentes de ingreso** | Diagnóstico S/ 900 (50% al firmar); prueba de vitrina S/ 1,200; monitoreo S/ 149 al mes por tienda con hasta 2 cámaras, S/ 75 por cámara adicional (S/ 129 desde 10 tiendas). \~58% del ingreso en 2031 | Estudio S/ 4,000 por lugar; certificación S/ 180 al mes por pantalla. \~37% del ingreso en 2031 |
 
 Extra para el operador (LAP o un mall): estudio de valor de locales a S/ 15,000, \~5% del ingreso en 2031.
 
@@ -155,7 +155,7 @@ Extra para el operador (LAP o un mall): estudio de valor de locales a S/ 15,000,
 | **6. Recursos clave** | Software ya construido (Insights: exposición, entradas, permanencia, captación; Ventas: tickets y conversión); la PC del equipo con RTX 4060 y una PC con GPU de 16 GB en 2027; 3 fundadores a medio tiempo (visión por computadora, backend y venta); contacto en LAP |
 | **7. Actividades clave** | Exportar grabaciones del NVR y procesarlas de noche; calibrar la puerta y el frente de cada tienda o la zona de visión de cada pantalla (\~1 hora); control de calidad con conteo manual de 15 minutos; redactar el informe con una recomendación; contactar 30 tiendas por trimestre |
 | **8. Socios clave** | LAP (acceso a tiendas del terminal y a JCDecaux); integradores de CCTV (acceso a cámaras y referidos); ESAN (prueba de precisión e incubadora); contador y asesoría legal en Ley 29733; tiendas de PC en Lima |
-| **9. Estructura de costos** | Variables: S/ 40 al mes por tienda y S/ 33 por pantalla (2027), \~10% del precio de cada estudio en caja. Fijos: contador S/ 150 y nube central S/ 100 al mes, luz extra \~S/ 65. Inversión: PC de S/ 5,500 en 2027 y S/ 4,500 por PC adicional, solo con contratos. Una vez: S.A.C. S/ 1,500, contratos S/ 1,000, marca y web \~S/ 1,035. Equipo: S/ 1,500 por fundador al mes desde junio de 2027, solo si hay caja |
+| **9. Estructura de costos** | Variables por cámara: S/ 27 al mes por cámara de tienda y S/ 33 por cámara de pantalla (2027); el costo de cada cliente crece con su número de cámaras, \~10% del precio de cada estudio en caja. Fijos: contador S/ 150 y nube central S/ 100 al mes, luz extra \~S/ 65. Inversión: PC de S/ 5,500 en 2027 y S/ 4,500 por PC adicional, solo con contratos. Una vez: S.A.C. S/ 1,500, contratos S/ 1,000, marca y web \~S/ 1,035. Equipo: S/ 1,500 por fundador al mes desde junio de 2027, solo si hay caja |
 
 ## 8. Precio contra valor para el cliente
 
@@ -165,7 +165,7 @@ Cada producto se vende con un estudio corto para entrar y un informe mensual par
 | --- | --- | --- | --- |
 | Captación | Diagnóstico de tienda | 2 semanas de grabaciones: pasan, se detienen frente a la vitrina, entran, permanencia, horas pico y conversión si hay tickets | S/ 900 por tienda |
 | Captación | Prueba de vitrina | Comparación de la vitrina actual con la nueva (sección 3) | S/ 1,200 por prueba |
-| Captación | Monitoreo de tienda | Informe mensual, comparación entre tiendas de la cadena, alertas de caída de captación o de atracción de vitrina | S/ 149 al mes por tienda (1–2 cámaras); S/ 129 desde 10 tiendas |
+| Captación | Monitoreo de tienda | Informe mensual, comparación entre tiendas de la cadena, alertas de caída de captación o de atracción de vitrina | S/ 149 al mes por tienda con hasta 2 cámaras; S/ 75 por cámara adicional; S/ 129 desde 10 tiendas |
 | Audiencia | Estudio de un lugar | 2 semanas: audiencia por hora y día, tiempo de exposición, comparación entre lugares | S/ 4,000 por lugar |
 | Audiencia | Certificación mensual | Audiencia medida de cada pantalla o espacio, para vender o comprar por audiencia | S/ 180 al mes por pantalla |
 | Extra | Valor de locales | Índice de valor por local y renta sugerida para el operador | S/ 15,000 por estudio |
@@ -178,41 +178,54 @@ Cada producto se vende con un estudio corto para entrar y un informe mensual par
 | Dueño de medios | S/ 180 al mes por pantalla | Si cobra 10% más por las pantallas con mejor audiencia y una pantalla factura S/ 5,000 al mes (supuesto), gana S/ 500 más |
 | Marca | S/ 4,000 por estudio | Evita pagar meses de publicidad en un lugar que nadie ve |
 
-## 9. Costos: procesar grabaciones en una PC propia
+## 9. Costo por cámara
 
-El procesamiento es por lotes, no en vivo. Una PC propia toma las grabaciones que el NVR del recinto ya guarda (2–4 semanas), procesa solo las horas necesarias a 5 cuadros por segundo y entrega conteos y tasas; el video se borra al terminar. Las grabaciones llegan en un disco de 4 TB (estudios) o subidas de noche (monitoreo); si el recinto no permite sacar el video, la PC se instala dentro.
+La unidad de costo es la **cámara**: cada cámara suma horas de video que la PC debe procesar, así que el costo de cada cliente es su número de cámaras × el costo por cámara. El servicio base de una tienda cubre hasta 2 cámaras; con más cámaras, el servicio cuesta más.
 
-| Producto | Video procesado al mes | Modo |
+El procesamiento es por lotes, no en vivo: una PC propia toma las grabaciones que el NVR del recinto ya guarda (2–4 semanas), procesa solo las horas necesarias a 5 cuadros por segundo y entrega conteos y tasas; el video se borra al terminar.
+
+| Tipo de cámara | Video procesado al mes | Modo |
 | --- | --- | --- |
-| Tienda | 1–2 cámaras de entrada × \~12 horas de apertura × 30 días | Liviano: detector y conteo por línea, sin Re-ID |
-| Pantalla | 1 cámara × 3 horas pico × 30 días (90 horas) | Completo |
+| Cámara de tienda | \~12 horas de apertura × 30 días (360 horas) | Liviano: detector y conteo por línea, sin Re-ID |
+| Cámara de pantalla | 3 horas pico × 30 días (90 horas) | Completo |
 
-**Rendimiento medido en el repositorio (RTX 4060):** \~12 cuadros por segundo con 7 cámaras 1080p y \~25 personas cada una; \~16 con dos videos; 3–4 con un video de un mall lleno en máxima sensibilidad.
+**Rendimiento medido en el repositorio (RTX 4060):** \~12 cuadros por segundo con 7 cámaras 1080p y \~25 personas cada una; \~16 con dos videos; 3–4 con un video de un mall lleno en máxima sensibilidad. El modo liviano se estima \~4 veces más rápido (supuesto).
 
-### Procesar una cámara de pantalla al mes (90 horas de video)
+### Costo de procesar una cámara al mes
 
-| Dónde se procesa | Costo al mes | Cámaras por máquina |
+| Dónde se procesa | Cámara de tienda | Cámara de pantalla |
 | --- | --- | --- |
-| **PC propia, por lotes** | **S/ 13** | 19 |
-| Nube Spot (\~US$ 0.18 por hora) | S/ 33 | — |
-| Nube a demanda (US$ 0.526 por hora) | S/ 97 | — |
-| Nube en vivo las 24 h | \~S/ 817 | \~1.7 por GPU |
+| **PC propia, por lotes** | **S/ 10** | **S/ 13** |
+| Nube Spot (\~US$ 0.18 por hora) | S/ 25 | S/ 33 |
+| Nube a demanda (US$ 0.526 por hora) | S/ 73 | S/ 97 |
+| Nube en vivo las 24 h | \~S/ 145 | \~S/ 817 |
+| Cámaras que atiende una PC | \~25 | 19 |
 
-PC con GPU de 8–16 GB: \~S/ 4,500 (S/ 125 al mes en 36 meses). Energía a 250 W las 24 horas: S/ 130 al mes (S/ 0.72 por kWh, Luz del Sur BT5B). Disco de 4 TB: S/ 630–710. El trabajo de una PC al mes costaría \~S/ 1,870 en la nube a demanda, por lo que la PC se recupera en menos de 3 meses (supuesto: una GPU T4 rinde 70% de una RTX 4060).
+PC con GPU de 8–16 GB: \~S/ 4,500 (S/ 125 al mes en 36 meses). Energía a 250 W las 24 horas: S/ 130 al mes (S/ 0.72 por kWh, Luz del Sur BT5B). Disco de 4 TB: S/ 630–710. Supuesto: una GPU T4 de nube rinde 70% de una RTX 4060.
 
-### Costo y margen mensual por producto
+### Costo total y margen por cámara
 
-| Concepto | Tienda 2027 | Tienda 2031 | Pantalla 2027 | Pantalla 2031 |
+| Concepto | Cámara de tienda 2027 | Cámara de tienda 2031 | Cámara de pantalla 2027 | Cámara de pantalla 2031 |
 | --- | --- | --- | --- | --- |
-| Procesamiento en PC por lotes | S/ 15 | S/ 10 | S/ 13 | S/ 8 |
-| Traslado del video (internet de noche o disco) | S/ 5 | S/ 3 | S/ 3 | S/ 2 |
-| Soporte y control de calidad | S/ 15 | S/ 12 | S/ 14 | S/ 11 |
-| Nube central (web, base, respaldos) | S/ 5 | S/ 3 | S/ 3 | S/ 3 |
-| **Costo total** | **S/ 40** | **S/ 28** | **S/ 33** | **S/ 24** |
-| Precio | S/ 149 | S/ 149 | S/ 180 | S/ 180 |
+| Procesamiento en PC por lotes | S/ 10 | S/ 7 | S/ 13 | S/ 8 |
+| Traslado del video (internet de noche o disco) | S/ 3 | S/ 2 | S/ 3 | S/ 2 |
+| Soporte y control de calidad | S/ 10 | S/ 8 | S/ 14 | S/ 11 |
+| Nube central (web, base, respaldos) | S/ 4 | S/ 2 | S/ 3 | S/ 3 |
+| **Costo por cámara** | **S/ 27** | **S/ 19** | **S/ 33** | **S/ 24** |
+| Precio por cámara | \~S/ 99 (S/ 149 por tienda, 1.5 cámaras en promedio) | \~S/ 99 | S/ 180 | S/ 180 |
 | **Margen bruto** | **73%** | **81%** | **82%** | **87%** |
 
-Tienda: 1.5 cámaras × 12 horas × 30 días en modo liviano, \~4 veces más rápido que el completo (supuesto). Pantalla: 90 horas al mes en modo completo. La calibración (\~1 hora) va dentro del diagnóstico o del estudio. Los estudios cuestan en caja \~10% de su precio. PCs necesarias: 2 en 2027, 4 en 2028, 10 en 2029, 22 en 2030 y 40 en 2031.
+### Cómo crece el costo con el número de cámaras
+
+| Cámaras | Costo al mes (tienda) | Costo al mes (pantallas) | PCs necesarias (tienda / pantallas) |
+| --- | --- | --- | --- |
+| 1 | S/ 27 | S/ 33 | 1 / 1 |
+| 2 (servicio base) | S/ 54 | S/ 66 | 1 / 1 |
+| 10 | S/ 270 | S/ 330 | 1 / 1 |
+| 25 | S/ 675 | S/ 825 | 1 / 2 |
+| 100 | S/ 2,700 | S/ 3,300 | 4 / 6 |
+
+El monitoreo de tienda cuesta S/ 149 al mes con hasta 2 cámaras y S/ 75 por cada cámara adicional; la certificación de pantallas, S/ 180 al mes por cámara. Así el precio crece con las cámaras igual que el costo. La calibración (\~1 hora por cámara) va dentro del diagnóstico o del estudio, y los estudios cuestan en caja \~10% de su precio. PCs necesarias en el plan: 2 en 2027, 4 en 2028, 10 en 2029, 22 en 2030 y 40 en 2031.
 
 ## 10. Pronóstico con S/ 5,000 de capital y a medio tiempo
 
@@ -253,7 +266,7 @@ Los meses que no aparecen siguen el mismo ritmo. En 2027 entran \~S/ 51 mil, se 
 | 2030 | 400 | 200 | S/ 1.11 M | S/ 685 mil | \~8 personas a tiempo completo |
 | 2031 | 750 | 350 | S/ 1.99 M | S/ 1.27 M | \~15 personas a tiempo completo |
 
-En 2031 el ingreso vendría en \~58% de tiendas (S/ 1.16 M), \~37% de publicidad (S/ 734 mil) y \~5% de estudios de locales (S/ 90 mil), con 82% recurrente. Supuestos: tienda S/ 149 al mes y S/ 900 por diagnóstico (12 en 2027 a 150 en 2031); estudio de audiencia S/ 4,000 (3 a 35 al año); pantalla S/ 180 al mes; 1–6 estudios de locales al año a S/ 15,000; costo de S/ 40 a S/ 28 por tienda y de S/ 33 a S/ 24 por pantalla al mes; PCs de 1 a 40; 15% de lo que queda se guarda como reserva.
+En 2031 el ingreso vendría en \~58% de tiendas (S/ 1.16 M), \~37% de publicidad (S/ 734 mil) y \~5% de estudios de locales (S/ 90 mil), con 82% recurrente. Supuestos: tienda S/ 149 al mes y S/ 900 por diagnóstico (12 en 2027 a 150 en 2031); estudio de audiencia S/ 4,000 (3 a 35 al año); pantalla S/ 180 al mes; 1–6 estudios de locales al año a S/ 15,000; costo por cámara de S/ 27 a S/ 19 en tiendas (1.5 cámaras en promedio) y de S/ 33 a S/ 24 en pantallas; PCs de 1 a 40; 15% de lo que queda se guarda como reserva.
 
 ### Prueba de estrés
 
