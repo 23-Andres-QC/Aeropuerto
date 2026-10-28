@@ -2,7 +2,7 @@
 
 28 de octubre de 2026 · Andres
 
-Los gráficos del documento original aparecen aquí como tablas.
+El gráfico del pronóstico aparece en el documento compartido; sus cifras están en la tabla de la sección 10.
 
 ## Resumen ejecutivo
 
@@ -12,14 +12,10 @@ Los gráficos del documento original aparecen aquí como tablas.
 
 ## 1. El problema: dos preguntas sin respuesta
 
-En cualquier lugar con público (tiendas a la calle, galerías, malls, supermercados, farmacias, estaciones, terminales y aeropuertos) se toman dos decisiones de dinero sin medir a la gente:
+Se toman dos decisiones de dinero sin medir a la gente:
 
 1. **¿Mi tienda capta a la gente que pasa?** Una tienda sabe cuánto vendió, pero no cuántas personas pasaron por su puerta, cuántas se detuvieron frente a la vitrina, cuántas entraron ni cuántas salieron sin comprar. La captación (entran / pasan) y la conversión (compran / entran, 20–40% en tienda física) son indicadores estándar del retail ([Crosscan](https://crosscan.com/en/blog/crosscan-data-insights-blog-2/site-optimization-through-people-counting-12), [GrowthFactor](https://www.growthfactor.ai/blog-posts/how-to-measure-foot-traffic-in-store)), y la vitrina influye en la captación ([Ariadne](https://www.ariadne.inc/resources/blogs/window-conversion-rate/)).
 2. **¿Cuánta gente ve este espacio de publicidad?** JCDecaux opera la publicidad del nuevo Jorge Chávez y vende sobre el flujo total de pasajeros ([Mercado Negro](https://www.mercadonegro.pe/medios/outdoor/jcdecaux-ofrece-una-innovadora-oferta-comercial-para-el-nuevo-aeropuerto-jorge-chavez/)), pero ese flujo no es la audiencia de cada pantalla. En la vía pública ya existe medición sindicada ([Mercado Negro](https://mercadonegro.pe/via-publica/nueva-herramienta-sindicada-de-medicion-ooh-reafirma-liderazgo-de-clear-channel)); dentro de los recintos no hay medición con cámaras.
-
-En Perú hay más de 9,000 comercios en los 88 malls de ACCEP, más de 20,000 tiendas en las galerías de Gamarra ([Perú Retail](https://www.peru-retail.com/?p=406301)), \~2,800 boticas de cadena ([Gestión](https://gestion.pe/economia/boticas-peru-duplica-su-stock-por-el-nino-y-reorden-su-red-con-foco-en-provincias-noticia/)), y la Línea 1 del Metro movió 203.9 millones de pasajeros en 2025 ([Energiminas](https://energiminas.com/?p=44929)).
-
-**Valor de saberlo (ejemplo con supuestos):** frente a una tienda pasan 2,000 personas al día; entra el 10% y compra el 25%, con ticket de S/ 60. Si la captación sube a 11%, la tienda vende \~S/ 9,000 más al mes. El monitoreo cuesta S/ 149 al mes.
 
 ## 2. Quién paga y cómo lo resuelve hoy
 
@@ -34,7 +30,7 @@ En Perú hay más de 9,000 comercios en los 88 malls de ACCEP, más de 20,000 ti
 
 ## 3. La solución: dos productos con la misma tecnología
 
-Las cámaras que ya existen y una PC que procesa las grabaciones de noche dan dos productos. Funcionan en cualquier lugar con una cámara que vea la entrada o el espacio a medir. Los precios están en la sección 8.
+Los dos productos funcionan en cualquier lugar con una cámara que vea la entrada o el espacio a medir.
 
 |  | Captación de tienda | Audiencia para publicidad |
 | --- | --- | --- |
@@ -72,8 +68,6 @@ AeroVision ya funciona como plataforma: el repositorio [23-Andres-QC/Aeropuerto]
 | Plataforma | API en Go, PostgreSQL/PostGIS y pgvector, web Vue, roles (superadmin, seguridad, negocio), contraseñas argon2id, bitácora | Base seria para vender a empresas |
 | Privacidad | Sin reconocimiento facial, sin guardar imágenes, IDs seudónimos, vectores Re-ID borrados a los 7 días | Argumento de venta frente a la Ley 29733 |
 
-**Lo que ya cubre:** Insights calcula exposición frente al local, entradas, permanencia y captación, y Ventas cruza visitantes con tickets.
-
 **Por construir:** lectura de grabaciones del NVR por fecha y hora; evento "se detiene frente a la vitrina"; modo liviano para tiendas; zona de visión por pantalla; precisión medida contra conteo manual; detector con licencia libre (hoy YOLO, AGPL); consola multi-cliente.
 
 ## 5. Mercado y competencia
@@ -84,11 +78,11 @@ El mercado mundial de sistemas de conteo de personas vale unos US$ 1,450 millone
 
 | Nivel | Cálculo | Unidades | Ingreso recurrente anual potencial |
 | --- | --- | --- | --- |
-| TAM Perú (locales) | 9,000+ comercios en malls de ACCEP + 20,000+ tiendas en galerías de Gamarra + 1,911 supermercados y tiendas de conveniencia + \~2,800 boticas de cadena + 1,142 tiendas Mass | \~34,900 locales | \~S/ 62.4 millones (a S/ 149 al mes) |
+| TAM Perú (locales) | 9,000+ comercios en los 88 malls de ACCEP + 20,000+ tiendas en galerías de Gamarra ([Perú Retail](https://www.peru-retail.com/?p=406301)) + 1,911 supermercados y tiendas de conveniencia ([Forbes Perú](https://forbes.pe/negocios/2024-11-29/miraflores-ate-y-lima-son-los-distritos-con-mas-supermercados-y-tiendas-de-conveniencia-en-el-pais/)) + \~2,800 boticas de cadena ([Gestión](https://gestion.pe/economia/boticas-peru-duplica-su-stock-por-el-nino-y-reorden-su-red-con-foco-en-provincias-noticia/)) + 1,142 tiendas Mass | \~34,900 locales | \~S/ 62.4 millones (a S/ 149 al mes) |
 | SAM (Lima, locales con cámara IP, \~30%) | 30% del TAM | \~10,500 locales | \~S/ 18.7 millones |
 | SOM a 2031 (meta del plan) | Pronóstico | 750 locales + 350 pantallas | \~S/ 2.1 millones |
 
-El TAM no incluye bodegas (\~535 mil en el país), universidades, clínicas ni bancos, que también pueden usar el servicio. El número de pantallas publicitarias en malls, galerías, estaciones y aeropuertos se obtiene en las reuniones con sus administradores. El 30% de locales con cámara IP utilizable es un supuesto del plan.
+El TAM no incluye bodegas (\~535 mil en el país), universidades, clínicas ni bancos. Tampoco incluye pantallas: solo la Línea 1 del Metro movió 203.9 millones de pasajeros en 2025 en 26 estaciones ([Energiminas](https://energiminas.com/?p=44929)); el número de pantallas se obtiene con sus administradores. El 30% de locales con cámara IP utilizable es un supuesto del plan.
 
 ### Competidores
 
@@ -110,7 +104,7 @@ Usar el CCTV existente ya no es una ventaja única ([FootfallCam](https://www.fo
 | | Ayuda | Perjudica |
 | --- | --- | --- |
 | **Interno** | **Fortalezas:** producto funcional de punta a punta; Re-ID multicámara y plano 2D que mide recorridos; módulo de ventas y conversión ya construido; usa el CCTV existente, sin hardware nuevo; privacidad por diseño (sin rostros ni imágenes); equipo técnico que itera muy rápido | **Debilidades:** sin clientes pagadores ni caso de éxito; precisión no validada por terceros; instalación y calibración manuales; poca experiencia comercial B2B; licencia del detector (AGPL) por resolver; equipo a medio tiempo en 2027 |
-| **Externo** | **Oportunidades:** mercado mundial crece ~13% al año; malls, galerías, estaciones y terminales sin medición; contacto en LAP, y JCDecaux opera la publicidad del terminal; tiendas que no miden su captación; no hay medición de audiencia con cámaras dentro de recintos; fondos de innovación (ProInnóvate) | **Amenazas:** Outdoor Metrics y medidores de vía pública; FootfallCam ya analiza pasillos con CCTV; exigencias de la Ley 29733 y su Reglamento; ciclos de compra largos en grandes recintos; cámaras viejas o mal ubicadas; precio de GPU y de nube |
+| **Externo** | **Oportunidades:** mercado mundial crece ~13% al año; \~34,900 locales comerciales en Perú; contacto en LAP, y JCDecaux opera la publicidad del terminal; tiendas que no miden su captación; sin medición de audiencia dentro de recintos; fondos de innovación (ProInnóvate) | **Amenazas:** Outdoor Metrics y medidores de vía pública; FootfallCam ya analiza pasillos con CCTV; exigencias de la Ley 29733 y su Reglamento; ciclos de compra largos en grandes recintos; cámaras viejas o mal ubicadas; precio de las PCs (una por cada 10 cámaras) |
 
 **Estrategias cruzadas:**
 
@@ -133,18 +127,18 @@ El Canvas tiene dos lados. El lado del cliente es distinto para cada producto; e
 | **2. Propuesta de valor** | Saber en qué paso pierde clientes (pasan → se detienen → entran → compran), por hora, y si una vitrina nueva funciona; con su propia cámara y sin comprar equipos | Audiencia medida de cada pantalla (personas que la tuvieron a la vista ≥ 2 s, por hora y día) para vender o comprar por audiencia y no por espacio |
 | **3. Canales** | Visita en persona con demo en el teléfono (módulo En vivo); presentación del contacto de LAP a tiendas del terminal; asociaciones de comerciantes y galerías (como Gamarra); integradores de CCTV con 20% de comisión el primer año; LinkedIn con casos | Presentación del contacto de LAP a JCDecaux; charla en ACCEP; agencias de medios con el caso del aeropuerto |
 | **4. Relación** | Diagnóstico con conteo manual de control; luego informe mensual automático, alertas y una llamada al mes | Cuenta dedicada; certificación mensual por pantalla; revisión trimestral |
-| **5. Fuentes de ingreso** | Diagnóstico S/ 900 (50% al firmar); prueba de vitrina S/ 1,200; monitoreo S/ 149 al mes por tienda con hasta 2 cámaras, S/ 75 por cámara adicional (S/ 129 desde 10 tiendas). \~58% del ingreso en 2031 | Estudio S/ 4,000 por lugar; certificación S/ 180 al mes por pantalla. \~37% del ingreso en 2031 |
+| **5. Fuentes de ingreso** | Diagnóstico, prueba de vitrina y monitoreo mensual por tienda (precios en la sección 8) | Estudio por lugar y certificación mensual por pantalla (precios en la sección 8) |
 
-Extra para el operador (LAP o un mall): estudio de valor de locales a S/ 15,000, \~5% del ingreso en 2031.
+Extra para el operador del recinto: estudio de valor de locales (sección 8).
 
 ### Lado de la operación: común a los dos productos
 
 | Bloque | Contenido |
 | --- | --- |
-| **6. Recursos clave** | Software ya construido (Insights: exposición, entradas, permanencia, captación; Ventas: tickets y conversión); la PC del equipo con RTX 4060 y una PC con GPU de 16 GB en 2027; 3 fundadores a medio tiempo (visión por computadora, backend y venta); contacto en LAP |
+| **6. Recursos clave** | Software ya construido (sección 4); la PC del equipo con RTX 4060 y una PC con GPU de 16 GB en 2027; 3 fundadores a medio tiempo (visión por computadora, backend y venta); contacto en LAP |
 | **7. Actividades clave** | Exportar grabaciones del NVR y procesarlas de noche; calibrar la puerta y el frente de cada tienda o la zona de visión de cada pantalla (\~1 hora); control de calidad con conteo manual de 15 minutos; redactar el informe con una recomendación; contactar 30 tiendas por trimestre |
 | **8. Socios clave** | LAP (acceso a tiendas del terminal y a JCDecaux); integradores de CCTV (acceso a cámaras y referidos); ESAN (prueba de precisión e incubadora); contador y asesoría legal en Ley 29733; tiendas de PC en Lima |
-| **9. Estructura de costos** | Variables por cámara: S/ 43 al mes por cámara de tienda y S/ 46 por cámara de pantalla (2027), con una PC por cada 10 cámaras; el costo de cada cliente crece con su número de cámaras, \~10% del precio de cada estudio en caja. Fijos: contador S/ 150 y nube central S/ 100 al mes, luz extra \~S/ 65. Inversión: PC de S/ 5,500 en 2027 y S/ 4,500 por PC adicional, solo con contratos. Una vez: S.A.C. S/ 1,500, contratos S/ 1,000, marca y web \~S/ 1,035. Equipo: S/ 1,500 por fundador al mes desde junio de 2027, solo si hay caja |
+| **9. Estructura de costos** | Por cámara al mes (sección 9): S/ 43 en tiendas y S/ 46 en pantallas, con PC, energía, traslado, soporte y nube. Por estudio: \~10% de su precio. Fijo: contador S/ 150 al mes. Inversión: una PC de S/ 4,500 por cada 10 cámaras. Una vez: S.A.C. S/ 1,500, contratos S/ 1,000, marca y web \~S/ 1,035. Equipo: S/ 1,500 por fundador al mes desde junio de 2027, solo si hay caja |
 
 ## 8. Precio contra valor para el cliente
 
@@ -163,7 +157,7 @@ Cada producto se vende con un estudio corto para entrar y un informe mensual par
 
 | Cliente | Paga | Puede ganar |
 | --- | --- | --- |
-| Tienda | S/ 149 al mes | +1 punto de captación ≈ S/ 9,000 más de venta al mes (ejemplo de la sección 1) |
+| Tienda | S/ 149 al mes | Si pasan 2,000 personas al día, compra el 25% de los que entran y el ticket es S/ 60, subir la captación de 10% a 11% suma ≈ S/ 9,000 de venta al mes (supuesto) |
 | Dueño de medios | S/ 180 al mes por pantalla | Si cobra 10% más por las pantallas con mejor audiencia y una pantalla factura S/ 5,000 al mes (supuesto), gana S/ 500 más |
 | Marca | S/ 4,000 por estudio | Evita pagar meses de publicidad en un lugar que nadie ve |
 
@@ -215,21 +209,11 @@ Total = PCs (S/ 255 al mes cada una) + S/ 17 por cámara de tienda o S/ 20 por c
 
 Con el tope de 10 cámaras, la PC cuesta lo mismo que la nube Spot y alrededor de un tercio de la nube a demanda; el video no sale a internet y el costo es fijo. PC con GPU de 8–16 GB: \~S/ 4,500 (S/ 125 al mes en 36 meses). Energía a 250 W las 24 horas: S/ 130 al mes (S/ 0.72 por kWh, Luz del Sur BT5B). Disco de 4 TB: S/ 630–710. Supuesto: una GPU T4 de nube rinde 70% de una RTX 4060.
 
-El monitoreo de tienda cuesta S/ 149 al mes con hasta 2 cámaras y S/ 75 por cada cámara adicional; la certificación de pantallas, S/ 180 al mes por cámara. La calibración (\~1 hora por cámara) va dentro del diagnóstico o del estudio, y los estudios cuestan en caja \~10% de su precio. PCs necesarias en el plan (cámaras en monitoreo + 10% para estudios, entre 10): 3 en 2027, 15 en 2028, 41 en 2029, 89 en 2030 y 163 en 2031.
+La calibración (\~1 hora por cámara) va dentro del diagnóstico o del estudio, y los estudios cuestan en caja \~10% de su precio.
 
 ## 10. Pronóstico con S/ 5,000 de capital y a medio tiempo
 
-Con S/ 5,000 de reserva y los fundadores a medio tiempo, **no se gasta nada hasta la primera venta**: hoy solo se pagan la luz y el internet de siempre, y el software se prueba en la PC del equipo. Las primeras ventas son pequeñas y rápidas (diagnósticos de tienda de S/ 900 y un estudio de audiencia de S/ 4,000), y con el adelanto del estudio de locales de LAP se compra una PC más potente. La caja nunca baja de la reserva; desde junio de 2027 cada fundador recibe S/ 1,500 al mes, y el paso a tiempo completo llega cuando el negocio puede pagarlo, hacia 2029.
-
-| Año | Ingresos | Caja disponible para pagar al equipo |
-| --- | --- | --- |
-| 2027 | S/ 51 mil | S/ 30.8 mil |
-| 2028 | S/ 206 mil | S/ 79 mil |
-| 2029 | S/ 525 mil | S/ 222 mil |
-| 2030 | S/ 1.11 M | S/ 490 mil |
-| 2031 | S/ 1.99 M | S/ 927 mil |
-
-Capital inicial S/ 5,000; fundadores a medio tiempo hasta que el negocio pague tiempo completo; soles sin IGV.
+Con S/ 5,000 de reserva y los fundadores a medio tiempo, **no se gasta nada hasta la primera venta**: hoy solo se pagan la luz y el internet de siempre y el software se prueba en la PC del equipo. Cada PC se compra con ventas ya cobradas, la caja nunca baja de la reserva y el paso a tiempo completo llega cuando el negocio puede pagarlo, hacia 2029.
 
 ### La caja mes a mes (nov 2026 – dic 2027)
 
@@ -256,7 +240,7 @@ Los meses que no aparecen siguen el mismo ritmo. En 2027 entran \~S/ 51 mil, se 
 | 2030 | 400 | 200 | 800 | 89 | S/ 1.11 M | S/ 490 mil | \~6 personas a tiempo completo |
 | 2031 | 750 | 350 | 1,475 | 163 | S/ 1.99 M | S/ 927 mil | \~11 personas a tiempo completo |
 
-En 2031 el ingreso vendría en \~58% de tiendas (S/ 1.16 M), \~37% de publicidad (S/ 734 mil) y \~5% de estudios de locales (S/ 90 mil), con 82% recurrente. Supuestos: tienda S/ 149 al mes y S/ 900 por diagnóstico (12 en 2027 a 150 en 2031); estudio de audiencia S/ 4,000 (3 a 35 al año); pantalla S/ 180 al mes; 1–6 estudios de locales al año a S/ 15,000; costo por cámara de S/ 43 a S/ 38 en tiendas (1.5 cámaras en promedio) y de S/ 46 a S/ 42 en pantallas; una PC de S/ 4,500 por cada 10 cámaras, renovada a los 3 años (de 3 PCs en 2027 a 163 en 2031); 15% de lo que queda se guarda como reserva.
+Supuestos: diagnósticos de 12 (2027) a 150 (2031); estudios de audiencia de 3 a 35 al año; 1 a 6 estudios de locales al año; 1.5 cámaras por tienda; precios de la sección 8 y costos de la sección 9, con una PC por cada 10 cámaras renovada a los 3 años; 15% de lo que queda se guarda como reserva. En 2031 el ingreso vendría \~58% de tiendas (S/ 1.16 M), \~37% de publicidad (S/ 734 mil) y \~5% de estudios de locales (S/ 90 mil), con 82% recurrente.
 
 ### Prueba de estrés
 
@@ -306,7 +290,7 @@ Hipótesis del plan, prueba y criterio con que se dan por validadas:
 
 ## 13. Fuentes y supuestos
 
-Cifras de fuentes públicas consultadas el 27 de octubre de 2026. Los montos marcados como estimados (constitución, PC, horas de trabajo) y las tasas de conversión son supuestos del plan.
+Cifras de fuentes públicas consultadas el 27 de octubre de 2026. Los montos marcados como estimados (constitución, PC) y las tasas de conversión son supuestos del plan.
 
 **Proyecto**
 
@@ -318,12 +302,13 @@ Cifras de fuentes públicas consultadas el 27 de octubre de 2026. Los montos mar
 - [Crosscan: tasa de captación](https://crosscan.com/en/blog/crosscan-data-insights-blog-2/site-optimization-through-people-counting-12)
 - [GrowthFactor: conversión en tienda física](https://www.growthfactor.ai/blog-posts/how-to-measure-foot-traffic-in-store)
 - [Ariadne: conversión de vitrina](https://www.ariadne.inc/resources/blogs/window-conversion-rate/)
-- [RetailNext: tráfico que pasa y captación](https://retailnext.net/resources/product-briefs/brief-passby-traffic)
 - [Mercado Negro: JCDecaux opera la publicidad del nuevo Jorge Chávez](https://www.mercadonegro.pe/medios/outdoor/jcdecaux-ofrece-una-innovadora-oferta-comercial-para-el-nuevo-aeropuerto-jorge-chavez/)
 - [Mercado Negro: medición sindicada en vía pública](https://mercadonegro.pe/via-publica/nueva-herramienta-sindicada-de-medicion-ooh-reafirma-liderazgo-de-clear-channel)
-- [Mercado Negro: Citymedia lanza pantallas medibles (octubre 2026)](https://www.mercadonegro.pe/actualidad/lanzamientos/citymedia-lanza-el-primer-circuito-de-pantallas-led-moviles-medibles-en-peru/)
-- [ACCEP: más de 60 millones de visitas al mes](https://accep.org.pe/2025/09/08/malls-superan-60-millones-de-visitas-al-mes-segun-el-reporte-2025-de-accep/)
+- [ACCEP: reporte 2025 de centros comerciales](https://accep.org.pe/2025/09/08/malls-superan-60-millones-de-visitas-al-mes-segun-el-reporte-2025-de-accep/)
+- [Perú Retail: galerías y tiendas de Gamarra](https://www.peru-retail.com/?p=406301)
 - [Forbes Perú: supermercados y tiendas de conveniencia](https://forbes.pe/negocios/2024-11-29/miraflores-ate-y-lima-son-los-distritos-con-mas-supermercados-y-tiendas-de-conveniencia-en-el-pais/)
+- [Gestión: red de boticas en Perú](https://gestion.pe/economia/boticas-peru-duplica-su-stock-por-el-nino-y-reorden-su-red-con-foco-en-provincias-noticia/)
+- [Energiminas: pasajeros de la Línea 1 del Metro de Lima](https://energiminas.com/?p=44929)
 
 **Mercado y competencia**
 
