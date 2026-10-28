@@ -13,6 +13,8 @@ En un mall o un aeropuerto se toman dos decisiones de dinero sin medir a la gent
 1. **Tiendas:** una tienda sabe cuánto vendió, pero no cuántas personas pasaron por su puerta, cuántas entraron ni cuántas salieron sin comprar. No sabe si el problema es la vitrina, la atención o el lugar.
 2. **Publicidad:** quien vende o compra publicidad dentro del recinto (JCDecaux en el nuevo Jorge Chávez, administradores de pantallas en malls) no sabe cuánta gente ve cada pantalla o espacio.
 
+Dentro del problema 1 está la **vitrina**: cómo se ve la tienda por fuera decide si la gente se detiene y entra. Hoy una tienda cambia su vitrina y no sabe si funcionó, porque solo mira si vendió más.
+
 AeroVision ya mide personas que pasan, entran y se quedan, con las cámaras existentes. El plan de negocio completo está en el documento compartido "Plan de Negocio — AeroVision Flow Analytics".
 
 ## Evidencia de demanda
@@ -68,6 +70,7 @@ Consecuencia: mientras la tienda crea que con las ventas le alcanza, no paga. La
 | 2 semanas | El contacto de LAP responde con fecha de reunión (tiendas del terminal o JCDecaux) | Buscar un administrador de pantallas en un mall |
 | Fin de marzo 2027 | 3 diagnósticos pagados a S/ 900 y 1 estudio de audiencia firmado | Revisar mensaje y cliente antes de gastar los S/ 5,000 |
 | Cada diagnóstico | Error del conteo ≤ 5% en entradas frente a un conteo manual de 15 minutos | No vender conversión hasta corregir el modelo |
+| 3 primeros diagnósticos | 1 de 3 tiendas contrata la prueba de vitrina cuando cambia su vitrina; "se detiene" coincide en ≥ 90% con un conteo manual | La atracción de vitrina queda como dato del diagnóstico, sin cobrarse aparte |
 
 ## Preguntas abiertas
 
@@ -104,7 +107,8 @@ El plan completo, con todas las evaluaciones, está en [docs/plan-de-negocio-aer
 | Mercado | Mundial: ~US$ 1,450 millones en 2025, ~13% al año. Perú: ~10,900 tiendas posibles (~S/ 19.5 millones al año); meta 2031: 750 tiendas y 350 pantallas (~S/ 2.1 millones) | 5 |
 | Competencia | FootfallCam ya analiza pasillos con CCTV; V-Count cobra ~US$ 50 por sensor al mes; en la vía pública mide Outdoor Metrics; dentro de malls y aeropuertos no hay medición con cámaras | 5 |
 | Modelo Canvas | Propuesta: saber cuánta gente capta una tienda y cuánta ve una pantalla, con las cámaras existentes y sin hardware nuevo. Segmentos: tiendas primero, luego JCDecaux y anunciantes | 6 |
-| Precios | Tienda: diagnóstico S/ 900 + S/ 149 al mes. Publicidad: estudio S/ 4,000 + S/ 180 al mes por pantalla. Extra: valor de locales S/ 15,000 | 7 |
+| Vitrina | Recorrido pasan → se detienen → entran → compran; "atracción de vitrina" = se detienen / pasan. Prueba de vitrina (2 semanas antes y 2 después del cambio) a S/ 1,200. Falta en el software el evento "se detiene" (≥ 2 s frente al local a ≤ 0.5 m/s), un cambio pequeño en Insights | 3 |
+| Precios | Tienda: diagnóstico S/ 900 + prueba de vitrina S/ 1,200 + S/ 149 al mes. Publicidad: estudio S/ 4,000 + S/ 180 al mes por pantalla. Extra: valor de locales S/ 15,000 | 7 |
 | Costos | Procesar grabaciones por lotes en una PC propia: ~S/ 10 por cámara al mes, frente a ~S/ 73 en la nube a demanda y ~S/ 613 en vivo. Margen: 73–81% por tienda, 83–88% por pantalla | 8 |
 | Pronóstico | S/ 51 mil en 2027 → ~S/ 2 millones en 2031, 82% recurrente; con S/ 5,000 y medio tiempo la caja nunca baja de la reserva | 9 |
 | Prueba de estrés | Precio de tienda S/ 99, la mitad de tiendas, procesar al doble de costo o publicidad a la mitad: el negocio se sostiene y crece más lento | 9 |

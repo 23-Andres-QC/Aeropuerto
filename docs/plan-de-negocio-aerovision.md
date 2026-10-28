@@ -8,11 +8,11 @@ Versión exportada del documento compartido del plan. Los gráficos del original
 
 **Problema:** en un mall o un aeropuerto hay dos preguntas de dinero que nadie responde con datos: (1) una tienda no sabe cuántas de las personas que pasan por su puerta entran, ni cuántas compran; (2) quien vende o compra publicidad no sabe cuánta gente ve realmente cada pantalla o espacio.
 
-**Idea:** AeroVision usa las cámaras que ya existen y una PC que procesa las grabaciones de noche para medir dos cosas: la **captación de una tienda** (pasan → entran → compran) y la **audiencia de un lugar** (cuántos lo ven y cuánto tiempo). Se vende como estudio puntual y como informe mensual.
+**Idea:** AeroVision usa las cámaras que ya existen y una PC que procesa las grabaciones de noche para medir dos cosas: la **captación de una tienda** (pasan → se detienen frente a la vitrina → entran → compran) y la **audiencia de un lugar** (cuántos lo ven y cuánto tiempo). Se vende como estudio puntual y como informe mensual.
 
 | Punto | Respuesta |
 | --- | --- |
-| Producto 1: Captación de tienda | "¿Mi tienda capta a la gente que pasa?" Diagnóstico de 2 semanas S/ 900; monitoreo S/ 149 al mes por tienda |
+| Producto 1: Captación de tienda | "¿Mi tienda capta a la gente que pasa?" Diagnóstico de 2 semanas S/ 900; prueba de vitrina S/ 1,200; monitoreo S/ 149 al mes por tienda |
 | Producto 2: Audiencia para publicidad | "¿Cuánta gente ve este lugar?" Estudio S/ 4,000 por lugar; certificación S/ 180 al mes por pantalla |
 | Extra para el operador | Valor de los locales (renta sugerida) para LAP o un mall: S/ 15,000 por estudio |
 | Primeros clientes | Tiendas dentro de LAP y de un mall (venta rápida, cámara propia); JCDecaux, que opera la publicidad del terminal, a través del contacto en LAP |
@@ -48,6 +48,8 @@ Una tienda sabe cuánto vendió, pero no cuántas personas pasaron por su puerta
 - Es lo que más se compra en el mundo del conteo de personas: los contadores se instalan sobre todo en las entradas de tiendas, y proveedores como [FootfallCam](https://www.footfallcam.com/kiosk/) venden a cadenas para comparar tiendas por tráfico y ventas.
 - Son indicadores estándar del retail: la **captación** compara a quienes pasan con quienes entran ([Crosscan](https://crosscan.com/en/blog/crosscan-data-insights-blog-2/site-optimization-through-people-counting-12)), y la **conversión** = compras / visitantes, que en tienda física suele estar entre 20% y 40% ([GrowthFactor](https://www.growthfactor.ai/blog-posts/how-to-measure-foot-traffic-in-store), dato de un proveedor).
 - En Perú hay más de 9,000 comercios dentro de los 88 malls de ACCEP, 475 supermercados y 1,436 tiendas de conveniencia.
+
+**La vitrina es parte del problema.** Cómo se ve la tienda por fuera (vitrina, luz, letrero, puerta, producto y precio a la vista) decide si la gente se detiene y entra. Una captación baja puede deberse a que la vitrina no llama la atención, aunque pase mucha gente ([Ariadne](https://www.ariadne.inc/resources/blogs/window-conversion-rate/)). Proveedores como [RetailNext](https://retailnext.net/resources/product-briefs/brief-passby-traffic) ya miden con video a quienes pasan y entran para evaluar vitrinas y letreros. Hoy una tienda cambia su vitrina y no sabe si funcionó: solo mira si vendió más, sin separar el efecto de la vitrina del de la temporada o el tráfico.
 
 **Cuánto vale saberlo (ejemplo con supuestos):** frente a una tienda pasan 2,000 personas al día; entra el 10% (200) y compra el 25% (50 tickets de S/ 60 = S/ 3,000 al día). Si la captación sube de 10% a 11%, entran 20 más, compran 5 más y la tienda vende \~S/ 9,000 más al mes. El monitoreo cuesta S/ 149 al mes.
 
@@ -95,6 +97,22 @@ Las cámaras que ya existen y una PC que procesa las grabaciones de noche dan do
 ```latex
 \text{Captación} = \frac{\text{Personas que entran}}{\text{Personas que pasan}} \qquad \text{Conversión} = \frac{\text{Tickets}}{\text{Personas que entran}}
 ```
+
+### La vitrina: ¿detiene a la gente?
+
+El recorrido frente a una tienda tiene un paso más, y es el que depende de cómo se ve por fuera: **pasan → se detienen frente a la vitrina → entran → compran**.
+
+```latex
+\text{Atracción de vitrina} = \frac{\text{Se detienen}}{\text{Pasan}} \qquad \text{Entrada} = \frac{\text{Entran}}{\text{Se detienen}}
+```
+
+- **Atracción baja** (pasan y no se detienen): la vitrina no llama la atención; hay que cambiar luz, producto, letrero.
+- **Atracción alta y entrada baja** (se detienen, miran y se van): lo que ven no convence; hay que revisar precio visible, puerta, promoción.
+- **Entrada alta y conversión baja** (entran y no compran): el problema está adentro (atención, surtido, cola en caja).
+
+**Prueba de vitrina:** se mide 2 semanas con la vitrina actual y 2 semanas con la nueva (o se alternan dos versiones por semana), y el informe dice cuál detiene y hace entrar a más gente, ajustado por el tráfico de cada semana. Se acompaña de una lista de revisión con foto de la fachada (luz, producto y precio visibles, puerta despejada, letrero legible a 10 m), para explicar el porqué de los números.
+
+**Qué falta en el software:** el evento "se detiene frente a la vitrina" (≥ 2 s en el frente del local a ≤ 0.5 m/s), que es el mismo cálculo con el que hoy se detecta una cola; es un cambio pequeño en Insights. Saber si la persona *mira* la vitrina (orientación de la cabeza con el modelo de puntos del cuerpo que ya se usa en teléfonos) queda para después.
 
 **El software ya hace casi todo el producto 1:** Insights calcula exposición frente al local (pasan), entradas, permanencia y tasa de captación, y el módulo Ventas cruza visitantes con tickets. El producto 2 necesita marcar en el plano la "zona de visión" de cada pantalla, igual que hoy se marca el frente de un local.
 
@@ -156,12 +174,12 @@ También existen proveedores que venden tráfico para negociar rentas en Europa 
 | Socios clave | Integradores de CCTV; ESAN e incubadoras; LAP (primer contacto); ACCEP y gremios; nube AWS/GCP; tiendas de PC; asesoría legal |
 | Actividades clave | Calibrar sitios; mejorar el modelo; validar precisión; venta consultiva; soporte remoto |
 | Recursos clave | Modelo de Re-ID multicámara; plataforma web; equipo técnico; datos de tráfico; casos de éxito |
-| Propuesta de valor | Sus cámaras se vuelven sensores de tráfico; ¿mi tienda capta? (pasan → entran → compran, por hora); audiencia por pantalla; sin rostros y sin hardware nuevo |
+| Propuesta de valor | Sus cámaras se vuelven sensores de tráfico; ¿mi tienda capta? (pasan → se detienen → entran → compran); audiencia por pantalla; sin rostros y sin hardware nuevo |
 | Relación con clientes | Estudio con metas; ejecutivo de cuenta; reporte mensual; soporte local |
 | Canales | Venta directa; integradores; eventos ACCEP; LinkedIn y casos; demo en el local |
 | Segmentos | **Tiendas (primero)**; **medios: JCDecaux**; anunciantes; operadores LAP y malls (extra); retail en cadena; marcas que abren locales |
 | Estructura de costos | Equipo técnico y comercial (el mayor costo); PCs propias por lotes, ~S/ 30–40 por tienda al mes; estudios: tiempo del equipo y ~10% de su precio en caja; marketing, eventos, legal y administración |
-| Fuentes de ingreso | Monitoreo: S/ 149 por tienda y S/ 180 por pantalla al mes; diagnóstico de tienda S/ 900; estudio de audiencia S/ 4,000 por lugar; extra: valor de locales S/ 15,000 por estudio |
+| Fuentes de ingreso | Monitoreo: S/ 149 por tienda y S/ 180 por pantalla al mes; diagnóstico de tienda S/ 900; prueba de vitrina S/ 1,200; estudio de audiencia S/ 4,000 por lugar; extra: valor de locales S/ 15,000 por estudio |
 
 Todo gira en la propuesta de valor: el cliente no compra equipos, compra saber cuánta gente capta su tienda o ve su publicidad. El estudio abre la puerta y paga la venta; el monitoreo mensual es el ingreso que escala.
 
@@ -171,8 +189,9 @@ Cada producto se vende con un estudio corto para entrar y un informe mensual par
 
 | Producto | Línea | Qué incluye | Precio (sin IGV) |
 | --- | --- | --- | --- |
-| Captación | Diagnóstico de tienda | 2 semanas de grabaciones: pasan, entran, permanencia, horas pico y conversión si hay tickets | S/ 900 por tienda |
-| Captación | Monitoreo de tienda | Informe mensual, comparación entre tiendas de la cadena, alertas de caída de captación | S/ 149 al mes por tienda (1–2 cámaras); S/ 129 desde 10 tiendas |
+| Captación | Diagnóstico de tienda | 2 semanas de grabaciones: pasan, se detienen frente a la vitrina, entran, permanencia, horas pico y conversión si hay tickets | S/ 900 por tienda |
+| Captación | Prueba de vitrina | 2 semanas antes y 2 después de cambiar la vitrina (o dos versiones alternadas), con lista de revisión de la fachada | S/ 1,200 por prueba |
+| Captación | Monitoreo de tienda | Informe mensual, comparación entre tiendas de la cadena, alertas de caída de captación o de atracción de vitrina | S/ 149 al mes por tienda (1–2 cámaras); S/ 129 desde 10 tiendas |
 | Audiencia | Estudio de un lugar | 2 semanas: audiencia por hora y día, tiempo de exposición, comparación entre lugares | S/ 4,000 por lugar |
 | Audiencia | Certificación mensual | Audiencia medida de cada pantalla o espacio, para vender o comprar por audiencia | S/ 180 al mes por pantalla |
 | Extra | Valor de locales | Índice de valor por local y renta sugerida para el operador | S/ 15,000 por estudio |
@@ -429,13 +448,15 @@ Camino elegido: **3 diagnósticos rápidos en tiendas conocidas** (dos gratis, e
 | 7 | Costo: una PC procesa una tienda (12 horas) en menos de 1 hora | Procesar 10 días de grabación real | ≥ 12 tiendas por PC | Procesar solo las horas pico | Pendiente |
 | 8 | Legal: la tienda y el operador aceptan el tratamiento | Contrato de encargo de tratamiento + aviso de videovigilancia existente | Firmado en los 3 primeros clientes | Quitar la estimación de género y reducir lo que se guarda | Diseño con privacidad; falta dictamen |
 
+**Hipótesis 9 (vitrina):** a las tiendas les importa saber si su vitrina detiene a la gente y pagarían S/ 1,200 por una prueba antes y después. Prueba: en los 3 primeros diagnósticos, mostrar la atracción de vitrina y ofrecer la prueba. Criterio: 1 de 3 la contrata cuando cambie su vitrina. Si falla, la atracción queda como dato dentro del diagnóstico, sin cobrarse aparte. Además, el evento "se detiene" debe coincidir en ≥ 90% con un conteo manual de 15 minutos.
+
 **Reglas para parar o cambiar:** si fallan 1 y 2, el producto de tiendas no sirve y la publicidad pasa a ser el negocio principal. Si fallan 4 y 5, el negocio sigue con tiendas. Si fallan los dos productos, se cambia de problema antes de escribir más código.
 
 **Guión para tiendas (15 minutos):**
 
 1. ¿Cómo saben hoy cuánta gente entra a su tienda?
 2. ¿Saben cuántos pasan por la puerta sin entrar?
-3. La última vez que cambiaron la vitrina, el personal o el horario, ¿cómo supieron si funcionó?
+3. La última vez que cambiaron la vitrina, el personal o el horario, ¿cómo supieron si funcionó? ¿Cuánto gastaron en esa vitrina?
 4. ¿Han pagado alguna vez un contador o un estudio de tráfico? ¿Cuánto?
 5. Si supieran su captación por hora, ¿qué cambiarían primero?
 6. ¿Cuánto sería razonable pagar al mes por eso? ¿Quién lo aprueba?
