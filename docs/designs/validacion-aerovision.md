@@ -3,7 +3,7 @@
 Sesión de validación con el método /office-hours (gstack, Y Combinator), 27 de octubre de 2026.
 Rama: claude/funny-sagan-bz89x1 · Repo: 23-Andres-QC/Aeropuerto
 
-El plan de negocio completo (problema, clientes, solución, mercado, FODA, Canvas, precios, costos, pronóstico, estrategia, marketing, cronograma y riesgos) está en [docs/plan-de-negocio-aerovision.md](../plan-de-negocio-aerovision.md). Este documento registra solo el resultado de la sesión y el plan de validación que se acordó.
+El plan de negocio completo (problema, clientes, solución, mercado, FODA, Canvas, precios, costo por cámara, pronóstico, plan de validación, cronograma y riesgos) está en [docs/plan-de-negocio-aerovision.md](../plan-de-negocio-aerovision.md). Este documento registra solo el resultado de la sesión y el plan de validación que se acordó.
 
 ## Estado al 27 de octubre de 2026
 
@@ -53,7 +53,7 @@ El plan de negocio completo (problema, clientes, solución, mercado, FODA, Canva
 | 3 primeros diagnósticos | 1 de 3 tiendas contrata la prueba de vitrina cuando cambia su vitrina | La atracción de vitrina queda como dato del diagnóstico |
 | Marzo de 2027 | 3 diagnósticos pagados a S/ 900 y 1 estudio de audiencia firmado | Se cambian el mensaje y el cliente antes de gastar la reserva |
 
-Las ocho hipótesis, con su prueba y criterio, están en la sección 13 del plan.
+Las ocho hipótesis, con su prueba y criterio, están en la sección 11 del plan.
 
 ## Datos por confirmar en la validación
 

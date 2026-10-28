@@ -282,47 +282,7 @@ En 2031 el ingreso vendría en \~58% de tiendas (S/ 1.16 M), \~37% de publicidad
 
 Tener dos productos reparte el riesgo: si uno vende la mitad, el otro sostiene el negocio y solo se crece más lento.
 
-## 11. Estrategia comercial
-
-Dos ventas distintas: la de tiendas es corta y por volumen (el dueño decide en una reunión); la de publicidad es larga y por pocos contratos grandes. Se empieza por tiendas para tener ingresos y casos rápido, y en paralelo se abre la puerta de la publicidad con el contacto en LAP. Meta 2027: 10 tiendas y 10 pantallas en monitoreo.
-
-**Orden de clientes:**
-
-1. **Tiendas a la calle, en galerías, en malls y en el terminal de LAP:** demo en la propia tienda con un teléfono (el módulo En vivo lo permite hoy) y diagnóstico pagado de S/ 900 con la grabación de su cámara de entrada; al entregar, oferta de monitoreo.
-2. **JCDecaux, presentado por el contacto en LAP:** estudio de audiencia de una zona del terminal (S/ 4,000) y luego certificación mensual de sus pantallas.
-3. **Administradores de pantallas en malls, galerías y estaciones, y agencias de medios:** con el caso del aeropuerto.
-4. **Cadenas de retail** (zonales y gerentes comerciales) cuando haya 10 tiendas con resultados.
-5. **Operadores de recintos (LAP, malls, galerías, terminales):** estudio de valor de locales, como extra.
-
-**Embudo trimestral de tiendas:** 30 contactadas → 10 demos → 5 diagnósticos pagados → 3 en monitoreo.
-
-| Comprador | Su dolor | Mensaje |
-| --- | --- | --- |
-| Dueño o jefe de tienda | Vende poco y no sabe si es la vitrina, la atención o el lugar | "Le decimos cuántos pasan por su puerta, cuántos se detienen en su vitrina, cuántos entran y cuántos compran, por hora." |
-| Cadena de tiendas | No sabe qué tiendas aprovechan su ubicación | "Compare la captación de todas sus tiendas con las cámaras que ya tienen." |
-| Dueño de medios | El anunciante pide audiencia y no la hay | "Venda cada pantalla por las personas que la vieron, no por el espacio." |
-| Marca o agencia | Paga publicidad sin saber si la ven | "Antes de pagar un lugar, sepa cuánta gente pasa frente a él." |
-| TI / seguridad / legal | Riesgo de datos | "Sin rostros ni imágenes guardadas; solo conteos." |
-
-## 12. Plan de marketing
-
-El marketing tiene un solo trabajo: conseguir reuniones con dueños de tiendas y con quien vende publicidad, y llegar con un caso medido. Hasta el primer cobro cuesta S/ 0; después, S/ 750 por trimestre (S/ 2,250 en 2027), pagados con ingresos y no con la reserva. La web y la marca ya están en los gastos de la sección 10.
-
-**Posicionamiento:** "Cuánta gente capta su tienda y cuánta ve su publicidad, medido con las cámaras que ya tiene."
-
-| Táctica | Qué se hace | Meta 2027 | Costo en 2027 |
-| --- | --- | --- | --- |
-| Visitas con demo | Mostrar el producto en la tienda con un teléfono en 30 minutos | 40 visitas | S/ 0 |
-| Caso de éxito | Captación de 3 tiendas y audiencia de una zona del terminal, con cifras autorizadas | 2 casos | S/ 0 |
-| LinkedIn de los fundadores | 2 publicaciones por semana: hallazgos de captación y vitrina, demos en video | 1,000 seguidores del sector | S/ 0 |
-| Índice público | Reporte "¿Cuánto capta una tienda en Lima?" con datos agregados autorizados | 1 edición con nota en Perú Retail o Gestión | S/ 0 |
-| Fondos y premios | Postular a ProInnóvate, incubadoras y premios de innovación | 1 fondo o premio | S/ 0 |
-| Material impreso | Tarjetas e informes de muestra para las visitas | — | S/ 750 |
-| Eventos | Charla o asistencia a ACCEP o al Congreso Latinoamericano de Centros Comerciales | 1 evento | S/ 1,500 |
-
-Indicadores: visitas por semana (meta 3), visitas que pasan a diagnóstico (meta 33%), diagnósticos que pasan a monitoreo (meta 50%).
-
-## 13. Plan de validación comercial (noviembre 2026 – marzo 2027)
+## 11. Plan de validación comercial (noviembre 2026 – marzo 2027)
 
 Hipótesis del plan, prueba y criterio con que se dan por validadas:
 
@@ -337,7 +297,7 @@ Hipótesis del plan, prueba y criterio con que se dan por validadas:
 | 7 | La grabación se obtiene y procesa a bajo costo | 10 días de video del NVR de 3 tiendas | 3 de 3 la entregan; 10 cámaras por PC |
 | 8 | Tienda y operador aceptan el tratamiento de datos | Contrato de encargo de tratamiento | Firmado en los 3 primeros clientes |
 
-## 14. Cronograma de próximos pasos
+## 12. Cronograma de próximos pasos
 
 | Fechas | Paso |
 | --- | --- |
@@ -355,7 +315,7 @@ Hipótesis del plan, prueba y criterio con que se dan por validadas:
 | 1 sep – 17 dic 2027 | Primera cadena de tiendas |
 | 31 dic 2027 | Meta: 10 tiendas y 10 pantallas |
 
-## 15. Riesgos y aspectos legales
+## 13. Riesgos y aspectos legales
 
 El riesgo más grande no es técnico: es que el ciclo de venta sea más largo que la caja disponible. Por eso el plan cobra cada estudio con adelanto y no contrata personal fijo hasta tener ingresos recurrentes.
 
@@ -372,7 +332,7 @@ El riesgo más grande no es técnico: es que el ciclo de venta sea más largo qu
 
 **Requisitos legales antes de facturar:** constituir la empresa (S.A.C. en régimen MYPE), registrar la marca AeroVision, inscribir el banco de datos ante la ANPD si corresponde, y tener modelos de contrato de estudio, suscripción y encargo de tratamiento.
 
-## 16. Fuentes y supuestos
+## 14. Fuentes y supuestos
 
 Cifras de fuentes públicas consultadas el 27 de octubre de 2026. Los montos marcados como estimados (constitución, PC, horas de trabajo) y las tasas de conversión son supuestos del plan.
 
