@@ -1,0 +1,38 @@
+PA-100K · train 20000 · val 6000 · test 10000 · escala CLIP 100.0
+Mujeres: train 45.7 %  val 49.5 %  test 39.0 %
+
+== TEST ==
+base (producción hoy)      acc 87.01  balanced 85.27  recall H 93.14  M 77.41  | umbral 0.55: cubre  97.0 %, acc 88.04
+sesgo b=+0.95              acc 86.35  balanced 86.56  recall H 85.62  M 87.50  | umbral 0.55: cubre  96.1 %, acc 87.51
+corregido l=1e-05 bal=False acc 88.46  balanced 87.77  recall H 90.89  M 84.65  | umbral 0.55: cubre  96.8 %, acc 89.87
+libre l=1e-05              acc 88.45  balanced 88.02  recall H 89.97  M 86.06  | umbral 0.55: cubre  96.7 %, acc 89.76
+
+== Error (%) del TEST por condición: base -> corregido ==
+Front      n= 2967    10.8 ->  10.7
+Side       n= 3992    12.6 ->  11.3
+Back       n= 3041    15.7 ->  12.7
+AgeLess18  n=   92    33.7 ->  19.6
+Age18-60   n= 9650    12.3 ->  11.1
+AgeOver60  n=  258    31.0 ->  26.0
+Glasses    n= 2464     7.7 ->   6.8
+Hat        n=  287    16.7 ->  13.6
+
+== VAL (para elegir lambda) ==
+corregido lambda=0 balanceado=False:  acc 84.60  balanced 84.57
+corregido lambda=1e-07 balanceado=False:  acc 84.68  balanced 84.65
+corregido lambda=1e-06 balanceado=False:  acc 85.27  balanced 85.24
+corregido lambda=3e-06 balanceado=False:  acc 85.33  balanced 85.30
+corregido lambda=1e-05 balanceado=False:  acc 85.55  balanced 85.51
+corregido lambda=0.0001 balanceado=False:  acc 84.60  balanced 84.56
+corregido lambda=0.001 balanceado=False:  acc 84.15  balanced 84.10
+corregido lambda=0 balanceado=True:  acc 84.38  balanced 84.36
+corregido lambda=1e-07 balanceado=True:  acc 84.65  balanced 84.63
+corregido lambda=1e-06 balanceado=True:  acc 85.10  balanced 85.08
+corregido lambda=3e-06 balanceado=True:  acc 85.23  balanced 85.21
+corregido lambda=1e-05 balanceado=True:  acc 85.30  balanced 85.28
+corregido lambda=0.0001 balanceado=True:  acc 84.82  balanced 84.79
+corregido lambda=0.001 balanceado=True:  acc 84.27  balanced 84.23
+libre lambda=0:  acc 84.47  balanced 84.45
+libre lambda=1e-06:  acc 85.03  balanced 85.02
+libre lambda=1e-05:  acc 85.43  balanced 85.41
+libre lambda=0.0001:  acc 84.85  balanced 84.82

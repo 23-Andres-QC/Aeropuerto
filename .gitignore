@@ -10,3 +10,6 @@ informe-captons-final/
 # Secuencias de MTMMC (s01, s10, …, y sus .tar): su licencia prohíbe redistribuirlas, así que nunca van al repositorio.
 /s[0-9][0-9]/
 /s[0-9][0-9].tar
+
+# Vectores de CLIP de PA-100K del ajuste de género (73 MB, se regeneran con ajuste_genero_extraer.py).
+Modelo/Test Modelo/ajuste_genero/*.npz

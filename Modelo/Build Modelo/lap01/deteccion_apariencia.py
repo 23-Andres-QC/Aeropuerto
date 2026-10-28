@@ -304,6 +304,19 @@ class ClasificadorGeneroCLIP:
             texto = (texto / _get_vector_norm(texto)).mean(dim=0, keepdim=True)
             clases.append(texto / _get_vector_norm(texto))
         self.texto = torch.cat(clases)
+        self.ajuste = self._cargar_ajuste(self.settings.get("adjustment"))
+
+    def _cargar_ajuste(self, nombre):
+        """Corrección lineal opcional del logit de «Mujer» (ajuste_genero_ajustar.py); None si no se configura."""
+        if not nombre:
+            return None
+        if not isinstance(nombre, str) or Path(nombre).name != nombre:
+            raise ValueError("gender.adjustment debe ser el nombre de un archivo dentro de la carpeta de pesos.")
+        datos = json.loads((self.weights / nombre).read_text(encoding="utf-8"))
+        pesos = torch.tensor(datos["pesos"], dtype=torch.float32)
+        if pesos.shape != (self.texto.shape[1],):
+            raise ValueError(f"{nombre}: {tuple(pesos.shape)} pesos no cuadran con el vector de CLIP ({self.texto.shape[1]}).")
+        return pesos.to(self.device), float(datos["sesgo"])
 
     def reiniciar(self, fps):
         """Reinicia la memoria de votos para una sesión nueva."""
@@ -338,7 +351,11 @@ class ClasificadorGeneroCLIP:
         """logits_per_image de CLIP con el texto ya codificado: mismas operaciones que CLIPModel.forward."""
         imagen = self.model.get_image_features(pixel_values=values).pooler_output
         imagen = imagen / self._norma(imagen)
-        return (torch.matmul(self.texto, imagen.t()) * self.model.logit_scale.exp()).t()
+        logits = (torch.matmul(self.texto, imagen.t()) * self.model.logit_scale.exp()).t()
+        if self.ajuste is not None:   # el softmax de dos clases es sigmoid(logit Mujer - logit Hombre): se suma la corrección a Mujer
+            pesos, sesgo = self.ajuste
+            logits[:, 1] += imagen @ pesos + sesgo
+        return logits
 
     def _cuadrado(self, crop):
         """El recorte entero centrado en un cuadrado: el recorte central de CLIP ya no le corta nada."""
