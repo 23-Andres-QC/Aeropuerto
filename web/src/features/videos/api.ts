@@ -12,11 +12,15 @@ export const MAX_VIDEOS = 10;
 /** tiempo_real salta frames si el modelo no alcanza al video; todos procesa cada frame, más lento si hace falta. */
 export type Modo = "tiempo_real" | "todos";
 
+/** ambos: IDs compartidos entre los videos de la tanda y género; multitracking: sin género; genero: con los IDs de cada video. */
+export type Analisis = "ambos" | "multitracking" | "genero";
+
 /** El video subido; `resumen` lo deja el modelo al terminar (null mientras se procesa). */
 export type VideoSubido = {
   id: string;
   nombre: string;
   modo: Modo;
+  analisis?: Analisis;
   bytes: number;
   subido: string;
   /** Los videos elegidos juntos (cámaras del mismo lugar): el modelo los empieza a la vez cuando suben los `en_tanda`. */
@@ -33,6 +37,7 @@ export type AvanceVideo = {
   id: string;
   nombre: string;
   modo: Modo;
+  analisis?: Analisis;
   ancho?: number;
   alto?: number;
   fps_video?: number;
@@ -76,10 +81,10 @@ export const api = {
 };
 
 /** Sube el archivo tal cual (sin recomprimir) e informa el avance de 0 a 1; `cancelar` corta la subida. */
-export function subirVideo(archivo: File, modo: Modo, alAvanzar: (fraccion: number) => void, tanda?: Tanda) {
+export function subirVideo(archivo: File, modo: Modo, analisis: Analisis, alAvanzar: (fraccion: number) => void, tanda?: Tanda) {
   const xhr = new XMLHttpRequest();
   const promesa = new Promise<VideoSubido>((resolver, rechazar) => {
-    const consulta = new URLSearchParams({ nombre: archivo.name, modo });
+    const consulta = new URLSearchParams({ nombre: archivo.name, modo, analisis });
     if (tanda) {
       consulta.set("tanda", tanda.id);
       consulta.set("en_tanda", String(tanda.total));

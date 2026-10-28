@@ -375,6 +375,7 @@ class VideoEnProceso:
 
     def __init__(self, info, ruta, motor, reid, asociacion, grupo=None):
         self.id, self.nombre, self.modo = info["id"], info["nombre"], info["modo"]
+        self.analisis = info.get("analisis") or "ambos"  # ambos, multitracking (sin género) o genero (IDs de este video)
         self.cap = cv2.VideoCapture(str(ruta))
         if not self.cap.isOpened() or not self.cap.grab():
             self.cap.release()
@@ -393,6 +394,8 @@ class VideoEnProceso:
         self.cap.release()
         self.cap = abrir_video(ruta, primero, motor.device)
         self.motor = motor_aparte(motor)
+        if self.analisis == "multitracking":
+            self.motor.genero.enabled = False  # sin CLIP: todos quedan «Sin determinar»
         # El seguidor cuenta frames procesados, uno tras otro: con el número del frame en el video, los saltos del
         # tiempo real le hacían creer que cada persona había desaparecido un rato y la perdía.
         self.motor.reiniciar({self.id: self.fps if self.modo == "todos" else min(self.fps, FPS_SEGUIDOR)})
@@ -476,7 +479,7 @@ class VideoEnProceso:
         # El asociador es del grupo: aquí cuentan solo las personas que se vieron en este video.
         vigentes = set(self.asociador.confirmadas.values()) & set(self.generos)
         t = self.tiempos
-        return {"id": self.id, "nombre": self.nombre, "modo": self.modo, "ancho": self.ancho, "alto": self.alto,
+        return {"id": self.id, "nombre": self.nombre, "modo": self.modo, "analisis": self.analisis, "ancho": self.ancho, "alto": self.alto,
                 "fps_video": round(self.fps, 2), "duracion_s": round(self.total / self.fps, 1) if self.total else None,
                 "t_s": round(max(self.ritmo.indice, 0) / self.fps, 2), "procesados": self.procesados,
                 "saltados": self.saltados, "segundos": round(time.perf_counter() - self.inicio, 1),
@@ -748,13 +751,18 @@ class VideosSubidos:
         return grupos
 
     def _abrir_grupo(self, listos):
-        """Abre los videos descargados de una tanda en un grupo por modo (ver GrupoVideos) y los pone en marcha a la
-        vez: en tiempo real, cada pasada toma de todos el frame del mismo segundo."""
+        """Abre los videos descargados de una tanda en un grupo por modo y análisis (ver GrupoVideos) y los pone en marcha
+        a la vez: en tiempo real, cada pasada toma de todos el frame del mismo segundo. Con el análisis «genero» cada
+        video va en su propio grupo: sus IDs no se comparten con los otros videos."""
         gpu = str(self.motor.device).startswith("cuda")
-        for modo in sorted({info["modo"] for info, _ in listos}):
-            tanda = [(info, ruta) for info, ruta in listos if info["modo"] == modo]
-            grupo = GrupoVideos([info["id"] for info, _ in tanda], self.reid, self.asociacion, gpu=gpu)
-            abiertos = [(video, ruta) for info, ruta in tanda if (video := self._abrir(info, ruta, None, grupo, activar=False))]
+        clave = lambda info: (info["modo"], info.get("analisis") or "ambos")  # noqa: E731
+        for modo, analisis in sorted({clave(info) for info, _ in listos}):
+            tanda = [(info, ruta) for info, ruta in listos if clave(info) == (modo, analisis)]
+            grupos = [[x] for x in tanda] if analisis == "genero" else [tanda]
+            abiertos = []
+            for miembros in grupos:
+                grupo = GrupoVideos([info["id"] for info, _ in miembros], self.reid, self.asociacion, gpu=gpu)
+                abiertos += [(video, ruta) for info, ruta in miembros if (video := self._abrir(info, ruta, None, grupo, activar=False))]
             cero = time.perf_counter()
             with self.bloqueo:
                 for video, ruta in abiertos:
@@ -762,8 +770,8 @@ class VideosSubidos:
                     self.activos[video.id] = (video, ruta)
             for video, _ in abiertos:
                 print(f"Procesando el video {video.nombre}: {video.ancho}x{video.alto}, {video.fps:g} FPS, "
-                      f"modo {video.modo} ({len(self.activos)} a la vez)", flush=True)
-            if len(abiertos) > 1:
+                      f"modo {video.modo}, análisis {analisis} ({len(self.activos)} a la vez)", flush=True)
+            if len(abiertos) > 1 and analisis != "genero":
                 print(f"Videos {', '.join(v.nombre for v, _ in abiertos)}: cámaras del mismo lugar, con IDs compartidos", flush=True)
 
     def _abrir(self, info, ruta, error, grupo=None, activar=True):

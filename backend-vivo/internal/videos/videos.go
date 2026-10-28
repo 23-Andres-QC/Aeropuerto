@@ -28,6 +28,15 @@ const (
 	Todos      = "todos"
 )
 
+// Qué hace el modelo con el video: Ambos sigue a las personas entre las cámaras de
+// la tanda (IDs compartidos) y les da género; Multitracking solo lo primero (sin
+// género); Genero da género con los IDs de cada video, sin compartirlos.
+const (
+	Ambos         = "ambos"
+	Multitracking = "multitracking"
+	Genero        = "genero"
+)
+
 // MaxVideos es cuántos videos (en cola, en proceso o con su resumen) admite la
 // lista a la vez; para subir más hay que quitar alguno.
 const MaxVideos = 10
@@ -43,6 +52,8 @@ type Video struct {
 	ID     string    `json:"id"`
 	Nombre string    `json:"nombre"`
 	Modo   string    `json:"modo"`
+	// Analisis: Ambos, Multitracking o Genero (ver las constantes).
+	Analisis string `json:"analisis"`
 	Bytes  int64     `json:"bytes"`
 	Subido time.Time `json:"subido"`
 	// Tanda agrupa los videos que se eligieron juntos en la web (cámaras del mismo
@@ -102,11 +113,11 @@ func (r *Registro) Lleno() bool {
 
 // Subir copia el video a un archivo temporal y, si llega completo, lo agrega al final de la lista.
 func (r *Registro) Subir(nombre, modo string, cuerpo io.Reader) (Video, error) {
-	return r.SubirEnTanda(nombre, modo, "", 0, cuerpo)
+	return r.SubirEnTanda(nombre, modo, "", "", 0, cuerpo)
 }
 
 // SubirEnTanda es Subir para uno de los enTanda videos de la tanda (ver Video.Tanda).
-func (r *Registro) SubirEnTanda(nombre, modo, tanda string, enTanda int, cuerpo io.Reader) (Video, error) {
+func (r *Registro) SubirEnTanda(nombre, modo, analisis, tanda string, enTanda int, cuerpo io.Reader) (Video, error) {
 	if tanda == "" {
 		enTanda = 0
 	} else if len(tanda) > 64 || strings.Trim(tanda, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != "" {
@@ -129,6 +140,12 @@ func (r *Registro) SubirEnTanda(nombre, modo, tanda string, enTanda int, cuerpo 
 	}
 	if modo != TiempoReal && modo != Todos {
 		return Video{}, fmt.Errorf("%w: el modo debe ser %s o %s", ErrInvalido, TiempoReal, Todos)
+	}
+	if analisis == "" {
+		analisis = Ambos
+	}
+	if analisis != Ambos && analisis != Multitracking && analisis != Genero {
+		return Video{}, fmt.Errorf("%w: el análisis debe ser %s, %s o %s", ErrInvalido, Ambos, Multitracking, Genero)
 	}
 	if r.Lleno() {
 		return Video{}, ErrLleno
@@ -156,7 +173,7 @@ func (r *Registro) SubirEnTanda(nombre, modo, tanda string, enTanda int, cuerpo 
 	}
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)
-	v := &Video{ID: "vid-" + hex.EncodeToString(b), Nombre: nombre, Modo: modo, Bytes: n,
+	v := &Video{ID: "vid-" + hex.EncodeToString(b), Nombre: nombre, Modo: modo, Analisis: analisis, Bytes: n,
 		Subido: time.Now().UTC().Truncate(time.Second), Tanda: tanda, EnTanda: enTanda, ruta: f.Name()}
 	r.mu.Lock()
 	// Otra subida pudo completar la lista mientras se copiaba este archivo.

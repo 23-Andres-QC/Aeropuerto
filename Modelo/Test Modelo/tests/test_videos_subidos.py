@@ -314,6 +314,39 @@ class Simultaneos(unittest.TestCase):
         self.assertEqual(config["overlaps"], [["a", "b"]], "pueden ver a la misma persona a la vez")
         self.assertEqual({(x["from"], x["to"]) for x in config["transitions"]}, {("a", "b"), ("b", "a")})
 
+    def test_con_analisis_genero_cada_video_de_la_tanda_lleva_sus_propios_ids(self):
+        import videos_subidos
+        v, _, _, _ = self.videos()
+        v.reid, v.asociacion = object(), {}
+        abiertos = []
+
+        class Abierto:
+            def __init__(self, info, ruta, motor, reid, asociacion, grupo=None):
+                self.id, self.nombre, self.modo, self.grupo = info["id"], info["nombre"], info["modo"], grupo
+                self.fps, self.ritmo, self.terminado = 15.0, Ritmo(15.0, info["modo"]), False
+                self.ancho = self.alto = 4
+                abiertos.append(self)
+
+            def leer(self):
+                return None
+
+            def cerrar(self):
+                pass
+
+        original, videos_subidos.VideoEnProceso = videos_subidos.VideoEnProceso, Abierto
+        try:
+            with tempfile.TemporaryDirectory() as carpeta:
+                for vid in ("a", "b"):
+                    info = {"id": vid, "nombre": vid, "modo": "tiempo_real", "analisis": "genero", "tanda": "t", "en_tanda": 2}
+                    v.descargas[vid] = (info, threading.Event())
+                    v.descargados.append((info, Path(carpeta) / f"{vid}.video", None))
+                v.paso()
+        finally:
+            videos_subidos.VideoEnProceso = original
+        a, b = abiertos
+        self.assertIsNot(a.grupo, b.grupo, "sin multitracking: cada video con su asociador")
+        self.assertEqual(a.ritmo.cero, b.ritmo.cero, "igual empiezan juntos")
+
     def test_una_tanda_espera_a_que_suban_todos_aunque_el_mas_chico_termine_primero(self):
         import videos_subidos
         v, _, _, _ = self.videos()

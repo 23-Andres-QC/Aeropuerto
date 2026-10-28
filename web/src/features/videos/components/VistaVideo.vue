@@ -180,6 +180,7 @@ onUnmounted(() => {
     <div class="panel-heading">
       <h2 class="dato">{{ video.nombre }}</h2>
       <span class="heading-meta">
+        <span v-if="video.analisis && video.analisis !== 'ambos'" class="pill">solo {{ video.analisis === "genero" ? "género" : "multitracking" }}</span>
         <span class="pill" :class="{ vivo: estado === 'procesando', falla: estado === 'error' }">{{ estado }}</span>
         <button class="danger-button" type="button" @click="emit('quitar')">{{ final ? "Quitar video" : "Detener y quitar" }}</button>
       </span>
