@@ -20,7 +20,8 @@ const props = defineProps<{
   fuente?: string;
   reloj: RelojComun;
 }>();
-const emit = defineEmits<{ quitar: [] }>();
+// desde: el segundo de las primeras cajas que llegaron (el relevo no guarda las anteriores; ver VideosPage).
+const emit = defineEmits<{ quitar: []; desde: [t: number] }>();
 
 const imagen = ref("");
 const lienzo = ref<HTMLCanvasElement>();
@@ -67,6 +68,7 @@ function alVideo(ev: MessageEvent) {
 // pantalla dibuja las cajas interpoladas en el segundo que se ve (ver cajasEn).
 const instantaneas: Instantanea[] = [];
 const MAX_INSTANTANEAS = 20000;
+let desde: number | undefined;
 let arrancando = false;
 let animacion = 0;
 
@@ -79,6 +81,7 @@ function alDetecciones(ev: MessageEvent) {
   }
   ultimo.value = m;
   if (!reproduce.value || m.t == null) {
+    if (m.t != null && desde == null) emit("desde", (desde = m.t));
     requestAnimationFrame(dibujar);
     return;
   }
@@ -88,6 +91,7 @@ function alDetecciones(ev: MessageEvent) {
     instantaneas.length = 0; // el video volvió a empezar
   }
   instantaneas.push(m);
+  if (instantaneas.length === 1) emit("desde", (desde = m.t));
   if (instantaneas.length > MAX_INSTANTANEAS) instantaneas.shift();
 }
 

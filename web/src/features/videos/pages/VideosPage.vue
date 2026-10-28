@@ -60,6 +60,10 @@ watch(activos, (mapa) => {
   ultimos.value = new Map([...ultimos.value, ...mapa]);
 });
 const avanceDe = (id: string) => activos.value.get(id) ?? ultimos.value.get(id);
+// Desde qué segundo tiene cajas cada visor: el relevo solo guarda las últimas, así que con la página abierta (o recargada)
+// a mitad del proceso llegan las de ahí en adelante. El reloj no va antes de eso: se veían los videos sin cajas.
+const desde = new Map<string, number>();
+const inicio = () => Math.max(0, ...videos.value.filter((v) => !v.resumen).map((v) => desde.get(v.id) ?? 0));
 
 /** Hasta qué segundo se puede mostrar un video: lo procesado (menos el margen), todo si terminó, o null si no empezó. */
 function disponible(v: VideoSubido): number | null {
@@ -80,7 +84,8 @@ function avanzar(ahoraMs: number) {
   const lista = videos.value;
   const limites = lista.map(disponible);
   if (comun.t == null) {
-    if (lista.length && !subiendo.value && limites.every((l) => l != null && l > 0)) comun.t = 0;
+    const listos = limites.every((l) => l != null && l > 0) && lista.every((v) => v.resumen || desde.has(v.id));
+    if (lista.length && !subiendo.value && listos) comun.t = inicio();
   } else {
     const t = comun.t;
     const tope = Math.min(...lista.map((v, i) => (t >= duracionDe(v) ? Infinity : (limites[i] ?? t))));
@@ -98,6 +103,7 @@ function avanzar(ahoraMs: number) {
 watch(
   () => videos.value.map((v) => v.id),
   (ahoraIds, antesIds) => {
+    for (const id of desde.keys()) if (!ahoraIds.includes(id)) desde.delete(id);
     if (ahoraIds.some((id) => !antesIds.includes(id))) {
       comun.t = null;
       pausado.value = false;
@@ -124,7 +130,7 @@ function irA(segundo: number) {
   const lista = videos.value;
   const limites = lista.map(disponible);
   const tope = Math.min(...lista.map((v, i) => (segundo >= duracionDe(v) ? Infinity : (limites[i] ?? 0))));
-  comun.t = Math.max(0, Math.min(segundo, tope));
+  comun.t = Math.max(inicio(), Math.min(segundo, tope));
   horaComun.value = comun.t;
 }
 
@@ -355,6 +361,7 @@ onUnmounted(() => {
         :dispositivo="v.resumen?.dispositivo ?? servicio?.dispositivo"
         :fuente="fuenteDe(v.id)"
         :reloj="comun"
+        @desde="(t) => desde.set(v.id, t)"
         @quitar="quitar(v.id)"
       />
       <section v-else class="panel vacio">
