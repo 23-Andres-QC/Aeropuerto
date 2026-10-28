@@ -76,15 +76,48 @@ def _part_signature(part, mask=None):
     return np.concatenate((hs, value, chroma)).astype(np.float32)
 
 
-def clothing_signature(image, box, all_boxes=None):
-    """Firma de color de cabeza, torso y piernas excluyendo lo cubierto por otras cajas (360 valores)."""
+def _firmas_de_partes(partes):
+    """_part_signature de varias regiones a la vez, con los mismos valores: cada región se reduce por separado, pero el
+    paso a HSV y Lab (pixel por pixel) y los histogramas van en una sola cuenta. Con ~25 personas por cámara, las ~10
+    llamadas chicas de OpenCV por región eran un tercio del seguidor."""
+    firmas = np.zeros((len(partes), 120), np.float32)
+    usadas, imagenes, mascaras = [], [], []
+    for k, (part, mask) in enumerate(partes):
+        if part.size == 0 or (mask is not None and np.count_nonzero(mask) < 32):
+            continue
+        usadas.append(k)
+        imagenes.append(cv2.resize(part, (48, 64), interpolation=cv2.INTER_AREA))
+        mascaras.append(np.ones((64, 48), bool) if mask is None else
+                        cv2.resize(mask.astype(np.uint8), (48, 64), interpolation=cv2.INTER_NEAREST) != 0)
+    if not usadas:
+        return firmas
+    for inicio in range(0, len(usadas), 255):  # el número de región va en un canal de 8 bits
+        tramo = slice(inicio, inicio + 255)
+        n = len(usadas[tramo])
+        pila = np.concatenate(imagenes[tramo])  # (64·n, 48, 3): cvtColor va pixel por pixel
+        hsv, lab = cv2.cvtColor(pila, cv2.COLOR_BGR2HSV), cv2.cvtColor(pila, cv2.COLOR_BGR2LAB)
+        # Un canal más con el número de región: calcHist cuenta las n regiones a la vez, con los mismos bins.
+        region = np.repeat(np.arange(n, dtype=np.uint8), 64 * 48).reshape(64 * n, 48)
+        mascara = np.concatenate(mascaras[tramo]).astype(np.uint8)
+        partes_hist = []
+        for imagen, canales, bins, rangos in ((hsv, [0, 1, 2], [12, 4], [0, 180, 0, 256]), (hsv, [0, 3], [8], [0, 256]),
+                                              (lab, [0, 2, 3], [8, 8], [0, 256, 0, 256])):
+            hist = cv2.calcHist([region, imagen], canales, mascara, [n] + bins, [0, n] + rangos).reshape(n, -1)
+            partes_hist.append(np.sqrt(hist / (hist.sum(axis=1, keepdims=True) + 1e-8)))
+        firmas[usadas[tramo]] = np.concatenate(partes_hist, axis=1)
+    return firmas
+
+
+def _partes(image, box, all_boxes=None):
+    """Las regiones (cabeza, torso, piernas) de una caja con su máscara sin lo que tapan las otras cajas, o None si la
+    caja es demasiado chica."""
     x1, y1, x2, y2 = map(int, box)
     height, width = image.shape[:2]
     x1, y1 = max(0, x1), max(0, y1)
     x2, y2 = min(width, x2), min(height, y2)
     crop = image[y1:y2, x1:x2]
     if crop.shape[0] < 16 or crop.shape[1] < 8:
-        return np.zeros(360, dtype=np.float32)
+        return None
 
     safe_mask = np.full(crop.shape[:2], 255, dtype=np.uint8)
     if all_boxes is not None:
@@ -100,15 +133,36 @@ def clothing_signature(image, box, all_boxes=None):
     h, w = crop.shape[:2]
     head_top, head_bottom = int(0.02 * h), int(0.28 * h)
     head_left, head_right = int(0.22 * w), int(0.78 * w)
-    head = _part_signature(crop[head_top:head_bottom, head_left:head_right],
-                           safe_mask[head_top:head_bottom, head_left:head_right])
+    head = (crop[head_top:head_bottom, head_left:head_right], safe_mask[head_top:head_bottom, head_left:head_right])
 
     top, bottom = int(0.20 * h), int(0.94 * h)
     left, right = int(0.16 * w), int(0.84 * w)
     body, body_mask = crop[top:bottom, left:right], safe_mask[top:bottom, left:right]
     split = max(1, int(body.shape[0] * 0.55))
-    signature = np.concatenate((head, _part_signature(body[:split], body_mask[:split]),
-                                _part_signature(body[split:], body_mask[split:])))
+    return head, (body[:split], body_mask[:split]), (body[split:], body_mask[split:])
+
+
+def clothing_signatures(image, boxes, indices):
+    """clothing_signature(image, boxes[i], boxes) de cada i de `indices`, con las regiones de todas en una cuenta."""
+    partes = [_partes(image, boxes[i], boxes) for i in indices]
+    firmas = _firmas_de_partes([p for trio in partes if trio is not None for p in trio])
+    salida, k = [], 0
+    for trio in partes:
+        if trio is None:
+            salida.append(np.zeros(360, dtype=np.float32))
+            continue
+        signature = firmas[k:k + 3].reshape(-1)
+        k += 3
+        salida.append(signature / (np.linalg.norm(signature) + 1e-8))
+    return salida
+
+
+def clothing_signature(image, box, all_boxes=None):
+    """Firma de color de cabeza, torso y piernas excluyendo lo cubierto por otras cajas (360 valores)."""
+    partes = _partes(image, box, all_boxes)
+    if partes is None:
+        return np.zeros(360, dtype=np.float32)
+    signature = np.concatenate([_part_signature(part, mask) for part, mask in partes])
     return signature / (np.linalg.norm(signature) + 1e-8)
 
 
@@ -247,7 +301,7 @@ def describe_indices(image, boxes, indices, extractor=None):
     boxes = np.asarray(boxes, dtype=np.float32).reshape(-1, 4)
     indices = list(indices)
     deep = extractor(image, boxes[indices]) if extractor is not None and indices else [None] * len(indices)
-    return {i: Appearance(clothing_signature(image, boxes[i], boxes), vector) for i, vector in zip(indices, deep)}
+    return {i: Appearance(colour, vector) for i, colour, vector in zip(indices, clothing_signatures(image, boxes, indices), deep)}
 
 
 class ClasificadorGeneroCLIP:
@@ -311,6 +365,16 @@ class ClasificadorGeneroCLIP:
             texto = (texto / _get_vector_norm(texto)).mean(dim=0, keepdim=True)
             clases.append(texto / _get_vector_norm(texto))
         self.texto = torch.cat(clases)
+        self.grabada = None
+        if str(self.device).startswith("cuda"):
+            from .grafos import RedGrabada
+
+            # En la GPU, grabado (ver grafos) y en media precisión: con 7 videos a la vez la GPU va llena y 4 recortes
+            # esperaban ~80 ms. En media precisión la red tarda la mitad (de 8,4 a 4,5 ms con 4 recortes); en 284
+            # recortes de personas de 3 cámaras da la misma etiqueta en todos, con la probabilidad a menos de 0,006.
+            lado = int(self.model.config.vision_config.image_size)
+            tamanos = tuple(t for t in (1, 2, 4, 8) if t < self.batch_size) + (self.batch_size,)
+            self.grabada = RedGrabada(self._logits_red, (3, lado, lado), tamanos, self.device, media_precision=True)
 
     def reiniciar(self, fps):
         """Reinicia la memoria de votos para una sesión nueva."""
@@ -343,6 +407,9 @@ class ClasificadorGeneroCLIP:
 
     def _logits(self, values):
         """logits_per_image de CLIP con el texto ya codificado: mismas operaciones que CLIPModel.forward."""
+        return self._logits_red(values) if getattr(self, "grabada", None) is None else self.grabada(values)
+
+    def _logits_red(self, values):
         imagen = self.model.get_image_features(pixel_values=values).pooler_output
         imagen = imagen / self._norma(imagen)
         return (torch.matmul(self.texto, imagen.t()) * self.model.logit_scale.exp()).t()

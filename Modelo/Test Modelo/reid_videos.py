@@ -99,7 +99,8 @@ class ReIDPersonViT:
 
 class ReIDGrabado:
     """Un ReIDPersonas en la GPU (OSNet-AIN convertido de ONNX) con la red grabada en CUDA graphs (ver lap01.grafos):
-    con 4 recortes, de ~29 a 5 ms. Mismos vectores, en precisión completa como antes."""
+    con 4 recortes, de ~29 a 5 ms. En media precisión: con 7 cámaras y ~90 recortes por paso, de 88 a 52 ms, con los
+    mismos vectores (coseno ≥ 0,99995 con los de precisión completa)."""
 
     def __init__(self, reid):
         self.reid, self.dimension, self.batch_size = reid, reid.dimension, reid.batch_size
@@ -115,7 +116,7 @@ class ReIDGrabado:
         red.graph.eliminate_dead_code()
         red.recompile()
         tamanos = tuple(t for t in (2, 4, 8) if t < reid.batch_size) + (reid.batch_size,)
-        self.grabada = RedGrabada(red, (3, reid.height, reid.width), tamanos, reid.device)
+        self.grabada = RedGrabada(red, (3, reid.height, reid.width), tamanos, reid.device, media_precision=True)
 
     @torch.inference_mode()
     def __call__(self, crops):

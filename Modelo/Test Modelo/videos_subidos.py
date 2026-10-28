@@ -86,7 +86,10 @@ SIMULTANEOS = int(os.environ.get("VIDEOS_SIMULTANEOS") or 10)
 # - muchas cámaras: con 7 cámaras de 1080p a 60 fps y ~25 personas en cada una, cada paso tardaba ~1,8 s (0,5 cuadros
 #   por segundo de cada video). Casi todo se iba en decodificar en la CPU los cuadros que se saltan y en comparar cada
 #   identidad con todas las vigentes, par por par. Ahora se decodifica en la GPU (ver lector_gpu), cada video en su
-#   hilo, y el asociador compara de una vez (con las mismas decisiones): ~0,85 s por paso;
+#   hilo, y el asociador compara de una vez (con las mismas decisiones): ~0,85 s por paso. Después, con la GPU llena,
+#   las firmas de color de un cuadro van en una cuenta (mismos valores), CLIP grabado y en media precisión (misma
+#   etiqueta en 284 recortes) y OSNet-AIN en media precisión (coseno ≥ 0,99995): ~0,58 s por paso (1,7 cuadros por
+#   segundo de cada video);
 # - cruces: cuando dos personas se cruzan, el seguidor elegía casi solo por movimiento y los dos tracks se cambiaban de
 #   persona (la mayoría de los cambios de ID). Ahora el parecido pesa 0,8 en esa elección (no 0,22), cuenta con un 80 %
 #   del vector profundo (no 20 %: el color distingue poco a gente vestida parecida) y un track activo sigue a una caja sin

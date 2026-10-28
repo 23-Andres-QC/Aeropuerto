@@ -10,7 +10,7 @@ TEST = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TEST))
 import camara_telefono  # noqa: E402,F401  (prepara lap01 y sus rutas)
 from lap01.camaras_reid import vistas_confiables  # noqa: E402
-from lap01.deteccion_apariencia import _part_signature, clothing_signature  # noqa: E402
+from lap01.deteccion_apariencia import _part_signature, clothing_signature, clothing_signatures  # noqa: E402
 from lap01.tracking_local import _iou  # noqa: E402
 
 
@@ -100,6 +100,17 @@ class VistasConfiables(unittest.TestCase):
             for caja in b:
                 np.testing.assert_array_equal(clothing_signature(imagen, caja, todas), firma_referencia(imagen, caja, todas),
                                               err_msg=f"caso {caso}")
+
+    def test_firmas_de_un_cuadro_juntas_igual_que_una_por_una(self):
+        rng = np.random.default_rng(7)
+        # Ruido (todos los valores de cada canal) y bloques lisos (bordes exactos de los bins).
+        imagen = rng.integers(0, 256, (576, 1024, 3), dtype=np.uint8)
+        imagen[:, 512:] = np.repeat(np.repeat(rng.integers(0, 256, (36, 32, 3), dtype=np.uint8), 16, 0), 16, 1)
+        for caso in range(60):
+            b = cajas(rng, int(rng.integers(1, 40)))
+            indices = sorted(rng.choice(len(b), int(rng.integers(1, len(b) + 1)), replace=False).tolist())
+            for i, firma in zip(indices, clothing_signatures(imagen, b, indices)):
+                np.testing.assert_array_equal(firma, clothing_signature(imagen, b[i], b), err_msg=f"caso {caso}")
 
 
 if __name__ == "__main__":
