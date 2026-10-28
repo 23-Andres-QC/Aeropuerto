@@ -805,9 +805,9 @@ const elementos = computed(() => {
   };
 });
 
-/** Largo de la barra de escala: un valor redondo que se vea de ~110 px con cualquier zoom. */
+/** Largo de la barra de escala: un valor redondo que se vea de ~60 px con cualquier zoom. */
 const escalaM = computed(() => {
-  const objetivo = (110 * e.value) / k.value;
+  const objetivo = (60 * e.value) / k.value;
   return [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000].find((m) => m >= objetivo) ?? 2000;
 });
 /** El recorte de la cuadrícula al piso sobre el campus necesita un id propio por plano (hay varios por página). */
@@ -979,9 +979,9 @@ watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
           <text :x="c.x" :y="c.arriba - 9 * e" class="ayuda-vecino">Clic otra vez para acercar</text>
         </g>
       </g>
-      <g class="escala" :transform="`translate(${vista.x + 14 * e} ${vista.y + vista.h - 18 * e})`">
-        <rect :width="escalaM * k" :height="5 * e" />
-        <text :x="escalaM * k + 6 * e" :y="6 * e">{{ escalaM }} m</text>
+      <g class="escala" :transform="`translate(${vista.x + 10 * e} ${vista.y + vista.h - 8 * e})`">
+        <rect :width="escalaM * k" :height="3 * e" />
+        <text :x="escalaM * k + 5 * e" :y="4 * e">{{ escalaM }} m</text>
       </g>
       <defs>
         <marker id="flecha-flujo" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto">
@@ -1323,7 +1323,7 @@ watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
 }
 .camara-nombre,
 .escala text {
-  font-size: calc(12px * var(--e));
+  font-size: calc(10px * var(--e));
   font-weight: 600;
   fill: var(--ink-soft);
   paint-order: stroke;
