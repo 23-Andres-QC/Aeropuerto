@@ -7,6 +7,8 @@ import PlanoSitio, { type FlechaPlano, type RecorridoPlano } from "../components
 import { CELDA_CALOR, SESION_VIVO, capturasVersion, entradasPorIntervalo, fijarModoVivo, historiasDe, mensajeGuardado, modoVivo, motorVivo as vivo, type ConteoCamara, type CuentaSentido } from "../enVivo";
 import ContrasteSesiones from "../components/ContrasteSesiones.vue";
 import TraficoSitio from "../components/TraficoSitio.vue";
+import LineaTiempo from "../components/LineaTiempo.vue";
+import { LETRAS, nombreRango, recortarVarios, relativo, type Rango } from "../lineaTiempo";
 import { desdeReplay, entradasPorIntervalo as entradasEntre, resumir, type HistoriaBasica, type ResumenVivo } from "../analisisVivo";
 import { GENEROS_ABREV, suprimirGenero, textoGenero } from "../../../core/roles";
 import { useSitios } from "../useSitios";
@@ -32,14 +34,21 @@ const verFlujos = ref(true);
 const guardadasVivo = computed(() => sesiones.value.filter((s) => s.kind === "LIVE"));
 const deVideos = computed(() => sesiones.value.filter((s) => s.kind === "VIDEO"));
 
+/** Rangos de tiempo elegidos en la línea de tiempo: con alguno, todo el tablero (y sus reportes) muestra solo esos tramos. */
+const rangos = ref<Rango[]>([]);
+const conRangos = computed(() => !modoVivo.value && rangos.value.length > 0);
+const replayVista = computed(() => (replay.value && conRangos.value ? recortarVarios(replay.value, rangos.value) : replay.value));
+
 /**
  * Una captura en vivo guardada no pasa por la Parte III: sus métricas se calculan aquí desde su reproducción para que se vea
- * con el mismo tablero que lo grabado. Si ya se corrió la Parte III sobre ella, manda la Parte III.
+ * con el mismo tablero que lo grabado. Si ya se corrió la Parte III sobre ella, manda la Parte III. Con rangos elegidos, las de
+ * cualquier sesión se calculan así, sobre esos tramos.
  */
 const analisisGuardado = computed(() => {
   const s = sesion.value;
-  if (modoVivo.value || s?.kind !== "LIVE" || !replay.value || analitica.value) return null;
-  const a = desdeReplay(replay.value, new Date(s.recording_start).getTime(), zonas.value);
+  if (modoVivo.value || !s || !replayVista.value) return null;
+  if (!conRangos.value && (s.kind !== "LIVE" || analitica.value)) return null;
+  const a = desdeReplay(replayVista.value, new Date(s.recording_start).getTime(), zonas.value);
   return { ...a, resumen: resumir(a.historias, zonas.value, a.densidad) };
 });
 
@@ -56,7 +65,12 @@ const analisis = computed<Analisis | null>(() => {
   const g = analisisGuardado.value;
   if (!g) return null;
   const de = (zona: number | null) => (zona == null ? g.historias : g.historias.filter((h) => h.zonas.has(zona)));
-  return { resumen: g.resumen, historias: de, entradas: (zona) => entradasEntre(de(zona), g.inicio, g.fin), calor: g.calor, celda: CELDA_CALOR };
+  // Con rangos, las entradas van del inicio del primero al fin del último.
+  const [desde, hasta] = conRangos.value
+    ? [g.inicio + 1000 * Math.min(...rangos.value.map((o) => o.desde)), g.inicio + 1000 * Math.max(...rangos.value.map((o) => o.hasta))]
+    : [g.inicio, g.fin];
+  const cuantas = conRangos.value ? 60 : 12;
+  return { resumen: g.resumen, historias: de, entradas: (zona) => entradasEntre(de(zona), desde, hasta, cuantas), calor: g.calor, celda: CELDA_CALOR };
 });
 const grabadas = computed(() => sesiones.value.filter((s) => s.kind === "BUILD"));
 
@@ -196,7 +210,15 @@ const tarjetasVivo = computed<Tarjeta[]>(() => {
   const permanencia = enZona ? (z?.permanencia ?? null) : res.permanenciaMedia;
   const pico = enZona ? (z?.densidad ?? 0) : (res.densidadMax?.valor ?? 0);
   return [
-    { titulo: "Personas", valor: hs.length.toLocaleString(), detalle: enZona ? `de ${res.personas} en vivo` : textoGenero(hs.length, priv.visibles, priv.ocultas) || "género no registrado" },
+    {
+      titulo: "Personas",
+      valor: hs.length.toLocaleString(),
+      detalle: conRangos.value
+        ? `de ${sesion.value?.identities ?? "—"} en la sesión`
+        : enZona
+          ? `de ${res.personas} en vivo`
+          : textoGenero(hs.length, priv.visibles, priv.ocultas) || "género no registrado",
+    },
     { titulo: "Visitas", valor: hayLocales ? entraron.length.toLocaleString() : "—", detalle: hayLocales ? "entraron a un local" : "sin locales" },
     { titulo: "Exposición", valor: hayLocales ? expuestos.length.toLocaleString() : "—", detalle: "pasan por el frente" },
     {
@@ -282,7 +304,8 @@ const generoVisible = computed(() => {
     return { hay: true, total: lista.length, visibles: p.visibles, ocultas: p.ocultas };
   }
   const res = r.value;
-  if (!res) return { hay: false, total: 0, visibles: {} as Record<string, number>, ocultas: 0 };
+  // El género de cada persona no se guarda: no se puede contar dentro de un rango.
+  if (!res || conRangos.value) return { hay: false, total: 0, visibles: {} as Record<string, number>, ocultas: 0 };
   return { hay: true, total: res.personas, visibles: res.genero, ocultas: res.genero_ocultos ?? 0 };
 });
 const generos = computed(() => {
@@ -328,7 +351,7 @@ function dentro([x, y]: Punto, pol: Punto[]) {
 }
 
 const personasMapa = computed(() =>
-  (replay.value?.personas ?? []).filter((p) => !zonaSel.value || p.x.some((x, i) => dentro([x, p.y[i]], zonaSel.value!.points))),
+  (replayVista.value?.personas ?? []).filter((p) => !zonaSel.value || p.x.some((x, i) => dentro([x, p.y[i]], zonaSel.value!.points))),
 );
 // Un trazo por tramo continuo: no se une a una persona a través de un hueco en el que no se la vio.
 const recorridos = computed<RecorridoPlano[]>(() =>
@@ -412,10 +435,18 @@ const generado = ref("");
 const hoy = () => new Date().toISOString().slice(0, 10);
 const nombreArchivo = (ext: string) => `insights-${slug.value}-${hoy()}.${ext}`;
 
+const textoRangos = computed(() => rangos.value.map((o, i) => nombreRango(inicioSesion.value, o, i)).join(" · "));
 const encabezadoReporte = computed<string[][]>(() => [
   [`Insights · ${config.value?.site.name ?? slug.value}`],
   [`Sesión: ${sesion.value?.name ?? "—"}`, `Zona: ${alcance.value}`],
+  ...(conRangos.value ? [[`Rangos: ${textoRangos.value}`]] : []),
 ]);
+
+// --- Línea de tiempo: rangos elegidos de la sesión; sin rangos, el tablero y sus reportes quedan como siempre -----------
+const tablasLinea = ref<TablaReporte[]>([]);
+const inicioSesion = computed(() => (sesion.value ? new Date(sesion.value.recording_start).getTime() : 0));
+const conLinea = computed(() => !modoVivo.value && !vistaSinCapturas.value && !!replay.value && !!sesion.value);
+watch(sesionId, () => (rangos.value = []));
 
 /** Lo que muestra el tablero, en tablas: el CSV y el PDF salen de aquí. */
 const tablasReporte = computed<TablaReporte[]>(() => [
@@ -445,6 +476,7 @@ const tablasReporte = computed<TablaReporte[]>(() => [
     cabecera: ["Cámara", "Sentido", "Total", "Hombre", "Mujer", "Sin determinar", "Con ID", "Sin ID"],
     filas: filasConteo.value.map((f) => [f.camara, f.sentido.replace(/^[↑↓] /, ""), f.c.total, ...f.genero.map((n) => n ?? "oculto"), f.c.conId, f.c.sinId]),
   },
+  ...(conLinea.value && conRangos.value ? tablasLinea.value : []),
 ]);
 
 const sinPermiso = computed(() => !puedeExportar.value);
@@ -618,6 +650,9 @@ onMounted(async () => {
     <span><small>Personas</small><b>{{ sesion.identities.toLocaleString() }}</b></span>
     <span><small>Puntos de trayectoria</small><b>{{ sesion.points.toLocaleString() }}</b></span>
     <span><small>Cámaras</small><b>{{ config?.cameras.length ?? "—" }}</b></span>
+    <span v-if="conRangos" class="rangos-activos" data-prueba="rangos-activos">
+      <small>Rangos</small><b>{{ rangos.map((o, i) => `${LETRAS[i]} ${relativo(o.desde)}–${relativo(o.hasta)}`).join(" · ") }}</b>
+    </span>
   </div>
   <p v-if="modoVivo && vivo.sinUbicar.value" class="aviso-sin-ubicar" role="status">
     {{ vivo.sinUbicar.value }} de {{ vivo.resumen.value.personas }} sin ubicar en el plano: el teléfono no reconoce el patio.
@@ -630,6 +665,7 @@ onMounted(async () => {
     <p class="print-marca">AEROVISION · Lima Airport Partners</p>
     <h1>{{ config?.site.name ?? slug }} · Comportamiento de personas</h1>
     <p>Sesión: {{ sesion?.name ?? "—" }} · Zona: {{ alcance }}</p>
+    <p v-if="conRangos">Rangos: {{ textoRangos }}</p>
     <p>Generado {{ generado }}</p>
   </div>
   <p v-if="error" class="error" role="alert">{{ error }}</p>
@@ -676,6 +712,19 @@ onMounted(async () => {
       </div>
     </section>
 
+    <LineaTiempo
+      v-if="conLinea && replay"
+      v-model:rangos="rangos"
+      :class="{ 'sin-rangos': !rangos.length }"
+      :replay="replay"
+      :zonas="zonas"
+      :zona-id="zonaId"
+      :inicio="inicioSesion"
+      :encabezado="encabezadoReporte"
+      :archivo="nombreArchivo('csv').replace(/\.csv$/, '-rangos.csv')"
+      @tablas="tablasLinea = $event"
+    />
+
     <section class="fila fila-2">
       <article class="panel">
         <div class="panel-heading">
@@ -701,7 +750,7 @@ onMounted(async () => {
         <div class="panel-heading">
           <h2>Mapa de calor</h2>
           <span class="heading-meta">
-            <select v-if="p3" v-model="capaCalor" aria-label="Capa del mapa de calor">
+            <select v-if="p3 && !analisis" v-model="capaCalor" aria-label="Capa del mapa de calor">
               <option value="ocupacion">Ocupación</option>
               <option value="visitantes">Visitantes únicos</option>
             </select>
@@ -773,7 +822,7 @@ onMounted(async () => {
       <article class="panel">
         <div class="panel-heading">
           <h2>Entradas por intervalo</h2>
-          <span class="muted">{{ alcance }}<template v-if="p3?.series"> · {{ p3.series.paso_s }} s</template></span>
+          <span class="muted">{{ alcance }}<template v-if="p3?.series && !analisis"> · {{ p3.series.paso_s }} s</template><template v-else-if="analisis"> · 10 s</template></span>
         </div>
         <div v-if="barras.length" class="chart">
           <div v-for="(b, i) in barras" :key="i" class="bar-col">

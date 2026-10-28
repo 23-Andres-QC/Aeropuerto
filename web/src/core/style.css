@@ -1254,6 +1254,13 @@ main table:not(.mapa-calor) thead th {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     margin-bottom: 12px;
   }
+  .sin-rangos,
+  .linea-tiempo .heading-meta button,
+  .linea-tiempo .segmentado,
+  .linea-tiempo .quitar,
+  .linea-tiempo .nuevo {
+    display: none !important;
+  }
 }
 
 /* ---------- el mismo diseño de la hoja, para armar el PDF que se exporta y se envía por correo ----------
@@ -1285,6 +1292,11 @@ html.modo-pdf .sidebar,
 html.modo-pdf .workspace-header,
 html.modo-pdf .replay-filters,
 html.modo-pdf .export-actions,
+html.modo-pdf .sin-rangos,
+html.modo-pdf .linea-tiempo .heading-meta button,
+html.modo-pdf .linea-tiempo .segmentado,
+html.modo-pdf .linea-tiempo .quitar,
+html.modo-pdf .linea-tiempo .nuevo,
 html.modo-pdf footer {
     display: none !important;
   }

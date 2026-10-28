@@ -54,7 +54,8 @@ async function incrustarImagenes(doc: Document) {
 
 /** Los bloques del tablero, de arriba abajo: cada uno se dibuja aparte para que ningún panel quede partido entre dos páginas. */
 function bloquesDe(raiz: HTMLElement): HTMLElement[] {
-  const fuera = (e: Element) => e.tagName === "DETAILS" || e.classList.contains("page-title") || e.classList.contains("vacio-guardado") || e.tagName === "P";
+  const fuera = (e: Element) =>
+    e.tagName === "DETAILS" || e.classList.contains("page-title") || e.classList.contains("vacio-guardado") || e.classList.contains("sin-rangos") || e.tagName === "P";
   const lista: HTMLElement[] = [];
   const recorre = (e: Element) => {
     for (const h of Array.from(e.children)) {
