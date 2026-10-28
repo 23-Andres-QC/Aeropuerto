@@ -96,7 +96,11 @@ SIMULTANEOS = int(os.environ.get("VIDEOS_SIMULTANEOS") or 10)
 #   comparar apariencias solo si se solapa con ella al menos 0,25 (no 0,06). En 12 videos de 5 min en tiempo real, con
 #   30–90 personas etiquetadas cada uno: IDF1 de 35 % a 40 %, un tercio menos de cambios de ID (4422 -> 2940) y de 3,8
 #   a 2,9 IDs por persona, con el conteo igual de cerca (error total 109 -> 97) y el mismo tiempo por frame;
-# - lo que no se mueve no cuenta (maniquíes, afiches, estatuas): ver Quietud;
+# - quien está quieto se muestra y cuenta como todos. Antes lo que no se alejaba un 20 % de su altura en 4 s (Quietud,
+#   por los maniquíes) no se mostraba ni contaba: en una plaza con 7 cámaras ocultaba a la cuarta parte de la gente (los
+#   que conversan o esperan parados), y en el video del pasillo con maniquíes igual los mostraba el 93 % del tiempo (el
+#   teléfono se mueve y bastaba una vez). El cambio de apariencia en 3 s tampoco los separa: gente parada lejos cambia
+#   menos que un maniquí visto con el teléfono en mano. Los teléfonos sí siguen con Quietud;
 # - el género vota desde la primera vista, sin mínimos de tamaño, votos ni consenso: se muestra la etiqueta más votada
 #   con su certeza promedio, en vez de «Sin determinar» hasta reunir 5 votos de personas de 96 px o más. La que ya se
 #   mostró sobre un ID cambia solo si la otra gana con CAMBIO_GENERO de certeza: con uno o dos votos parpadeaba (en esos
@@ -401,8 +405,6 @@ class VideoEnProceso:
         self.ms_total = 0.0
         self._inicio_paso = 0.0
         self.generos = {}
-        self.quietud = Quietud()
-        self.se_movieron = set()  # IDs de personas que se movieron alguna vez: las únicas que cuentan
         self.inicio = time.perf_counter()
         self.terminado = False
 
@@ -433,15 +435,10 @@ class VideoEnProceso:
         return self.motor.procesar({self.id: frame}, {self.id: self.procesados}, detecciones)[self.id]
 
     def cerrar_paso(self, frame, t, filas):
-        """Última parte de un paso, ya con los IDs del grupo: lo quieto, el género y los tiempos; las filas a mostrar."""
+        """Última parte de un paso, ya con los IDs del grupo: el género y los tiempos; las filas a mostrar."""
         inicio = self._inicio_paso
-        self.quietud.actualizar(t, filas, frame)
-        # Lo que no se mueve sigue en el seguidor (si no, volvería como alguien nuevo) pero no se muestra ni cuenta.
-        filas = [f for f in filas if not self.quietud.estatico(f["local_id"], t)]
         for fila in filas:
             self._genero(fila)
-            if fila["global_id"] is not None and fila["local_id"] in self.quietud.movidos:
-                self.se_movieron.add(fila["global_id"])
         fin = time.perf_counter()
         self.ms_total += fin - inicio
         self.ms.append(fin - inicio)
@@ -476,7 +473,7 @@ class VideoEnProceso:
 
     def estado(self):
         """Avance y métricas del video para la web."""
-        vigentes = set(self.asociador.confirmadas.values()) & self.se_movieron
+        vigentes = set(self.asociador.confirmadas.values())
         t = self.tiempos
         return {"id": self.id, "nombre": self.nombre, "modo": self.modo, "ancho": self.ancho, "alto": self.alto,
                 "fps_video": round(self.fps, 2), "duracion_s": round(self.total / self.fps, 1) if self.total else None,
@@ -504,7 +501,7 @@ class VideoEnProceso:
         for gid, publico in a.confirmadas.items():
             # El asociador es del grupo: aquí van solo los tramos de la persona en este video.
             tramos = [a.tracklets[uid] for uid in a.globales.get(gid, ()) if a.tracklets[uid].camera_id == self.id]
-            if not tramos or publico not in self.se_movieron:
+            if not tramos:
                 continue
             etiqueta, certeza = genero_por_votos(self._votos(self.grupo.locales_de.get(publico, ())))
             p = personas.setdefault(publico, {"id": publico, "genero": etiqueta or "Sin determinar",
