@@ -1028,15 +1028,9 @@ def personas_para_web(filas, ancho, ancho_relevo=ANCHO_RELEVO):
     return personas
 
 
-def main():
-    """Sigue la lista de teléfonos de backend-vivo y procesa todos los que estén transmitiendo."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    # 127.0.0.1 y no localhost: en Windows localhost prueba antes ::1 y cada petición tarda ~2 s.
-    parser.add_argument("--api", default="http://127.0.0.1:8093", help="URL de backend-vivo")
-    args = parser.parse_args()
-    url_api = args.api.rstrip("/")
-    if not sin_freno_de_windows() and sys.platform == "win32":
-        print("Windows no dejó quitar el ahorro de energía a este proceso: puede ir más lento.", flush=True)
+def cargar_modelo():
+    """El modelo de este servicio: (motor, Re-ID de los teléfonos, Re-ID de Videos, asociación del Build). También lo carga
+    el comedor (Modelo/Build Modelo/plano_esan/zona2/procesar_video.py) para procesar sus videos igual que Videos."""
     config = json.loads((MODELO / "config_lap01.json").read_text())
     config["tracker"].update(SEGUIDOR_TELEFONO)
     config["detector"].update(DETECTOR_TELEFONO)
@@ -1069,7 +1063,6 @@ def main():
     if os.environ.get("MODELO_IMGSZ"):
         config["detector"]["imgsz"] = int(os.environ["MODELO_IMGSZ"])
     asociacion_build = json.loads((MODELO / "camaras.json").read_text()).get("association", {})
-    asociacion = {**asociacion_build, **ASOCIACION_TELEFONO}
     print("Cargando el modelo final (YOLO26, tracker, Re-ID, género)...", flush=True)
     motor = lap01.MotorLAP01(MODELO, config, device="auto", batch=True)
     if not torch.cuda.is_available() and con_onnx:
@@ -1083,16 +1076,6 @@ def main():
         # CLIP ve la mitad de arriba (ver MITAD_SUPERIOR); lo usan los teléfonos y la sección Videos.
         clasificar = motor.genero._clasificar
         motor.genero._clasificar = lambda crops: clasificar([mitad_superior(c) for c in crops])
-    ubicador = Ubicador.cargar(MODELO / "ubicacion" / SITIO_TELEFONOS)
-    parte = lambda f: "el cuerpo entero" if f >= 1 else f"la parte de arriba del cuerpo ({f:.0%})"  # noqa: E731
-    print(f"Re-ID con {parte(PARTE_SUPERIOR_REID)}; género con {parte(MITAD_SUPERIOR)}.", flush=True)
-    print(f"Modelo listo en {motor.device} · detector {type(getattr(motor.detector, 'base', motor.detector)).__name__} a "
-          f"{config['detector']['imgsz']} px · ubicación: {SITIO_TELEFONOS if ubicador else 'sin referencias'} · "
-          f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no'}", flush=True)
-    memoria = MemoriaIdentidades(url_api, asociacion)
-    relevo = Relevo(url_api)
-    reid_sesion = ReIDMitadSuperior(reid, PARTE_SUPERIOR_REID) if PARTE_SUPERIOR_REID < 1 else reid
-    sesion = SesionEnVivo(motor, reid_sesion, asociacion, memoria, ubicador)
     # Los videos subidos van con la asociación del Build, sin los ajustes para teléfonos, y con su propio Re-ID: con GPU,
     # OSNet-AIN y PersonViT juntos (reconocen mejor a la misma persona desde otra cámara, ver AJUSTES en videos_subidos);
     # sin GPU, el del Build con todos los núcleos (en el servidor es lo que más tarda por frame): corre en el hilo
@@ -1105,6 +1088,30 @@ def main():
         reid_videos = ReIDPersonas(MODELO / encoder["weights"], imgsz=encoder.get("imgsz"),
                                    threads=int(os.environ.get("OMP_NUM_THREADS") or os.cpu_count() or 4),
                                    batch_size=encoder.get("batch_size", 8), device="cpu")
+    return motor, reid, reid_videos, asociacion_build
+
+
+def main():
+    """Sigue la lista de teléfonos de backend-vivo y procesa todos los que estén transmitiendo."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    # 127.0.0.1 y no localhost: en Windows localhost prueba antes ::1 y cada petición tarda ~2 s.
+    parser.add_argument("--api", default="http://127.0.0.1:8093", help="URL de backend-vivo")
+    args = parser.parse_args()
+    url_api = args.api.rstrip("/")
+    if not sin_freno_de_windows() and sys.platform == "win32":
+        print("Windows no dejó quitar el ahorro de energía a este proceso: puede ir más lento.", flush=True)
+    motor, reid, reid_videos, asociacion_build = cargar_modelo()
+    asociacion = {**asociacion_build, **ASOCIACION_TELEFONO}
+    ubicador = Ubicador.cargar(MODELO / "ubicacion" / SITIO_TELEFONOS)
+    parte = lambda f: "el cuerpo entero" if f >= 1 else f"la parte de arriba del cuerpo ({f:.0%})"  # noqa: E731
+    print(f"Re-ID con {parte(PARTE_SUPERIOR_REID)}; género con {parte(MITAD_SUPERIOR)}.", flush=True)
+    print(f"Modelo listo en {motor.device} · detector {type(getattr(motor.detector, 'base', motor.detector)).__name__} a "
+          f"{motor.config['detector']['imgsz']} px · ubicación: {SITIO_TELEFONOS if ubicador else 'sin referencias'} · "
+          f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no'}", flush=True)
+    memoria = MemoriaIdentidades(url_api, asociacion)
+    relevo = Relevo(url_api)
+    reid_sesion = ReIDMitadSuperior(reid, PARTE_SUPERIOR_REID) if PARTE_SUPERIOR_REID < 1 else reid
+    sesion = SesionEnVivo(motor, reid_sesion, asociacion, memoria, ubicador)
     videos = VideosSubidos(url_api, motor, reid_videos, asociacion_build, relevo, personas_para_web)
     lectores, nombres, calentado = {}, {}, False
     publicado, fallos, ultimo_video = 0.0, 0, -math.inf

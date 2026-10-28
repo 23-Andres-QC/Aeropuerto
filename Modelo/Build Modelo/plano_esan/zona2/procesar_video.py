@@ -1,6 +1,8 @@
 """Un video grabado en el comedor (zona grabada 2 de ESAN) → sesión de la web: personas sobre el plano del comedor y el video con sus cajas.
 
-Detecta personas (YOLO26s) y las sigue (ByteTrack) a ~12 cuadros por segundo; la posición en el piso sale del pie de cada caja con un
+Detecta y sigue a las personas con el mismo modelo de la sección Videos (Modelo/Test Modelo/videos_subidos.py): todas las
+cámaras juntas como una tanda, con el mismo detector, seguidor, Re-ID, asociador y género, y los IDs compartidos entre ellas
+(`--modelo propio` usa el de antes: YOLO26s + ByteTrack y su propia unión de recorridos). La posición en el piso sale del pie de cada caja con un
 modelo de cámara sencillo (altura, distancia focal y horizonte de `camaras_video.json`) y de dónde estaba parada la cámara en el
 dibujo del plano. Es una ubicación aproximada, no una calibración con puntos medidos: se corrige con `posicion_px` y `rumbo_deg`.
 
@@ -21,6 +23,7 @@ Otra grabación del comedor va con su propio archivo (`--config camaras_video_27
 """
 import argparse
 import colorsys
+from collections import Counter
 import json
 import math
 import os
@@ -35,6 +38,7 @@ from pathlib import Path
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
+TEST_MODELO = AQUI.parents[2] / "Test Modelo"  # el servicio del modelo (Videos)
 CONFIG = AQUI / "camaras_video.json"
 if not CONFIG.exists():
     CONFIG = Path("/tmp/camaras_video.json")  # dentro del contenedor, junto al script
@@ -130,6 +134,82 @@ def seguir(video, pesos, cadencia):
         idx += 1
     cap.release()
     return cuadros, fps / paso, tam
+
+
+def seguir_como_videos(camaras, salida, rehacer=False):
+    """Pasada 1 con el modelo de la sección Videos, las cámaras juntas como una tanda (videos_subidos.GrupoVideos): mismo
+    motor, Re-ID y asociador que carga el servicio del modelo (camara_telefono.cargar_modelo), y en cada pasada todos los
+    videos van por el mismo segundo. Se procesa cada cuadro de la cadencia FPS_SALIDA, sin el reloj del tiempo real.
+    `camaras`: {id: ruta}. Devuelve {id: (cuadros, fps, tam, numeros, generos)}: `numeros` es el ID de Videos de cada ID del
+    seguidor (el que más llevó) y `generos`, {ID: (género, certeza)} como en el resumen de Videos."""
+    guardados = {cid: salida / f"videos_{cid}.json" for cid in camaras}
+    if not rehacer and all(g.exists() for g in guardados.values()):
+        out = {}
+        for cid, g in guardados.items():
+            cuadros, fps, tam, numeros, generos = json.loads(g.read_text())
+            out[cid] = (cuadros, fps, tuple(tam), {int(k): v for k, v in numeros.items()}, {int(k): tuple(v) for k, v in generos.items()})
+        return out
+    import cv2
+
+    sys.path.insert(0, str(TEST_MODELO))
+    import camara_telefono
+    import videos_subidos
+
+    motor, _, reid, asociacion = camara_telefono.cargar_modelo()
+    grupo = videos_subidos.GrupoVideos(list(camaras), reid, asociacion, gpu=str(motor.device).startswith("cuda"))
+    estado = {}
+    for cid, ruta in camaras.items():
+        video = videos_subidos.VideoEnProceso({"id": cid, "nombre": cid, "modo": "tiempo_real"}, ruta, motor, reid, asociacion, grupo)
+        video.cerrar()  # los cuadros se leen aquí, uno por uno
+        cap = cv2.VideoCapture(str(ruta))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        estado[cid] = {"video": video, "cap": cap, "fps": fps, "paso": max(1, round(fps / FPS_SALIDA)), "idx": 0, "cuadros": [], "ids": {},
+                       "tam": (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))}
+
+    def siguiente(e):
+        while True:
+            ok, im = e["cap"].read()
+            if not ok:
+                return None
+            e["idx"] += 1
+            if (e["idx"] - 1) % e["paso"] == 0:
+                return im, (e["idx"] - 1) / e["fps"]
+
+    proximos = {cid: siguiente(e) for cid, e in estado.items()}
+    pasadas = 0
+    while any(proximos.values()):
+        t0 = min(p[1] for p in proximos.values() if p)
+        lote = [(cid, *proximos[cid]) for cid in estado if proximos[cid] and proximos[cid][1] <= t0 + 0.5 / FPS_SALIDA]
+        try:  # como Videos: los cuadros de todas las cámaras en una sola pasada del detector
+            detecciones = estado[lote[0][0]]["video"].motor.detectar({cid: frame for cid, frame, _ in lote})
+        except Exception:
+            detecciones = None
+        entradas = []
+        for cid, frame, t in lote:
+            video = estado[cid]["video"]
+            entradas.append((video, frame, t, video.seguir(frame, None if detecciones is None else {cid: detecciones[cid]})))
+        grupo.asociar(entradas)
+        for video, frame, t, filas in entradas:
+            filas = video.cerrar_paso(frame, t, filas)
+            e = estado[video.id]
+            e["cuadros"].append({"t": t, "gente": [(int(f["local_id"]), [float(f[k]) for k in ("x1", "y1", "x2", "y2")], float(f["confidence"]))
+                                                   for f in filas]})
+            for f in filas:
+                if f["global_id"] is not None:
+                    e["ids"].setdefault(int(f["local_id"]), Counter())[int(f["global_id"])] += 1
+            proximos[video.id] = siguiente(e)
+        pasadas += 1
+        if pasadas % 200 == 0:
+            print(f"{pasadas} pasadas · {t0:.0f} s", flush=True)
+    out = {}
+    for cid, e in estado.items():
+        e["cap"].release()
+        numeros = {i: c.most_common(1)[0][0] for i, c in e["ids"].items()}
+        generos = {p["id"]: (p["genero"], p["certeza"]) for p in e["video"].personas()}
+        out[cid] = (e["cuadros"], e["fps"] / e["paso"], e["tam"], numeros, generos)
+        guardados[cid].write_text(json.dumps([e["cuadros"], e["fps"] / e["paso"], e["tam"], numeros, generos]))
+        print(f"{cid}: {len(e['cuadros'])} cuadros, {len(set(numeros.values()))} personas (Videos cuenta {len(generos)})", flush=True)
+    return out
 
 
 class Embebedor:
@@ -324,9 +404,10 @@ def corregir(mat, u, v):
     return p[0], p[1]
 
 
-def recorridos(cuadros, camara, tam, embs, mats=None):
+def recorridos(cuadros, camara, tam, embs, mats=None, numeros=None):
     """Posición en el piso de cada persona (suavizada), con los recorridos de una misma persona bajo un solo número.
-    Devuelve (id del seguidor → (número, puntos), número → {"e": vector de apariencia, "n": cuántos}); descarta lo que dura muy poco."""
+    Devuelve (id del seguidor → (número, puntos), número → {"e": vector de apariencia, "n": cuántos}); descarta lo que dura muy poco.
+    Con `numeros` (ID del seguidor → ID de Videos) los números ya vienen dados: no se unen recorridos ni se descarta nada."""
     pistas, frames = {}, {}
     for k, cuadro in enumerate(cuadros):
         for i, (x1, y1, x2, y2), c in cuadro["gente"]:
@@ -350,6 +431,9 @@ def recorridos(cuadros, camara, tam, embs, mats=None):
             ventana = med[max(0, j - 4): j + 5]
             suave.append((p[0], sum(q[0] for q in ventana) / len(ventana), sum(q[1] for q in ventana) / len(ventana), p[3], p[4]))
         suaves[i] = suave
+    if numeros is not None:
+        personas = {i: (numeros[i], pts) for i, pts in suaves.items() if i in numeros}
+        return personas, {n: {"e": None, "n": 0} for n, _ in personas.values()}
     grupos = agrupar(suaves, frames, embs)
     buenos = [g for g in grupos if sum(len(suaves[i]) for i in g["tids"]) >= MIN_PUNTOS
               and max(suaves[i][-1][0] for i in g["tids"]) - min(suaves[i][0][0] for i in g["tids"]) >= MIN_SEGUNDOS]
@@ -589,6 +673,18 @@ def dibujar(video, cuadros, numeros, camara_id, salida, fps, tam):
     ff.wait()
 
 
+GENERO_BD = {"Hombre": "HOMBRE", "Mujer": "MUJER"}
+
+
+def genero_de(numero, resultados):
+    """El género de una persona como lo dio Videos (la cámara con más certeza); sin él, SIN_DETERMINAR."""
+    vistos = [r["generos"][numero] for r in resultados if (r.get("generos") or {}).get(numero, ("",))[0] in GENERO_BD]
+    if not vistos:
+        return {"gender": "SIN_DETERMINAR", "gender_confidence": None, "gender_votes": 0}
+    genero, certeza = max(vistos, key=lambda g: g[1] or 0)
+    return {"gender": GENERO_BD[genero], "gender_confidence": certeza, "gender_votes": len(vistos)}
+
+
 def sesion_para_bd(resultados, config):
     """El JSON que recibe POST /api/v1/sites/esan/sessions (mismo formato que publica el Build, sin tocar el mapa del sitio).
 
@@ -626,7 +722,7 @@ def sesion_para_bd(resultados, config):
         identidades.append({"global_id": str(uuid.uuid5(ESPACIO, f"{sid}/g{numero}")), "public_number": numero,
                             "first_seen": (inicio + timedelta(seconds=min(p[0] for p in g["pts"]))).isoformat(),
                             "last_seen": (inicio + timedelta(seconds=max(p[0] for p in g["pts"]))).isoformat(), "n_cameras": len(g["camaras"]),
-                            "gender": "SIN_DETERMINAR", "gender_confidence": None, "gender_votes": 0})
+                            **genero_de(numero, resultados)})
     nombre = f"Comedor · video {inicio.strftime('%d/%m %H:%M')}" if len(resultados) == 1 else f"Comedor · {len(resultados)} perspectivas"
     if config.get("grabacion") and len(resultados) > 1:  # para no confundirla con la primera en la lista de sesiones
         nombre += f" · {inicio.strftime('%d/%m %H:%M')}"
@@ -636,7 +732,8 @@ def sesion_para_bd(resultados, config):
                     "ended_at": (inicio + timedelta(seconds=duracion)).isoformat(), "config_version": "", "config_sha256": "",
                     "summary": {"zona": config["zona"], "videos": {r["id"]: r["video"] for r in resultados}, "desfases_s": {r["id"]: 0.0 for r in resultados},
                                 "segundos_video": round(duracion, 2), "fps_por_camara": round(primera["fps"], 2), "personas": len(identidades),
-                                "estado": "Videos procesados por el modelo (YOLO26s + ByteTrack); ubicación aproximada en el plano",
+                                "estado": ("Videos procesados con el modelo de la sección Videos" if primera.get("generos") is not None
+                                           else "Videos procesados por el modelo (YOLO26s + ByteTrack)") + "; ubicación aproximada en el plano",
                                 "dispositivo": "cpu"}},
         "map": None,
         "cameras": camaras,
@@ -660,19 +757,25 @@ def publicar(archivo, url_web, sitio):
         sys.exit(f"La web rechazó la sesión ({error.code}): {error.read().decode('utf-8', 'replace')}")
 
 
-def analizar(camara_id, config, ruta, args, salida, embebedor):
-    """Una cámara de video: detecta, saca la apariencia de cada persona y la ubica en el plano (los números se afinan después, entre cámaras)."""
+def analizar(camara_id, config, ruta, args, salida, embebedor, seguido=None):
+    """Una cámara de video: detecta, saca la apariencia de cada persona y la ubica en el plano (los números se afinan después, entre cámaras).
+    Con `seguido` (lo que sacó seguir_como_videos para esta cámara) las cajas y los IDs ya son los de Videos."""
     cfg = config["camaras"][camara_id]
+    numeros = generos = None
     # Lo lento se guarda y se reutiliza al ajustar la pose o los umbrales (--rehacer lo vuelve a correr todo).
     guardado = salida / f"cuadros_{camara_id}.json"
-    if guardado.exists() and not args.rehacer:
+    if seguido is not None:
+        cuadros, fps, tam, numeros, generos = seguido
+    elif guardado.exists() and not args.rehacer:
         cuadros, fps, tam = json.loads(guardado.read_text())
         tam = tuple(tam)
     else:
         cuadros, fps, tam = seguir(ruta, args.pesos, FPS_SALIDA)
         guardado.write_text(json.dumps([cuadros, fps, tam]))
     guardado_emb = salida / f"apariencia_{camara_id}.npz"
-    if guardado_emb.exists() and not args.rehacer:
+    if seguido is not None:
+        embs = {}
+    elif guardado_emb.exists() and not args.rehacer:
         z = np.load(guardado_emb)
         embs = {int(i): z["e"][z["ids"] == i] for i in np.unique(z["ids"])}
     else:
@@ -693,10 +796,11 @@ def analizar(camara_id, config, ruta, args, salida, embebedor):
         giro = np.degrees([np.arctan2(a[1, 0], a[0, 0]) for a in mats])
         print(f"{camara_id}: la cámara se movió hasta {np.abs(desp[:, 0]).max():.0f} px de lado, {np.abs(desp[:, 1]).max():.0f} px de alto y {np.abs(giro).max():.1f}° de giro (respecto a su lugar promedio)")
     camara = Camara(cfg, *tam)
-    personas, vectores = recorridos(cuadros, camara, tam, embs, mats)
+    personas, vectores = recorridos(cuadros, camara, tam, embs, mats, numeros)
     crudas = len({i for c in cuadros for i, _, _ in c["gente"]})
     print(f"{camara_id}: {len(cuadros)} cuadros, {crudas} IDs del seguidor → {len(vectores)} personas")
-    return {"id": camara_id, "cfg": cfg, "camara": camara, "cuadros": cuadros, "personas": personas, "vectores": vectores,
+    etiquetas = {i: (n,) for i, n in numeros.items()} if numeros is not None else None
+    return {"id": camara_id, "cfg": cfg, "camara": camara, "cuadros": cuadros, "personas": personas, "vectores": vectores, "etiquetas": etiquetas, "generos": generos,
             "duracion": cuadros[-1]["t"] if cuadros else 0.0, "fps": fps, "tam": tam, "ruta": ruta, "video": f"{prefijo(config)}{camara_id}_procesado.mp4"}
 
 
@@ -721,7 +825,9 @@ def main():
     ap.add_argument("--config", help="otra grabación: su camaras_video (por defecto, camaras_video.json)")
     ap.add_argument("--salida", default="comedor")
     ap.add_argument("--pesos", default="/app/Modelo/yolo26s.pt")
-    ap.add_argument("--reid", default="/app/Modelo/osnet_ain_x1_0_msmt17.onnx", help="el Re-ID corporal en ONNX (OSNet-AIN)")
+    ap.add_argument("--modelo", choices=("videos", "propio"), default="videos",
+                    help="videos: el de la sección Videos; propio: YOLO26s + ByteTrack y la unión de recorridos de este script")
+    ap.add_argument("--reid", default="/app/Modelo/osnet_ain_x1_0_msmt17.onnx", help="el Re-ID corporal en ONNX (OSNet-AIN), solo con --modelo propio")
     ap.add_argument("--hoja", action="store_true", help="guarda hoja_<cámara>.jpg: recortes de cada persona para revisar a ojo")
     ap.add_argument("--sin-estabilizar", action="store_true", help="ubica a las personas como si la cámara estuviera quieta (sin corregir el movimiento de la mano)")
     ap.add_argument("--sin-video", action="store_true", help="solo afina las personas (cuenta y hojas): no dibuja los videos ni arma la sesión")
@@ -735,18 +841,22 @@ def main():
     config = json.loads((Path(args.config) if args.config else CONFIG).read_text(encoding="utf-8"))
     salida = Path(args.salida) / config.get("grabacion", "")
     salida.mkdir(parents=True, exist_ok=True)
-    embebedor = Embebedor(args.reid)
-    resultados = []
-    for par in args.video:
-        camara_id, ruta = par.split("=", 1)
-        resultados.append(analizar(camara_id, config, ruta, args, salida, embebedor))
+    rutas = dict(par.split("=", 1) for par in args.video)
+    if args.modelo == "videos":
+        seguidos = seguir_como_videos(rutas, salida, args.rehacer)
+        resultados = [analizar(camara_id, config, ruta, args, salida, None, seguidos[camara_id]) for camara_id, ruta in rutas.items()]
+    else:
+        embebedor = Embebedor(args.reid)
+        resultados = [analizar(camara_id, config, ruta, args, salida, embebedor) for camara_id, ruta in rutas.items()]
     recortar(resultados)
-    unidos = unir_camaras(resultados, config.get("equivalencias", []), config.get("mismas_personas", [])) if len(resultados) > 1 else 0
+    # Con el modelo de Videos los IDs ya se comparten entre las cámaras.
+    unidos = 0 if args.modelo == "videos" or len(resultados) < 2 else unir_camaras(
+        resultados, config.get("equivalencias", []), config.get("mismas_personas", []))
     total = len({n for r in resultados for n, _ in r["personas"].values()})
     print(f"{total} personas en la sesión ({unidos} vistas por más de una cámara)")
     for r in resultados:
         if not args.sin_video:
-            dibujar(r["ruta"], r["cuadros"], r["personas"], r["id"], salida / r["video"], r["fps"], r["tam"])
+            dibujar(r["ruta"], r["cuadros"], r.get("etiquetas") or r["personas"], r["id"], salida / r["video"], r["fps"], r["tam"])
         if args.hoja:
             hoja_contacto(r["ruta"], r["cuadros"], r["personas"], salida / f"hoja_{r['id']}.jpg")
     if args.sin_video:
