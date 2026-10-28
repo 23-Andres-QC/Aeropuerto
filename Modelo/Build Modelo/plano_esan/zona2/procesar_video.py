@@ -15,6 +15,9 @@ Necesita ultralytics y OpenCV: se corre dentro del contenedor del modelo (modelo
 
 El video queda en `Ouput/` (la web lo sirve desde ahí, igual que los del patio) y la sesión se guarda en el sitio `esan` con
 `summary.zona` = la zona del comedor: la web la muestra al acercarse al comedor en el plano.
+
+Otra grabación del comedor va con su propio archivo (`--config camaras_video_27oct.json`): sus poses y calibración, y una
+`grabacion` que entra en los nombres de los videos y de la sesión, así no pisa los de la anterior y queda como otra sesión.
 """
 import argparse
 import colorsys
@@ -625,6 +628,8 @@ def sesion_para_bd(resultados, config):
                             "last_seen": (inicio + timedelta(seconds=max(p[0] for p in g["pts"]))).isoformat(), "n_cameras": len(g["camaras"]),
                             "gender": "SIN_DETERMINAR", "gender_confidence": None, "gender_votes": 0})
     nombre = f"Comedor · video {inicio.strftime('%d/%m %H:%M')}" if len(resultados) == 1 else f"Comedor · {len(resultados)} perspectivas"
+    if config.get("grabacion") and len(resultados) > 1:  # para no confundirla con la primera en la lista de sesiones
+        nombre += f" · {inicio.strftime('%d/%m %H:%M')}"
     return {
         "session": {"session_id": sid, "name": nombre, "kind": "BUILD", "status": "DONE",
                     "recording_start": inicio.isoformat(), "recording_start_declared": True,
@@ -692,12 +697,18 @@ def analizar(camara_id, config, ruta, args, salida, embebedor):
     crudas = len({i for c in cuadros for i, _, _ in c["gente"]})
     print(f"{camara_id}: {len(cuadros)} cuadros, {crudas} IDs del seguidor → {len(vectores)} personas")
     return {"id": camara_id, "cfg": cfg, "camara": camara, "cuadros": cuadros, "personas": personas, "vectores": vectores,
-            "duracion": cuadros[-1]["t"] if cuadros else 0.0, "fps": fps, "tam": tam, "ruta": ruta, "video": f"comedor_{camara_id}_procesado.mp4"}
+            "duracion": cuadros[-1]["t"] if cuadros else 0.0, "fps": fps, "tam": tam, "ruta": ruta, "video": f"{prefijo(config)}{camara_id}_procesado.mp4"}
+
+
+def prefijo(config):
+    """Cómo empiezan los archivos de una grabación: `comedor_` la primera, `comedor_<grabacion>_` las demás."""
+    return f"comedor_{config['grabacion']}_" if config.get("grabacion") else "comedor_"
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--video", action="append", default=[], metavar="CAMARA=RUTA", help="una cámara de camaras_video.json y su video; se repite por cámara")
+    ap.add_argument("--config", help="otra grabación: su camaras_video (por defecto, camaras_video.json)")
     ap.add_argument("--salida", default="comedor")
     ap.add_argument("--pesos", default="/app/Modelo/yolo26s.pt")
     ap.add_argument("--reid", default="/app/Modelo/osnet_ain_x1_0_msmt17.onnx", help="el Re-ID corporal en ONNX (OSNet-AIN)")
@@ -711,8 +722,8 @@ def main():
     args = ap.parse_args()
     if args.publicar:
         return publicar(args.publicar, args.web, args.sitio)
-    config = json.loads(CONFIG.read_text(encoding="utf-8"))
-    salida = Path(args.salida)
+    config = json.loads((Path(args.config) if args.config else CONFIG).read_text(encoding="utf-8"))
+    salida = Path(args.salida) / config.get("grabacion", "")
     salida.mkdir(parents=True, exist_ok=True)
     embebedor = Embebedor(args.reid)
     resultados = []
@@ -731,7 +742,7 @@ def main():
         return
     depurar_puntos(resultados)
     carga = sesion_para_bd(resultados, config)
-    (salida / "comedor_sesion.json").write_text(json.dumps(carga, ensure_ascii=False), encoding="utf-8")
+    (salida / f"{prefijo(config)}sesion.json").write_text(json.dumps(carga, ensure_ascii=False), encoding="utf-8")
     print("listo", salida)
 
 
