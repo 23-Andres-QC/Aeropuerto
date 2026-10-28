@@ -473,7 +473,8 @@ class VideoEnProceso:
 
     def estado(self):
         """Avance y métricas del video para la web."""
-        vigentes = set(self.asociador.confirmadas.values())
+        # El asociador es del grupo: aquí cuentan solo las personas que se vieron en este video.
+        vigentes = set(self.asociador.confirmadas.values()) & set(self.generos)
         t = self.tiempos
         return {"id": self.id, "nombre": self.nombre, "modo": self.modo, "ancho": self.ancho, "alto": self.alto,
                 "fps_video": round(self.fps, 2), "duracion_s": round(self.total / self.fps, 1) if self.total else None,
