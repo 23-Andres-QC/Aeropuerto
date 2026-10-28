@@ -2,13 +2,13 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { cantidad, colorPersona, segundos } from "../../../shared/format";
-import { api, mapaDelSitio, tramos, GENEROS, type Analitica, type Config, type Insights, type Punto, type Replay, type Sesion } from "../api";
+import { api, mapaDelSitio, tramos, GENEROS, type Analitica, type Config, type Insights, type Punto, type Recorrido, type Replay, type Sesion } from "../api";
 import PlanoSitio, { type FlechaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
 import { CELDA_CALOR, SESION_VIVO, capturasVersion, entradasPorIntervalo, fijarModoVivo, historiasDe, mensajeGuardado, modoVivo, motorVivo as vivo, type ConteoCamara, type CuentaSentido } from "../enVivo";
 import ContrasteSesiones from "../components/ContrasteSesiones.vue";
 import TraficoSitio from "../components/TraficoSitio.vue";
 import LineaTiempo from "../components/LineaTiempo.vue";
-import { LETRAS, nombreRango, recortarVarios, relativo, type Rango } from "../lineaTiempo";
+import { COLORES, LETRAS, nombreRango, recortar, recortarVarios, relativo, type Rango } from "../lineaTiempo";
 import { desdeReplay, entradasPorIntervalo as entradasEntre, resumir, type HistoriaBasica, type ResumenVivo } from "../analisisVivo";
 import { GENEROS_ABREV, suprimirGenero, textoGenero } from "../../../core/roles";
 import { useSitios } from "../useSitios";
@@ -350,25 +350,51 @@ function dentro([x, y]: Punto, pol: Punto[]) {
   return c;
 }
 
-const personasMapa = computed(() =>
-  (replayVista.value?.personas ?? []).filter((p) => !zonaSel.value || p.x.some((x, i) => dentro([x, p.y[i]], zonaSel.value!.points))),
+const enZonaElegida = (p: Recorrido) => !zonaSel.value || p.x.some((x, i) => dentro([x, p.y[i]], zonaSel.value!.points));
+const personasMapa = computed(() => (replayVista.value?.personas ?? []).filter(enZonaElegida));
+
+/** Con rangos, qué muestran los mapas: todos (cada recorrido del color de su rango) o uno solo. */
+const rangoMapa = ref<number | null>(null);
+watch(
+  () => rangos.value.length,
+  (n) => {
+    if (rangoMapa.value != null && rangoMapa.value >= n) rangoMapa.value = null;
+  },
 );
-// Un trazo por tramo continuo: no se une a una persona a través de un hueco en el que no se la vio.
-const recorridos = computed<RecorridoPlano[]>(() =>
-  modoVivo.value
-    ? historiasDe(zonaId.value)
-        .filter((h) => h.puntos.length > 1)
-        .map((h) => ({ id: h.id, color: colorPersona(h.id), puntos: h.puntos }))
-    : personasMapa.value.flatMap((p) =>
-    tramos(p, replay.value?.paso_s ?? 0.2)
-      .filter((puntos) => puntos.length > 1)
-      .map((puntos) => ({ id: p.numero, color: colorPersona(p.numero), puntos })),
-  ),
+const porRango = computed(() =>
+  conRangos.value && replay.value
+    ? rangos.value
+        .map((o, i) => ({ i, personas: recortar(replay.value!, o).personas.filter(enZonaElegida) }))
+        .filter((r) => rangoMapa.value == null || r.i === rangoMapa.value)
+    : null,
 );
 
-const nRecorridos = computed(() => (modoVivo.value ? recorridos.value.length : personasMapa.value.length));
+// Un trazo por tramo continuo: no se une a una persona a través de un hueco en el que no se la vio.
+const recorridos = computed<RecorridoPlano[]>(() => {
+  if (modoVivo.value)
+    return historiasDe(zonaId.value)
+      .filter((h) => h.puntos.length > 1)
+      .map((h) => ({ id: h.id, color: colorPersona(h.id), puntos: h.puntos }));
+  const paso = replay.value?.paso_s ?? 0.2;
+  const trazos = (p: Recorrido, color: string) =>
+    tramos(p, paso)
+      .filter((puntos) => puntos.length > 1)
+      .map((puntos) => ({ id: p.numero, color, puntos }));
+  if (porRango.value) return porRango.value.flatMap((r) => r.personas.flatMap((p) => trazos(p, COLORES[r.i])));
+  return personasMapa.value.flatMap((p) => trazos(p, colorPersona(p.numero)));
+});
+
+const nRecorridos = computed(() =>
+  modoVivo.value
+    ? recorridos.value.length
+    : porRango.value
+      ? new Set(porRango.value.flatMap((r) => r.personas.map((p) => p.numero))).size
+      : personasMapa.value.length,
+);
 
 const celdasKDE = computed<[number, number, number][]>(() => {
+  if (conRangos.value && rangoMapa.value != null && replay.value)
+    return desdeReplay(recortar(replay.value, rangos.value[rangoMapa.value]), 0, zonas.value).calor;
   if (analisis.value) return analisis.value.calor;
   const k = p3.value?.kde;
   if (!k) return datos.value?.calor.celdas ?? [];
@@ -729,7 +755,23 @@ onMounted(async () => {
       <article class="panel">
         <div class="panel-heading">
           <h2>Mapa de movimiento</h2>
-          <span class="pill">{{ cantidad(nRecorridos, "recorrido") }}</span>
+          <span class="heading-meta">
+            <span v-if="conRangos" class="segmentado rangos-mapa" role="group" aria-label="Rangos en los mapas">
+              <button type="button" :class="{ activa: rangoMapa == null }" @click="rangoMapa = null">Todos</button>
+              <button
+                v-for="(o, i) in rangos"
+                :key="i"
+                type="button"
+                :class="{ activa: rangoMapa === i }"
+                :style="rangoMapa === i ? { background: COLORES[i], borderColor: COLORES[i] } : { color: COLORES[i] }"
+                :title="`${relativo(o.desde)}–${relativo(o.hasta)}`"
+                @click="rangoMapa = i"
+              >
+                {{ LETRAS[i] }}
+              </button>
+            </span>
+            <span class="pill">{{ cantidad(nRecorridos, "recorrido") }}</span>
+          </span>
         </div>
         <PlanoSitio
           v-if="mapa"
@@ -750,6 +792,20 @@ onMounted(async () => {
         <div class="panel-heading">
           <h2>Mapa de calor</h2>
           <span class="heading-meta">
+            <span v-if="conRangos" class="segmentado rangos-mapa" role="group" aria-label="Rango del mapa de calor">
+              <button type="button" :class="{ activa: rangoMapa == null }" @click="rangoMapa = null">Todos</button>
+              <button
+                v-for="(o, i) in rangos"
+                :key="i"
+                type="button"
+                :class="{ activa: rangoMapa === i }"
+                :style="rangoMapa === i ? { background: COLORES[i], borderColor: COLORES[i] } : { color: COLORES[i] }"
+                :title="`${relativo(o.desde)}–${relativo(o.hasta)}`"
+                @click="rangoMapa = i"
+              >
+                {{ LETRAS[i] }}
+              </button>
+            </span>
             <select v-if="p3 && !analisis" v-model="capaCalor" aria-label="Capa del mapa de calor">
               <option value="ocupacion">Ocupación</option>
               <option value="visitantes">Visitantes únicos</option>
@@ -895,6 +951,14 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.rangos-mapa > button {
+  min-height: 22px;
+  padding: 2px 8px;
+  font-weight: 700;
+}
+.rangos-mapa > .activa:first-child {
+  background: var(--ink);
+}
 .ir-trafico {
   color: var(--accent-ink);
 }
