@@ -53,7 +53,7 @@ El plan de negocio completo (problema, clientes, solución, mercado, FODA, Canva
 | 3 primeros diagnósticos | 1 de 3 tiendas contrata la prueba de vitrina cuando cambia su vitrina | La atracción de vitrina queda como dato del diagnóstico |
 | Marzo de 2027 | 3 diagnósticos pagados a S/ 900 y 1 estudio de audiencia firmado | Se cambian el mensaje y el cliente antes de gastar la reserva |
 
-Las ocho hipótesis completas, con prueba, criterio y alternativa, están en la sección 13 del plan.
+Las ocho hipótesis, con su prueba y criterio, están en la sección 13 del plan.
 
 ## Datos por confirmar en la validación
 
@@ -77,4 +77,4 @@ Las ocho hipótesis completas, con prueba, criterio y alternativa, están en la 
 
    > Hola [nombre], estamos validando AeroVision: medimos cuántas personas pasan frente a una tienda o una pantalla, cuántas se detienen, cuántas entran y cuánto se quedan, con las cámaras que ya existen y sin reconocimiento facial. ¿Nos podrías presentar con 2 o 3 tiendas del terminal y con la persona de JCDecaux que vende la publicidad? Queremos ofrecerles un diagnóstico de prueba de 1 día. Gracias.
 
-3. Entrevista a cada tienda con el guion de la sección 13 del plan, antes de mostrar el producto, con registro textual de las respuestas.
+3. Entrevista a cada tienda antes de mostrar el producto, con registro textual de las respuestas.
