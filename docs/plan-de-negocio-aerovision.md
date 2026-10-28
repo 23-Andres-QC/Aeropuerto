@@ -16,7 +16,7 @@ Los gráficos del documento original aparecen aquí como tablas.
 | Producto 2: Audiencia para publicidad | "¿Cuánta gente ve este lugar?" Estudio S/ 4,000 por lugar; certificación S/ 180 al mes por pantalla |
 | Extra para el operador | Valor de los locales (renta sugerida) para LAP o un mall: S/ 15,000 por estudio |
 | Primeros clientes | Tiendas a la calle, en galerías, en malls y en el terminal de LAP (venta rápida, cámara propia); JCDecaux, que opera la publicidad del terminal, a través del contacto en LAP |
-| Costo | \~S/ 27 al mes por cámara de tienda y \~S/ 33 por cámara de pantalla, procesando grabaciones en PC propia; el costo de cada cliente crece con su número de cámaras. Margen bruto en 2027: 73% en tiendas y 82% en pantallas |
+| Costo | \~S/ 43 al mes por cámara de tienda y \~S/ 46 por cámara de pantalla, procesando grabaciones en PC propia con un tope de 10 cámaras por PC; el costo de cada cliente crece con su número de cámaras. Margen bruto en 2027: 57% en tiendas y 74% en pantallas |
 | Números | S/ 51 mil en 2027 → \~S/ 2 millones en 2031; 82% recurrente |
 | Capital | S/ 5,000 de reserva, sin gastar nada antes de vender; la caja nunca baja de esa reserva |
 | Riesgo principal | Disposición de las tiendas a pagar S/ 149 al mes y precisión del conteo en la puerta (meta ≥ 95%) |
@@ -155,7 +155,7 @@ Extra para el operador (LAP o un mall): estudio de valor de locales a S/ 15,000,
 | **6. Recursos clave** | Software ya construido (Insights: exposición, entradas, permanencia, captación; Ventas: tickets y conversión); la PC del equipo con RTX 4060 y una PC con GPU de 16 GB en 2027; 3 fundadores a medio tiempo (visión por computadora, backend y venta); contacto en LAP |
 | **7. Actividades clave** | Exportar grabaciones del NVR y procesarlas de noche; calibrar la puerta y el frente de cada tienda o la zona de visión de cada pantalla (\~1 hora); control de calidad con conteo manual de 15 minutos; redactar el informe con una recomendación; contactar 30 tiendas por trimestre |
 | **8. Socios clave** | LAP (acceso a tiendas del terminal y a JCDecaux); integradores de CCTV (acceso a cámaras y referidos); ESAN (prueba de precisión e incubadora); contador y asesoría legal en Ley 29733; tiendas de PC en Lima |
-| **9. Estructura de costos** | Variables por cámara: S/ 27 al mes por cámara de tienda y S/ 33 por cámara de pantalla (2027); el costo de cada cliente crece con su número de cámaras, \~10% del precio de cada estudio en caja. Fijos: contador S/ 150 y nube central S/ 100 al mes, luz extra \~S/ 65. Inversión: PC de S/ 5,500 en 2027 y S/ 4,500 por PC adicional, solo con contratos. Una vez: S.A.C. S/ 1,500, contratos S/ 1,000, marca y web \~S/ 1,035. Equipo: S/ 1,500 por fundador al mes desde junio de 2027, solo si hay caja |
+| **9. Estructura de costos** | Variables por cámara: S/ 43 al mes por cámara de tienda y S/ 46 por cámara de pantalla (2027), con una PC por cada 10 cámaras; el costo de cada cliente crece con su número de cámaras, \~10% del precio de cada estudio en caja. Fijos: contador S/ 150 y nube central S/ 100 al mes, luz extra \~S/ 65. Inversión: PC de S/ 5,500 en 2027 y S/ 4,500 por PC adicional, solo con contratos. Una vez: S.A.C. S/ 1,500, contratos S/ 1,000, marca y web \~S/ 1,035. Equipo: S/ 1,500 por fundador al mes desde junio de 2027, solo si hay caja |
 
 ## 8. Precio contra valor para el cliente
 
@@ -180,52 +180,53 @@ Cada producto se vende con un estudio corto para entrar y un informe mensual par
 
 ## 9. Costo por cámara
 
-La unidad de costo es la **cámara**: cada cámara suma horas de video que la PC debe procesar, así que el costo de cada cliente es su número de cámaras × el costo por cámara. El servicio base de una tienda cubre hasta 2 cámaras; con más cámaras, el servicio cuesta más.
+La unidad de costo es la **cámara**, y una PC procesa como tope **10 cámaras**. Por eso el costo crece por bloques: cada 10 cámaras se necesita una PC más. El servicio base de una tienda cubre hasta 2 cámaras; con más cámaras, el servicio cuesta más.
 
-El procesamiento es por lotes, no en vivo: una PC propia toma las grabaciones que el NVR del recinto ya guarda (2–4 semanas), procesa solo las horas necesarias a 5 cuadros por segundo y entrega conteos y tasas; el video se borra al terminar.
+El procesamiento es por lotes, no en vivo: la PC toma las grabaciones que el NVR del recinto ya guarda (2–4 semanas), procesa solo las horas necesarias a 5 cuadros por segundo y entrega conteos y tasas; el video se borra al terminar.
 
 | Tipo de cámara | Video procesado al mes | Modo |
 | --- | --- | --- |
 | Cámara de tienda | \~12 horas de apertura × 30 días (360 horas) | Liviano: detector y conteo por línea, sin Re-ID |
 | Cámara de pantalla | 3 horas pico × 30 días (90 horas) | Completo |
 
-**Rendimiento medido en el repositorio (RTX 4060):** \~12 cuadros por segundo con 7 cámaras 1080p y \~25 personas cada una; \~16 con dos videos; 3–4 con un video de un mall lleno en máxima sensibilidad. El modo liviano se estima \~4 veces más rápido (supuesto).
+**Rendimiento medido en el repositorio (RTX 4060):** \~12 cuadros por segundo con 7 cámaras 1080p y \~25 personas cada una; \~16 con dos videos; 3–4 con un video de un mall lleno en máxima sensibilidad.
 
-### Costo de procesar una cámara al mes
-
-| Dónde se procesa | Cámara de tienda | Cámara de pantalla |
-| --- | --- | --- |
-| **PC propia, por lotes** | **S/ 10** | **S/ 13** |
-| Nube Spot (\~US$ 0.18 por hora) | S/ 25 | S/ 33 |
-| Nube a demanda (US$ 0.526 por hora) | S/ 73 | S/ 97 |
-| Nube en vivo las 24 h | \~S/ 145 | \~S/ 817 |
-| Cámaras que atiende una PC | \~25 | 19 |
-
-PC con GPU de 8–16 GB: \~S/ 4,500 (S/ 125 al mes en 36 meses). Energía a 250 W las 24 horas: S/ 130 al mes (S/ 0.72 por kWh, Luz del Sur BT5B). Disco de 4 TB: S/ 630–710. Supuesto: una GPU T4 de nube rinde 70% de una RTX 4060.
-
-### Costo total y margen por cámara
+### Costo por cámara al mes
 
 | Concepto | Cámara de tienda 2027 | Cámara de tienda 2031 | Cámara de pantalla 2027 | Cámara de pantalla 2031 |
 | --- | --- | --- | --- | --- |
-| Procesamiento en PC por lotes | S/ 10 | S/ 7 | S/ 13 | S/ 8 |
+| PC: S/ 125 de amortización + S/ 130 de energía, entre 10 cámaras | S/ 26 | S/ 26 | S/ 26 | S/ 26 |
 | Traslado del video (internet de noche o disco) | S/ 3 | S/ 2 | S/ 3 | S/ 2 |
 | Soporte y control de calidad | S/ 10 | S/ 8 | S/ 14 | S/ 11 |
 | Nube central (web, base, respaldos) | S/ 4 | S/ 2 | S/ 3 | S/ 3 |
-| **Costo por cámara** | **S/ 27** | **S/ 19** | **S/ 33** | **S/ 24** |
+| **Costo por cámara** | **S/ 43** | **S/ 38** | **S/ 46** | **S/ 42** |
 | Precio por cámara | \~S/ 99 (S/ 149 por tienda, 1.5 cámaras en promedio) | \~S/ 99 | S/ 180 | S/ 180 |
-| **Margen bruto** | **73%** | **81%** | **82%** | **87%** |
+| **Margen bruto** | **57%** | **62%** | **74%** | **77%** |
 
 ### Cómo crece el costo con el número de cámaras
 
-| Cámaras | Costo al mes (tienda) | Costo al mes (pantallas) | PCs necesarias (tienda / pantallas) |
-| --- | --- | --- | --- |
-| 1 | S/ 27 | S/ 33 | 1 / 1 |
-| 2 (servicio base) | S/ 54 | S/ 66 | 1 / 1 |
-| 10 | S/ 270 | S/ 330 | 1 / 1 |
-| 25 | S/ 675 | S/ 825 | 1 / 2 |
-| 100 | S/ 2,700 | S/ 3,300 | 4 / 6 |
+| Cámaras | PCs | Costo de las PCs al mes | Total al mes (tienda) | Total al mes (pantallas) |
+| --- | --- | --- | --- | --- |
+| 2 (servicio base) | 1, compartida con otros clientes | S/ 51 | S/ 85 | S/ 91 |
+| 10 (tope de una PC) | 1 | S/ 255 | S/ 425 | S/ 455 |
+| 20 | 2 | S/ 510 | S/ 850 | S/ 910 |
+| 50 | 5 | S/ 1,275 | S/ 2,125 | S/ 2,275 |
+| 100 | 10 | S/ 2,550 | S/ 4,250 | S/ 4,550 |
 
-El monitoreo de tienda cuesta S/ 149 al mes con hasta 2 cámaras y S/ 75 por cada cámara adicional; la certificación de pantallas, S/ 180 al mes por cámara. Así el precio crece con las cámaras igual que el costo. La calibración (\~1 hora por cámara) va dentro del diagnóstico o del estudio, y los estudios cuestan en caja \~10% de su precio. PCs necesarias en el plan: 2 en 2027, 4 en 2028, 10 en 2029, 22 en 2030 y 40 en 2031.
+Total = PCs (S/ 255 al mes cada una) + S/ 17 por cámara de tienda o S/ 20 por cámara de pantalla (traslado, soporte y nube).
+
+### PC propia frente a la nube (procesar una cámara al mes)
+
+| Dónde se procesa | Cámara de tienda | Cámara de pantalla |
+| --- | --- | --- |
+| **PC propia (tope de 10 cámaras)** | **S/ 26** | **S/ 26** |
+| Nube Spot (\~US$ 0.18 por hora) | S/ 25 | S/ 33 |
+| Nube a demanda (US$ 0.526 por hora) | S/ 73 | S/ 97 |
+| Nube en vivo las 24 h | \~S/ 145 | \~S/ 817 |
+
+Con el tope de 10 cámaras, la PC cuesta lo mismo que la nube Spot y alrededor de un tercio de la nube a demanda; el video no sale a internet y el costo es fijo. PC con GPU de 8–16 GB: \~S/ 4,500 (S/ 125 al mes en 36 meses). Energía a 250 W las 24 horas: S/ 130 al mes (S/ 0.72 por kWh, Luz del Sur BT5B). Disco de 4 TB: S/ 630–710. Supuesto: una GPU T4 de nube rinde 70% de una RTX 4060.
+
+El monitoreo de tienda cuesta S/ 149 al mes con hasta 2 cámaras y S/ 75 por cada cámara adicional; la certificación de pantallas, S/ 180 al mes por cámara. La calibración (\~1 hora por cámara) va dentro del diagnóstico o del estudio, y los estudios cuestan en caja \~10% de su precio. PCs necesarias en el plan (cámaras en monitoreo + 10% para estudios, entre 10): 3 en 2027, 15 en 2028, 41 en 2029, 89 en 2030 y 163 en 2031.
 
 ## 10. Pronóstico con S/ 5,000 de capital y a medio tiempo
 
@@ -233,11 +234,11 @@ Con S/ 5,000 de reserva y los fundadores a medio tiempo, **no se gasta nada hast
 
 | Año | Ingresos | Caja disponible para pagar al equipo |
 | --- | --- | --- |
-| 2027 | S/ 51 mil | S/ 31.5 mil |
-| 2028 | S/ 206 mil | S/ 118 mil |
-| 2029 | S/ 525 mil | S/ 316 mil |
-| 2030 | S/ 1.11 M | S/ 685 mil |
-| 2031 | S/ 1.99 M | S/ 1.27 M |
+| 2027 | S/ 51 mil | S/ 30.8 mil |
+| 2028 | S/ 206 mil | S/ 79 mil |
+| 2029 | S/ 525 mil | S/ 222 mil |
+| 2030 | S/ 1.11 M | S/ 490 mil |
+| 2031 | S/ 1.99 M | S/ 927 mil |
 
 Capital inicial S/ 5,000; fundadores a medio tiempo hasta que el negocio pague tiempo completo; soles sin IGV.
 
@@ -248,35 +249,35 @@ Capital inicial S/ 5,000; fundadores a medio tiempo hasta que el negocio pague t
 | Nov 2026 – ene 2027 | Pruebas en la PC del equipo, entrevistas, prueba de precisión | — | S/ 0 | S/ 5,000 |
 | Feb 2027 | 2 diagnósticos de tienda; adelanto del primer estudio de audiencia; S.A.C., contratos y disco | S/ 3,800 | S/ 3,545 | S/ 5,255 |
 | Mar 2027 | 2 diagnósticos más; saldo del estudio de audiencia | S/ 3,800 | S/ 215 | S/ 8,840 |
-| Abr 2027 | 2 diagnósticos; primera tienda en monitoreo; adelanto del estudio de locales de LAP; PC potente | S/ 9,449 | S/ 6,115 | S/ 12,174 |
+| Abr 2027 | 2 diagnósticos; primera tienda en monitoreo; adelanto del estudio de locales de LAP; segunda PC | S/ 9,449 | S/ 6,115 | S/ 12,174 |
 | Jun 2027 | Saldo del estudio LAP; segundo estudio de audiencia; empiezan los S/ 1,500 por fundador | S/ 10,847 | S/ 6,800 | S/ 17,104 |
 | Jul 2027 | Primeras 4 pantallas certificadas | S/ 4,216 | S/ 4,815 | S/ 16,505 |
 | Oct 2027 | Tercer estudio de audiencia; 7 tiendas en monitoreo | S/ 5,023 | S/ 5,015 | S/ 11,372 |
-| Dic 2027 | Cierre: 10 tiendas en monitoreo y 10 pantallas certificadas | S/ 3,290 | S/ 5,565 | **S/ 8,914** |
+| Dic 2027 | Cierre: 10 tiendas y 10 pantallas (25 cámaras); tercera PC al pasar de 20 cámaras | S/ 3,290 | S/ 9,479 | **S/ 5,000** |
 
-Los meses que no aparecen siguen el mismo ritmo. En 2027 entran \~S/ 51 mil, se gastan \~S/ 16 mil (incluida la PC) y se pagan S/ 31.5 mil a los fundadores. A fin de 2027 el ingreso recurrente (\~S/ 3,300 al mes) cubre el 73% del pago a los fundadores (S/ 4,500); el resto lo cubren los diagnósticos y estudios hasta que el monitoreo crece en 2028.
+Los meses que no aparecen siguen el mismo ritmo. En 2027 entran \~S/ 51 mil, se gastan \~S/ 21 mil (incluidas 2 PCs) y se pagan S/ 30.8 mil a los fundadores. A fin de 2027 el ingreso recurrente (\~S/ 3,300 al mes) cubre el 73% del pago a los fundadores (S/ 4,500); el resto lo cubren los diagnósticos y estudios hasta que el monitoreo crece en 2028.
 
 ### Cómo crece después, sin capital externo
 
-| Año | Locales en monitoreo | Pantallas certificadas | Ingresos | Caja para el equipo | Equivale a |
-| --- | --- | --- | --- | --- | --- |
-| 2027 | 10 | 10 | S/ 51 mil | S/ 31.5 mil | S/ 1,500 al mes por fundador desde junio |
-| 2028 | 60 | 40 | S/ 206 mil | S/ 118 mil | \~S/ 3,300 al mes por fundador, a medio tiempo |
-| 2029 | 180 | 100 | S/ 525 mil | S/ 316 mil | \~4 personas a tiempo completo (S/ 4,500 + cargas) |
-| 2030 | 400 | 200 | S/ 1.11 M | S/ 685 mil | \~8 personas a tiempo completo |
-| 2031 | 750 | 350 | S/ 1.99 M | S/ 1.27 M | \~15 personas a tiempo completo |
+| Año | Locales en monitoreo | Pantallas certificadas | Cámaras | PCs | Ingresos | Caja para el equipo | Equivale a |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2027 | 10 | 10 | 25 | 3 | S/ 51 mil | S/ 30.8 mil | S/ 1,500 al mes por fundador desde junio |
+| 2028 | 60 | 40 | 130 | 15 | S/ 206 mil | S/ 79 mil | \~S/ 2,200 al mes por fundador, a medio tiempo |
+| 2029 | 180 | 100 | 370 | 41 | S/ 525 mil | S/ 222 mil | \~2–3 personas a tiempo completo (S/ 4,500 + cargas) |
+| 2030 | 400 | 200 | 800 | 89 | S/ 1.11 M | S/ 490 mil | \~6 personas a tiempo completo |
+| 2031 | 750 | 350 | 1,475 | 163 | S/ 1.99 M | S/ 927 mil | \~11 personas a tiempo completo |
 
-En 2031 el ingreso vendría en \~58% de tiendas (S/ 1.16 M), \~37% de publicidad (S/ 734 mil) y \~5% de estudios de locales (S/ 90 mil), con 82% recurrente. Supuestos: tienda S/ 149 al mes y S/ 900 por diagnóstico (12 en 2027 a 150 en 2031); estudio de audiencia S/ 4,000 (3 a 35 al año); pantalla S/ 180 al mes; 1–6 estudios de locales al año a S/ 15,000; costo por cámara de S/ 27 a S/ 19 en tiendas (1.5 cámaras en promedio) y de S/ 33 a S/ 24 en pantallas; PCs de 1 a 40; 15% de lo que queda se guarda como reserva.
+En 2031 el ingreso vendría en \~58% de tiendas (S/ 1.16 M), \~37% de publicidad (S/ 734 mil) y \~5% de estudios de locales (S/ 90 mil), con 82% recurrente. Supuestos: tienda S/ 149 al mes y S/ 900 por diagnóstico (12 en 2027 a 150 en 2031); estudio de audiencia S/ 4,000 (3 a 35 al año); pantalla S/ 180 al mes; 1–6 estudios de locales al año a S/ 15,000; costo por cámara de S/ 43 a S/ 38 en tiendas (1.5 cámaras en promedio) y de S/ 46 a S/ 42 en pantallas; una PC de S/ 4,500 por cada 10 cámaras, renovada a los 3 años (de 3 PCs en 2027 a 163 en 2031); 15% de lo que queda se guarda como reserva.
 
 ### Prueba de estrés
 
 | Qué sale mal | Caja para el equipo en 2028 | En 2031 | Lectura |
 | --- | --- | --- | --- |
-| Nada (base) | S/ 118 mil | S/ 1.27 M | — |
-| Los locales pagan S/ 99 y no S/ 149 | S/ 100 mil | S/ 979 mil | Se sostiene |
-| Se consigue la mitad de locales | S/ 98 mil | S/ 918 mil | Se sostiene, más lento |
-| Procesar cuesta el doble | S/ 98 mil | S/ 1.04 M | Se sostiene |
-| La publicidad vende la mitad | S/ 87 mil | S/ 1.0 M | Se sostiene con los locales |
+| Nada (base) | S/ 79 mil | S/ 927 mil | — |
+| Los locales pagan S/ 99 y no S/ 149 | S/ 61 mil | S/ 633 mil | Se sostiene |
+| Se consigue la mitad de locales | S/ 76 mil | S/ 728 mil | Se sostiene, más lento |
+| Procesar y operar cada cámara cuesta el doble | S/ 54 mil | S/ 609 mil | Se sostiene |
+| La publicidad vende la mitad | S/ 55 mil | S/ 701 mil | Se sostiene con los locales |
 | Nadie compra en 2027 | — | — | No se gastó nada: la reserva sigue intacta |
 
 Tener dos productos reparte el riesgo: si uno vende la mitad, el otro sostiene el negocio y solo se crece más lento.
@@ -333,7 +334,7 @@ Hipótesis del plan, prueba y criterio con que se dan por validadas:
 | 4 | Las tiendas valoran probar su vitrina | Oferta de la prueba de vitrina en los 3 primeros diagnósticos | 1 de 3 la contrata |
 | 5 | Un dueño de medios quiere audiencia medida por pantalla | Reuniones con JCDecaux y 2 administradores de pantallas | 1 estudio pagado |
 | 6 | La audiencia medida cambia lo que paga un anunciante | 1 mes de audiencia entregado a 2 anunciantes | 1 la usa para comprar o fijar tarifa |
-| 7 | La grabación se obtiene y procesa a bajo costo | 10 días de video del NVR de 3 tiendas | 3 de 3 la entregan; ≥ 12 tiendas por PC |
+| 7 | La grabación se obtiene y procesa a bajo costo | 10 días de video del NVR de 3 tiendas | 3 de 3 la entregan; 10 cámaras por PC |
 | 8 | Tienda y operador aceptan el tratamiento de datos | Contrato de encargo de tratamiento | Firmado en los 3 primeros clientes |
 
 ## 14. Cronograma de próximos pasos
@@ -362,7 +363,7 @@ El riesgo más grande no es técnico: es que el ciclo de venta sea más largo qu
 | --- | --- | --- | --- |
 | Ciclo de venta largo (malls, aeropuerto) | Alta | Alto | Empezar por tiendas (venta corta); LAP y JCDecaux en paralelo; estudios cortos con adelanto |
 | Precisión insuficiente con multitudes o cámaras viejas | Media | Alto | Conteo manual de referencia en cada estudio; publicar el error medido; vender solo métricas validadas |
-| La PC procesa menos tiendas de lo previsto | Media | Alto | Medir en el primer diagnóstico; modo liviano para tiendas; optimizar con TensorRT |
+| La PC procesa menos de 10 cámaras | Media | Alto | Medir en el primer diagnóstico; modo liviano para tiendas; optimizar con TensorRT |
 | Datos personales (Ley 29733 y su Reglamento, D.S. 016-2024-JUS) | Media | Alto | Sin rostros ni imágenes; contrato de encargado de tratamiento; aviso de videovigilancia; evaluación de impacto; asesoría legal antes del primer contrato |
 | Un gran proveedor baja precios o regala analítica en sus cámaras | Media | Medio | Diferenciar con el recorrido completo (se detienen, entran, compran), la prueba de vitrina y el soporte en Lima |
 | Dependencia de LAP y de pocos clientes | Alta en 2027 | Medio | Ningún cliente > 40% del ingreso desde 2028 |
