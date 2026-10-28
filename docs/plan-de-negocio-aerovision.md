@@ -10,17 +10,6 @@ Los gráficos del documento original aparecen aquí como tablas.
 
 **Idea:** AeroVision usa las cámaras que ya existen y una PC que procesa las grabaciones de noche para medir dos cosas: la **captación de una tienda** (pasan → se detienen frente a la vitrina → entran → compran) y la **audiencia de un lugar** (cuántos lo ven y cuánto tiempo). Se vende como estudio puntual y como informe mensual.
 
-| Punto | Respuesta |
-| --- | --- |
-| Producto 1: Captación de tienda | "¿Mi tienda capta a la gente que pasa?" Diagnóstico de 2 semanas S/ 900; prueba de vitrina S/ 1,200; monitoreo S/ 149 al mes por tienda con hasta 2 cámaras (S/ 75 por cámara adicional) |
-| Producto 2: Audiencia para publicidad | "¿Cuánta gente ve este lugar?" Estudio S/ 4,000 por lugar; certificación S/ 180 al mes por pantalla |
-| Extra para el operador | Valor de los locales (renta sugerida) para LAP o un mall: S/ 15,000 por estudio |
-| Primeros clientes | Tiendas a la calle, en galerías, en malls y en el terminal de LAP (venta rápida, cámara propia); JCDecaux, que opera la publicidad del terminal, a través del contacto en LAP |
-| Costo | \~S/ 43 al mes por cámara de tienda y \~S/ 46 por cámara de pantalla, procesando grabaciones en PC propia con un tope de 10 cámaras por PC; el costo de cada cliente crece con su número de cámaras. Margen bruto en 2027: 57% en tiendas y 74% en pantallas |
-| Números | S/ 51 mil en 2027 → \~S/ 2 millones en 2031; 82% recurrente |
-| Capital | S/ 5,000 de reserva, sin gastar nada antes de vender; la caja nunca baja de esa reserva |
-| Riesgo principal | Disposición de las tiendas a pagar S/ 149 al mes y precisión del conteo en la puerta (meta ≥ 95%) |
-
 ## 1. El problema: dos preguntas sin respuesta
 
 En cualquier lugar con público (tiendas a la calle, galerías, malls, supermercados, farmacias, estaciones, terminales y aeropuertos) se toman dos decisiones de dinero sin medir a la gente:
