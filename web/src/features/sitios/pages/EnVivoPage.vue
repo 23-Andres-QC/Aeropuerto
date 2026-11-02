@@ -532,7 +532,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
                 <span>{{ p.genero ?? "Sin determinar" }}<template v-if="p.conf"> · {{ Math.round(p.conf * 100) }}%</template></span>
                 <small class="muted">{{ p.camaras.join(", ") }}</small>
               </li>
-              <li v-if="!vivo.vivas.value.lista.length" class="muted vacio">Nadie en el plano.</li>
+              <li v-if="!vivo.vivas.value.lista.length" class="muted vacio">Sin observaciones.</li>
             </ul>
           </aside>
         </div>
@@ -551,7 +551,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
             <b>G{{ p.numero }}</b>
             <small class="muted">{{ p.camaras.join(", ") }} · {{ segundos(p.fin_s - p.inicio_s) }}</small>
           </li>
-          <li v-if="!presentes.length" class="muted vacio">{{ replay || !verGrabacion ? "Nadie en el plano." : "Sin sesión." }}</li>
+          <li v-if="!presentes.length" class="muted vacio">{{ replay || !verGrabacion ? "Sin observaciones en este instante." : "Sin sesión." }}</li>
         </ul>
       </aside>
     </div>

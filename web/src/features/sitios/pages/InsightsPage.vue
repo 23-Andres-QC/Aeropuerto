@@ -884,6 +884,9 @@ onMounted(async () => {
           @zona="elegirZona"
         />
         <p v-else class="empty">Sin plano</p>
+        <p v-if="mapa && !celdasKDE.length && !cargando" class="empty" role="status" data-prueba="calor-sin-datos">
+          Sin datos en este periodo: el mapa de calor está vacío.
+        </p>
       </article>
     </section>
 
