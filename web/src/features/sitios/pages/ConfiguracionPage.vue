@@ -518,8 +518,8 @@ onUnmounted(() => {
           </div>
 
           <footer class="ventana-pie">
-            <button v-if="zonaSel" class="danger-button" type="button" @click="borrarZona(zonaSel)">Eliminar</button>
-            <button v-else-if="camaraSel" class="danger-button" type="button" @click="borrarCamara(camaraSel)">Eliminar</button>
+            <button v-if="zonaSel" class="danger-button" type="button" @click="borrarZona(zonaSel)">Eliminar zona</button>
+            <button v-else-if="camaraSel" class="danger-button" type="button" @click="borrarCamara(camaraSel)">Eliminar cámara</button>
             <button v-else-if="localSel" class="danger-button" type="button" @click="borrarTienda(localSel)">Eliminar tienda</button>
             <button v-if="zonaSel" type="button" @click="editarEnPlano">Editar forma</button>
             <button v-else-if="camaraSel" type="button" @click="editarEnPlano">Mover en el plano</button>
