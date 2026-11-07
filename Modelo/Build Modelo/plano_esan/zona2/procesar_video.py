@@ -680,7 +680,7 @@ def hoja_contacto(video, cuadros, personas, salida, n=6):
 
 
 def dibujar(video, cuadros, numeros, camara_id, salida, fps, tam):
-    """Pasada 2: el video con las cajas y los IDs, en H.264 para que el navegador lo reproduzca."""
+    """Pasada 2: el video con el ID de cada persona sobre su cabeza (sin caja), en H.264 para que el navegador lo reproduzca."""
     import cv2
     import imageio_ffmpeg
 
@@ -698,16 +698,17 @@ def dibujar(video, cuadros, numeros, camara_id, salida, fps, tam):
         if idx % paso == 0:
             vistos = [(numeros[i][0], i, b) for i, b, _ in cuadros[k]["gente"] if i in numeros]
             for numero, i, (x1, y1, x2, y2) in vistos:
+                # Solo el ID global sobre la cabeza, sin caja: una etiqueta con el color de la persona.
                 color = color_persona(numero)
-                cv2.rectangle(im, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-                texto = f"G{numero} | {camara_id} L{i}"
-                (w, h), _ = cv2.getTextSize(texto, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
-                y0 = max(h + 4, int(y1))
-                cv2.rectangle(im, (int(x1), y0 - h - 4), (int(x1) + w + 4, y0), color, -1)
+                texto = f"G{numero}"
+                (w, h), _ = cv2.getTextSize(texto, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+                cx = min(max(int((x1 + x2) / 2), w // 2 + 3), tam[0] - w // 2 - 3)
+                y0 = max(h + 6, int(y1) - 3)
+                cv2.rectangle(im, (cx - w // 2 - 3, y0 - h - 5), (cx + w // 2 + 3, y0), color, -1)
                 # Texto negro sobre los colores claros (amarillos, verdes) y blanco sobre los oscuros: siempre se lee.
                 claro = 0.114 * color[0] + 0.587 * color[1] + 0.299 * color[2] > 140
-                cv2.putText(im, texto, (int(x1) + 2, y0 - 3), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0) if claro else (255, 255, 255), 1, cv2.LINE_AA)
-            cabecera = f"{camara_id} | {cuadros[k]['t']:.2f}s | {len(vistos)} tracks"
+                cv2.putText(im, texto, (cx - w // 2, y0 - 3), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0) if claro else (255, 255, 255), 1, cv2.LINE_AA)
+            cabecera = f"{camara_id} | {cuadros[k]['t']:.2f}s | {len(vistos)} personas"
             (w, h), _ = cv2.getTextSize(cabecera, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
             cv2.rectangle(im, (0, 0), (w + 8, h + 8), (0, 0, 0), -1)
             cv2.putText(im, cabecera, (4, h + 3), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
