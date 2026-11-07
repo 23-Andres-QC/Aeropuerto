@@ -174,3 +174,69 @@ func TestMigracionSinGeneroSeDeshace(t *testing.T) {
 		}
 	}
 }
+
+// Con GPU la memoria guarda los vectores de Videos (896 valores) junto a los de 512; la migración 003 se deshace (las
+// personas de 896 no caben en vector(512) y se borran) y se vuelve a aplicar. Solo con VIVO_TEST_DATABASE_URL.
+func TestPostgresVectoresDeVideos(t *testing.T) {
+	url := os.Getenv("VIVO_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("sin VIVO_TEST_DATABASE_URL")
+	}
+	ctx := context.Background()
+	db, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err = Migrar(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	repo := NuevoPostgres(db)
+	if _, _, err = repo.BorrarTodas(ctx); err != nil {
+		t.Fatal(err)
+	}
+	_, numeracion, err := repo.Personas(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conGPU, sinGPU := personaDePrueba(), personaDePrueba()
+	conGPU.Suma, conGPU.Vistas[0].Prototipo = vectorDeVideos(1), vectorDeVideos(0.5)
+	sinGPU.ID = 3
+	for _, p := range []Persona{conGPU, sinGPU} {
+		if err = repo.Guardar(ctx, p, numeracion.Epoca); err != nil {
+			t.Fatalf("guardar %d: %v", p.ID, err)
+		}
+	}
+	personas, _, err := repo.Personas(ctx)
+	if err != nil || len(personas) != 2 || len(personas[0].Suma) != Dimension || len(personas[1].Suma) != DimensionVideos ||
+		len(personas[1].Vistas) != 1 || len(personas[1].Vistas[0].Prototipo) != DimensionVideos {
+		t.Fatalf("personas = %+v, %v", personas, err)
+	}
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	contar := func() (n int) {
+		if err := tx.QueryRow(ctx, "SELECT count(*) FROM personas").Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	for _, f := range []struct {
+		fsys fs.FS
+		name string
+	}{{migrations.DownFS, "down/003_vector_flexible.down.sql"}, {migrations.FS, "003_vector_flexible.sql"}} {
+		sql, err := fs.ReadFile(f.fsys, f.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = tx.Exec(ctx, string(sql)); err != nil {
+			t.Fatalf("%s: %v", f.name, err)
+		}
+		if n := contar(); n != 1 {
+			t.Errorf("tras %s quedan %d personas (esperaba solo la de 512)", f.name, n)
+		}
+	}
+}

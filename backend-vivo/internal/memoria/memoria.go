@@ -17,9 +17,16 @@ import (
 	"time"
 )
 
-// Dimension de los vectores Re-ID (salida de yolo26s-reid.onnx). Debe coincidir
-// con vector(512) de la migración.
+// Dimension de los vectores Re-ID de yolo26s-reid.onnx: la del modelo sin GPU.
 const Dimension = 512
+
+// DimensionVideos: con GPU los teléfonos usan el Re-ID de Videos, OSNet-AIN (512)
+// y PersonViT (384) juntos.
+const DimensionVideos = 896
+
+// Dimensiones que acepta la memoria (la columna es vector sin dimensión fija,
+// migración 003). Una persona usa una sola: su suma y sus vistas miden lo mismo.
+var Dimensiones = []int{Dimension, DimensionVideos}
 
 // Límites de lo que el modelo puede mandar por persona.
 const (
@@ -68,8 +75,12 @@ func (v *Vector) UnmarshalJSON(data []byte) error {
 }
 
 func (v Vector) validar(nombre string) error {
-	if len(v) != Dimension {
-		return invalido("%s debe tener %d valores (tiene %d)", nombre, Dimension, len(v))
+	valida := false
+	for _, d := range Dimensiones {
+		valida = valida || len(v) == d
+	}
+	if !valida {
+		return invalido("%s debe tener %d u %d valores (tiene %d)", nombre, Dimension, DimensionVideos, len(v))
 	}
 	var norma float64
 	for _, x := range v {
@@ -189,6 +200,9 @@ func (p *Persona) Validar() error {
 		tramos[v.Tramo] = true
 		if err := v.Prototipo.validar(fmt.Sprintf("vista %d", i)); err != nil {
 			return err
+		}
+		if len(v.Prototipo) != len(p.Suma) {
+			return invalido("vista %d: tiene %d valores y la suma %d", i, len(v.Prototipo), len(p.Suma))
 		}
 	}
 	return nil

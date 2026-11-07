@@ -66,9 +66,19 @@ func TestTextoDePgvectorIdaYVuelta(t *testing.T) {
 	}
 }
 
+// Con GPU los teléfonos guardan los vectores de Videos (896 valores); una persona no mezcla medidas.
+func vectorDeVideos(semilla float32) Vector {
+	return append(vectorDePrueba(semilla), vectorDePrueba(semilla)[:DimensionVideos-Dimension]...)
+}
+
 func TestValidarPersona(t *testing.T) {
 	if p := personaDePrueba(); p.Validar() != nil {
 		t.Fatalf("persona válida rechazada: %v", p.Validar())
+	}
+	conGPU := personaDePrueba()
+	conGPU.Suma, conGPU.Vistas[0].Prototipo = vectorDeVideos(1), vectorDeVideos(0.5)
+	if err := conGPU.Validar(); err != nil {
+		t.Fatalf("persona con los vectores de Videos rechazada: %v", err)
 	}
 	casos := map[string]func(*Persona){
 		"dimensión":      func(p *Persona) { p.Suma = p.Suma[:10] },
@@ -80,6 +90,7 @@ func TestValidarPersona(t *testing.T) {
 		"fechas":         func(p *Persona) { p.UltimaVez = p.PrimeraVez.Add(-time.Second) },
 		"tramo repetido": func(p *Persona) { p.Vistas = append(p.Vistas, p.Vistas[0]) },
 		"vista mal":      func(p *Persona) { p.Vistas[0].Prototipo = p.Vistas[0].Prototipo[:3] },
+		"otra medida":    func(p *Persona) { p.Vistas[0].Prototipo = vectorDeVideos(0.5) },
 		"demasiadas vistas": func(p *Persona) {
 			for i := 0; i <= MaxVistas; i++ {
 				p.Vistas = append(p.Vistas, Vista{Tramo: strings.Repeat("x", i+1), Camara: "c", Prototipo: vectorDePrueba(1), Muestras: 1})

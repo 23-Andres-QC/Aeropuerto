@@ -216,18 +216,25 @@ Se activa con el botón de la cabecera, y también entra solo cuando se conecta 
 
 `camara_telefono.py` corre el modelo final sobre todos los teléfonos a la vez.
 
-- **Detector:**
-  - **En GPU:** a 960 px con confianza 0,15, para ver a quien está lejos.
-  - **En CPU** (`modelo-vivo`): `yolo26s` a 640 px (`MODELO_IMGSZ`).
-  - Los puntos del cuerpo (`yolo26s-pose`) solo afinan la caja de quien se ve de cerca, sin los brazos. Una caja muy ancha (brazos abiertos) se angosta.
+- **Con GPU, el mismo multitracking de Videos** (sección 9), que sigue y reconoce mucho mejor a la gente:
+  - su detector a 1280 px con confianza 0,10, sin los puntos del cuerpo;
+  - su seguidor, que en los cruces pesa la apariencia (0,8);
+  - su Re-ID, **OSNet-AIN y PersonViT juntos** (vectores de 896 valores, también en la memoria de identidades), y su asociador con sus umbrales;
+  - su género: vota desde la primera vista y lo que ya se mostró cambia solo con 0,6 de certeza.
+  - Con dos teléfonos (dos videos del dataset), el carril rápido tarda una mediana de 88 ms por cuadro, contra 152 ms del algoritmo anterior, que pasaba por los puntos del cuerpo.
+  - `MODELO_ALGORITMO=telefonos` vuelve al algoritmo anterior.
+- **Sin GPU** (`modelo-vivo`), el de siempre, como Videos sin GPU:
+  - `yolo26s` a 640 px (`MODELO_IMGSZ`) y `yolo26s-reid` (512 valores);
+  - los puntos del cuerpo (`yolo26s-pose`) solo afinan la caja de quien se ve de cerca, sin los brazos. Una caja muy ancha (brazos abiertos) se angosta.
 - **Dos carriles:**
   - el **rápido** (detectar y seguir) publica las cajas enseguida;
   - el **lento** (género, Re-ID y memoria) va aparte, así las cajas no esperan a lo más pesado.
 - **El video va en directo:** las cajas se adelantan con la velocidad de cada persona, en lugar de atrasar la imagen.
 - **Lo quieto no cuenta:** lo que no se mueve en 3 s no se muestra ni se cuenta (maniquíes, afiches).
-- **Género:** mientras no se confirma, se muestra el que va ganando. Con una certeza de 0,8 o más queda fijo.
+- **Género sin GPU:** mientras no se confirma, se muestra el que va ganando. Con una certeza de 0,8 o más queda fijo.
 - **Memoria de identidades:** cada persona conserva su ID, su color y su género aunque salga y vuelva, pase a otro teléfono o el modelo se reinicie.
-  - Para reconocerla usa los mismos umbrales del asociador: 0,6 / 0,55 entre cámaras y 0,7 / 0,65 con una sola.
+  - Para reconocerla usa los mismos umbrales del asociador: con GPU los de Videos (0,765 / 0,715 entre cámaras y 0,791 con una sola); sin GPU 0,6 / 0,55 entre cámaras y 0,7 / 0,65 con una sola.
+  - `vivo-db` acepta vectores de 512 o de 896 valores; quien se guardó con el otro Re-ID no se compara.
   - Un ID nuevo se sigue comparando durante 60 s. Si era alguien ya visto, se fusiona y queda el ID antiguo.
   - Se guarda en `vivo-db` cada 2 s, en segundo plano.
   - Se borra sola tras **7 días sin ver a la persona** (`VIVO_RETENCION_HORAS`), o con **Olvidar a todos**, que reinicia la numeración en 1 y rechaza (409) cualquier guardado anterior.

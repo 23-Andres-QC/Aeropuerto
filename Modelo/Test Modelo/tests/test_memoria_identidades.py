@@ -259,7 +259,7 @@ class BackendFalso(BaseHTTPRequestHandler):
             return self._responder(200, {"personas": len(e["personas"]), "vistas": 0, "siguiente_id": e["siguiente"],
                                          "epoca": e["epoca"], "retencion_horas": 168})
         personas = [{"id": pid, **p} for pid, p in e["personas"].items()]
-        self._responder(200, {"dimension": DIM, "siguiente_id": e["siguiente"], "epoca": e["epoca"],
+        self._responder(200, {"dimensiones": [512, 896], "siguiente_id": e["siguiente"], "epoca": e["epoca"],
                               "retencion_horas": 168, "personas": personas})
 
     def _epoca_vale(self):

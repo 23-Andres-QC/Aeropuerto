@@ -54,10 +54,18 @@ from detector_pose import DetectorCuerpo, ajustar_cajas
 from memoria_identidades import AsociadorConMemoria, MemoriaIdentidades
 from ubicacion import MIN_COINCIDENCIAS as U_MIN, Ubicador
 from reid_videos import ReIDCombinado, ReIDGrabado, ReIDPersonViT
-from videos_subidos import (CANAL_ESTADO as CANAL_VIDEOS, PERSONVIT_VIDEO_GPU, REID_VIDEO_GPU, Quietud, VideosSubidos,
-                            genero_por_votos)
+from videos_subidos import (ASOCIACION_REID_GPU, ASOCIACION_VIDEO, CAMBIO_GENERO, CANAL_ESTADO as CANAL_VIDEOS, GENEROS,
+                            PERSONVIT_VIDEO_GPU, REID_VIDEO_GPU, Quietud, SinEnvolventes, VideosSubidos, genero_por_votos,
+                            motor_aparte)
 
 CANAL_ESTADO = "telefonos"
+# Con GPU los teléfonos usan el multitracking de Videos (ver AJUSTES en videos_subidos), que sigue y reconoce mucho mejor
+# a la gente: su motor (detector a 1280 px sin los puntos del cuerpo, seguidor que en los cruces pesa la apariencia),
+# su Re-ID (OSNet-AIN y PersonViT juntos, 896 valores, también en la memoria de identidades), su asociador con sus
+# umbrales y su género (vota desde la primera vista y cambia solo con CAMBIO_GENERO de certeza). Lo único propio de los
+# teléfonos que queda es Quietud (no mostrar maniquíes ni afiches) y la memoria de identidades. Sin GPU sigue el de
+# siempre, como Videos, que sin GPU usa el Re-ID del Build. MODELO_ALGORITMO=telefonos vuelve al de antes.
+ALGORITMO_VIDEOS = os.environ.get("MODELO_ALGORITMO", "videos") != "telefonos"
 ANCHO_RELEVO = 640
 # Un frame del relevo no puede pasar de 512 KB (maxRelayFrame en backend-vivo): se baja la calidad si hace falta.
 MAX_JPEG_RELEVO = 480 * 1024
@@ -624,8 +632,14 @@ class SesionEnVivo:
     identidades devuelve su ID a quien vuelve a aparecer.
     """
 
-    def __init__(self, motor, reid, asociacion, memoria, ubicador=None):
+    como_videos = False  # con el algoritmo de Videos (ver ALGORITMO_VIDEOS); lo fija __init__
+
+    def __init__(self, motor, reid, asociacion, memoria, ubicador=None, como_videos=False):
         self.motor, self.reid, self.asociacion, self.memoria = motor, reid, asociacion, memoria
+        # Con el algoritmo de Videos (ver ALGORITMO_VIDEOS): sus ventanas del seguidor en cuadros procesados, sin
+        # reescalarlas, y su género por votos (locales_de y mostrados, como GrupoVideos).
+        self.como_videos = como_videos
+        self.locales_de, self.mostrados = {}, {}
         # Ubicación en el plano (ubicacion.py): se calcula en otro hilo y las cajas no la esperan (ver _recoger_ubicacion).
         self.ubicador, self._ubicando, self._ubicacion = ubicador, ThreadPoolExecutor(max_workers=1), None
         self._ubicado = {}  # teléfono -> cuándo se pidió su última ubicación (por turnos, ver _pedir_ubicacion)
@@ -640,7 +654,8 @@ class SesionEnVivo:
         self.fijos = {}  # (teléfono, track local) -> (género, certeza) ya fijado con certeza >= GENERO_FIJO
         self.intentos_genero = {}  # (teléfono, track local) -> cuadros que ya pasaron por CLIP (hasta INTENTOS_GENERO)
         seguidor = getattr(motor, "config", {}).get("tracker", {})
-        self._ventanas = {k: seguidor[k] for k in VENTANAS_SEGUIDOR if k in seguidor}  # en cuadros a RITMO_AJUSTE_SEGUIDOR
+        # En cuadros a RITMO_AJUSTE_SEGUIDOR; con el algoritmo de Videos no se reescalan (cuentan cuadros procesados).
+        self._ventanas = {} if como_videos else {k: seguidor[k] for k in VENTANAS_SEGUIDOR if k in seguidor}
         # Tres carriles: el rápido (detectar y seguir, que da las cajas) corre en el lazo principal y publica enseguida;
         # el de los IDs (Re-ID y memoria de identidades) y el del género (CLIP) corren cada uno en su hilo, en paralelo,
         # con el último instante de cada teléfono. Así las cajas no esperan a lo más pesado, y el ID no espera a CLIP ni
@@ -685,6 +700,7 @@ class SesionEnVivo:
             if self.asociador is not None:
                 self.asociador.reiniciar()
             self.fijos, self.intentos_genero, self._ultimo_id, self.generos, self.quietud = {}, {}, {}, {}, {}
+            self.locales_de, self.mostrados = {}, {}
         print("Grabación nueva: el modelo olvidó la anterior (personas, tramos, seguidores y géneros).", flush=True)
         return True
 
@@ -737,7 +753,8 @@ class SesionEnVivo:
         self._recoger_ubicacion()
         self._pedir_ubicacion(frames)
         detectadas = self.motor.detectar(frames)
-        if not isinstance(self.motor.detector, DetectorCuerpo):  # con pose las cajas ya son de cuerpo sin brazos
+        # Con pose las cajas ya son de cuerpo sin brazos; el detector de Videos (SinEnvolventes) deja las suyas.
+        if not isinstance(self.motor.detector, (DetectorCuerpo, SinEnvolventes)):
             detectadas = {cid: ajustar_cajas(*dato) for cid, dato in detectadas.items()}
         self._ventanas_seguidor(frames)
         filas = self.motor.seguir(frames, fuente, detectadas)
@@ -926,7 +943,10 @@ class SesionEnVivo:
             time.sleep(max(0.0, CARRIL_LENTO_CADA_S - (time.monotonic() - inicio)))
 
     def _falta_genero(self, cid, fila):
-        """El track todavía puede pasar un cuadro por CLIP: ni él ni su persona tienen género fijo y le quedan intentos."""
+        """El track todavía puede pasar un cuadro por CLIP: ni él ni su persona tienen género fijo y le quedan intentos.
+        Con el algoritmo de Videos siempre (el motor muestrea cada sample_s y guarda los últimos max_votes votos)."""
+        if self.como_videos:
+            return True
         llave = (cid, fila["local_id"])
         if llave in self.fijos or self.intentos_genero.get(llave, 0) >= INTENTOS_GENERO:
             return False
@@ -946,6 +966,8 @@ class SesionEnVivo:
         antes = {(cid, f["local_id"]): genero.memory.get((cid, f["local_id"]), {}).get("last_frame", -math.inf)
                  for cid, fs in pendientes.items() for f in fs}
         genero.actualizar(frames, fuente, pendientes)
+        if self.como_videos:
+            return  # los votos quedan en el motor y _genero los cuenta, como en Videos
         for llave, ultimo in antes.items():
             estado = genero.memory.get(llave)
             if estado is None or estado["last_frame"] == ultimo:
@@ -983,6 +1005,8 @@ class SesionEnVivo:
     def _genero(self, cid, fila):
         """Género que se muestra de una persona: solo uno fijo (certeza de GENERO_FIJO o más, ver INTENTOS_GENERO), el
         de su persona en la memoria o el de su track; si no, «Sin determinar». Un fijo no vuelve a cambiar."""
+        if self.como_videos:
+            return self._genero_como_videos(cid, fila)
         pid = fila["global_id"]
         persona = self.memoria.personas.get(pid) if pid is not None else None
         llave = (cid, fila["local_id"])
@@ -994,6 +1018,27 @@ class SesionEnVivo:
             if persona is not None:
                 self.memoria.genero(pid, *self.fijos[llave])  # el track lo fijó antes de tener ID: pasa a su persona
         if pid is not None:
+            self.generos[pid] = fila["genero"]
+
+    def _genero_como_videos(self, cid, fila):
+        """Género como en Videos (VideoEnProceso._genero): con los votos de todos los tracks de la persona en todos los
+        teléfonos (o del suyo mientras no tiene ID). El que ya se mostró sobre el ID se mantiene hasta que el otro gane
+        con CAMBIO_GENERO de certeza."""
+        pid = fila["global_id"]
+        locales = {(cid, fila["local_id"])}
+        if pid is not None:
+            locales = self.locales_de.setdefault(pid, set())
+            locales.add((cid, fila["local_id"]))
+        memoria = self.motor.genero.memory
+        votos = [voto for llave in list(locales) for voto in list(memoria.get(llave, {}).get("votes", []))]
+        etiqueta, certeza = genero_por_votos(votos)
+        fila["genero"], fila["confianza_genero"] = (etiqueta, certeza) if etiqueta in GENEROS else ("Sin determinar", None)
+        if pid is not None:
+            mostrado = self.mostrados.get(pid)
+            if mostrado is not None and fila["genero"] != mostrado[0] and (certeza or 0) < CAMBIO_GENERO:
+                fila["genero"], fila["confianza_genero"] = mostrado
+            elif fila["genero"] in GENEROS:
+                self.mostrados[pid] = (fila["genero"], fila["confianza_genero"])
             self.generos[pid] = fila["genero"]
 
     def fps(self, cid):
@@ -1026,6 +1071,17 @@ def personas_para_web(filas, ancho, ancho_relevo=ANCHO_RELEVO):
                          "conf": round(fila["confidence"], 3), "gender": genero,
                          "gender_conf": round(fila["confianza_genero"], 3) if genero and fila.get("confianza_genero") else None})
     return personas
+
+
+def modelo_telefonos(motor, reid, asociacion_build):
+    """(motor, Re-ID, asociación, como_videos) de los teléfonos: con GPU los de Videos (ver ALGORITMO_VIDEOS), con su
+    propio motor y su propio Re-ID (no comparten estado con los videos que se procesan a la vez); si no, los de siempre."""
+    if ALGORITMO_VIDEOS and str(motor.device).startswith("cuda"):
+        reid_videos = ReIDCombinado([ReIDGrabado(ReIDPersonas(MODELO / REID_VIDEO_GPU, batch_size=16, device=motor.device)),
+                                     ReIDPersonViT(MODELO / PERSONVIT_VIDEO_GPU, device=motor.device)])
+        return motor_aparte(motor), reid_videos, {**asociacion_build, **ASOCIACION_VIDEO, **ASOCIACION_REID_GPU}, True
+    reid = ReIDMitadSuperior(reid, PARTE_SUPERIOR_REID) if PARTE_SUPERIOR_REID < 1 else reid
+    return motor, reid, {**asociacion_build, **ASOCIACION_TELEFONO}, False
 
 
 def cargar_modelo():
@@ -1101,17 +1157,21 @@ def main():
     if not sin_freno_de_windows() and sys.platform == "win32":
         print("Windows no dejó quitar el ahorro de energía a este proceso: puede ir más lento.", flush=True)
     motor, reid, reid_videos, asociacion_build = cargar_modelo()
-    asociacion = {**asociacion_build, **ASOCIACION_TELEFONO}
+    motor_telefonos, reid_sesion, asociacion, como_videos = modelo_telefonos(motor, reid, asociacion_build)
     ubicador = Ubicador.cargar(MODELO / "ubicacion" / SITIO_TELEFONOS)
     parte = lambda f: "el cuerpo entero" if f >= 1 else f"la parte de arriba del cuerpo ({f:.0%})"  # noqa: E731
-    print(f"Re-ID con {parte(PARTE_SUPERIOR_REID)}; género con {parte(MITAD_SUPERIOR)}.", flush=True)
-    print(f"Modelo listo en {motor.device} · detector {type(getattr(motor.detector, 'base', motor.detector)).__name__} a "
-          f"{motor.config['detector']['imgsz']} px · ubicación: {SITIO_TELEFONOS if ubicador else 'sin referencias'} · "
+    if como_videos:
+        print("Teléfonos con el algoritmo de Videos: su detector, su seguidor, Re-ID OSNet-AIN + PersonViT, su asociador "
+              "y su género.", flush=True)
+    else:
+        print(f"Re-ID con {parte(PARTE_SUPERIOR_REID)}; género con {parte(MITAD_SUPERIOR)}.", flush=True)
+    detector = getattr(motor_telefonos.detector, "base", motor_telefonos.detector)
+    print(f"Modelo listo en {motor.device} · detector {type(detector).__name__} a "
+          f"{getattr(detector, 'config', motor.config['detector'])['imgsz']} px · ubicación: {SITIO_TELEFONOS if ubicador else 'sin referencias'} · "
           f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no'}", flush=True)
-    memoria = MemoriaIdentidades(url_api, asociacion)
+    memoria = MemoriaIdentidades(url_api, asociacion, dimension=reid_sesion.dimension)
     relevo = Relevo(url_api)
-    reid_sesion = ReIDMitadSuperior(reid, PARTE_SUPERIOR_REID) if PARTE_SUPERIOR_REID < 1 else reid
-    sesion = SesionEnVivo(motor, reid_sesion, asociacion, memoria, ubicador)
+    sesion = SesionEnVivo(motor_telefonos, reid_sesion, asociacion, memoria, ubicador, como_videos=como_videos)
     videos = VideosSubidos(url_api, motor, reid_videos, asociacion_build, relevo, personas_para_web)
     lectores, nombres, calentado = {}, {}, False
     publicado, fallos, ultimo_video = 0.0, 0, -math.inf
@@ -1157,7 +1217,7 @@ def main():
             if datos:
                 try:
                     if not calentado:
-                        motor.calentar({cid: d[1] for cid, d in datos.items()})
+                        motor_telefonos.calentar({cid: d[1] for cid, d in datos.items()})
                         calentado = True
                     filas = sesion.procesar(datos)
                     fallos = 0

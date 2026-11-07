@@ -14,7 +14,8 @@ El AsociadorMulticamara de LAP01 une a una persona entre cámaras y en regresos 
   modelo nunca espera a la red. Si backend-vivo no responde al arrancar, la memoria dura solo esta ejecución.
 * «Olvidar a todos» (desde la web) sube la época de la base: el modelo lo nota (409 o sondeo) y también olvida.
 
-Se guarda solo apariencia (vectores de 512 valores), género y cuándo y dónde se vio: nada de video ni fotos.
+Se guarda solo apariencia (vectores de 512 valores con yolo26s-reid o de 896 con el Re-ID de Videos, el de los
+teléfonos con GPU), género y cuándo y dónde se vio: nada de video ni fotos.
 """
 import base64
 import json
@@ -31,7 +32,7 @@ import numpy as np
 import lap01
 from lap01.camaras_reid import _solapan, cargar_camaras
 
-DIMENSION = 512
+DIMENSION = 512  # yolo26s-reid; con GPU los teléfonos usan el Re-ID de Videos y la memoria toma la de ese (896)
 MAX_VISTAS = 16          # prototipos de tramo guardados por persona (enlace promedio)
 ESCRIBIR_CADA_S = 2.0    # una persona que cambia se escribe en la base como mucho cada 2 s
 # Cada cuánto se revisa si alguien vació la memoria desde la web (la web la vacía al empezar cada grabación en vivo).
@@ -126,8 +127,9 @@ class MemoriaIdentidades:
     Todo cambio ocurre en el hilo del modelo; el hilo escritor solo lee (con el candado) y avisa si hay que olvidar.
     """
 
-    def __init__(self, url_api, asociacion, conectar=True):
+    def __init__(self, url_api, asociacion, conectar=True, dimension=DIMENSION):
         self.url = url_api.rstrip("/") + "/api/v1/personas"
+        self.dimension = dimension  # la del Re-ID de la sesión: personas guardadas con otra no se comparan
         umbral = float(asociacion.get("threshold", 0.6))
         promedio = float(asociacion.get("average_threshold", 0.55))
         misma = float(asociacion.get("same_camera_threshold", 0.7))
@@ -137,7 +139,7 @@ class MemoriaIdentidades:
         self.min_muestras = int(asociacion.get("min_query_samples", 4))
         self.personas, self.siguiente, self.persistente = {}, 1, False
         self.epoca = 0  # la de la base; cambia con «olvidar a todos»
-        self._ids, self._matriz, self._fila = [], np.zeros((0, DIMENSION), np.float32), {}
+        self._ids, self._matriz, self._fila = [], np.zeros((0, self.dimension), np.float32), {}
         self._hay = threading.Condition()
         self._pendientes, self._cerrado, self._fallando = {}, False, False
         self._epoca_nueva = None  # la avisa el escritor; la aplica el hilo del modelo
@@ -162,12 +164,20 @@ class MemoriaIdentidades:
             print(f"Memoria de identidades no disponible ({error}): los IDs valen solo mientras corre el modelo.",
                   flush=True)
             return
-        if dato.get("dimension") != DIMENSION:
-            print(f"La memoria usa vectores de {dato.get('dimension')} valores y el Re-ID de {DIMENSION}: se ignora.",
+        aceptadas = dato.get("dimensiones") or [dato.get("dimension")]
+        if self.dimension not in aceptadas:
+            print(f"La memoria acepta vectores de {aceptadas} valores y el Re-ID da {self.dimension}: se ignora.",
                   flush=True)
             return
+        otras = 0
         for persona in dato["personas"]:
-            self.personas[persona["id"]] = Persona.de_json(persona)
+            p = Persona.de_json(persona)
+            if len(p.suma) != self.dimension:
+                otras += 1  # vista con el otro Re-ID (con o sin GPU): no se compara; se borra sola con la retención
+                continue
+            self.personas[persona["id"]] = p
+        if otras:
+            print(f"Memoria de identidades: {otras} personas guardadas con otro Re-ID no se usan.", flush=True)
         self.siguiente = max([dato["siguiente_id"], *(pid + 1 for pid in self.personas)])
         self.epoca, self.persistente = dato["epoca"], True
         self._reconstruir()
@@ -281,7 +291,7 @@ class MemoriaIdentidades:
         self._ids = [pid for pid, p in self.personas.items() if p.muestras > 0]
         self._fila = {pid: i for i, pid in enumerate(self._ids)}
         self._matriz = (np.stack([_normal(self.personas[pid].suma) for pid in self._ids])
-                        if self._ids else np.zeros((0, DIMENSION), np.float32))
+                        if self._ids else np.zeros((0, self.dimension), np.float32))
 
     def reconocer(self, suma, prototipos, camaras, ocupadas=(), ignorar=()):
         """(id de la persona ya vista que coincide sin ambigüedad o None, duda).
@@ -323,7 +333,7 @@ class MemoriaIdentidades:
         with self._hay:
             pid = self.siguiente
             self.siguiente += 1
-            self.personas[pid] = Persona(pid, np.zeros(DIMENSION, np.float32), 0, ahora, ahora)
+            self.personas[pid] = Persona(pid, np.zeros(self.dimension, np.float32), 0, ahora, ahora)
         return pid
 
     def sumar(self, pid, delta, muestras, camara, ahora):
@@ -674,7 +684,7 @@ class AsociadorConMemoria(lap01.AsociadorMulticamara):
         """La identidad deja de ser esa persona y se le restan sus aportes."""
         del self.confirmadas[gid]
         self._desde.pop(gid, None)
-        delta, muestras, tramos = np.zeros(DIMENSION, np.float32), 0, []
+        delta, muestras, tramos = np.zeros(self.memoria.dimension, np.float32), 0, []
         for t in self._miembros(gid):
             n, suma = self._aportes.pop(t.uid, (0, None))
             if suma is not None:

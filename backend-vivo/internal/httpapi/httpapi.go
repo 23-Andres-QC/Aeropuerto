@@ -185,7 +185,7 @@ func (a api) personas(w http.ResponseWriter, r *http.Request) {
 		errorInterno(w, "no se pudo leer la memoria de identidades", err)
 		return
 	}
-	escribir(w, http.StatusOK, map[string]any{"dimension": memoria.Dimension, "siguiente_id": numeracion.Siguiente,
+	escribir(w, http.StatusOK, map[string]any{"dimensiones": memoria.Dimensiones, "siguiente_id": numeracion.Siguiente,
 		"epoca": numeracion.Epoca, "retencion_horas": a.RetencionHoras, "personas": personas})
 }
 

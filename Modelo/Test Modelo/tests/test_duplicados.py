@@ -15,6 +15,8 @@ from memoria_identidades import DIMENSION, AsociadorConMemoria, MemoriaIdentidad
 
 
 class MemoriaFalsa:
+    dimension = DIMENSION
+
     def __init__(self, pids):
         self.personas = {pid: object() for pid in pids}
         self.quitados, self.fusionadas = [], []
