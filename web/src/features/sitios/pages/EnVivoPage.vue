@@ -4,7 +4,7 @@ import { colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, type Config, type Replay, type Sesion } from "../api";
 import VistaTelefono from "../../telefonos/components/VistaTelefono.vue";
 import PlanoSitio, { type PersonaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
-import { camarasVivo, CELDA_CALOR, LINEA_CONTEO, SESION_VIVO, ajusteMapa, capturaDePrueba, capturasVersion, fijarUnion, unidasAhora, unirPorPosicion, grabando, iniciarGrabacion, terminarGrabacion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura, zonaVivo, zonaElegida } from "../enVivo";
+import { camarasVivo, CELDA_CALOR, LINEA_CONTEO, SESION_VIVO, ajusteMapa, capturaDePrueba, capturasVersion, fijarUnion, unidasAhora, unirPorPosicion, grabando, iniciarGrabacion, terminarGrabacion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura, zonaVivo, zonaElegida, claveVivo, zonasDelPlano } from "../enVivo";
 import type { VistaGuardada } from "../vistaPlano";
 import { useRoute } from "vue-router";
 import { useSitios } from "../useSitios";
@@ -51,9 +51,11 @@ const valorSesion = computed({
 // Los dos planos (seguimiento y calor) comparten zoom y desplazamiento.
 const vistaPlanos = ref<VistaGuardada | null>(null);
 const planoSeguimiento = ref<InstanceType<typeof PlanoSitio> | null>(null);
-/** Las zonas grabadas del sitio: el patio y las demás (el comedor), para ir a ellas con un solo clic. */
-const zonasGrabadas = computed(() => [{ clave: "sitio", nombre: "Patio" }, ...(mapa.value?.capas ?? []).map((c) => ({ clave: c.nombre, nombre: c.nombre.replace(/^Zona grabada \d+\s*·\s*/i, "").replace(/^./, (m) => m.toUpperCase()) }))]);
-// Al activar el en vivo se eligió patio o comedor: el plano se acerca a esa zona (también si se cambia con el modo ya activo).
+/** Las zonas grabadas del sitio: el patio y las demás (el comedor, el pasillo), para ir a ellas con un solo clic. */
+const zonasGrabadas = computed(() => zonasDelPlano(mapa.value?.capas));
+/** En vivo el plano queda fijo en la zona que se graba y solo se dibuja esa. */
+const soloZona = computed(() => (enVivo.value ? claveVivo.value : null));
+// Al activar el en vivo se eligió la zona: el plano se acerca a ella (también si se cambia con el modo ya activo).
 watch(
   [zonaElegida, () => planoSeguimiento.value, () => mapa.value?.capas?.length],
   async ([z, plano]) => {
@@ -69,13 +71,6 @@ watch(
   },
   { immediate: true },
 );
-// Zona que se graba en vivo: la que se eligió al activar el en vivo (patio o comedor). Para cambiarla se sale del en vivo y se vuelve a activar;
-// «general» (las dos a la vez) llegará después.
-const zonasAGrabar = computed(() => [
-  { clave: "sitio", nombre: "Patio", activa: true, elegida: zonaElegida.value === "Patio" },
-  ...(mapa.value?.capas ?? []).map((c) => ({ clave: c.nombre, nombre: c.nombre.replace(/^Zona grabada \d+\s*·\s*/i, "").replace(/^./, (m) => m.toUpperCase()), activa: true, elegida: zonaElegida.value === "Comedor" })),
-  ...(mapa.value?.capas?.length ? [{ clave: "general", nombre: "General · patio y comedor a la vez", activa: false, elegida: false }] : []),
-]);
 /** Zona grabada de una sesión: la del comedor lo declara en su resumen (`zona`); todo lo demás es del patio. */
 const zonaDe = (s: Sesion) => (typeof s.summary?.zona === "string" ? s.summary.zona : "sitio");
 // El selector lista las sesiones de la zona a la vista (con todo el campus, las del patio).
@@ -418,22 +413,6 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <span v-else-if="!cargando && !sesiones.length" class="pill">sin sesiones</span>
       </div>
       <div v-if="enVivo" class="barra-vivo">
-        <div v-if="zonasAGrabar.length > 1" class="zona-a-grabar" role="group" aria-label="Zona a grabar" data-prueba="zona-a-grabar">
-          <span class="etiqueta-zona">Zona a grabar</span>
-          <button
-            v-for="z in zonasAGrabar"
-            :key="z.clave"
-            type="button"
-            class="opcion-zona"
-            :class="{ elegida: z.elegida }"
-            :disabled="true"
-            :aria-pressed="z.elegida"
-            :title="z.activa ? (z.elegida ? 'Se graba esta zona. Para cambiarla, sal del en vivo y actívalo de nuevo' : 'Para grabar esta zona, sal del en vivo y actívalo de nuevo') : z.clave === 'general' ? 'Próximamente: en vivo simultáneo en el patio y el comedor' : 'Próximamente: esta zona aún no tiene sus cámaras'"
-            :data-prueba="z.activa ? 'zona-activa' : 'zona-proxima'"
-          >
-            {{ z.nombre }}<small v-if="!z.activa"> · próximamente</small>
-          </button>
-        </div>
         <label class="check" title="Si dos cámaras distintas ubican a dos IDs casi en el mismo lugar, se muestran como una sola persona (por si el modelo les dio IDs distintos)">
           <input :checked="unirPorPosicion" type="checkbox" @change="fijarUnion(($event.target as HTMLInputElement).checked)" /> Unir personas muy cercanas
           <span v-if="unidasAhora" class="pill good">{{ unidasAhora }} unida{{ unidasAhora === 1 ? "" : "s" }}</span>
@@ -456,7 +435,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         </button>
         <span v-if="mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
       </div>
-      <div class="ir-a" role="group" aria-label="Ir a una zona del plano">
+      <div v-if="!soloZona" class="ir-a" role="group" aria-label="Ir a una zona del plano">
         <span class="muted">Ir a</span>
         <button v-for="z in zonasGrabadas" :key="z.clave" type="button" class="primary-button" :data-prueba="`ir-${z.clave}`" @click="planoSeguimiento?.ir(z.clave)">{{ z.nombre }}</button>
         <button type="button" @click="planoSeguimiento?.ir('campus')">Todo el campus</button>
@@ -464,11 +443,11 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
       <div class="planos-par">
         <div class="plano-caja">
           <h3 class="plano-titulo">Seguimiento</h3>
-          <PlanoSitio ref="planoSeguimiento" :mapa="mapa" :zonas="config?.zones ?? []" :personas="personas" :recorridos="recorridos" :camaras="camarasPlano" inicio="sitio" zoom :recordar="enVivo" v-model:enlace="vistaPlanos" @lugar="lugar = $event" />
+          <PlanoSitio ref="planoSeguimiento" :mapa="mapa" :zonas="config?.zones ?? []" :personas="personas" :recorridos="recorridos" :camaras="camarasPlano" inicio="sitio" zoom :recordar="enVivo" :solo="soloZona" v-model:enlace="vistaPlanos" @lugar="lugar = $event" />
         </div>
         <div class="plano-caja">
           <h3 class="plano-titulo">Mapa de calor</h3>
-          <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :calor="calorPlano" :calor-max="calorTope" :celda-calor="CELDA_CALOR" :mostrar-camaras="false" inicio="sitio" zoom :recordar="enVivo" v-model:enlace="vistaPlanos" />
+          <PlanoSitio :mapa="mapa" :zonas="config?.zones ?? []" :calor="calorPlano" :calor-max="calorTope" :celda-calor="CELDA_CALOR" :mostrar-camaras="false" inicio="sitio" zoom :recordar="enVivo" :solo="soloZona" v-model:enlace="vistaPlanos" />
         </div>
       </div>
       <p v-if="otraZona && !enVivo" class="aviso-zona" role="status" data-prueba="zona-sin-videos"><b>{{ otraZona }}</b> sin videos grabados.</p>
@@ -655,43 +634,6 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   gap: 6px 10px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--glass-line);
-}
-.zona-a-grabar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  flex-basis: 100%;
-}
-.etiqueta-zona {
-  font-size: 10.5px;
-  font-weight: 650;
-  color: var(--ink-soft);
-}
-.opcion-zona {
-  min-height: 28px;
-  padding: 4px 10px;
-  border: 1px solid var(--line-control);
-  background: transparent;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink-soft);
-}
-.opcion-zona.elegida {
-  border-color: #2563eb;
-  background: rgba(37, 99, 235, 0.12);
-  color: #1d4ed8;
-}
-.opcion-zona:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.opcion-zona.elegida:disabled {
-  opacity: 1;
-  cursor: default;
-}
-.opcion-zona small {
-  font-weight: 500;
 }
 .lado-vivo {
   min-width: 0;

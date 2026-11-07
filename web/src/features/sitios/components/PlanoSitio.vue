@@ -43,6 +43,8 @@ const props = withDefaults(
     recordar?: boolean;
     /** Con v-model:enlace, los planos que comparten la misma vista se acercan y desplazan juntos. */
     enlace?: VistaGuardada | null;
+    /** Solo esta zona grabada («sitio» o el nombre de una capa): las demás no se dibujan y la vista queda fija en ella. */
+    solo?: string | null;
   }>(),
   {
     zonas: () => [],
@@ -66,6 +68,7 @@ const props = withDefaults(
     inicio: "campus",
     recordar: true,
     enlace: null,
+    solo: null,
   },
 );
 const emit = defineEmits<{
@@ -191,14 +194,26 @@ function tocar(_clave: string, acercar: () => void) {
   acercar();
 }
 /** ¿Se ve la zona grabada del sitio (el patio)? Sin campus, siempre; con campus, no desde lejos ni sobre otra zona grabada. */
-const veSitio = computed(() => !campus.value || (!enCampus.value && !capaEnVista.value));
-/** Acercar a una de las zonas grabadas. */
-const irACapa = (i: number) => {
+const veSitio = computed(() => (props.solo ? props.solo === "sitio" : !campus.value || (!enCampus.value && !capaEnVista.value)));
+/** Lo que se ve de cerca una zona grabada (otra capa): su contorno con un poco de aire. */
+function vistaDeCapa(i: number): Vista {
   const c = capas.value[i].caja;
   const w = Math.max(c.w * 1.3, (c.h * 1.3 * ancho.value) / alto.value);
   const h = (w * alto.value) / ancho.value;
-  irA({ x: c.x + c.w / 2 - w / 2, y: c.y + c.h / 2 - h / 2, w, h });
-};
+  return { x: c.x + c.w / 2 - w / 2, y: c.y + c.h / 2 - h / 2, w, h };
+}
+/** Acercar a una de las zonas grabadas. */
+const irACapa = (i: number) => irA(vistaDeCapa(i));
+/** Con `solo`: las capas que se dibujan (solo la elegida) y si se dibuja el patio. */
+const capasVisibles = computed(() => (props.solo ? capas.value.filter((c) => c.nombre === props.solo) : capas.value));
+const dibujaSitio = computed(() => !props.solo || props.solo === "sitio");
+/** Con `solo`: el marco donde queda fija la vista (la zona elegida con un poco de aire); null sin `solo`. */
+const marcoSolo = computed<Vista | null>(() => {
+  if (!props.solo) return null;
+  if (props.solo === "sitio") return vistaSitio.value;
+  const i = capas.value.findIndex((c) => c.nombre === props.solo);
+  return i >= 0 ? vistaDeCapa(i) : null;
+});
 const transformCampus = computed(() => {
   const m = matrizCampus.value;
   return m ? `matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.e} ${m.f})` : undefined;
@@ -282,7 +297,7 @@ const etiquetaSitio = computed(() => {
 });
 function reiniciarVista() {
   cancelAnimationFrame(animacion);
-  vista.value = acotar(campus.value && props.inicio === "campus" ? vistaTodo.value : vistaSitio.value);
+  vista.value = acotar(marcoSolo.value ?? (campus.value && props.inicio === "campus" ? vistaTodo.value : vistaSitio.value));
 }
 // Solo se reinicia si cambia el marco del plano, no cada vez que se recarga la configuración.
 const claveVista = computed(() => `${props.mapa.tam_px.join()}|${props.mapa.px_por_metro}|${props.mapa.origen_m.join()}|${campus.value?.url ?? ""}`);
@@ -356,13 +371,18 @@ const entrarAlSitio = () => irA(vistaSitio.value);
 /** Ir de un salto (con la animación de siempre) a una zona grabada: «sitio» (el patio) o el nombre de una capa (el comedor). */
 defineExpose({
   ir(clave: string) {
+    if (props.solo && clave !== props.solo) return verTodo();
     if (clave === "campus") return verTodo();
     if (clave === "sitio") return entrarAlSitio();
     const i = capas.value.findIndex((c) => c.nombre === clave);
     if (i >= 0) irACapa(i);
   },
 });
-const verTodo = () => (campus.value ? irA(vistaTodo.value) : reiniciarVista());
+const verTodo = () => (marcoSolo.value ? irA(marcoSolo.value) : campus.value ? irA(vistaTodo.value) : reiniciarVista());
+// Al elegir (o cambiar) la zona fija, la vista va a ella; al soltarla, se puede volver a mirar todo.
+watch(marcoSolo, (f, antes) => {
+  if (f && (!antes || !misma(f, antes))) irA(f);
+});
 // Tamaño del plano en pantalla: el SVG se ajusta a su caja manteniendo la proporción (meet).
 const pantalla = ref({ w: 0, h: 0 });
 let observador: ResizeObserver | undefined;
@@ -438,6 +458,13 @@ const trazos = computed(() =>
 
 /** Mantiene la vista dentro de lo que hay para ver (con el giro de ese zoom); si sobra espacio en un eje, la centra. */
 function acotar(v: Vista): Vista {
+  const f = marcoSolo.value;
+  if (f) {
+    // Fija en la zona elegida: no se aleja más que su marco ni se sale de él.
+    const w = Math.min(Math.max(v.w, ancho.value / 40), f.w);
+    const h = (w * alto.value) / ancho.value;
+    return { x: Math.min(Math.max(v.x, f.x), f.x + f.w - w), y: Math.min(Math.max(v.y, f.y), f.y + f.h - h), w, h };
+  }
   const w = Math.min(Math.max(v.w, ancho.value / 40), anchoMax.value);
   const m = mundoCon(giroDe(w));
   const h = (w * alto.value) / ancho.value;
@@ -568,7 +595,7 @@ watch(
 /** Zonas con la forma que se está arrastrando; la activa va al final, encima de las demás. */
 const zonasPlano = computed(() => {
   const a = arrastreZona.value;
-  const lista = props.zonas.map((z) => (a && a.id === z.zone_id ? { ...z, points: a.puntos } : z));
+  const lista = (props.solo ? props.zonas.filter((z) => lugarDeZona(z) === props.solo) : props.zonas).map((z) => (a && a.id === z.zone_id ? { ...z, points: a.puntos } : z));
   const activa = lista.findIndex((z) => z.zone_id === props.zonaActiva);
   if (activa >= 0) lista.push(...lista.splice(activa, 1));
   return lista;
@@ -784,7 +811,7 @@ function lugarDeZona(z: Zona): string {
   return lugarDePunto([z.points.reduce((a, p) => a + p[0], 0) / z.points.length, z.points.reduce((a, p) => a + p[1], 0) / z.points.length]);
 }
 /** Lo que se ve: todo el campus, el sitio o el nombre de otra zona grabada acercada. */
-const lugarActual = computed(() => (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"));
+const lugarActual = computed(() => props.solo ?? (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"));
 const elementos = computed(() => {
   // La leyenda lista las zonas de la zona grabada que se mira; con todo el campus a la vista, ninguna.
   const zonas = new Map<string, string>();
@@ -853,15 +880,15 @@ watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
           <clipPath v-if="mapa.piso_L_m?.length" :id="idPiso"><polygon :points="puntos(mapa.piso_L_m)" /></clipPath>
         </template>
         <rect v-else :width="ancho" :height="alto" class="fondo" />
-        <image v-if="mapa.fondo" :href="mapa.fondo.url" x="0" y="0" :width="ancho" :height="alto" preserveAspectRatio="none" class="dibujo" />
-        <image v-for="c in capas" :key="c.nombre" :href="c.fondo.url" x="0" y="0" :width="c.ancho" :height="c.alto" :transform="c.transform" preserveAspectRatio="none" class="dibujo" />
-        <polygon v-if="mapa.piso_L_m?.length" :points="puntos(mapa.piso_L_m)" class="piso" :class="{ 'sobre-dibujo': mapa.fondo }" />
+        <image v-if="mapa.fondo && dibujaSitio" :href="mapa.fondo.url" x="0" y="0" :width="ancho" :height="alto" preserveAspectRatio="none" class="dibujo" />
+        <image v-for="c in capasVisibles" :key="c.nombre" :href="c.fondo.url" x="0" y="0" :width="c.ancho" :height="c.alto" :transform="c.transform" preserveAspectRatio="none" class="dibujo" />
+        <polygon v-if="mapa.piso_L_m?.length && dibujaSitio" :points="puntos(mapa.piso_L_m)" class="piso" :class="{ 'sobre-dibujo': mapa.fondo }" />
         <!-- Los obstáculos ya están en el dibujo de fondo; sin dibujo, se marcan aquí. -->
-        <template v-if="!mapa.fondo">
+        <template v-if="!mapa.fondo && dibujaSitio">
           <polygon v-for="(o, i) in mapa.obstaculos ?? []" :key="'o' + i" :points="puntos(o.puntos_m)" class="obstaculo"><title>{{ o.nombre }}</title></polygon>
         </template>
         <!-- Sobre el campus, la cuadrícula solo va en el piso del sitio. -->
-        <g :clip-path="campus && mapa.piso_L_m?.length ? `url(#${idPiso})` : undefined">
+        <g v-if="dibujaSitio" :clip-path="campus && mapa.piso_L_m?.length ? `url(#${idPiso})` : undefined">
           <line v-for="l in lineas.verticales" :key="'v' + l.v" :x1="l.v" :x2="l.v" y1="0" :y2="alto" :class="l.fuerte ? 'rejilla-5' : 'rejilla'" />
           <line v-for="l in lineas.horizontales" :key="'h' + l.v" :y1="l.v" :y2="l.v" x1="0" :x2="ancho" :class="l.fuerte ? 'rejilla-5' : 'rejilla'" />
         </g>
@@ -989,7 +1016,7 @@ watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
         </marker>
       </defs>
     </svg>
-    <button v-if="zoom && campus && !enCampus" type="button" class="ver-campus" data-prueba="ver-campus" @click="verTodo">⤢ Alejar: todo el campus</button>
+    <button v-if="zoom && campus && !enCampus && !solo" type="button" class="ver-campus" data-prueba="ver-campus" @click="verTodo">⤢ Alejar: todo el campus</button>
     <div v-if="zoom" class="controles-zoom">
       <button type="button" aria-label="Acercar" title="Acercar (o rueda del ratón)" @click="acercar(0.7)">＋</button>
       <button type="button" aria-label="Alejar" title="Alejar" @click="acercar(1 / 0.7)">－</button>

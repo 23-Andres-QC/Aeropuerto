@@ -21,10 +21,20 @@ import { construirSesion, uuid, type CargaSesion, type PersonaGuardable, type Tr
 export const SESION_VIVO = "__vivo__";
 /**
  * Cámaras que toman los teléfonos según la zona del en vivo, por orden de llegada: en el patio la 1, luego la 2 y la 3; en el
- * comedor la 4 y luego la 5. Para ubicar a la gente en el plano una cámara necesita referencias calibradas
- * (Modelo/Test Modelo/Modelo/ubicacion/esan): hoy solo están las de cam01 y cam02. Un sitio sin zonas elegibles usa cam01 y cam02.
+ * comedor la 4 y luego la 5; en el pasillo del Edificio D la 6 y la 7. Para ubicar a la gente en el plano una cámara necesita
+ * referencias calibradas (Modelo/Test Modelo/Modelo/ubicacion/esan). Un sitio sin zonas elegibles usa cam01 y cam02.
  */
-const CAMARAS_POR_ZONA: Record<"Patio" | "Comedor", string[]> = { Patio: ["cam01", "cam02", "cam03"], Comedor: ["cam04", "cam05"] };
+const CAMARAS_POR_ZONA: Record<string, string[]> = { Patio: ["cam01", "cam02", "cam03"], Comedor: ["cam04", "cam05"], "Pasillo del Edificio D": ["cam06", "cam07"] };
+/** Cámaras de una zona grabada que aún no tiene las suyas en CAMARAS_POR_ZONA. */
+const CAMARAS_OTRA_ZONA = ["cam08", "cam09"];
+
+/** Nombre corto de una zona grabada: «Zona grabada 3 · pasillo del Edificio D» → «Pasillo del Edificio D». */
+export const nombreZona = (capa: string) => capa.replace(/^Zona grabada \d+\s*·\s*/i, "").replace(/^./, (m) => m.toUpperCase());
+/** Las zonas grabadas de un sitio: el patio («sitio») y las demás capas del plano, con su nombre corto. */
+export const zonasDelPlano = (capas: { nombre: string }[] | null | undefined) => [
+  { clave: "sitio", nombre: "Patio" },
+  ...(capas ?? []).map((c) => ({ clave: c.nombre, nombre: nombreZona(c.nombre) })),
+];
 /** Una detección más vieja que esto ya no se dibuja. */
 const VIGENCIA_MS = 2000;
 /** Cuánto se conserva el rastro en pantalla de quien dejó de verse. */
@@ -801,9 +811,8 @@ function prepararCaptura(): Pendiente | null {
   }
   if (!personas.length) return null;
   const hora = new Date(inicio.value).toLocaleString("es-PE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  // En un sitio con más de una zona grabada la captura queda en la zona que se eligió al activar el en vivo (patio = «sitio»).
-  const capaComedor = config.value?.plano?.capas?.find((c) => /comedor/i.test(c.nombre))?.nombre;
-  const zona = zonaVivo.value === "Comedor" && capaComedor ? capaComedor : zonaVivo.value ? "sitio" : undefined;
+  // En un sitio con más de una zona grabada la captura queda solo en la zona que se eligió al activar el en vivo (patio = «sitio»).
+  const zona = claveVivo.value ?? undefined;
   const nombre = `${config.value?.site.name ?? quien} · en vivo${zonaVivo.value ? ` · ${zonaVivo.value}` : ""} · ${hora}`;
   const conteoDireccion = { linea: LINEA_CONTEO, camaras: resumirConteo() };
   return { sitio: quien, carga: construirSesion(personas, { sesionId, nombre, inicio: inicio.value, fin: Date.now(), conteoDireccion, zona }) };
@@ -1064,15 +1073,12 @@ watch(
   { immediate: true },
 );
 
-/**
- * Dónde se hace el en vivo. Hoy es el patio (la zona grabada 1: ahí están los teléfonos, la calibración y el modelo); el comedor y el
- * «general» (patio y comedor a la vez) vendrán después. Un sitio con una sola zona grabada no necesita decirlo (null).
- */
-export type ZonaEnVivo = "Patio" | "Comedor";
+/** Dónde se hace el en vivo: el nombre corto de una zona grabada («Patio», «Comedor», «Pasillo del Edificio D»). */
+export type ZonaEnVivo = string;
 const CLAVE_ZONA = "zona-vivo";
 function leerZona(): ZonaEnVivo {
   try {
-    return localStorage.getItem(CLAVE_ZONA) === "Comedor" ? "Comedor" : "Patio";
+    return localStorage.getItem(CLAVE_ZONA) || "Patio";
   } catch {
     return "Patio";
   }
@@ -1081,11 +1087,15 @@ function leerZona(): ZonaEnVivo {
 export const zonaElegida = ref<ZonaEnVivo>(leerZona());
 /** Se está preguntando dónde se hace el en vivo (el aviso que sale al pulsar «Activar en vivo»). */
 export const preguntandoZona = ref(false);
-export const zonaVivo = computed(() => (config.value?.plano?.capas?.length ? zonaElegida.value : null));
+/** Las zonas que se pueden grabar en vivo (las del plano del sitio). */
+export const zonasVivo = computed(() => zonasDelPlano(config.value?.plano?.capas));
+/** La zona del en vivo (null en un sitio con una sola zona grabada), y su clave en el plano: «sitio» o el nombre de su capa. */
+export const zonaVivo = computed(() => (config.value?.plano?.capas?.length ? (zonasVivo.value.find((z) => z.nombre === zonaElegida.value) ?? zonasVivo.value[0]).nombre : null));
+export const claveVivo = computed(() => (zonaVivo.value ? zonasVivo.value.find((z) => z.nombre === zonaVivo.value)!.clave : null));
 /** Las cámaras que toman los teléfonos en esta zona del en vivo, en el orden en que se van conectando. */
-export const camarasVivo = computed(() => (zonaVivo.value ? CAMARAS_POR_ZONA[zonaVivo.value] : ["cam01", "cam02"]));
+export const camarasVivo = computed(() => (zonaVivo.value ? CAMARAS_POR_ZONA[zonaVivo.value] ?? CAMARAS_OTRA_ZONA : ["cam01", "cam02"]));
 
-/** El botón «Activar en vivo»: si el sitio tiene más de una zona grabada pregunta cuál (patio o comedor); apagarlo no pregunta nada. */
+/** El botón «Activar en vivo»: si el sitio tiene más de una zona grabada pregunta cuál; apagarlo no pregunta nada. */
 export async function alternarVivo() {
   if (modoVivo.value) return fijarModoVivo(false);
   if (!config.value) await cargarConfig(); // antes de prender, el plano aún no se había leído

@@ -11,7 +11,7 @@ import PaletaComandos from "./core/PaletaComandos.vue";
 import SelectorSitio from "./features/sitios/components/SelectorSitio.vue";
 import IconoNav from "./shared/IconoNav.vue";
 import { contarSolicitudesPendientes, solicitudesPendientes } from "./features/cuentas/pendientes";
-import { alternarVivo, elegirZonaVivo, modoVivo, preguntandoZona, usarSitioVivo, zonaVivo } from "./features/sitios/enVivo";
+import { alternarVivo, elegirZonaVivo, modoVivo, preguntandoZona, usarSitioVivo, zonasVivo, zonaVivo } from "./features/sitios/enVivo";
 import { rutaAlElegir } from "./features/sitios/selector";
 import type { Sitio } from "./features/sitios/api";
 import { recordarSitio, ultimoSitio, useSitios, vaciarSitios } from "./features/sitios/useSitios";
@@ -163,7 +163,7 @@ function elegirSitio(s: Sitio) {
             class="modo-vivo"
             :class="{ activo: modoVivo }"
             type="button"
-            :title="modoVivo ? 'Salir del modo en vivo: guarda la captura y el modelo olvida a las personas (al volver, todos son nuevos)' : 'Activar el modo en vivo con los teléfonos conectados: te pregunta si es en el comedor o en el patio'"
+            :title="modoVivo ? 'Salir del modo en vivo: guarda la captura y el modelo olvida a las personas (al volver, todos son nuevos)' : 'Activar el modo en vivo con los teléfonos conectados: te pregunta qué zona vas a grabar'"
             data-prueba="activar-vivo"
             @click="alternarVivo"
           >
@@ -197,15 +197,23 @@ function elegirSitio(s: Sitio) {
   <AvisoInactividad />
   <!-- Si se publica una versión nueva mientras la pestaña sigue abierta, lo avisa (la pestaña no se actualiza sola). -->
   <AvisoVersion />
-  <!-- Al activar el en vivo se pregunta dónde: en el patio o en el comedor. -->
+  <!-- Al activar el en vivo se pregunta qué zona se graba: solo esa se registra y se ve en el plano. -->
   <Teleport to="body">
     <div v-if="preguntandoZona" class="zona-velo" role="presentation" @click.self="preguntandoZona = false" @keydown.esc="preguntandoZona = false">
       <div class="zona-caja" role="dialog" aria-modal="true" aria-labelledby="zona-titulo" data-prueba="elegir-zona-vivo">
-        <h2 id="zona-titulo">¿Dónde activamos el en vivo?</h2>
-        <p>Elige la zona que están mirando los teléfonos.</p>
+        <h2 id="zona-titulo">¿QUÉ ZONA VAS A GRABAR?</h2>
         <div class="zona-opciones">
-          <button type="button" class="primary-button" data-prueba="vivo-patio" autofocus @click="elegirZonaVivo('Patio')">Patio</button>
-          <button type="button" class="primary-button" data-prueba="vivo-comedor" @click="elegirZonaVivo('Comedor')">Comedor</button>
+          <button
+            v-for="(z, i) in zonasVivo"
+            :key="z.clave"
+            type="button"
+            class="primary-button"
+            :data-prueba="`vivo-${z.nombre.split(' ')[0].toLowerCase()}`"
+            :autofocus="i === 0"
+            @click="elegirZonaVivo(z.nombre)"
+          >
+            {{ z.nombre }}
+          </button>
         </div>
         <button type="button" class="zona-cancelar" @click="preguntandoZona = false">Cancelar</button>
       </div>
@@ -216,9 +224,9 @@ function elegirSitio(s: Sitio) {
 <style>
 .zona-velo { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; background: rgba(2, 8, 23, 0.55); backdrop-filter: blur(2px); }
 .zona-caja { width: min(92vw, 380px); padding: 22px 24px; border-radius: 14px; background: var(--glass-strong, #fff); border: 1px solid var(--glass-line); box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35); text-align: center; }
-.zona-caja h2 { margin: 0 0 6px; font-size: 18px; }
+.zona-caja h2 { margin: 0 0 16px; font-size: 18px; }
 .zona-caja p { margin: 0 0 16px; color: var(--ink-soft); font-size: 13.5px; }
-.zona-opciones { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.zona-opciones { display: grid; gap: 10px; }
 .zona-opciones button { min-height: 52px; font-size: 16px; }
 .zona-cancelar { margin-top: 12px; background: none; border: 0; color: var(--ink-soft); cursor: pointer; font-size: 13px; }
 </style>
