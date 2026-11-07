@@ -200,12 +200,11 @@ try {
   assert.ok(ley.some((l) => /^Ascensores/.test(l)) && ley.some((l) => /^Carpa azul/.test(l)), `acercado al patio, la leyenda lista lo que tiene el patio: ${ley}`);
   assert.ok(!ley.some((l) => /^(Comedor|SS\.HH)/.test(l)), "y no lo del comedor");
   assert.ok(!ley.some((l) => /^Piso/.test(l)), "el piso no es una zona que mapear");
-  assert.ok(await evalua(`!!document.querySelector('[data-prueba=ver-campus]')`), "acercado a una zona hay un botón para alejar a todo el campus");
-  await clic(`document.querySelector('[data-prueba=ver-campus]')`);
+  assert.equal(await evalua(`[...document.querySelectorAll('image.dibujo')].filter((i) => /esan-zona-/.test(i.getAttribute('href'))).length`), 0, "con el patio elegido no se dibujan el comedor ni el pasillo");
+  await clic(`[...document.querySelectorAll('.ir-a button')].find((b) => b.textContent.trim() === 'Todo el campus')`);
   await esperar(1500);
   ev = await vistaEnVivo();
   assert.equal(ev.videos, 0, "al alejarse al campus los videos se van");
-  assert.ok(!(await evalua(`!!document.querySelector('[data-prueba=ver-campus]')`)), "con todo el campus a la vista el botón de alejar se va");
   await clicEnElPlano("g.entrada-vecino[role=button]");
   await esperar(1500);
   ev = await vistaEnVivo();

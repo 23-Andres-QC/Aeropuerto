@@ -532,7 +532,8 @@ const camaras = computed(() => {
         altura: c.altura_m as number | undefined,
         activa: true,
       }));
-  return base.map((c) => {
+  // Con `solo`, solo las cámaras de esa zona grabada.
+  return base.filter((c) => !props.solo || lugarDePunto(c.pos) === props.solo).map((c) => {
     const a = arrastre.value?.id === c.id ? arrastre.value : null;
     const pos = a?.pos ?? c.pos;
     const angulo = a?.angulo ?? c.angulo;

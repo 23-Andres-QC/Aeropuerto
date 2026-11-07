@@ -53,8 +53,16 @@ const vistaPlanos = ref<VistaGuardada | null>(null);
 const planoSeguimiento = ref<InstanceType<typeof PlanoSitio> | null>(null);
 /** Las zonas grabadas del sitio: el patio y las demás (el comedor, el pasillo), para ir a ellas con un solo clic. */
 const zonasGrabadas = computed(() => zonasDelPlano(mapa.value?.capas));
-/** En vivo el plano queda fijo en la zona que se graba y solo se dibuja esa. */
-const soloZona = computed(() => (enVivo.value ? claveVivo.value : null));
+/** Zona elegida para ver lo grabado (con «Ir a» o con un clic en el campus): el plano queda fijo en ella y solo la dibuja; null, todo el campus. */
+const zonaFija = ref<string | null>("sitio");
+/** En vivo el plano queda fijo en la zona que se graba; si no, en la elegida para ver lo grabado. */
+const soloZona = computed(() => (enVivo.value ? claveVivo.value : zonaFija.value));
+/** «Ir a»: fija el plano en esa zona, o lo suelta para ver todo el campus. */
+async function irAZona(clave: string) {
+  zonaFija.value = clave === "campus" ? null : clave;
+  await nextTick();
+  planoSeguimiento.value?.ir(clave);
+}
 // Al activar el en vivo se eligió la zona: el plano se acerca a ella (también si se cambia con el modo ya activo).
 watch(
   [zonaElegida, () => planoSeguimiento.value, () => mapa.value?.capas?.length],
@@ -351,6 +359,8 @@ watch(velocidad, () => sincronizar(true));
 watch(sesionId, cargarSesion);
 // Al acercarse a otra zona grabada se elige una de sus sesiones (la que tenga recorridos primero).
 watch(lugar, (zona) => {
+  // Desde todo el campus, un clic en una zona la deja fija.
+  if (!enVivo.value && zonaFija.value === null && zona !== "campus") zonaFija.value = zona;
   if (enVivo.value || zona === "campus" || (sesion.value && zonaDe(sesion.value) === zona)) return;
   const propias = sesiones.value.filter((s) => zonaDe(s) === zona);
   const elegida = propias.find((s) => s.kind === "BUILD" && s.points > 0) ?? propias[0];
@@ -369,6 +379,7 @@ watch(planoSeguimiento, async (plano) => {
   if (!plano || !zonaInicial) return;
   const zona = zonaInicial;
   zonaInicial = "";
+  zonaFija.value = zona;
   if (zona === "sitio") return;
   await nextTick();
   plano.ir(zona);
@@ -437,8 +448,8 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
       </div>
       <div v-if="!soloZona" class="ir-a" role="group" aria-label="Ir a una zona del plano">
         <span class="muted">Ir a</span>
-        <button v-for="z in zonasGrabadas" :key="z.clave" type="button" class="primary-button" :data-prueba="`ir-${z.clave}`" @click="planoSeguimiento?.ir(z.clave)">{{ z.nombre }}</button>
-        <button type="button" @click="planoSeguimiento?.ir('campus')">Todo el campus</button>
+        <button v-for="z in zonasGrabadas" :key="z.clave" type="button" :class="{ 'primary-button': zonaFija === z.clave }" :aria-pressed="zonaFija === z.clave" :data-prueba="`ir-${z.clave}`" @click="irAZona(z.clave)">{{ z.nombre }}</button>
+        <button type="button" :class="{ 'primary-button': zonaFija === null }" :aria-pressed="zonaFija === null" @click="irAZona('campus')">Todo el campus</button>
       </div>
       <div class="planos-par">
         <div class="plano-caja">
