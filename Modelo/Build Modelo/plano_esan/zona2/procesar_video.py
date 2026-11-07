@@ -119,8 +119,13 @@ class Camara:
         r = math.radians(cfg["rumbo_deg"])  # 0 = hacia arriba del dibujo, en sentido del reloj
         self.adelante, self.derecha = (math.sin(r), -math.cos(r)), (math.cos(r), math.sin(r))
 
-    def piso(self, u, v, lejos=35.0):
-        """Metros del patio del punto del piso en el pixel (u, v), o None si cae sobre el horizonte o más lejos de `lejos` m."""
+    def piso_libre(self, u, v, lejos=80.0):
+        """Metros de ESAN del punto del piso en el pixel (u, v), sin ajustarlo al contorno (también fuera de la zona); None sobre el horizonte."""
+        p = self._en_dibujo(u, v, lejos)
+        return None if p is None else px_a_m(*p)
+
+    def _en_dibujo(self, u, v, lejos):
+        """Px del dibujo del punto del piso en el pixel (u, v), o None si cae sobre el horizonte o más lejos de `lejos` m."""
         x, y = (u - self.cx) / self.f, (v - self.cy) / self.f
         c, s = math.cos(self.pitch), math.sin(self.pitch)
         y_n, z_n = y * c + s, -y * s + c  # rayo en el sistema nivelado (y hacia abajo, z hacia adelante)
@@ -130,8 +135,15 @@ class Camara:
         adelante, derecha = t * z_n, t * x
         if adelante > lejos:
             return None
-        px = self.pos[0] + (adelante * self.adelante[0] + derecha * self.derecha[0]) * PX_POR_M
-        py = self.pos[1] + (adelante * self.adelante[1] + derecha * self.derecha[1]) * PX_POR_M
+        return (self.pos[0] + (adelante * self.adelante[0] + derecha * self.derecha[0]) * PX_POR_M,
+                self.pos[1] + (adelante * self.adelante[1] + derecha * self.derecha[1]) * PX_POR_M)
+
+    def piso(self, u, v, lejos=35.0):
+        """Metros del patio del punto del piso en el pixel (u, v), o None si cae sobre el horizonte o más lejos de `lejos` m."""
+        p = self._en_dibujo(u, v, lejos)
+        if p is None:
+            return None
+        px, py = p
         # Lejos la ubicación se estira (un píxel son metros): lo que caería fuera del edificio se queda en su muro.
         if PISO_M:
             return dentro_del_piso(px_a_m(px, py), PISO_M, FUERA_M)
@@ -855,6 +867,7 @@ def analizar(camara_id, config, ruta, args, salida, embebedor, seguido=None):
     print(f"{camara_id}: {len(cuadros)} cuadros, {crudas} IDs del seguidor → {len(vectores)} personas")
     etiquetas = {i: (n,) for i, n in numeros.items()} if numeros is not None else None
     return {"id": camara_id, "cfg": cfg, "camara": camara, "cuadros": cuadros, "personas": personas, "vectores": vectores, "etiquetas": etiquetas, "generos": generos,
+            "mats": mats, "numeros": numeros,
             "duracion": cuadros[-1]["t"] if cuadros else 0.0, "fps": fps, "tam": tam, "ruta": ruta, "video": f"{prefijo(config)}{camara_id}_procesado.mp4"}
 
 
@@ -913,6 +926,13 @@ def main():
         embebedor = Embebedor(args.reid)
         resultados = [analizar(camara_id, config, ruta, args, salida, embebedor) for camara_id, ruta in rutas.items()]
     recortar(resultados)
+    if args.modelo == "videos":
+        # Cerca manda Videos; los tramos lejanos siguen el ID que llevaban o toman el de la cámara más cercana (ver ids_lejanos).
+        import ids_lejanos
+        print(ids_lejanos.asignar(resultados))
+        for r in resultados:
+            r["personas"], r["vectores"] = recorridos(r["cuadros"], r["camara"], r["tam"], {}, r["mats"], r["numeros"])
+            r["etiquetas"] = {i: (n,) for i, n in r["numeros"].items()}
     # Con el modelo de Videos los IDs ya se comparten entre las cámaras.
     unidos = 0 if args.modelo == "videos" or len(resultados) < 2 else unir_camaras(
         resultados, config.get("equivalencias", []), config.get("mismas_personas", []))
