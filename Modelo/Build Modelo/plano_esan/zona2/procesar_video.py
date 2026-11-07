@@ -20,6 +20,9 @@ El video queda en `Ouput/` (la web lo sirve desde ahí, igual que los del patio)
 
 Otra grabación del comedor va con su propio archivo (`--config camaras_video_27oct.json`): sus poses y calibración, y una
 `grabacion` que entra en los nombres de los videos y de la sesión, así no pisa los de la anterior y queda como otra sesión.
+
+Otra zona grabada usa el mismo script con su archivo (`--config ../zona3/camaras_video.json`): con `capa` (su capa.json) las
+poses van en px de su dibujo y las personas se quedan dentro de su contorno; `titulo` y `prefijo` nombran la sesión y los videos.
 """
 import argparse
 import colorsys
@@ -50,6 +53,8 @@ ESPACIO = uuid.UUID("6f1d2c9e-5b0a-4c63-9a52-3a8d7e0c1b44")
 # Dibujo del comedor (px del plano) → metros del patio, igual que la capa del plano de ESAN (capa.json).
 PX_POR_M, ANCLA_PX, ANCLA_M, ANGULO = 29.7, (595.0, 428.0), (-59.38, 16.59), math.radians(-8.3)
 PISO_PX = (110.0, 110.0, 1080.0, 747.0)  # el piso del comedor en el dibujo (u0, v0, u1, v1), con un paso de margen a los muros
+PISO_M = None  # otra zona (usar_zona): su contorno en metros, en lugar del rectángulo del comedor
+FUERA_M = 1.5  # en otra zona, lo que cae más afuera de su contorno es gente de fuera (se descarta); más cerca, se lleva al borde
 # Unir recorridos de una misma persona (el seguidor la parte en varios IDs): hasta UNIR_S segundos de hueco, caminando a VMAX m/s como mucho
 # (más D0 m de margen por el error de la ubicación), y con apariencia parecida (coseno del Re-ID): SIM_CONTINUA si se siguen casi pegados,
 # SIM_SALTO si hubo un hueco, y SIM_CAMARAS para decir que dos cámaras ven a la misma persona.
@@ -57,6 +62,37 @@ UNIR_S, VMAX, D0, MAX_SOLAPE = 120.0, 1.8, 1.5, 2
 SIM_MIN, SIM_CERCA, SIM_CAMARAS = 0.70, 0.62, 0.80
 DIST_MAX_M = 4.5  # (también es el margen de ubicación para el salto entre cámaras sin verse a la vez)  # dos cámaras que ven a la vez a la misma persona la ubican a menos de esto (mediana); más lejos = personas distintas
 EMB_CADA, EMB_ALTO, EMB_CONF, EMB_IOU = 2, 28, 0.3, 0.35  # un vector cada 2 cuadros procesados, de cajas de al menos 28 px de alto
+
+
+def usar_zona(config):
+    """Con `capa` en la configuración (otra zona grabada, no el comedor), el dibujo y el contorno del piso son los de esa capa."""
+    global PX_POR_M, ANCLA_PX, ANCLA_M, ANGULO, PISO_M, ALCANCE_M
+    ALCANCE_M = config.get("alcance_m", ALCANCE_M)
+    if not config.get("capa"):
+        return
+    capa = json.loads((Path(config.get("_carpeta", AQUI)) / config["capa"]).read_text(encoding="utf-8"))
+    PX_POR_M, ANCLA_PX, ANCLA_M = capa["px_por_metro"], tuple(capa["ancla_px"]), tuple(capa["ancla_m"])
+    ANGULO, PISO_M = math.radians(capa["angulo_deg"]), [tuple(p) for p in capa["piso_m"]]
+
+
+def dentro_del_piso(p, piso, fuera=None):
+    """El punto si cae dentro del contorno; si no, el punto más cercano de su borde (None si queda a más de `fuera` m)."""
+    x, y = p
+    adentro = False
+    for (xi, yi), (xj, yj) in zip(piso, piso[-1:] + piso[:-1]):
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+            adentro = not adentro
+    if adentro:
+        return p
+    mejor, dist = p, float("inf")
+    for (ax, ay), (bx, by) in zip(piso, piso[1:] + piso[:1]):
+        dx, dy = bx - ax, by - ay
+        t = min(1.0, max(0.0, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy or 1.0)))
+        c = (ax + t * dx, ay + t * dy)
+        d = math.hypot(x - c[0], y - c[1])
+        if d < dist:
+            mejor, dist = c, d
+    return None if fuera is not None and dist > fuera else mejor
 
 
 def px_a_m(u, v):
@@ -97,6 +133,8 @@ class Camara:
         px = self.pos[0] + (adelante * self.adelante[0] + derecha * self.derecha[0]) * PX_POR_M
         py = self.pos[1] + (adelante * self.adelante[1] + derecha * self.derecha[1]) * PX_POR_M
         # Lejos la ubicación se estira (un píxel son metros): lo que caería fuera del edificio se queda en su muro.
+        if PISO_M:
+            return dentro_del_piso(px_a_m(px, py), PISO_M, FUERA_M)
         return px_a_m(min(max(px, PISO_PX[0]), PISO_PX[2]), min(max(py, PISO_PX[1]), PISO_PX[3]))
 
     def pose_m(self):
@@ -155,7 +193,7 @@ def seguir_como_videos(camaras, salida, rehacer=False):
     import camara_telefono
     import videos_subidos
 
-    motor, _, reid, asociacion = camara_telefono.cargar_modelo()
+    motor, _, reid, asociacion = camara_telefono.cargar_modelo(genero=camara_telefono.GENERO_MODELO)
     grupo = videos_subidos.GrupoVideos(list(camaras), reid, asociacion, gpu=str(motor.device).startswith("cuda"))
     estado = {}
     for cid, ruta in camaras.items():
@@ -723,7 +761,8 @@ def sesion_para_bd(resultados, config):
                             "first_seen": (inicio + timedelta(seconds=min(p[0] for p in g["pts"]))).isoformat(),
                             "last_seen": (inicio + timedelta(seconds=max(p[0] for p in g["pts"]))).isoformat(), "n_cameras": len(g["camaras"]),
                             **genero_de(numero, resultados)})
-    nombre = f"Comedor · video {inicio.strftime('%d/%m %H:%M')}" if len(resultados) == 1 else f"Comedor · {len(resultados)} perspectivas"
+    titulo = config.get("titulo", "Comedor")
+    nombre = f"{titulo} · video {inicio.strftime('%d/%m %H:%M')}" if len(resultados) == 1 else f"{titulo} · {len(resultados)} perspectivas"
     if config.get("grabacion") and len(resultados) > 1:  # para no confundirla con la primera en la lista de sesiones
         nombre += f" · {inicio.strftime('%d/%m %H:%M')}"
     return {
@@ -743,7 +782,11 @@ def sesion_para_bd(resultados, config):
 
 def llave_api():
     """La llave con la que los scripts le hablan a la web: LAP_API_KEY, o la de prueba de la laptop."""
-    return os.environ.get("LAP_API_KEY") or "lap-local-api-key"
+    if os.environ.get("LAP_API_KEY"):
+        return os.environ["LAP_API_KEY"]
+    sys.path.insert(0, str(AQUI.parent))
+    from generar_plano import llave_api as del_env  # la API_KEY del .env de la raíz, como generar_plano.py
+    return del_env()
 
 
 def publicar(archivo, url_web, sitio):
@@ -815,8 +858,9 @@ def recortar(resultados):
 
 
 def prefijo(config):
-    """Cómo empiezan los archivos de una grabación: `comedor_` la primera, `comedor_<grabacion>_` las demás."""
-    return f"comedor_{config['grabacion']}_" if config.get("grabacion") else "comedor_"
+    """Cómo empiezan los archivos de una grabación: `comedor_` la primera, `comedor_<grabacion>_` las demás (otra zona, su `prefijo`)."""
+    base = config.get("prefijo", "comedor")
+    return f"{base}_{config['grabacion']}_" if config.get("grabacion") else f"{base}_"
 
 
 def main():
@@ -838,7 +882,9 @@ def main():
     args = ap.parse_args()
     if args.publicar:
         return publicar(args.publicar, args.web, args.sitio)
-    config = json.loads((Path(args.config) if args.config else CONFIG).read_text(encoding="utf-8"))
+    ruta_config = Path(args.config) if args.config else CONFIG
+    config = {**json.loads(ruta_config.read_text(encoding="utf-8")), "_carpeta": str(ruta_config.resolve().parent)}
+    usar_zona(config)
     salida = Path(args.salida) / config.get("grabacion", "")
     salida.mkdir(parents=True, exist_ok=True)
     rutas = dict(par.split("=", 1) for par in args.video)

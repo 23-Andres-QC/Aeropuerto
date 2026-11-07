@@ -1,0 +1,36 @@
+{
+  "zona": "Zona grabada 3 · pasillo del Edificio D",
+  "titulo": "Pasillo del Edificio D",
+  "prefijo": "pasillo",
+  "capa": "capa.json",
+  "alcance_m": 35.0,
+  "nota": "Poses estimadas por lo que se ve en los videos, no una calibración: las dos cámaras graban desde lo alto del Edificio D. cam06 (camara1) en el extremo oeste de la fachada norte, mirando al este por la escalera hacia la plaza; cam07 (camara2) al sur del lado este, mirando al norte por el pasillo entre el edificio y el del este. posicion_px va en px del dibujo de la zona 3 (esan-zona-3.svg) y rumbo_deg es 0 hacia arriba del dibujo (el norte del edificio), en sentido del reloj. La altura y el horizonte se ajustaron con la altura de las personas detectadas (f_px de un teléfono sin zoom: con la altura de la gente casi no se distingue); las dos quedaron a 4,75 m, un segundo piso.",
+  "camaras": {
+    "cam06": {
+      "nombre": "cam06",
+      "video": "camara1.mp4",
+      "inicio": "2026-11-07T13:43:00-05:00",
+      "posicion_px": [
+        100,
+        432
+      ],
+      "rumbo_deg": 90,
+      "altura_m": 4.75,
+      "f_px": 600,
+      "horizonte_px": 50
+    },
+    "cam07": {
+      "nombre": "cam07",
+      "video": "camara2.mp4",
+      "inicio": "2026-11-07T13:43:00-05:00",
+      "posicion_px": [
+        1060,
+        867
+      ],
+      "rumbo_deg": 0,
+      "altura_m": 4.75,
+      "f_px": 600,
+      "horizonte_px": 59
+    }
+  }
+}
