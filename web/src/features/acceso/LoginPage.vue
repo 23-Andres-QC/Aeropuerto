@@ -87,7 +87,7 @@ async function login() {
           </div>
 
           <p v-if="motivoCierre === 'inactividad' && !error" class="login-error" role="status" data-prueba="cierre-por-inactividad">
-            Cerramos tu sesión por inactividad (2 minutos). Vuelve a iniciar sesión para continuar.
+            Cerramos tu sesión por inactividad (5 minutos). Vuelve a iniciar sesión para continuar.
           </p>
           <p v-if="motivoCierre === 'atras' && !error" class="login-error" role="status" data-prueba="cierre-por-regreso">
             Por seguridad, cerramos tu sesión al volver con las flechas del navegador. Inicia sesión de nuevo para continuar.

@@ -1,6 +1,6 @@
 // Prueba de punta a punta (manual: pide el stack levantado y un navegador): cierre de sesión por inactividad.
 //
-// En producción son 2 minutos sin actividad y el aviso «¿sigues ahí?» sale 10 s antes. Para no esperar tanto, la prueba acorta el plazo a
+// En producción son 5 minutos sin actividad y el aviso «¿sigues ahí?» sale 10 s antes. Para no esperar tanto, la prueba acorta el plazo a
 // 8 s (localStorage «lap-inactividad-s»; el aviso sale 4 s antes) y comprueba lo mismo:
 //   1. Con actividad (mover el mouse, usar la rueda) no pasa nada.
 //   2. Quieto, sale el aviso con la cuenta regresiva; mover el mouse no lo quita, pero «Sigo aquí» sí, y la sesión sigue viva.

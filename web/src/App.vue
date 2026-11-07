@@ -193,7 +193,7 @@ function elegirSitio(s: Sitio) {
       <footer><RouterLink to="/privacidad">Aviso de privacidad</RouterLink><RouterLink to="/cambiar-clave">Mi contraseña</RouterLink></footer>
     </div>
   </div>
-  <!-- A los 2 min sin actividad se cierra la sesión (10 s antes pregunta «¿sigues ahí?»); vale para todas las pantallas con sesión. -->
+  <!-- A los 5 min sin actividad se cierra la sesión (10 s antes pregunta «¿sigues ahí?»); vale para todas las pantallas con sesión. -->
   <AvisoInactividad />
   <!-- Si se publica una versión nueva mientras la pestaña sigue abierta, lo avisa (la pestaña no se actualiza sola). -->
   <AvisoVersion />

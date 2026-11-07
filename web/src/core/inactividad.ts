@@ -1,10 +1,10 @@
-// Cierre de sesión por inactividad: tras 2 minutos sin tocar la pantalla (mover el mouse, hacer clic, escribir, hacer scroll o tocarla)
+// Cierre de sesión por inactividad: tras 5 minutos sin tocar la pantalla (mover el mouse, hacer clic, escribir, hacer scroll o tocarla)
 // se cierra la sesión, y 10 segundos antes se pregunta «¿sigues ahí?». El reloj es del navegador, no del servidor; la sesión del servidor
 // (8 h) sigue siendo el tope de siempre.
 import { ref } from "vue";
 
 /** Segundos sin actividad tras los cuales se cierra la sesión. */
-const LIMITE_POR_DEFECTO_S = 120;
+const LIMITE_POR_DEFECTO_S = 300;
 /** Segundos antes del cierre en los que se pregunta «¿sigues ahí?». */
 const AVISO_POR_DEFECTO_S = 10;
 

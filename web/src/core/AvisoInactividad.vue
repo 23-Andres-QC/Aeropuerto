@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Vigila la inactividad mientras haya sesión: a los 2 min sin actividad cierra la sesión y manda al login; 10 s antes pregunta «¿sigues ahí?».
+// Vigila la inactividad mientras haya sesión: a los 5 min sin actividad cierra la sesión y manda al login; 10 s antes pregunta «¿sigues ahí?».
 import { nextTick, onUnmounted, ref, watch } from "vue";
 import { logout, sesion } from "./auth";
 import { CLAVE_AVISO_CIERRE, detener, segundosRestantes, sigoAqui, vigilarInactividad } from "./inactividad";
