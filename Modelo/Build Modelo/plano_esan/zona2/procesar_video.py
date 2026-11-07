@@ -823,6 +823,8 @@ def analizar(camara_id, config, ruta, args, salida, embebedor, seguido=None):
     else:
         cuadros, fps, tam = seguir(ruta, args.pesos, FPS_SALIDA)
         guardado.write_text(json.dumps([cuadros, fps, tam]))
+    if seguido is None and cfg.get("desfase_s"):  # al reloj de la sesión (Videos ya lo aplica al seguir)
+        cuadros = [{**c, "t": c["t"] + float(cfg["desfase_s"])} for c in cuadros]
     guardado_emb = salida / f"apariencia_{camara_id}.npz"
     if seguido is not None:
         embs = {}
@@ -871,15 +873,21 @@ def prefijo(config):
     return f"{base}_{config['grabacion']}_" if config.get("grabacion") else f"{base}_"
 
 
+def en_modelo(nombre):
+    """Un archivo de los pesos del modelo: en el contenedor (/app/Modelo) o, fuera de él, en Test Modelo/Modelo."""
+    app = Path("/app/Modelo") / nombre
+    return app if app.exists() else TEST_MODELO / "Modelo" / nombre
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--video", action="append", default=[], metavar="CAMARA=RUTA", help="una cámara de camaras_video.json y su video; se repite por cámara")
     ap.add_argument("--config", help="otra grabación: su camaras_video (por defecto, camaras_video.json)")
     ap.add_argument("--salida", default="comedor")
-    ap.add_argument("--pesos", default="/app/Modelo/yolo26s.pt")
-    ap.add_argument("--modelo", choices=("videos", "propio"), default="videos",
-                    help="videos: el de la sección Videos; propio: YOLO26s + ByteTrack y la unión de recorridos de este script")
-    ap.add_argument("--reid", default="/app/Modelo/osnet_ain_x1_0_msmt17.onnx", help="el Re-ID corporal en ONNX (OSNet-AIN), solo con --modelo propio")
+    ap.add_argument("--pesos", default=str(en_modelo("yolo26s.pt")))
+    ap.add_argument("--modelo", choices=("videos", "propio"), default=None,
+                    help="videos: el de la sección Videos; propio: YOLO26s + ByteTrack y la unión de recorridos de este script. Por defecto, el «modelo» de la configuración (o videos)")
+    ap.add_argument("--reid", default=str(en_modelo("osnet_ain_x1_0_msmt17.onnx")), help="el Re-ID corporal en ONNX (OSNet-AIN), solo con --modelo propio")
     ap.add_argument("--hoja", action="store_true", help="guarda hoja_<cámara>.jpg: recortes de cada persona para revisar a ojo")
     ap.add_argument("--sin-estabilizar", action="store_true", help="ubica a las personas como si la cámara estuviera quieta (sin corregir el movimiento de la mano)")
     ap.add_argument("--sin-video", action="store_true", help="solo afina las personas (cuenta y hojas): no dibuja los videos ni arma la sesión")
@@ -893,6 +901,7 @@ def main():
     ruta_config = Path(args.config) if args.config else CONFIG
     config = {**json.loads(ruta_config.read_text(encoding="utf-8")), "_carpeta": str(ruta_config.resolve().parent)}
     usar_zona(config)
+    args.modelo = args.modelo or config.get("modelo", "videos")
     salida = Path(args.salida) / config.get("grabacion", "")
     salida.mkdir(parents=True, exist_ok=True)
     rutas = dict(par.split("=", 1) for par in args.video)
