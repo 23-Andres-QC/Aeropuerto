@@ -119,7 +119,7 @@ class Camara:
         r = math.radians(cfg["rumbo_deg"])  # 0 = hacia arriba del dibujo, en sentido del reloj
         self.adelante, self.derecha = (math.sin(r), -math.cos(r)), (math.cos(r), math.sin(r))
 
-    def piso(self, u, v, lejos=35.0, fuera=None):
+    def piso(self, u, v, lejos=35.0):
         """Metros del patio del punto del piso en el pixel (u, v), o None si cae sobre el horizonte o más lejos de `lejos` m."""
         x, y = (u - self.cx) / self.f, (v - self.cy) / self.f
         c, s = math.cos(self.pitch), math.sin(self.pitch)
@@ -134,7 +134,7 @@ class Camara:
         py = self.pos[1] + (adelante * self.adelante[1] + derecha * self.derecha[1]) * PX_POR_M
         # Lejos la ubicación se estira (un píxel son metros): lo que caería fuera del edificio se queda en su muro.
         if PISO_M:
-            return dentro_del_piso(px_a_m(px, py), PISO_M, FUERA_M if fuera is None else fuera)
+            return dentro_del_piso(px_a_m(px, py), PISO_M, FUERA_M)
         return px_a_m(min(max(px, PISO_PX[0]), PISO_PX[2]), min(max(py, PISO_PX[1]), PISO_PX[3]))
 
     def pose_m(self):
@@ -174,22 +174,7 @@ def seguir(video, pesos, cadencia):
     return cuadros, fps / paso, tam
 
 
-def filtro_de_zona(cfg, tam, margen=3.0):
-    """En otra zona (con su contorno): qué detecciones se siguen. Quien tiene los pies más allá del alcance o a más de `margen` m
-    fuera del contorno es gente de afuera (la plaza del fondo, a 40 m, con 20 px de alto): no se le da ID ni entra al asociador,
-    donde sus IDs saltaban y confundían a los de adentro. Los pies cortados por el borde de abajo (bajo la cámara) se siguen."""
-    if not PISO_M:
-        return None
-    camara = Camara(cfg, *tam)
-
-    def filtrar(cajas):
-        cajas = np.asarray(cajas, dtype=float).reshape(-1, 4)
-        return np.array([y2 > tam[1] - 4 or camara.piso((x1 + x2) / 2, y2, lejos=ALCANCE_M, fuera=margen) is not None
-                         for x1, y1, x2, y2 in cajas], dtype=bool)
-    return filtrar
-
-
-def seguir_como_videos(camaras, salida, rehacer=False, desfases=None, configs=None):
+def seguir_como_videos(camaras, salida, rehacer=False, desfases=None):
     """Pasada 1 con el modelo de la sección Videos, las cámaras juntas como una tanda (videos_subidos.GrupoVideos): mismo
     motor, Re-ID y asociador que carga el servicio del modelo (camara_telefono.cargar_modelo), y en cada pasada todos los
     videos van por el mismo segundo. Se procesa cada cuadro de la cadencia FPS_SALIDA, sin el reloj del tiempo real.
@@ -198,7 +183,6 @@ def seguir_como_videos(camaras, salida, rehacer=False, desfases=None, configs=No
     `desfases`: {id: segundos} en que empezó cada video en el reloj de la sesión (las cámaras no empiezan a la vez): cada pasada lleva
     los cuadros del mismo instante real y los tiempos de los cuadros ya van en el reloj de la sesión."""
     desfases = {cid: float((desfases or {}).get(cid, 0.0)) for cid in camaras}
-    configs = configs or {}
     guardados = {cid: salida / f"videos_{cid}.json" for cid in camaras}
     if not rehacer and all(g.exists() for g in guardados.values()):
         leidos = {cid: json.loads(g.read_text()) for cid, g in guardados.items()}
@@ -215,18 +199,16 @@ def seguir_como_videos(camaras, salida, rehacer=False, desfases=None, configs=No
     import camara_telefono
     import videos_subidos
 
-    motor, _, reid, asociacion = camara_telefono.cargar_modelo(genero=camara_telefono.GENERO_MODELO)
+    motor, _, reid, asociacion = camara_telefono.cargar_modelo(genero=False)  # como «Solo multitracking» de Videos: sin género
     grupo = videos_subidos.GrupoVideos(list(camaras), reid, asociacion, gpu=str(motor.device).startswith("cuda"))
     estado = {}
     for cid, ruta in camaras.items():
-        video = videos_subidos.VideoEnProceso({"id": cid, "nombre": cid, "modo": "tiempo_real"}, ruta, motor, reid, asociacion, grupo)
+        video = videos_subidos.VideoEnProceso({"id": cid, "nombre": cid, "modo": "tiempo_real", "analisis": "multitracking"}, ruta, motor, reid, asociacion, grupo)
         video.cerrar()  # los cuadros se leen aquí, uno por uno
         cap = cv2.VideoCapture(str(ruta))
         fps = cap.get(cv2.CAP_PROP_FPS)
         estado[cid] = {"video": video, "cap": cap, "fps": fps, "paso": max(1, round(fps / FPS_SALIDA)), "idx": 0, "cuadros": [], "ids": {},
                        "tam": (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))), "desfase": desfases[cid]}
-        if cid in configs:
-            estado[cid]["filtro"] = filtro_de_zona(configs[cid], estado[cid]["tam"])
 
     def siguiente(e):
         while True:
@@ -246,13 +228,6 @@ def seguir_como_videos(camaras, salida, rehacer=False, desfases=None, configs=No
             detecciones = estado[lote[0][0]]["video"].motor.detectar({cid: frame for cid, frame, _ in lote})
         except Exception:
             detecciones = None
-        if detecciones is not None:
-            for cid, _, _ in lote:
-                filtro = estado[cid].get("filtro")
-                if filtro is not None:
-                    cajas, puntajes = detecciones[cid]
-                    quedan = filtro(cajas)
-                    detecciones[cid] = (np.asarray(cajas)[quedan], np.asarray(puntajes)[quedan])
         entradas = []
         for cid, frame, t in lote:
             video = estado[cid]["video"]
@@ -922,8 +897,7 @@ def main():
     salida.mkdir(parents=True, exist_ok=True)
     rutas = dict(par.split("=", 1) for par in args.video)
     if args.modelo == "videos":
-        seguidos = seguir_como_videos(rutas, salida, args.rehacer, {c: config["camaras"][c].get("desfase_s", 0.0) for c in rutas},
-                                      {c: config["camaras"][c] for c in rutas})
+        seguidos = seguir_como_videos(rutas, salida, args.rehacer, {c: config["camaras"][c].get("desfase_s", 0.0) for c in rutas})
         resultados = [analizar(camara_id, config, ruta, args, salida, None, seguidos[camara_id]) for camara_id, ruta in rutas.items()]
     else:
         embebedor = Embebedor(args.reid)
