@@ -4,7 +4,7 @@
   "prefijo": "pasillo",
   "capa": "capa.json",
   "alcance_m": 35.0,
-  "nota": "Poses calibradas con los propios videos (la gente camina dentro del pasillo y a lo largo de cada brazo, y quien está en las dos cámaras a la vez cae en el mismo punto), partiendo de lo que se ve en ellos: las dos cámaras graban desde lo alto del Edificio D. cam06 (camara1) en el extremo oeste de la fachada norte, mirando al este por la escalera hacia la plaza; cam07 (camara2) al sur del lado este, mirando al norte por el pasillo entre el edificio y el del este. posicion_px va en px del dibujo de la zona 3 (esan-zona-3.svg) y rumbo_deg es 0 hacia arriba del dibujo (el norte del edificio), en sentido del reloj. La altura y el horizonte se ajustaron con la altura de las personas detectadas (f_px de un teléfono sin zoom: con la altura de la gente casi no se distingue); las dos quedaron a 4,75 m, un segundo piso. Tiempo: los dos videos empiezan a la vez (desfase_s 0); camara2 sigue grabando 11 s más.",
+  "nota": "Poses calibradas con los propios videos (la gente camina dentro del pasillo y a lo largo de cada brazo, y quien está en las dos cámaras a la vez cae en el mismo punto), partiendo de lo que se ve en ellos: las dos cámaras graban desde lo alto del Edificio D. cam06 (camara1) en el extremo oeste de la fachada norte, mirando al este por la escalera hacia la plaza; cam07 (camara2) al sur del lado este, mirando al norte por el pasillo entre el edificio y el del este. posicion_px va en px del dibujo de la zona 3 (esan-zona-3.svg) y rumbo_deg es 0 hacia arriba del dibujo (el norte del edificio), en sentido del reloj. La altura y el horizonte se ajustaron con la altura de las personas detectadas (f_px de un teléfono sin zoom: con la altura de la gente casi no se distingue); las dos quedaron a 4,75 m, un segundo piso. Tiempo: camara2 venía 1,6 s atrasada: se le cortan los primeros 1,6 s (camara2_desde_1.6s.mp4, ffmpeg -ss 1.6) y desde ahí los dos videos empiezan a la vez (desfase_s 0).",
   "camaras": {
     "cam06": {
       "nombre": "cam06",
@@ -22,7 +22,7 @@
     },
     "cam07": {
       "nombre": "cam07",
-      "video": "camara2.mp4",
+      "video": "camara2_desde_1.6s.mp4",
       "inicio": "2026-11-07T13:43:00-05:00",
       "posicion_px": [
         1000.0,
