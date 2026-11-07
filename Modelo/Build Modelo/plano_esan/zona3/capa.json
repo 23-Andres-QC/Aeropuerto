@@ -2,16 +2,16 @@
  "nombre": "Zona grabada 3 · pasillo del Edificio D",
  "fondo": {
   "url": "/planos/esan-zona-3.svg",
-  "fuente": "Exterior del Edificio D: L pegada a las paredes norte y este del comedor, con los anchos del área marcada en el mapa del campus"
+  "fuente": "Exterior del Edificio D: recto contra las paredes norte y este del comedor y, por fuera, los bordes del terreno en el mapa del campus"
  },
  "tam_px": [
-  1308,
-  775
+  1513,
+  920
  ],
  "px_por_metro": 29.7,
  "ancla_px": [
   535.0,
-  593.7
+  774.7
  ],
  "ancla_m": [
   -59.38,
@@ -20,20 +20,32 @@
  "angulo_deg": -8.3,
  "piso_m": [
   [
-   -73.18,
-   37.44
+   -73.17,
+   37.45
   ],
   [
-   -32.28,
-   31.48
+   -62.79,
+   38.92
   ],
   [
-   -35.65,
-   8.32
+   -50.08,
+   40.23
   ],
   [
-   -43.57,
-   9.48
+   -26.15,
+   32.34
+  ],
+  [
+   -26.28,
+   24.66
+  ],
+  [
+   -29.44,
+   9.07
+  ],
+  [
+   -43.4,
+   10.66
   ],
   [
    -41.29,

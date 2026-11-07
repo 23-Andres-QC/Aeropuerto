@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1308 775">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1513 920">
 <title>ESAN · Zona grabada 3 · pasillo del Edificio D</title>
-<desc>Exterior del Edificio D: L pegada a las paredes norte y este del comedor, con los anchos del área marcada en el mapa del campus. 1 px = 1/29.7 m.</desc>
-<polygon points="40.0,40.0 1267.6,40.0 1267.6,735.0 1030.0,735.0 1030.0,265.7 40.0,265.7" fill="#e8eef5" stroke="#38bdf8" stroke-width="8" stroke-linejoin="miter"/>
+<desc>Exterior del Edificio D: recto contra las paredes norte y este del comedor y, por fuera, los bordes del terreno en el mapa del campus. 1 px = 1/29.7 m.</desc>
+<polygon points="40.0,220.7 338.8,133.0 706.7,40.0 1444.0,169.3 1473.0,395.7 1447.0,867.5 1030.0,880.5 1030.0,446.7 40.0,446.7" fill="#e8eef5" stroke="#38bdf8" stroke-width="8" stroke-linejoin="miter"/>
 </svg>
