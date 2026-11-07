@@ -160,10 +160,11 @@ def main():
         campus = {k: v for k, v in json.loads((AQUI / "campus.json").read_text(encoding="utf-8")).items() if k != "descripcion"}
         cuerpo = {"fondo": {"url": URL_FONDO, "fuente": "Levantamiento desde cam01 y cam03 (homografías del Build)"},
                   "piso_m": piso, "obstaculos": obstaculos, "campus": campus}
-        # La zona grabada 2 (el comedor del Edificio D) viaja como una capa del mismo plano: zona2/generar_zona2.py escribe zona2/capa.json.
-        capa = AQUI / "zona2" / "capa.json"
-        if capa.exists():
-            cuerpo["capas"] = [json.loads(capa.read_text(encoding="utf-8"))]
+        # Las otras zonas grabadas viajan como capas del mismo plano: zona2/generar_zona2.py (el comedor del Edificio D) y
+        # zona3/generar_zona3.py (el pasillo exterior del Edificio D) escriben su capa.json.
+        capas = [json.loads(c.read_text(encoding="utf-8")) for c in sorted(AQUI.glob("zona*/capa.json"))]
+        if capas:
+            cuerpo["capas"] = capas
         llamar(args.web, "PUT", f"/api/v1/sites/{args.sitio}/plano", cuerpo)
         print(f"Plano guardado en el sitio {args.sitio} ({len(obstaculos)} obstáculos: {', '.join(o['nombre'] for o in obstaculos)}; {len(cuerpo.get('capas', []))} capa(s)).")
     if args.zonas:

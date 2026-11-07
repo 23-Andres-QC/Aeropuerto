@@ -13,3 +13,7 @@ Representación local vertical, con el norte hacia arriba, derivada de 2.461 geo
 ## `esan-zona-2.svg` · ESAN, Edificio D, 2.º piso (zona grabada 2)
 
 Comedor, comedor de profesores y zona de atención, trazados sobre el plano de evacuación S-05 (enero 2018) enderezado de una foto. Lo genera `Modelo/Build Modelo/plano_esan/zona2/generar_zona2.py`: 1 px = 1/29,7 m, lienzo de 1190 × 856 px con 100 px de margen (la escalera de la ruta 1 queda fuera del muro oeste). Las rutas de evacuación son esquemáticas. Sin fondo propio. No es el fondo de un sitio: es una *capa* del plano de ESAN (`plano.capas`), colocada en los metros del patio.
+
+## `esan-zona-3.svg` · ESAN, pasillo exterior del Edificio D (zona grabada 3)
+
+El pasillo por la fachada norte del Edificio D que dobla por su lado este, trazado sobre el mapa del campus siguiendo el área marcada para grabar. Lo genera `Modelo/Build Modelo/plano_esan/zona3/generar_zona3.py`: 1 px = 1/20 m, en los ejes de ESAN. Como el comedor, es una *capa* del plano de ESAN (`plano.capas`); su ubicación es aproximada (el mapa del campus tiene ~1,7 px por metro).
