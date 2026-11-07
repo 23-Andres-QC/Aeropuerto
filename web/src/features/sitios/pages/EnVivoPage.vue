@@ -446,7 +446,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         </button>
         <span v-if="mensajeGuardado" class="muted mensaje-guardado">{{ mensajeGuardado }}</span>
       </div>
-      <div v-if="!soloZona" class="ir-a" role="group" aria-label="Ir a una zona del plano">
+      <div v-if="!enVivo" class="ir-a" role="group" aria-label="Ir a una zona del plano">
         <span class="muted">Ir a</span>
         <button v-for="z in zonasGrabadas" :key="z.clave" type="button" :class="{ 'primary-button': zonaFija === z.clave }" :aria-pressed="zonaFija === z.clave" :data-prueba="`ir-${z.clave}`" @click="irAZona(z.clave)">{{ z.nombre }}</button>
         <button type="button" :class="{ 'primary-button': zonaFija === null }" :aria-pressed="zonaFija === null" @click="irAZona('campus')">Todo el campus</button>
