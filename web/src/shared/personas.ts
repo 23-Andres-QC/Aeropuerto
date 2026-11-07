@@ -9,12 +9,9 @@ export type CuadroDetecciones = {
 
 type PersonaMarcada = CuadroDetecciones["people"][number] & { local_id?: number | null };
 
-/** «G12 · L5 · H 92%»: ID global, ID local (el del seguidor en esa cámara) y género con su certeza, H o M. */
+/** «G12 · L5»: ID global e ID local (el del seguidor en esa cámara). */
 export function etiquetaPersona(p: PersonaMarcada): string {
-  const genero = p.gender === "Hombre" || p.gender === "Mujer"
-    ? `${p.gender[0]}${p.gender_conf ? " " + Math.round(p.gender_conf * 100) + "%" : ""}`
-    : "";
-  return [p.global_id != null ? `G${p.global_id}` : "", p.local_id != null ? `L${p.local_id}` : "", genero].filter(Boolean).join(" · ");
+  return [p.global_id != null ? `G${p.global_id}` : "", p.local_id != null ? `L${p.local_id}` : ""].filter(Boolean).join(" · ");
 }
 
 /** Color de quien aún no tiene ID global. */
@@ -87,7 +84,7 @@ export function dibujarMarcador(ctx: CanvasRenderingContext2D, p: PersonaMarcada
   ctx.fillText(texto, x + 5 * s, y + alto - 5 * s);
 }
 
-/** Dibuja cada persona sobre el canvas que cubre el frame: su marcador con el ID global y el género. */
+/** Dibuja cada persona sobre el canvas que cubre el frame: su marcador con el ID global. */
 export function dibujarPersonas(c: HTMLCanvasElement, m: CuadroDetecciones) {
   if (!m.frame_w) return;
   if (c.width !== m.frame_w || c.height !== m.frame_h) {

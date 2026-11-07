@@ -38,7 +38,6 @@ const avance = computed(() => {
   const v = props.video;
   return v.duracion_s && v.t_s != null ? Math.min(1, v.t_s / v.duracion_s) : null;
 });
-const generos = computed(() => Object.entries(props.video.genero ?? {}).sort((a, b) => b[1] - a[1]));
 const aviso = computed(() => {
   if (props.estado === "preparando") return "Preparando el video…";
   if (props.estado === "error") return props.mensaje ?? "No se pudo procesar el video.";
@@ -180,7 +179,6 @@ onUnmounted(() => {
     <div class="panel-heading">
       <h2 class="dato">{{ video.nombre }}</h2>
       <span class="heading-meta">
-        <span v-if="video.analisis && video.analisis !== 'ambos'" class="pill">solo {{ video.analisis === "genero" ? "género" : "multitracking" }}</span>
         <span class="pill" :class="{ vivo: estado === 'procesando', falla: estado === 'error' }">{{ estado }}</span>
         <button class="danger-button" type="button" @click="emit('quitar')">{{ final ? "Quitar video" : "Detener y quitar" }}</button>
       </span>
@@ -223,18 +221,14 @@ onUnmounted(() => {
         <div><b>{{ video.fps }}</b><small>FPS promedio</small></div>
         <div><b>{{ video.ms_por_frame ?? "—" }} ms</b><small>por frame (promedio)</small></div>
       </div>
-      <p v-if="generos.length" class="generos">
-        <span v-for="[g, n] in generos" :key="g" class="pill">{{ g }}: {{ n }}</span>
-      </p>
       <div v-if="video.personas?.length" class="tabla">
         <table>
           <thead>
-            <tr><th>Persona</th><th>Género</th><th>Aparece</th><th>A la vista</th></tr>
+            <tr><th>Persona</th><th>Aparece</th><th>A la vista</th></tr>
           </thead>
           <tbody>
             <tr v-for="p in video.personas" :key="p.id">
               <td><b class="id" :style="{ '--color': colorPersona(p.id) }">G{{ p.id }}</b></td>
-              <td>{{ p.genero }}<span v-if="p.certeza" class="muted"> · {{ Math.round(p.certeza * 100) }} %</span></td>
               <td>{{ reloj(p.desde_s) }} – {{ reloj(p.hasta_s) }}</td>
               <td>{{ segundos(p.visible_s) }}</td>
             </tr>
@@ -246,9 +240,6 @@ onUnmounted(() => {
 
     <p class="fuente muted">
       <span v-if="video.ancho">{{ video.ancho }}×{{ video.alto }} · {{ video.fps_video }} FPS</span>
-      <span v-if="!final">
-        <span v-for="[g, n] in generos" :key="g"> · {{ g }}: {{ n }}</span>
-      </span>
       <span v-if="dispositivo"> · modelo en {{ dispositivo }}</span>
     </p>
   </section>
@@ -346,12 +337,6 @@ onUnmounted(() => {
 .resumen h3 {
   margin: 4px 12px 8px;
   font-size: 13px;
-}
-.generos {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 10px 12px 0;
 }
 .tabla {
   max-height: 320px;

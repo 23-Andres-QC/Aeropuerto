@@ -51,11 +51,12 @@ import lap01
 from lap01.camaras_reid import ReIDPersonas
 from detector_onnx import DetectorONNX
 from detector_pose import DetectorCuerpo, ajustar_cajas
-from detector_tensorrt import PorLotes, usar_tensorrt
+from detector_tensorrt import PorLotes, motor_con_tensorrt, usar_tensorrt
 from memoria_identidades import AsociadorConMemoria, MemoriaIdentidades
 from ubicacion import MIN_COINCIDENCIAS as U_MIN, Ubicador
 from reid_videos import ReIDCombinado, ReIDGrabado, ReIDPersonViT
 from videos_subidos import (ASOCIACION_REID_GPU, ASOCIACION_VIDEO, CAMBIO_GENERO, CANAL_ESTADO as CANAL_VIDEOS, GENEROS,
+                            IMGSZ_GPU, IMGSZ_VIDEO,
                             PERSONVIT_VIDEO_GPU, REID_VIDEO_GPU, Quietud, SinEnvolventes, VideosSubidos, genero_por_votos,
                             motor_aparte)
 
@@ -67,6 +68,10 @@ CANAL_ESTADO = "telefonos"
 # teléfonos que queda es Quietud (no mostrar maniquíes ni afiches) y la memoria de identidades. Sin GPU sigue el de
 # siempre, como Videos, que sin GPU usa el Re-ID del Build. MODELO_ALGORITMO=telefonos vuelve al de antes.
 ALGORITMO_VIDEOS = os.environ.get("MODELO_ALGORITMO", "videos") != "telefonos"
+# Las cámaras en vivo y Videos no calculan el género: CLIP ni se carga (libera la GPU para el resto). No cambia el
+# multitracking (el género no entra al seguidor, al asociador ni a la memoria): con dos cámaras del mismo lugar, mismos
+# IDs y cambios de ID con y sin él. MODELO_GENERO=si lo vuelve a activar.
+GENERO_MODELO = os.environ.get("MODELO_GENERO", "no") == "si"
 ANCHO_RELEVO = 640
 # Un frame del relevo no puede pasar de 512 KB (maxRelayFrame en backend-vivo): se baja la calidad si hace falta.
 MAX_JPEG_RELEVO = 480 * 1024
@@ -1088,7 +1093,7 @@ def modelo_telefonos(motor, reid, asociacion_build):
     """(motor, Re-ID, asociación, como_videos) de los teléfonos: con GPU los de Videos (ver ALGORITMO_VIDEOS), con su
     propio motor y su propio Re-ID (no comparten estado con los videos que se procesan a la vez); si no, los de siempre.
     Con GPU su YOLO va compilado en TensorRT (ver detector_tensorrt): las mismas personas y cada cuadro de dos teléfonos
-    en ~51 ms en vez de ~59. Videos sigue con el de PyTorch: sus videos detectan desde otro hilo y un motor compilado no se comparte."""
+    en ~51 ms en vez de ~59. Videos tiene su propia copia (ver detector_tensorrt.motor_con_tensorrt)."""
     if ALGORITMO_VIDEOS and str(motor.device).startswith("cuda"):
         reid_videos = ReIDCombinado([ReIDGrabado(ReIDPersonas(MODELO / REID_VIDEO_GPU, batch_size=16, device=motor.device)),
                                      ReIDPersonViT(MODELO / PERSONVIT_VIDEO_GPU, device=motor.device)])
@@ -1099,13 +1104,15 @@ def modelo_telefonos(motor, reid, asociacion_build):
     return motor, reid, {**asociacion_build, **ASOCIACION_TELEFONO}, False
 
 
-def cargar_modelo():
+def cargar_modelo(genero=True):
     """El modelo de este servicio: (motor, Re-ID de los teléfonos, Re-ID de Videos, asociación del Build). También lo carga
-    el comedor (Modelo/Build Modelo/plano_esan/zona2/procesar_video.py) para procesar sus videos igual que Videos."""
+    el comedor (Modelo/Build Modelo/plano_esan/zona2/procesar_video.py) para procesar sus videos igual que Videos.
+    Sin `genero` no carga CLIP (ver GENERO_MODELO)."""
     config = json.loads((MODELO / "config_lap01.json").read_text())
     config["tracker"].update(SEGUIDOR_TELEFONO)
     config["detector"].update(DETECTOR_TELEFONO)
     config["gender"].update(GENERO_TELEFONO)
+    config["gender"]["enabled"] = bool(config["gender"].get("enabled", True) and genero)
     con_onnx = False
     if torch.cuda.is_available():
         config["detector"]["imgsz"] = IMGSZ_GPU_TELEFONO
@@ -1134,7 +1141,7 @@ def cargar_modelo():
     if os.environ.get("MODELO_IMGSZ"):
         config["detector"]["imgsz"] = int(os.environ["MODELO_IMGSZ"])
     asociacion_build = json.loads((MODELO / "camaras.json").read_text()).get("association", {})
-    print("Cargando el modelo final (YOLO26, tracker, Re-ID, género)...", flush=True)
+    print(f"Cargando el modelo final (YOLO26, tracker, Re-ID{', género' if genero else ''})...", flush=True)
     motor = lap01.MotorLAP01(MODELO, config, device="auto", batch=True)
     if not torch.cuda.is_available() and con_onnx:
         motor.detector = DetectorONNX(MODELO / DETECTOR_ONNX_TELEFONO, config["detector"], nucleos)
@@ -1171,15 +1178,18 @@ def main():
     url_api = args.api.rstrip("/")
     if not sin_freno_de_windows() and sys.platform == "win32":
         print("Windows no dejó quitar el ahorro de energía a este proceso: puede ir más lento.", flush=True)
-    motor, reid, reid_videos, asociacion_build = cargar_modelo()
+    motor, reid, reid_videos, asociacion_build = cargar_modelo(genero=GENERO_MODELO)
     motor_telefonos, reid_sesion, asociacion, como_videos = modelo_telefonos(motor, reid, asociacion_build)
+    # Videos con su propia copia del detector compilado: detecta desde su hilo, a la vez que los teléfonos.
+    motor_videos = motor_con_tensorrt(motor, IMGSZ_VIDEO or IMGSZ_GPU) if str(motor.device).startswith("cuda") else motor
     ubicador = Ubicador.cargar(MODELO / "ubicacion" / SITIO_TELEFONOS)
     parte = lambda f: "el cuerpo entero" if f >= 1 else f"la parte de arriba del cuerpo ({f:.0%})"  # noqa: E731
+    genero = f"género con {parte(MITAD_SUPERIOR)}" if motor.genero.enabled else "sin género"
     if como_videos:
-        print("Teléfonos con el algoritmo de Videos: su detector, su seguidor, Re-ID OSNet-AIN + PersonViT, su asociador "
-              "y su género.", flush=True)
+        print(f"Teléfonos con el algoritmo de Videos: su detector, su seguidor, Re-ID OSNet-AIN + PersonViT y su "
+              f"asociador; {genero}.", flush=True)
     else:
-        print(f"Re-ID con {parte(PARTE_SUPERIOR_REID)}; género con {parte(MITAD_SUPERIOR)}.", flush=True)
+        print(f"Re-ID con {parte(PARTE_SUPERIOR_REID)}; {genero}.", flush=True)
     detector = getattr(motor_telefonos.detector, "base", motor_telefonos.detector)
     compilado = " en TensorRT" if isinstance(getattr(detector, "model", None), PorLotes) else ""
     print(f"Modelo listo en {motor.device} · detector {type(detector).__name__}{compilado} a "
@@ -1188,7 +1198,7 @@ def main():
     memoria = MemoriaIdentidades(url_api, asociacion, dimension=reid_sesion.dimension)
     relevo = Relevo(url_api)
     sesion = SesionEnVivo(motor_telefonos, reid_sesion, asociacion, memoria, ubicador, como_videos=como_videos)
-    videos = VideosSubidos(url_api, motor, reid_videos, asociacion_build, relevo, personas_para_web)
+    videos = VideosSubidos(url_api, motor_videos, reid_videos, asociacion_build, relevo, personas_para_web)
     lectores, nombres, calentado = {}, {}, False
     publicado, fallos, ultimo_video = 0.0, 0, -math.inf
     enlace, enlace_visto = None, -math.inf

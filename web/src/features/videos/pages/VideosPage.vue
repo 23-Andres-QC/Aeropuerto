@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { json, request, socketPersistente } from "../../../core/http";
 import { ultimoSitio } from "../../sitios/useSitios";
 import { RELEVO_VIVO } from "../../telefonos/api";
-import { api, MAX_VIDEOS, subirVideo, type Analisis, type EstadoVideos, type VideoActivo, type VideoSubido } from "../api";
+import { api, MAX_VIDEOS, subirVideo, type EstadoVideos, type VideoActivo, type VideoSubido } from "../api";
 import { gruposTerminados, sesionDeVideos } from "../guardar";
 import VistaVideo, { type RelojComun } from "../components/VistaVideo.vue";
 
@@ -166,13 +166,6 @@ async function cargar() {
 /** Sube todos los archivos elegidos a la vez; cada uno entra a la lista apenas termina de subir. Los elegidos juntos van
  * en una tanda (cámaras del mismo lugar): el modelo espera a que suban todos y los procesa a la vez, con IDs compartidos;
  * antes empezaba el que terminaba primero (el más chico) y los demás quedaban aparte. */
-/** Qué hace el modelo con los próximos videos que se suban (para evaluar cada parte por separado). */
-const analisis = ref<Analisis>("ambos");
-const ANALISIS: { valor: Analisis; nombre: string }[] = [
-  { valor: "multitracking", nombre: "Solo multitracking" },
-  { valor: "genero", nombre: "Solo género" },
-  { valor: "ambos", nombre: "Ambos" },
-];
 
 async function elegidos() {
   const archivos = Array.from(entrada.value?.files ?? []);
@@ -190,7 +183,7 @@ async function elegidos() {
   await Promise.all(
     archivos.slice(0, libres).map(async (archivo) => {
       const id = ++siguienteSubida;
-      const { promesa, cancelar } = subirVideo(archivo, "tiempo_real", analisis.value, (f) => {
+      const { promesa, cancelar } = subirVideo(archivo, "tiempo_real", "multitracking", (f) => {
         subidas.value = subidas.value.map((x) => (x.id === id ? { ...x, fraccion: f } : x));
       }, tanda);
       subidas.value = [...subidas.value, { id, nombre: archivo.name, fraccion: 0, cancelar }];
@@ -309,9 +302,6 @@ onUnmounted(() => {
   </section>
   <section class="panel subir">
     <input ref="entrada" type="file" accept="video/*" multiple hidden @change="elegidos" />
-    <div class="chips segmentado" role="group" aria-label="Qué hace el modelo">
-      <button v-for="a in ANALISIS" :key="a.valor" type="button" :class="{ activo: analisis === a.valor }" :disabled="subiendo" @click="analisis = a.valor">{{ a.nombre }}</button>
-    </div>
     <button class="primary-button" type="button" :disabled="subiendo || lleno" @click="entrada?.click()">Elegir videos…</button>
     <p v-if="lleno" class="muted detalle"><b>La lista está llena ({{ MAX_VIDEOS }}): quita alguno para subir otro.</b></p>
     <span v-if="videos.length" class="heading-meta">

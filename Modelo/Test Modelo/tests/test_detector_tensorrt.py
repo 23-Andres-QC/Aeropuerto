@@ -59,6 +59,18 @@ class Cargar(unittest.TestCase):
             self.assertTrue(dt.usar_tensorrt(motor))
         self.assertEqual(motor.detector.base.model, "compilado")
 
+    def test_videos_lleva_su_propia_copia_sin_tocar_el_motor(self):
+        base = types.SimpleNamespace(model="pytorch", config={"imgsz": 1280})
+        motor = types.SimpleNamespace(model_dir="M", config={"weights": {"detector": "yolo26m.pt"}},
+                                      detector=types.SimpleNamespace(base=base))
+        with mock.patch.object(dt, "cargar", return_value="compilado de videos"):
+            otro = dt.motor_con_tensorrt(motor, 1280)
+        self.assertEqual(otro.detector.model, "compilado de videos")
+        self.assertEqual(otro.detector.config, {"imgsz": 1280})
+        self.assertEqual(base.model, "pytorch", "los teléfonos y el Build no cambian")
+        with mock.patch.object(dt, "cargar", return_value=None):
+            self.assertIs(dt.motor_con_tensorrt(motor, 1280), motor)
+
 
 if __name__ == "__main__":
     unittest.main()

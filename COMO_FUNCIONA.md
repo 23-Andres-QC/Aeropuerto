@@ -54,7 +54,7 @@ Usuario y contraseña de la demo: `LAP` / `LAP`. Cada sitio tiene las mismas sec
 | **Insights** | Tablero: mapas de movimiento y de calor, zonas, rutas, personas, visitas, exposición, permanencia, captación, densidad, series por intervalo y flujos. Se filtra por sesión y zona, compara sesiones y exporta a PDF y CSV |
 | **Registros** | Tabla de las capturas (sesiones `LIVE`, `BUILD` o todas) con fecha y rango de hora |
 | **Configuración** | Mover y girar cámaras, crear locales y zonas, eliminar sesiones |
-| **Teléfonos** | Las cámaras de teléfono conectadas con el proceso del modelo: cajas, ID, género, personas, fps y latencia. También tiene **Olvidar a todos** |
+| **Teléfonos** | Las cámaras de teléfono conectadas con el proceso del modelo: cajas, ID, personas, fps y latencia. También tiene **Olvidar a todos** |
 | **Videos** | Probar el modelo con un video de la computadora, sin guardar nada |
 
 ---
@@ -220,10 +220,10 @@ Se activa con el botón de la cabecera, y también entra solo cuando se conecta 
   - su detector a 1280 px con confianza 0,10, sin los puntos del cuerpo;
   - su seguidor, que en los cruces pesa la apariencia (0,8);
   - su Re-ID, **OSNet-AIN y PersonViT juntos** (vectores de 896 valores, también en la memoria de identidades), y su asociador con sus umbrales;
-  - su género: vota desde la primera vista y lo que ya se mostró cambia solo con 0,6 de certeza.
+  - **sin género** (tampoco en Videos): CLIP no se carga y no cambia el multitracking, que no lo usa. `MODELO_GENERO=si` lo vuelve a activar.
   - Con dos teléfonos (dos videos del dataset), el carril rápido tarda una mediana de 88 ms por cuadro, contra 152 ms del algoritmo anterior, que pasaba por los puntos del cuerpo.
   - `MODELO_ALGORITMO=telefonos` vuelve al algoritmo anterior.
-  - **Detector en TensorRT** (`detector_tensorrt.py`): el mismo yolo26m compilado para la GPU, con las mismas personas: con dos teléfonos detectar baja de 40 a 31 ms y cada cuadro de 59 a 51 ms. Se compila solo la primera vez (~4 min, en otro proceso) y queda en `Modelo/` como `.engine` (no va al repositorio). Si no se puede, sigue en PyTorch; `MODELO_TENSORRT=no` lo desactiva. Videos sigue en PyTorch.
+  - **Detector en TensorRT** (`detector_tensorrt.py`): el mismo yolo26m compilado para la GPU, con las mismas personas: con dos teléfonos detectar baja de 40 a 31 ms y cada cuadro de 59 a 51 ms. Se compila solo la primera vez (~4 min, en otro proceso) y queda en `Modelo/` como `.engine` (no va al repositorio). Si no se puede, sigue en PyTorch; `MODELO_TENSORRT=no` lo desactiva. Videos usa su propia copia del motor compilado: detecta desde su hilo, a la vez que los teléfonos.
   - El movimiento de cada cámara (para no mostrar lo quieto) se mide en otro hilo mientras se detecta, y el detector hace una pasada por forma de cuadro: un teléfono vertical junto a uno horizontal ya no se rellena a 1280 × 1280. Con dos teléfonos cada cuadro baja de 51 a 43 ms (de 71 a 42 ms con uno vertical).
 - **Sin GPU** (`modelo-vivo`), el de siempre, como Videos sin GPU:
   - `yolo26s` a 640 px (`MODELO_IMGSZ`) y `yolo26s-reid` (512 valores);
@@ -258,9 +258,9 @@ Se activa con el botón de la cabecera, y también entra solo cuando se conecta 
   - tracks desde 0,15 de confianza y personas desde 12 px;
   - IDs confirmados con 3 vistas y 2 s;
   - lo que no se aleja más de un 20 % de su altura en 4 s no se cuenta.
-- **El género se muestra siempre** desde la primera vista, con la certeza promedio de CLIP. A cambio hay más falsos positivos lejos.
+- **Solo multitracking**, sin género (ver la sección 8).
 - El modelo procesa en tiempo real: si no alcanza al video, salta cuadros. El video va un poco detrás del modelo y cada caja se interpola entre dos cuadros procesados.
-- **Al terminar** se borran las dos copias del archivo y queda solo el **resumen**: personas, reparto por género, segundos en que aparece cada ID, FPS y ms por cuadro.
+- **Al terminar** se borran las dos copias del archivo y queda solo el **resumen**: personas, segundos en que aparece cada ID, FPS y ms por cuadro.
   - El resumen vive en memoria hasta que se pulsa **Quitar video**.
   - Quitar el video mientras se procesa lo detiene sin resumen.
   - Un video que nadie procesó se borra solo a las 6 horas.

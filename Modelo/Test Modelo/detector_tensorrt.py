@@ -1,4 +1,4 @@
-"""Detector de los teléfonos con GPU en TensorRT: el mismo YOLO (yolo26m a 1280 px, media precisión), compilado para la
+"""Detector de los teléfonos y de Videos con GPU en TensorRT: el mismo YOLO (yolo26m a 1280 px, media precisión), compilado para la
 GPU de la máquina. En dos cámaras del mismo lugar (150 pares de cuadros de 1080p) encuentra las mismas personas que en
 PyTorch (2240 de 2242 con confianza >= 0,25; todas las de PyTorch con IoU >= 0,5, también las lejanas) y tarda ~23 ms
 por dos cuadros en vez de ~40. Con el modelo entero (dos teléfonos de 1280 px, en tiempo real) detectar pasa de 40 a
@@ -9,6 +9,7 @@ Se compila una vez (~4 min) para esa GPU y esa versión de TensorRT y queda junt
 sirve en la máquina que lo compiló). Se compila en otro proceso: dentro del modelo, con sus redes ya en la GPU, faltaba
 memoria y tras el fallo cada cuadro tardaba ~650 ms. Si TensorRT no está o falla, el detector sigue en PyTorch.
 MODELO_TENSORRT=no lo desactiva."""
+import copy
 import os
 import re
 import shutil
@@ -92,6 +93,19 @@ def cargar(pesos, imgsz):
     except Exception as error:  # sin TensorRT o sin memoria para compilar: sigue en PyTorch
         print(f"Detector en PyTorch: TensorRT no disponible ({type(error).__name__}: {error})", flush=True)
         return None
+
+
+def motor_con_tensorrt(motor, imgsz):
+    """Copia del motor de Videos con su propia copia del YOLO compilado (motor_aparte la toma de ahí para cada video):
+    Videos detecta desde su hilo a la vez que los teléfonos, y así no esperan uno al otro. Sin compilado, el mismo motor."""
+    base = getattr(motor.detector, "base", motor.detector)
+    modelo = cargar(Path(motor.model_dir) / motor.config["weights"]["detector"], imgsz)
+    if modelo is None:
+        return motor
+    otro, detector = copy.copy(motor), copy.copy(base)
+    detector.model = modelo
+    otro.detector = detector
+    return otro
 
 
 def usar_tensorrt(motor):

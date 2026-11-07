@@ -483,7 +483,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
       </div>
     </section>
 
-    <!-- Al costado del plano: lo que capta cada teléfono (video con las cajas, los IDs y el género del modelo) y quién está ahora. -->
+    <!-- Al costado del plano: lo que capta cada teléfono (video con las cajas y los IDs del modelo) y quién está ahora. -->
     <div class="columna-lado">
       <label class="selector-sesion">Sesión
         <select v-model="valorSesion">
@@ -511,7 +511,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
         <div class="camaras-lado" aria-label="Teléfonos y cámaras del plano">
           <div v-for="r in vivo.ranuras.value" :key="r.camara" class="ranura-col">
             <VistaTelefono v-if="r.telefono" :id="r.telefono.id" :nombre="`${r.camara} · ${r.telefono.nombre}${r.telefono.simulado ? ' (prueba)' : ''}`" :estado="r.estado" :linea="LINEA_CONTEO" compacta sin-quitar />
-            <p v-if="r.telefono" class="conteo-ranura" title="Cruces de la línea punteada en esta captura: hacia arriba de la imagen (se alejan) y hacia abajo (vuelven). Cuenta también a quien no tiene ID ni género.">
+            <p v-if="r.telefono" class="conteo-ranura" title="Cruces de la línea punteada en esta captura: hacia arriba de la imagen (se alejan) y hacia abajo (vuelven). Cuenta también a quien no tiene ID.">
               <b>↑ {{ r.suben }}</b> suben · <b>↓ {{ r.regresan }}</b> regresan
             </p>
             <article v-else class="panel ranura libre">
@@ -529,7 +529,6 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
               <li v-for="p in vivo.vivas.value.lista" :key="p.clave">
                 <span class="punto" :style="{ background: p.id != null ? colorPersona(p.id) : '#8ba4bf' }"></span>
                 <b>{{ p.id != null ? `G${p.id}` : "?" }}</b>
-                <span>{{ p.genero ?? "Sin determinar" }}<template v-if="p.conf"> · {{ Math.round(p.conf * 100) }}%</template></span>
                 <small class="muted">{{ p.camaras.join(", ") }}</small>
               </li>
               <li v-if="!vivo.vivas.value.lista.length" class="muted vacio">Sin observaciones.</li>
