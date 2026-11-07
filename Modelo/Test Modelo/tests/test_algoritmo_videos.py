@@ -66,10 +66,12 @@ class ModeloDeLosTelefonos(unittest.TestCase):
         combinado = types.SimpleNamespace(dimension=896)
         with mock.patch.object(ct, "ReIDPersonas"), mock.patch.object(ct, "ReIDGrabado"), \
                 mock.patch.object(ct, "ReIDPersonViT"), mock.patch.object(ct, "ReIDCombinado", return_value=combinado), \
-                mock.patch.object(ct, "motor_aparte", return_value="motor de videos") as aparte:
+                mock.patch.object(ct, "motor_aparte", return_value="motor de videos") as aparte, \
+                mock.patch.object(ct, "usar_tensorrt") as compilado:
             propio, reid_tel, asociacion, como_videos = ct.modelo_telefonos(motor, None, {"threshold": 0.6, "otro": 1})
         self.assertTrue(como_videos)
         aparte.assert_called_once_with(motor)
+        compilado.assert_called_once_with("motor de videos")
         self.assertEqual(propio, "motor de videos")
         self.assertIs(reid_tel, combinado)
         self.assertEqual(asociacion, {"threshold": 0.6, "otro": 1, **ASOCIACION_VIDEO, **ASOCIACION_REID_GPU})

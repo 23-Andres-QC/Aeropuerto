@@ -223,6 +223,7 @@ Se activa con el botón de la cabecera, y también entra solo cuando se conecta 
   - su género: vota desde la primera vista y lo que ya se mostró cambia solo con 0,6 de certeza.
   - Con dos teléfonos (dos videos del dataset), el carril rápido tarda una mediana de 88 ms por cuadro, contra 152 ms del algoritmo anterior, que pasaba por los puntos del cuerpo.
   - `MODELO_ALGORITMO=telefonos` vuelve al algoritmo anterior.
+  - **Detector en TensorRT** (`detector_tensorrt.py`): el mismo yolo26m compilado para la GPU, con las mismas personas: con dos teléfonos detectar baja de 40 a 31 ms y cada cuadro de 59 a 51 ms. Se compila solo la primera vez (~4 min, en otro proceso) y queda en `Modelo/` como `.engine` (no va al repositorio). Si no se puede, sigue en PyTorch; `MODELO_TENSORRT=no` lo desactiva. Videos sigue en PyTorch.
 - **Sin GPU** (`modelo-vivo`), el de siempre, como Videos sin GPU:
   - `yolo26s` a 640 px (`MODELO_IMGSZ`) y `yolo26s-reid` (512 valores);
   - los puntos del cuerpo (`yolo26s-pose`) solo afinan la caja de quien se ve de cerca, sin los brazos. Una caja muy ancha (brazos abiertos) se angosta.

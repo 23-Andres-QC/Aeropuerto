@@ -51,6 +51,7 @@ import lap01
 from lap01.camaras_reid import ReIDPersonas
 from detector_onnx import DetectorONNX
 from detector_pose import DetectorCuerpo, ajustar_cajas
+from detector_tensorrt import PorLotes, usar_tensorrt
 from memoria_identidades import AsociadorConMemoria, MemoriaIdentidades
 from ubicacion import MIN_COINCIDENCIAS as U_MIN, Ubicador
 from reid_videos import ReIDCombinado, ReIDGrabado, ReIDPersonViT
@@ -1075,11 +1076,15 @@ def personas_para_web(filas, ancho, ancho_relevo=ANCHO_RELEVO):
 
 def modelo_telefonos(motor, reid, asociacion_build):
     """(motor, Re-ID, asociación, como_videos) de los teléfonos: con GPU los de Videos (ver ALGORITMO_VIDEOS), con su
-    propio motor y su propio Re-ID (no comparten estado con los videos que se procesan a la vez); si no, los de siempre."""
+    propio motor y su propio Re-ID (no comparten estado con los videos que se procesan a la vez); si no, los de siempre.
+    Con GPU su YOLO va compilado en TensorRT (ver detector_tensorrt): las mismas personas y cada cuadro de dos teléfonos
+    en ~51 ms en vez de ~59. Videos sigue con el de PyTorch: sus videos detectan desde otro hilo y un motor compilado no se comparte."""
     if ALGORITMO_VIDEOS and str(motor.device).startswith("cuda"):
         reid_videos = ReIDCombinado([ReIDGrabado(ReIDPersonas(MODELO / REID_VIDEO_GPU, batch_size=16, device=motor.device)),
                                      ReIDPersonViT(MODELO / PERSONVIT_VIDEO_GPU, device=motor.device)])
-        return motor_aparte(motor), reid_videos, {**asociacion_build, **ASOCIACION_VIDEO, **ASOCIACION_REID_GPU}, True
+        propio = motor_aparte(motor)
+        usar_tensorrt(propio)
+        return propio, reid_videos, {**asociacion_build, **ASOCIACION_VIDEO, **ASOCIACION_REID_GPU}, True
     reid = ReIDMitadSuperior(reid, PARTE_SUPERIOR_REID) if PARTE_SUPERIOR_REID < 1 else reid
     return motor, reid, {**asociacion_build, **ASOCIACION_TELEFONO}, False
 
@@ -1166,7 +1171,8 @@ def main():
     else:
         print(f"Re-ID con {parte(PARTE_SUPERIOR_REID)}; género con {parte(MITAD_SUPERIOR)}.", flush=True)
     detector = getattr(motor_telefonos.detector, "base", motor_telefonos.detector)
-    print(f"Modelo listo en {motor.device} · detector {type(detector).__name__} a "
+    compilado = " en TensorRT" if isinstance(getattr(detector, "model", None), PorLotes) else ""
+    print(f"Modelo listo en {motor.device} · detector {type(detector).__name__}{compilado} a "
           f"{getattr(detector, 'config', motor.config['detector'])['imgsz']} px · ubicación: {SITIO_TELEFONOS if ubicador else 'sin referencias'} · "
           f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no'}", flush=True)
     memoria = MemoriaIdentidades(url_api, asociacion, dimension=reid_sesion.dimension)
