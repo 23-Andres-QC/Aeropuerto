@@ -4,33 +4,35 @@
   "prefijo": "pasillo",
   "capa": "capa.json",
   "alcance_m": 35.0,
-  "nota": "Poses estimadas por lo que se ve en los videos, no una calibración: las dos cámaras graban desde lo alto del Edificio D. cam06 (camara1) en el extremo oeste de la fachada norte, mirando al este por la escalera hacia la plaza; cam07 (camara2) al sur del lado este, mirando al norte por el pasillo entre el edificio y el del este. posicion_px va en px del dibujo de la zona 3 (esan-zona-3.svg) y rumbo_deg es 0 hacia arriba del dibujo (el norte del edificio), en sentido del reloj. La altura y el horizonte se ajustaron con la altura de las personas detectadas (f_px de un teléfono sin zoom: con la altura de la gente casi no se distingue); las dos quedaron a 4,75 m, un segundo piso.",
+  "nota": "Poses calibradas con los propios videos (la gente camina dentro del pasillo y a lo largo de cada brazo, y quien está en las dos cámaras a la vez cae en el mismo punto), partiendo de lo que se ve en ellos: las dos cámaras graban desde lo alto del Edificio D. cam06 (camara1) en el extremo oeste de la fachada norte, mirando al este por la escalera hacia la plaza; cam07 (camara2) al sur del lado este, mirando al norte por el pasillo entre el edificio y el del este. posicion_px va en px del dibujo de la zona 3 (esan-zona-3.svg) y rumbo_deg es 0 hacia arriba del dibujo (el norte del edificio), en sentido del reloj. La altura y el horizonte se ajustaron con la altura de las personas detectadas (f_px de un teléfono sin zoom: con la altura de la gente casi no se distingue); las dos quedaron a 4,75 m, un segundo piso. Tiempo: las dos grabaciones terminaron juntas (camara2 dura 11,24 s más) y lo confirman las personas que pasan de una cámara a la otra: cam06 empieza 11,24 s después que cam07 (desfase_s).",
   "camaras": {
     "cam06": {
       "nombre": "cam06",
       "video": "camara1.mp4",
       "inicio": "2026-11-07T13:43:00-05:00",
       "posicion_px": [
-        100,
-        432
+        237.6,
+        373.6
       ],
-      "rumbo_deg": 90,
+      "rumbo_deg": 83.6,
       "altura_m": 4.75,
       "f_px": 600,
-      "horizonte_px": 50
+      "horizonte_px": 50,
+      "desfase_s": 11.24
     },
     "cam07": {
       "nombre": "cam07",
       "video": "camara2.mp4",
       "inicio": "2026-11-07T13:43:00-05:00",
       "posicion_px": [
-        1060,
-        867
+        1000.0,
+        906.7
       ],
-      "rumbo_deg": 0,
+      "rumbo_deg": 33.6,
       "altura_m": 4.75,
       "f_px": 600,
-      "horizonte_px": 59
+      "horizonte_px": 59,
+      "desfase_s": 0.0
     }
   }
 }

@@ -841,6 +841,18 @@ const escalaM = computed(() => {
 /** El recorte de la cuadrícula al piso sobre el campus necesita un id propio por plano (hay varios por página). */
 const idPiso = `piso-${Math.random().toString(36).slice(2, 9)}`;
 
+/** Texto que se lee sobre el color de una persona: negro sobre los claros (amarillos, verdes), blanco sobre los oscuros. */
+function textoSobre(color: string): string {
+  const m = /hsl\(\s*([\d.]+),\s*([\d.]+)%,\s*([\d.]+)%/.exec(color);
+  if (!m) return "#fff";
+  const [h, sat, l] = [+m[1], +m[2] / 100, +m[3] / 100];
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    return l - sat * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+  };
+  const lum = 0.2126 * f(0) + 0.7152 * f(8) + 0.0722 * f(4);
+  return lum > 0.45 ? "#111827" : "#fff";
+}
 const centro = (ps: Punto[]): Punto => [ps.reduce((a, p) => a + p[0], 0) / ps.length, ps.reduce((a, p) => a + p[1], 0) / ps.length];
 // Al final del script, cuando ya existe todo lo que la vista necesita.
 watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
@@ -980,7 +992,8 @@ watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
         </g>
         <g v-for="p in personas" :key="'p' + p.id" class="persona-g" :class="p.estado ?? 'visto'">
           <circle :cx="px(p.x)" :cy="py(p.y)" :r="(p.estado === 'salio' ? 6 : 9) * e" :fill="p.color" class="persona" />
-          <text :x="px(p.x) + 12 * e" :y="py(p.y) - 8 * e" class="persona-etiqueta" :style="{ fill: p.color }">{{ p.etiqueta }}</text>
+          <rect :x="px(p.x) + 9 * e" :y="py(p.y) - 21 * e" :width="(p.etiqueta.length * 8 + 8) * e" :height="17 * e" :rx="4 * e" :fill="p.color" class="persona-chip" />
+          <text :x="px(p.x) + 13 * e" :y="py(p.y) - 8 * e" class="persona-etiqueta" :style="{ fill: textoSobre(p.color) }">{{ p.etiqueta }}</text>
         </g>
         <!-- Desde el campus, el sitio grabado se marca y un clic acerca a él. -->
         <g v-if="enCampus" class="entrada-sitio" :class="{ elegida: elegida === 'sitio' }" role="button" tabindex="0" @click.stop="tocar('sitio', entrarAlSitio)" @keydown.enter="tocar('sitio', entrarAlSitio)">
@@ -1109,6 +1122,7 @@ watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
 .lienzo-plano.lejos .zona-nombre,
 .lienzo-plano.lejos .camara,
 .lienzo-plano.lejos .persona-etiqueta,
+.lienzo-plano.lejos .persona-chip,
 .lienzo-plano.lejos .flecha text {
   display: none;
 }
@@ -1403,9 +1417,13 @@ watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
 .persona-etiqueta {
   font-size: calc(13px * var(--e));
   font-weight: 700;
-  paint-order: stroke;
-  stroke: var(--glass-strong);
-  stroke-width: calc(3px * var(--e));
+  pointer-events: none;
+}
+/* El ID va sobre una etiqueta de su color, con el texto en negro o blanco según el color: se lee sobre cualquier fondo. */
+.persona-chip {
+  stroke: rgba(15, 23, 42, 0.35);
+  stroke-width: calc(1px * var(--e));
+  pointer-events: none;
 }
 .persona-g.salio .persona-etiqueta {
   font-size: calc(11px * var(--e));

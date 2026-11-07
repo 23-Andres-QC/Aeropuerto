@@ -174,17 +174,23 @@ def seguir(video, pesos, cadencia):
     return cuadros, fps / paso, tam
 
 
-def seguir_como_videos(camaras, salida, rehacer=False):
+def seguir_como_videos(camaras, salida, rehacer=False, desfases=None):
     """Pasada 1 con el modelo de la sección Videos, las cámaras juntas como una tanda (videos_subidos.GrupoVideos): mismo
     motor, Re-ID y asociador que carga el servicio del modelo (camara_telefono.cargar_modelo), y en cada pasada todos los
     videos van por el mismo segundo. Se procesa cada cuadro de la cadencia FPS_SALIDA, sin el reloj del tiempo real.
     `camaras`: {id: ruta}. Devuelve {id: (cuadros, fps, tam, numeros, generos)}: `numeros` es el ID de Videos de cada ID del
-    seguidor (el que más llevó) y `generos`, {ID: (género, certeza)} como en el resumen de Videos."""
+    seguidor (el que más llevó) y `generos`, {ID: (género, certeza)} como en el resumen de Videos.
+    `desfases`: {id: segundos} en que empezó cada video en el reloj de la sesión (las cámaras no empiezan a la vez): cada pasada lleva
+    los cuadros del mismo instante real y los tiempos de los cuadros ya van en el reloj de la sesión."""
+    desfases = {cid: float((desfases or {}).get(cid, 0.0)) for cid in camaras}
     guardados = {cid: salida / f"videos_{cid}.json" for cid in camaras}
+    if not rehacer and all(g.exists() for g in guardados.values()):
+        leidos = {cid: json.loads(g.read_text()) for cid, g in guardados.items()}
+        rehacer = any((v[5] if len(v) > 5 else 0.0) != desfases[cid] for cid, v in leidos.items())  # otro desfase: hay que volver a pasar
     if not rehacer and all(g.exists() for g in guardados.values()):
         out = {}
         for cid, g in guardados.items():
-            cuadros, fps, tam, numeros, generos = json.loads(g.read_text())
+            cuadros, fps, tam, numeros, generos = leidos[cid][:5]
             out[cid] = (cuadros, fps, tuple(tam), {int(k): v for k, v in numeros.items()}, {int(k): tuple(v) for k, v in generos.items()})
         return out
     import cv2
@@ -202,7 +208,7 @@ def seguir_como_videos(camaras, salida, rehacer=False):
         cap = cv2.VideoCapture(str(ruta))
         fps = cap.get(cv2.CAP_PROP_FPS)
         estado[cid] = {"video": video, "cap": cap, "fps": fps, "paso": max(1, round(fps / FPS_SALIDA)), "idx": 0, "cuadros": [], "ids": {},
-                       "tam": (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))}
+                       "tam": (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))), "desfase": desfases[cid]}
 
     def siguiente(e):
         while True:
@@ -211,7 +217,7 @@ def seguir_como_videos(camaras, salida, rehacer=False):
                 return None
             e["idx"] += 1
             if (e["idx"] - 1) % e["paso"] == 0:
-                return im, (e["idx"] - 1) / e["fps"]
+                return im, (e["idx"] - 1) / e["fps"] + e["desfase"]
 
     proximos = {cid: siguiente(e) for cid, e in estado.items()}
     pasadas = 0
@@ -245,7 +251,7 @@ def seguir_como_videos(camaras, salida, rehacer=False):
         numeros = {i: c.most_common(1)[0][0] for i, c in e["ids"].items()}
         generos = {p["id"]: (p["genero"], p["certeza"]) for p in e["video"].personas()}
         out[cid] = (e["cuadros"], e["fps"] / e["paso"], e["tam"], numeros, generos)
-        guardados[cid].write_text(json.dumps([e["cuadros"], e["fps"] / e["paso"], e["tam"], numeros, generos]))
+        guardados[cid].write_text(json.dumps([e["cuadros"], e["fps"] / e["paso"], e["tam"], numeros, generos, e["desfase"]]))
         print(f"{cid}: {len(e['cuadros'])} cuadros, {len(set(numeros.values()))} personas (Videos cuenta {len(generos)})", flush=True)
     return out
 
@@ -698,7 +704,9 @@ def dibujar(video, cuadros, numeros, camara_id, salida, fps, tam):
                 (w, h), _ = cv2.getTextSize(texto, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
                 y0 = max(h + 4, int(y1))
                 cv2.rectangle(im, (int(x1), y0 - h - 4), (int(x1) + w + 4, y0), color, -1)
-                cv2.putText(im, texto, (int(x1) + 2, y0 - 3), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
+                # Texto negro sobre los colores claros (amarillos, verdes) y blanco sobre los oscuros: siempre se lee.
+                claro = 0.114 * color[0] + 0.587 * color[1] + 0.299 * color[2] > 140
+                cv2.putText(im, texto, (int(x1) + 2, y0 - 3), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0) if claro else (255, 255, 255), 1, cv2.LINE_AA)
             cabecera = f"{camara_id} | {cuadros[k]['t']:.2f}s | {len(vistos)} tracks"
             (w, h), _ = cv2.getTextSize(cabecera, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
             cv2.rectangle(im, (0, 0), (w + 8, h + 8), (0, 0, 0), -1)
@@ -769,7 +777,7 @@ def sesion_para_bd(resultados, config):
         "session": {"session_id": sid, "name": nombre, "kind": "BUILD", "status": "DONE",
                     "recording_start": inicio.isoformat(), "recording_start_declared": True,
                     "ended_at": (inicio + timedelta(seconds=duracion)).isoformat(), "config_version": "", "config_sha256": "",
-                    "summary": {"zona": config["zona"], "videos": {r["id"]: r["video"] for r in resultados}, "desfases_s": {r["id"]: 0.0 for r in resultados},
+                    "summary": {"zona": config["zona"], "videos": {r["id"]: r["video"] for r in resultados}, "desfases_s": {r["id"]: float(r["cfg"].get("desfase_s", 0.0)) for r in resultados},
                                 "segundos_video": round(duracion, 2), "fps_por_camara": round(primera["fps"], 2), "personas": len(identidades),
                                 "estado": ("Videos procesados con el modelo de la sección Videos" if primera.get("generos") is not None
                                            else "Videos procesados por el modelo (YOLO26s + ByteTrack)") + "; ubicación aproximada en el plano",
@@ -889,7 +897,7 @@ def main():
     salida.mkdir(parents=True, exist_ok=True)
     rutas = dict(par.split("=", 1) for par in args.video)
     if args.modelo == "videos":
-        seguidos = seguir_como_videos(rutas, salida, args.rehacer)
+        seguidos = seguir_como_videos(rutas, salida, args.rehacer, {c: config["camaras"][c].get("desfase_s", 0.0) for c in rutas})
         resultados = [analizar(camara_id, config, ruta, args, salida, None, seguidos[camara_id]) for camara_id, ruta in rutas.items()]
     else:
         embebedor = Embebedor(args.reid)
