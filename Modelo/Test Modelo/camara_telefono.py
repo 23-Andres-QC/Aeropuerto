@@ -141,6 +141,8 @@ ESTATICO_TELEFONO_S = 3.0
 # deriva con el teléfono en la mano (hasta ~0,45 alturas en una vitrina de video1) y con 0,2 quedaba a la vista con ID;
 # quien camina se aleja media altura en menos de un segundo, mucho antes de los 3 s.
 ESTATICO_DESPLAZAMIENTO_TELEFONO = 0.5
+# Hilos que miden el movimiento de cada cámara mientras el detector trabaja (ver Quietud.preparar).
+_HILOS_QUIETUD = ThreadPoolExecutor(max_workers=4, thread_name_prefix="quietud")
 # Con esta certeza o más el género de una persona queda fijo y ya no cambia.
 GENERO_FIJO = 0.8
 # Una muestra para CLIP cada 0,3 s por track (el Build, cada 0,6 s).
@@ -753,14 +755,22 @@ class SesionEnVivo:
         fuente = dict(self.procesados)
         self._recoger_ubicacion()
         self._pedir_ubicacion(frames)
-        detectadas = self.motor.detectar(frames)
+        # El movimiento de cada cámara (Quietud) solo necesita la imagen: se mide en otro hilo mientras se detecta.
+        quietudes = {cid: self.quietud.setdefault(cid, Quietud(ESTATICO_TELEFONO_S, ESTATICO_DESPLAZAMIENTO_TELEFONO))
+                     for cid in frames}
+        preparadas = [_HILOS_QUIETUD.submit(q.preparar, frames[cid]) for cid, q in quietudes.items()]
+        try:
+            detectadas = self.motor.detectar(frames)
+        finally:
+            for preparada in preparadas:
+                preparada.result()
         # Con pose las cajas ya son de cuerpo sin brazos; el detector de Videos (SinEnvolventes) deja las suyas.
         if not isinstance(self.motor.detector, (DetectorCuerpo, SinEnvolventes)):
             detectadas = {cid: ajustar_cajas(*dato) for cid, dato in detectadas.items()}
         self._ventanas_seguidor(frames)
         filas = self.motor.seguir(frames, fuente, detectadas)
         for cid, fs in filas.items():
-            quieta = self.quietud.setdefault(cid, Quietud(ESTATICO_TELEFONO_S, ESTATICO_DESPLAZAMIENTO_TELEFONO))
+            quieta = quietudes.get(cid) or self.quietud.setdefault(cid, Quietud(ESTATICO_TELEFONO_S, ESTATICO_DESPLAZAMIENTO_TELEFONO))
             quieta.actualizar(self.t, fs, frames[cid])
             filas[cid] = [f for f in fs if not quieta.estatico(f["local_id"], self.t)]
         # Cada carril lento recibe sus copias: modifica sus filas mientras el lazo principal publica las suyas.

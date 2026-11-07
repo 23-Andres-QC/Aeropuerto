@@ -25,7 +25,9 @@ from threadpoolctl import threadpool_limits
 
 
 class DetectorPersonas:
-    """YOLO26m, clase person. Con batch=True agrupa un frame por cámara (nunca frames de distinto tiempo)."""
+    """YOLO26m, clase person. Con batch=True agrupa un frame por cámara (nunca frames de distinto tiempo), una pasada por
+    forma de frame: juntos, frames de distinta forma se rellenan todos a imgsz × imgsz (con un teléfono horizontal y otro
+    vertical, 46 ms en vez de 27 por separado en la GPU)."""
 
     def __init__(self, pesos, config, device, batch=True):
         from ultralytics import YOLO
@@ -39,8 +41,16 @@ class DetectorPersonas:
         kwargs = dict(classes=[0], conf=self.config["conf"], iou=self.config["iou"], imgsz=self.config["imgsz"],
                       device=self.device, verbose=False, rect=True, quantize=precision)
         images = list(frames.values())
-        results = (self.model.predict(source=images, **kwargs) if self.batch
-                   else [self.model.predict(source=image, **kwargs)[0] for image in images])
+        if self.batch:
+            por_forma = {}
+            for i, image in enumerate(images):
+                por_forma.setdefault(image.shape, []).append(i)
+            results = [None] * len(images)
+            for indices in por_forma.values():
+                for i, result in zip(indices, self.model.predict(source=[images[i] for i in indices], **kwargs)):
+                    results[i] = result
+        else:
+            results = [self.model.predict(source=image, **kwargs)[0] for image in images]
         detections = {}
         for cid, result in zip(frames, results):
             if result.boxes is None or not len(result.boxes):

@@ -277,26 +277,40 @@ class Quietud:
         self.ultimo = {}    # local_id -> (t, centro en el fondo) en su última vista
         self.movidos = set()
         self.fondo = None   # (gris chico, máscara sin las personas, escala) del frame anterior
+        self.preparado = None  # (frame, gris, escala, movimiento) medido antes de tener sus filas (ver preparar)
+
+    def preparar(self, frame):
+        """Mide ya el movimiento de la cámara hasta este frame: solo necesita la imagen (las personas de este frame son
+        la máscara del siguiente). Los teléfonos lo hacen mientras el detector trabaja, en otro hilo (OpenCV suelta el
+        GIL): eran ~8 ms por cuadro de dos teléfonos después de detectar. actualizar lo usa si recibe el mismo frame."""
+        self.preparado = (frame, *self._flujo(frame))
+
+    def _flujo(self, frame):
+        """(gris chico, escala, cuánto se movió el fondo desde el frame anterior en px del frame o None)."""
+        escala = min(1.0, ANCHO_FLUJO / frame.shape[1])
+        gris = cv2.cvtColor(cv2.resize(frame, None, fx=escala, fy=escala, interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)
+        previo = self.fondo
+        if previo is None or previo[0].shape != gris.shape:
+            return gris, escala, None
+        puntos = cv2.goodFeaturesToTrack(previo[0], maxCorners=200, qualityLevel=0.01, minDistance=6, mask=previo[1])
+        if puntos is None or len(puntos) < MIN_PUNTOS_FONDO:
+            return gris, escala, None
+        nuevos, ok, _ = cv2.calcOpticalFlowPyrLK(previo[0], gris, puntos, None, winSize=(21, 21), maxLevel=3)
+        ok = ok.reshape(-1).astype(bool)
+        if ok.sum() < MIN_PUNTOS_FONDO:
+            return gris, escala, None
+        return gris, escala, np.median((nuevos - puntos).reshape(-1, 2)[ok], axis=0) / escala
 
     def _movimiento_camara(self, frame, filas):
         """Cuánto se movió la imagen del fondo desde el frame anterior (px del frame), o None si no se puede medir."""
-        escala = min(1.0, ANCHO_FLUJO / frame.shape[1])
-        gris = cv2.cvtColor(cv2.resize(frame, None, fx=escala, fy=escala, interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)
+        preparado, self.preparado = getattr(self, "preparado", None), None
+        gris, escala, movimiento = preparado[1:] if preparado is not None and preparado[0] is frame else self._flujo(frame)
         mascara = np.full(gris.shape, 255, np.uint8)
         for f in filas:
             cv2.rectangle(mascara, (int(f["x1"] * escala), int(f["y1"] * escala)),
                           (int(f["x2"] * escala), int(f["y2"] * escala)), 0, -1)
-        previo, self.fondo = self.fondo, (gris, mascara, escala)
-        if previo is None or previo[0].shape != gris.shape:
-            return None
-        puntos = cv2.goodFeaturesToTrack(previo[0], maxCorners=200, qualityLevel=0.01, minDistance=6, mask=previo[1])
-        if puntos is None or len(puntos) < MIN_PUNTOS_FONDO:
-            return None
-        nuevos, ok, _ = cv2.calcOpticalFlowPyrLK(previo[0], gris, puntos, None, winSize=(21, 21), maxLevel=3)
-        ok = ok.reshape(-1).astype(bool)
-        if ok.sum() < MIN_PUNTOS_FONDO:
-            return None
-        return np.median((nuevos - puntos).reshape(-1, 2)[ok], axis=0) / escala
+        self.fondo = (gris, mascara, escala)
+        return movimiento
 
     def actualizar(self, t, filas, frame=None):
         """Registra las filas de un frame (t: segundo del video; frame: la imagen, para medir el movimiento de la cámara)."""
