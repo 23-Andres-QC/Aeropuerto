@@ -1,7 +1,7 @@
 {
  "sitio": "esan",
  "fecha": "2026-10-07",
- "nota": "Referencias de los teléfonos del patio de ESAN (edificios A y B). Cada una es un cuadro del relevo (640 px de ancho) con su homografía de píxeles a metros del plano. Cámara 1: balcón del oeste (izquierda del plano), mirando al este; A0 se calibró con el reciclaje, el tacho verde y las dos expendedoras y A1-A2 se alinearon con A0 por las baldosas. Cámara 2: balcón de la baranda roja al este (derecha del plano), mirando al oeste; B0-B1 se alinearon con A0 por las baldosas que ven las dos cámaras y B2 con B0. Cámaras 4 y 5 (comedor): cuadros de los videos de cam04 y cam05 (24/10), con la homografía del modelo de cámara de procesar_video.py (altura, distancia focal y horizonte de camaras_video.json); sirven si el teléfono se para donde estuvieron esas cámaras, mirando igual.",
+ "nota": "Referencias de los teléfonos del patio de ESAN (edificios A y B). Cada una es un cuadro del relevo (640 px de ancho) con su homografía de píxeles a metros del plano. Cámara 1: balcón del oeste (izquierda del plano), mirando al este; A0 se calibró con el reciclaje, el tacho verde y las dos expendedoras y A1-A2 se alinearon con A0 por las baldosas. Cámara 2: balcón de la baranda roja al este (derecha del plano), mirando al oeste; B0-B1 se alinearon con A0 por las baldosas que ven las dos cámaras y B2 con B0. Cámaras 4 y 5 (comedor): cuadros de los videos de cam04 y cam05 (24/10), con la homografía del modelo de cámara de procesar_video.py (altura, distancia focal y horizonte de camaras_video.json); sirven si el teléfono se para donde estuvieron esas cámaras, mirando igual. Cámaras 6 y 7 (pasillo del Edificio D): igual que el comedor, cuadros de cam06 y cam07 (07/11) con el modelo de cámara de zona3/camaras_video.json y lo que se movió el teléfono en ese cuadro; sirven si el teléfono se para donde estuvieron esas cámaras, mirando igual.",
  "referencias": [
   {
    "nombre": "A0",
@@ -204,6 +204,108 @@
     17.514124350305487,
     -5.902666255104269e-12,
     -0.0017328200046046504,
+    1.0
+   ]
+  },
+  {
+   "nombre": "E0",
+   "camara": 6,
+   "imagen": "E0.jpg",
+   "origen": "cam06@0.15",
+   "H": [
+    0.026186702296104612,
+    0.892470326175912,
+    -139.79544388037186,
+    0.059975767056121475,
+    -0.40212260044912046,
+    11.589342415238047,
+    -0.00033946661604622485,
+    -0.012707817055608759,
+    1.0
+   ]
+  },
+  {
+   "nombre": "E1",
+   "camara": 6,
+   "imagen": "E1.jpg",
+   "origen": "cam06@0.5",
+   "H": [
+    0.061210578246195434,
+    1.0873556144178056,
+    -156.92975526031083,
+    0.05993724356917773,
+    -0.4922873659513596,
+    12.131007503664883,
+    -0.0008308423464781003,
+    -0.015483869820345615,
+    1.0
+   ]
+  },
+  {
+   "nombre": "E2",
+   "camara": 6,
+   "imagen": "E2.jpg",
+   "origen": "cam06@0.85",
+   "H": [
+    0.04167249473835027,
+    0.5093736062121755,
+    -106.1181592672242,
+    0.02225167147686484,
+    -0.23165731766985306,
+    21.399031975629285,
+    -0.0005742770728123114,
+    -0.007253931545889237,
+    1.0
+   ]
+  },
+  {
+   "nombre": "F0",
+   "camara": 7,
+   "imagen": "F0.jpg",
+   "origen": "cam07@0.15",
+   "H": [
+    -0.05646033719667495,
+    0.6808742427489687,
+    -77.52852364292245,
+    0.05346876334767362,
+    -0.11508196223385463,
+    -68.00463287073737,
+    -8.308444340748161e-05,
+    -0.01466144338467029,
+    1.0
+   ]
+  },
+  {
+   "nombre": "F1",
+   "camara": 7,
+   "imagen": "F1.jpg",
+   "origen": "cam07@0.5",
+   "H": [
+    2.4897171217869705,
+    -29.590266325551465,
+    1501.2747902164451,
+    -2.329986540672177,
+    4.999066599788103,
+    3229.298294078176,
+    0.0028413525209038957,
+    0.6372431515490808,
+    1.0
+   ]
+  },
+  {
+   "nombre": "F2",
+   "camara": 7,
+   "imagen": "F2.jpg",
+   "origen": "cam07@0.85",
+   "H": [
+    -0.03832127280925071,
+    0.441133963565847,
+    -67.12061057921578,
+    0.034945585868627206,
+    -0.07444930372243745,
+    -41.7062966677402,
+    -1.6613963181279453e-05,
+    -0.009502351733177383,
     1.0
    ]
   }

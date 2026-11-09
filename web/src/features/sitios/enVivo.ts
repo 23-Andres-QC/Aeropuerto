@@ -157,6 +157,27 @@ export function proyectorAlcance(camara: Camara | undefined, mapa: Mapa): ((caja
   };
 }
 
+/** Focal de un teléfono en fracción del lado mayor del cuadro (la de los videos del pasillo: 600 px de 832), también con el teléfono en vertical. */
+const FOCAL_LADO = 0.72;
+/** Hasta dónde se ubica por la pose de la cámara en una zona grabada: lo más lejano del pasillo queda a ~40 m. */
+const ALCANCE_ZONA_M = 45;
+
+/**
+ * Persona de una zona grabada cuyo teléfono no reconoce la vista: se ubica con la posición y el rumbo de su cámara en el plano, la distancia
+ * por su tamaño y el lado por dónde queda en el cuadro. Es aproximado y supone que el teléfono apunta como su cámara, pero dibuja.
+ */
+function proyectarPorPose(camara: Camara | undefined, [x1, y1, x2, y2]: number[], anchoFrame: number, altoFrame: number): Punto | null {
+  if (!camara?.position) return null;
+  const alto = y2 - y1;
+  if (!(alto > 8) || alto > altoFrame * 0.97) return null;
+  const f = FOCAL_LADO * Math.max(anchoFrame, altoFrame);
+  const distancia = (f * ALTURA_PERSONA_M) / alto;
+  if (!Number.isFinite(distancia) || distancia > ALCANCE_ZONA_M) return null;
+  const rumbo = ((camara.angle_deg ?? 0) * Math.PI) / 180;
+  const lado = Math.atan(((x1 + x2) / 2 - anchoFrame / 2) / f);
+  return [camara.position[0] + distancia * Math.cos(rumbo - lado), camara.position[1] + distancia * Math.sin(rumbo - lado)];
+}
+
 // --- Estado del motor (uno solo para toda la aplicación) ------------------------
 const sitio = ref("");
 const config = shallowRef<Config>();
@@ -476,6 +497,16 @@ function alPiso(p: Punto, piso: Punto[] | null | undefined): Punto {
   return mejor;
 }
 
+/** El en vivo es en una zona grabada que no es el patio. */
+const enZonaGrabada = () => !!claveVivo.value && claveVivo.value !== "sitio";
+
+/** El piso de la zona del en vivo: el de su capa o, en el patio, el del sitio. Con el del patio, la gente de otra zona se iba a su borde. */
+function pisoDeLaZona(): Punto[] | null | undefined {
+  const plano = config.value?.plano;
+  const capa = plano?.capas?.find((c) => c.nombre === claveVivo.value);
+  return capa ? capa.piso_m : plano?.piso_m;
+}
+
 // --- Ubicación de los teléfonos en el plano ----------------------------------------------
 // El modelo manda, con las cajas de cada cuadro, la homografía de sus píxeles a metros del plano (Modelo/Test Modelo/ubicacion.py):
 // compara el cuadro con imágenes de referencia calibradas de cada cámara, así que vale aunque el teléfono se mueva en la mano.
@@ -514,7 +545,9 @@ function alDetecciones(id: string, ev: MessageEvent) {
   if (!cid) return;
   // Sin ubicación el teléfono sigue transmitiendo: su ranura cuenta como activa y En vivo avisa que no reconoce el patio
   // (antes se ignoraba el cuadro y la cámara figuraba apagada, sin aviso).
-  if (!plano || !m.frame_w || !m.frame_h || Date.now() < descartarHasta) {
+  // En una zona grabada, sin reconocer la vista, va por la pose de su cámara (ver proyectarPorPose); en el patio no: ahí sigue sin dibujarse.
+  const camara = !plano && enZonaGrabada() ? camaras.value?.find((c) => c.camera_id === cid) : undefined;
+  if ((!plano && !camara?.position) || !m.frame_w || !m.frame_h || Date.now() < descartarHasta) {
     cuadros.set(id, { llegada: Date.now(), observaciones: [] });
     return;
   }
@@ -525,9 +558,9 @@ function alDetecciones(id: string, ev: MessageEvent) {
     const [x1, y1, x2, y2] = p.box;
     // Con los pies cortados por el borde del cuadro la proyección no vale (igual que en el Build).
     if (y2 >= m.frame_h - 3) continue;
-    const bruto = proyectarCalibrado(plano, (x1 + x2) / 2, y2, m.frame_w);
+    const bruto = plano ? proyectarCalibrado(plano, (x1 + x2) / 2, y2, m.frame_w) : proyectarPorPose(camara, p.box, m.frame_w, m.frame_h);
     if (!bruto) continue;
-    const punto = alPiso([bruto[0] + ajusteMapa.value.dx, bruto[1] + ajusteMapa.value.dy], config.value?.plano?.piso_m);
+    const punto = alPiso([bruto[0] + ajusteMapa.value.dx, bruto[1] + ajusteMapa.value.dy], pisoDeLaZona());
     observaciones.push({
       clave: p.global_id != null ? `g${p.global_id}` : `${cid}-${p.local_id}`,
       id: p.global_id,
@@ -750,7 +783,7 @@ const ranuras = computed<RanuraVivo[]>(() => {
       activa: vigente,
       personas: vigente && cuadro ? cuadro.observaciones.length : 0,
       // El modelo no reconoce lo que ve (no apunta al patio): no se ubica en el plano (ver alDetecciones).
-      sinCalibracion: !!telefono && vigente && !ubicados.value.has(telefono.id),
+      sinCalibracion: !!telefono && vigente && !ubicados.value.has(telefono.id) && !enZonaGrabada(),
       suben: contado?.sube.total ?? 0,
       regresan: contado?.regresa.total ?? 0,
     };
