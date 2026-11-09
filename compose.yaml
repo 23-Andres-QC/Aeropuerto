@@ -163,6 +163,32 @@ services:
       camara-web:
         condition: service_healthy
     restart: unless-stopped
+  # Modelo en vivo con la GPU dentro de Docker, para cuando no se puede correr directo con Python (en Windows, el Control
+  # inteligente de aplicaciones puede bloquear las DLL de PyTorch). Va con perfil: docker compose --profile gpu up -d modelo-gpu.
+  # Mismo multitracking que directo; el detector va en PyTorch en vez de TensorRT (mismas personas, ~8 ms más por cuadro).
+  modelo-gpu:
+    build:
+      context: "./Modelo/Test Modelo"
+      dockerfile: Dockerfile.gpu
+    profiles: [gpu]
+    gpus: all
+    network_mode: host
+    # El código y los pesos, de la carpeta del repositorio.
+    volumes:
+      - "./Modelo/Test Modelo:/app"
+    command: ["--api", "http://127.0.0.1:${VIVO_API_PORT:-8093}"]
+    environment:
+      # Dentro de Docker el modelo no ve la IP de la laptop en la red: ej. https://192.168.1.5:8444.
+      ENLACE_CAMARA: ${ENLACE_CAMARA:-}
+      MODELO_TENSORRT: "no"
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
+    depends_on:
+      backend-vivo:
+        condition: service_healthy
+      camara-web:
+        condition: service_healthy
+    # No vuelve a arrancar solo al abrir Docker: el modelo se levanta cuando se pide.
+    restart: on-failure:3
 volumes:
   pgdata:
   camara-cert:

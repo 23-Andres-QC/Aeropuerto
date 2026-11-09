@@ -21,6 +21,8 @@ CCTV / dataset → Modelo LAP01 (Python, GPU) → API Go → PostgreSQL/PostGIS 
 ```bash
 docker compose up -d --build                                    # web, API, backend-vivo, cámara web y las dos bases
 python "Modelo/Test Modelo/camara_telefono.py"                  # el modelo en vivo, fuera de Docker y con la GPU
+# Si Windows bloquea PyTorch (Control inteligente de aplicaciones), el modelo en vivo dentro de Docker, también con la GPU:
+ENLACE_CAMARA=https://IP-de-la-laptop:8444 docker compose --profile gpu up -d modelo-gpu
 ```
 
 | | |

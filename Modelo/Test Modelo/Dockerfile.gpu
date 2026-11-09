@@ -1,0 +1,18 @@
+# Modelo en vivo (camara_telefono.py) con la GPU dentro de Docker: servicio modelo-gpu de compose.yaml. Para cuando no se
+# puede correr directo con Python: en Windows, el Control inteligente de aplicaciones puede bloquear las DLL de PyTorch.
+# Solo trae las dependencias: el código y los pesos se leen de la carpeta del repositorio (ver compose.yaml), así un cambio
+# en el código no pide reconstruir nada.
+FROM python:3.13-slim-bookworm
+# OpenCV necesita libGL y glib aunque no abra ventanas.
+RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+# torch con CUDA: varios GB. En su propia capa para no volver a bajarlo si cambia lo de abajo.
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu130 torch==2.14.0 torchvision==0.29.0
+# Las mismas versiones que en la laptop. Sin TensorRT: su motor compilado es de cada sistema y el detector sigue en PyTorch.
+RUN pip install --no-cache-dir ultralytics==8.4.163 transformers==5.17.0 onnxruntime==1.30.0 onnx==1.21.0 onnx2torch==1.5.15 \
+    opencv-python==5.0.0.93 numpy==2.5.2 pandas==2.3.3 scipy==1.18.1 pillow==12.3.0 safetensors==0.8.0 lap==0.5.13 \
+    websockets==17.1 threadpoolctl==3.7.0 pynvvideocodec==2.2.3 ipython
+WORKDIR /app
+RUN useradd -m -u 10001 app
+USER app
+ENTRYPOINT ["python", "-u", "camara_telefono.py"]
