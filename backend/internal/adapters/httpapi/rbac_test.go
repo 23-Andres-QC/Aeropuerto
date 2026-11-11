@@ -299,7 +299,11 @@ func TestPasswordRecoveryFlow(t *testing.T) {
 	if w := call(rg.h, "POST", "/api/v1/auth/restablecer/validar", map[string]string{"token": token}, nil); w.Code != http.StatusNoContent {
 		t.Fatalf("validar: %d %s", w.Code, w.Body)
 	}
-	if w := call(rg.h, "POST", "/api/v1/auth/restablecer/validar", map[string]string{"token": "x" + token[1:]}, nil); w.Code != http.StatusBadRequest {
+	invented := "x" + token[1:]
+	if token[0] == 'x' { // otherwise the "invented" link is the real one (1 time in 64)
+		invented = "y" + token[1:]
+	}
+	if w := call(rg.h, "POST", "/api/v1/auth/restablecer/validar", map[string]string{"token": invented}, nil); w.Code != http.StatusBadRequest {
 		t.Fatalf("un enlace inventado se acepta: %d", w.Code)
 	}
 	// A weak password does not spend the link.
