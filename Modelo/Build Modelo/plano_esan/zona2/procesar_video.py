@@ -23,6 +23,11 @@ Otra grabación del comedor va con su propio archivo (`--config camaras_video_27
 
 Otra zona grabada usa el mismo script con su archivo (`--config ../zona3/camaras_video.json`): con `capa` (su capa.json) las
 poses van en px de su dibujo y las personas se quedan dentro de su contorno; `titulo` y `prefijo` nombran la sesión y los videos.
+
+Una cámara con `referencias` (el número de cámara de las referencias de ubicación del en vivo, Test Modelo/Modelo/ubicacion/esan) no usa
+el modelo de cámara: su video se compara con esas imágenes y la homografía de cada una lleva el pie al piso (CamaraReferencias). Así
+se ubica el patio (sin `zona`, con `piso_m` = el contorno del plano del sitio y `conservar_camaras`, para no tocar la calibración de
+sus cámaras) o una zona grabada cuyas cámaras se volvieron a poner distintas.
 """
 import argparse
 import colorsys
@@ -62,12 +67,15 @@ UNIR_S, VMAX, D0, MAX_SOLAPE = 120.0, 1.8, 1.5, 2
 SIM_MIN, SIM_CERCA, SIM_CAMARAS = 0.70, 0.62, 0.80
 DIST_MAX_M = 4.5  # (también es el margen de ubicación para el salto entre cámaras sin verse a la vez)  # dos cámaras que ven a la vez a la misma persona la ubican a menos de esto (mediana); más lejos = personas distintas
 EMB_CADA, EMB_ALTO, EMB_CONF, EMB_IOU = 2, 28, 0.3, 0.35  # un vector cada 2 cuadros procesados, de cajas de al menos 28 px de alto
+DISPOSITIVO = "cpu"  # dónde corrió el detector (seguir_como_videos lo cambia por el del modelo, p. ej. cuda:0)
 
 
 def usar_zona(config):
     """Con `capa` en la configuración (otra zona grabada, no el comedor), el dibujo y el contorno del piso son los de esa capa."""
     global PX_POR_M, ANCLA_PX, ANCLA_M, ANGULO, PISO_M, ALCANCE_M
     ALCANCE_M = config.get("alcance_m", ALCANCE_M)
+    if config.get("piso_m"):  # el patio: su contorno (el del plano del sitio) va en la misma configuración
+        PISO_M = [tuple(p) for p in config["piso_m"]]
     if not config.get("capa"):
         return
     capa = json.loads((Path(config.get("_carpeta", AQUI)) / config["capa"]).read_text(encoding="utf-8"))
@@ -156,6 +164,101 @@ class Camara:
         return [round(x0, 3), round(y0, 3)], round(math.degrees(math.atan2(y1 - y0, x1 - x0)) % 360.0, 3) % 360.0
 
 
+class CamaraReferencias:
+    """Del pie al piso con una homografía (px del video estabilizado → metros del plano) sacada de las referencias de ubicación del en vivo
+    (ver homografia_por_referencias): para una cámara sin modelo propio, como las del patio, o que se volvió a poner distinta. La pose de
+    la configuración (`posicion_m` y `angulo_deg`, o `posicion_px` y `rumbo_deg` en el dibujo de la zona) solo dice desde dónde mira."""
+
+    def __init__(self, H, cfg, tam):
+        self.H = np.asarray(H, float)
+        if "posicion_m" in cfg:
+            self.pose = [round(float(v), 3) for v in cfg["posicion_m"]], round(float(cfg["angulo_deg"]) % 360.0, 3)
+        else:
+            self.pose = Camara(cfg, *tam).pose_m()
+        # El pie de la imagen está en el piso: lo que cae del otro lado del horizonte sale con el signo contrario.
+        self.signo = 1.0 if (self.H @ np.array([tam[0] / 2.0, tam[1] - 1.0, 1.0]))[2] > 0 else -1.0
+
+    def piso_libre(self, u, v, lejos=80.0):
+        """Metros del punto del piso en el pixel (u, v), sin ajustarlo al contorno; None sobre el horizonte o a más de `lejos` m de la cámara."""
+        p = self.H @ np.array([u, v, 1.0])
+        if p[2] * self.signo <= 1e-9:
+            return None
+        x, y = float(p[0] / p[2]), float(p[1] / p[2])
+        return (x, y) if math.hypot(x - self.pose[0][0], y - self.pose[0][1]) <= lejos else None
+
+    def piso(self, u, v, lejos=35.0):
+        """Como piso_libre, pero dentro del contorno de la zona (si lo tiene) y hasta 35 m."""
+        p = self.piso_libre(u, v, lejos)
+        return dentro_del_piso(p, PISO_M, FUERA_M) if p is not None and PISO_M else p
+
+    def pose_m(self):
+        return self.pose
+
+
+def homografia_por_referencias(video, n_cuadros, mats, camara, tam, sitio, n=24):
+    """Px del video estabilizado (`mats`, o del cuadro tal cual si es None) → metros del plano, con las imágenes de referencia de la
+    `camara` en Test Modelo/Modelo/ubicacion/<sitio> (las del en vivo: un cuadro de 640 px de ancho y su homografía al plano).
+    Se comparan `n` cuadros repartidos en el video con cada referencia (SIFT y RANSAC, sobre todo las baldosas): cada uno da
+    referencia ∘ (cuadro → referencia) ∘ (estabilizado → cuadro). La homografía final pone cada punto del piso en la mediana de todas."""
+    import cv2
+
+    carpeta = en_modelo(f"ubicacion/{sitio}")
+    datos = json.loads((carpeta / "referencias.json").read_text(encoding="utf-8"))
+    sift, buscador = cv2.SIFT_create(4000), cv2.BFMatcher()
+
+    def gris(im):
+        return cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
+
+    refs = []
+    for r in datos["referencias"]:
+        if r["camara"] == camara:
+            kp, des = sift.detectAndCompute(gris(cv2.imread(str(carpeta / r["imagen"]))), None)
+            refs.append((r["nombre"], kp, des, np.asarray(r["H"], float).reshape(3, 3)))
+    if not refs:
+        sys.exit(f"no hay referencias de la cámara {camara} en {carpeta}")
+    esc = 640.0 / tam[0]
+    S = np.diag([esc, esc, 1.0])
+    cap = cv2.VideoCapture(str(video))
+    paso = max(1, round(cap.get(cv2.CAP_PROP_FPS) / FPS_SALIDA))
+    candidatas, usadas = [], Counter()
+    for k in np.linspace(0, n_cuadros - 1, n).astype(int):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(k) * paso)
+        ok, im = cap.read()
+        if not ok:
+            continue
+        kp, des = sift.detectAndCompute(gris(cv2.resize(im, None, fx=esc, fy=esc, interpolation=cv2.INTER_AREA)), None)
+        if des is None:
+            continue
+        mejor = None
+        for nombre, kr, dr, H in refs:
+            pares = [p[0] for p in buscador.knnMatch(des, dr, k=2) if len(p) == 2 and p[0].distance < 0.75 * p[1].distance]
+            if len(pares) < 40:
+                continue
+            G, dentro = cv2.findHomography(np.float32([kp[m.queryIdx].pt for m in pares]), np.float32([kr[m.trainIdx].pt for m in pares]), cv2.RANSAC, 3.0)
+            buenos = int(dentro.sum()) if dentro is not None else 0
+            if G is not None and buenos >= 40 and (mejor is None or buenos > mejor[0]):
+                mejor = (buenos, nombre, H @ G @ S)
+        if mejor is not None:
+            usadas[mejor[1]] += 1
+            candidatas.append(mejor[2] @ np.linalg.inv(mats[k] if mats is not None else np.eye(3)))
+    cap.release()
+    if len(candidatas) < 3:
+        sys.exit(f"{video}: solo {len(candidatas)} de {n} cuadros se reconocen en las referencias de la cámara {camara}")
+    # Puntos de la mitad de abajo de la imagen (el piso); cada uno donde lo pone la mediana de las homografías que lo dejan en el piso.
+    u, v = np.meshgrid(np.linspace(0.08, 0.92, 9) * tam[0], np.linspace(0.5, 0.98, 9) * tam[1])
+    rejilla = np.stack([u.ravel(), v.ravel(), np.ones(u.size)], axis=1)
+    proy = np.array([rejilla @ Hc.T for Hc in candidatas])
+    signo = np.sign(proy[:, -5:-4, 2])  # el pie de la imagen, en el piso
+    proy = np.where(np.sign(proy[:, :, 2:]) == signo[:, :, None], proy[:, :, :2] / proy[:, :, 2:], np.nan)
+    medianas = np.nanmedian(proy, axis=0)
+    validos = ~np.isnan(medianas).any(axis=1)
+    H, _ = cv2.findHomography(rejilla[validos, :2].astype(np.float32), medianas[validos].astype(np.float32), 0)
+    error = np.nanmedian(np.linalg.norm(proy[:, validos] - medianas[validos], axis=2), axis=1)
+    print(f"{Path(video).name}: {len(candidatas)}/{n} cuadros reconocidos ({dict(usadas)}); cada uno se aparta de la mediana {np.median(error):.2f} m "
+          f"(peor {error.max():.2f} m)")
+    return H
+
+
 def seguir(video, pesos, cadencia):
     """Pasada 1: cajas y IDs de cada persona en los cuadros que se procesan. Devuelve (cuadros, fps, (ancho, alto))."""
     import cv2
@@ -211,7 +314,9 @@ def seguir_como_videos(camaras, salida, rehacer=False, desfases=None):
     import camara_telefono
     import videos_subidos
 
+    global DISPOSITIVO
     motor, _, reid, asociacion = camara_telefono.cargar_modelo(genero=False)  # como «Solo multitracking» de Videos: sin género
+    DISPOSITIVO = str(motor.device)
     grupo = videos_subidos.GrupoVideos(list(camaras), reid, asociacion, gpu=str(motor.device).startswith("cuda"))
     estado = {}
     for cid, ruta in camaras.items():
@@ -790,13 +895,14 @@ def sesion_para_bd(resultados, config):
         "session": {"session_id": sid, "name": nombre, "kind": "BUILD", "status": "DONE",
                     "recording_start": inicio.isoformat(), "recording_start_declared": True,
                     "ended_at": (inicio + timedelta(seconds=duracion)).isoformat(), "config_version": "", "config_sha256": "",
-                    "summary": {"zona": config["zona"], "videos": {r["id"]: r["video"] for r in resultados}, "desfases_s": {r["id"]: float(r["cfg"].get("desfase_s", 0.0)) for r in resultados},
+                    "summary": {"zona": config.get("zona"), "videos": {r["id"]: r["video"] for r in resultados}, "desfases_s": {r["id"]: float(r["cfg"].get("desfase_s", 0.0)) for r in resultados},
                                 "segundos_video": round(duracion, 2), "fps_por_camara": round(primera["fps"], 2), "personas": len(identidades),
                                 "estado": ("Videos procesados con el modelo de la sección Videos" if primera.get("generos") is not None
                                            else "Videos procesados por el modelo (YOLO26s + ByteTrack)") + "; ubicación aproximada en el plano",
-                                "dispositivo": "cpu"}},
+                                "dispositivo": DISPOSITIVO}},
         "map": None,
-        "cameras": camaras,
+        # Las cámaras del patio ya tienen su calibración (la del Build): con `conservar_camaras` la sesión no las toca.
+        "cameras": [] if config.get("conservar_camaras") else camaras,
         "identities": identidades, "tracklets": tracklets, "points": puntos,
     }
 
@@ -861,7 +967,16 @@ def analizar(camara_id, config, ruta, args, salida, embebedor, seguido=None):
         desp = np.array([a @ c - c for a in mats])[:, :2]
         giro = np.degrees([np.arctan2(a[1, 0], a[0, 0]) for a in mats])
         print(f"{camara_id}: la cámara se movió hasta {np.abs(desp[:, 0]).max():.0f} px de lado, {np.abs(desp[:, 1]).max():.0f} px de alto y {np.abs(giro).max():.1f}° de giro (respecto a su lugar promedio)")
-    camara = Camara(cfg, *tam)
+    if cfg.get("referencias") is not None:  # ubicada con las referencias del en vivo (ver CamaraReferencias)
+        guardado_h = salida / f"homografia_{camara_id}.npy"
+        if guardado_h.exists() and not args.rehacer:
+            H = np.load(guardado_h)
+        else:
+            H = homografia_por_referencias(ruta, len(cuadros), mats, cfg["referencias"], tam, args.sitio)
+            np.save(guardado_h, H)
+        camara = CamaraReferencias(H, cfg, tam)
+    else:
+        camara = Camara(cfg, *tam)
     personas, vectores = recorridos(cuadros, camara, tam, embs, mats, numeros)
     crudas = len({i for c in cuadros for i, _, _ in c["gente"]})
     print(f"{camara_id}: {len(cuadros)} cuadros, {crudas} IDs del seguidor → {len(vectores)} personas")

@@ -12,6 +12,8 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu13
 RUN pip install --no-cache-dir ultralytics==8.4.163 transformers==5.17.0 onnxruntime==1.30.0 onnx==1.21.0 onnx2torch==1.5.15 \
     opencv-python==5.0.0.93 numpy==2.5.2 pandas==2.3.3 scipy==1.18.1 pillow==12.3.0 safetensors==0.8.0 lap==0.5.13 \
     websockets==17.1 threadpoolctl==3.7.0 pynvvideocodec==2.2.3 ipython
+# Para dibujar los videos de las zonas grabadas (procesar_video.py) con el mismo contenedor.
+RUN pip install --no-cache-dir imageio-ffmpeg==0.6.0
 WORKDIR /app
 RUN useradd -m -u 10001 app
 USER app
