@@ -5,11 +5,11 @@
   "grabacion": "09nov",
   "capa": "capa.json",
   "alcance_m": 35.0,
-  "nota": "Segunda grabación del pasillo (9 de noviembre), con los teléfonos en los mismos lugares que la primera pero con otro encuadre (cam06 se movió más, en la mano): cada video se ubica con las referencias del en vivo de su cámara (E* = cam06, F* = cam07; sus homografías salen del modelo de cámara de camaras_video.json). posicion_px, rumbo_deg y lo demás del modelo de cámara son los de la primera grabación y aquí solo dicen desde dónde mira cada cámara. Tiempo: PASILLOD CAM1} empezó 14,0 s antes que PASILLOD CAM2 y se le cortan esos segundos (ffmpeg -ss 14.0, recodificado); desde ahí los dos van a la vez. El audio no sirve aquí (los teléfonos no oyen lo mismo): el desfase sale de la gente que el Re-ID reconoce en las dos cámaras al cruzar el comedor entre ellas. Quienes salen por abajo de cam07 entran por abajo de cam06 unos 38 s después (8 personas, ±1 s) y quien va al revés tarda 10 s: con el mismo cruce en los dos sentidos (unos 24 s, los ~32 m entre los dos puntos a 1,3 m/s), el desfase es de 14 s. Los videos llegaron sin la hora de grabación (metadatos borrados): la de inicio es aproximada, entre el fin de la prueba en vivo del pasillo (11:31) y la llegada de los archivos (11:43).",
+  "nota": "Segunda grabación del pasillo (9 de noviembre), con los teléfonos en los mismos lugares que la primera pero con otro encuadre (cam06 se movió más, en la mano): cada video se ubica con las referencias del en vivo de su cámara (E* = cam06, F* = cam07; sus homografías salen del modelo de cámara de camaras_video.json). posicion_px, rumbo_deg y lo demás del modelo de cámara son los de la primera grabación y aquí solo dicen desde dónde mira cada cámara. Tiempo: PASILLOD CAM1} va recortado a mano desde el segundo 68,714 del original (medido con su propio audio) y PASILLOD CAM2 entero: así empiezan a la vez. El audio entre las dos no sirve (no oyen lo mismo); lo confirma la gente que el Re-ID reconoce en las dos cámaras: 8 personas bajan la escalera de cam06, cruzan la plaza y bajan por el lado este hasta salir bajo cam07 unos 30 s después (±1 s, ~45 m a 1,5 m/s). Los videos llegaron sin la hora de grabación (metadatos borrados): la de inicio es aproximada, entre el fin de la prueba en vivo del pasillo (11:31) y la llegada de los archivos (11:43).",
   "camaras": {
     "cam06": {
       "nombre": "cam06",
-      "video": "PASILLOD CAM1}_desde_14.0s.mp4",
+      "video": "PASILLOD CAM1}.mp4",
       "inicio": "2026-11-09T11:32:00-05:00",
       "referencias": 6,
       "posicion_px": [237.6, 373.6],

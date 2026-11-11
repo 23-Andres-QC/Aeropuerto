@@ -5,17 +5,17 @@
   "grabacion": "09nov",
   "alcance_m": 20.0,
   "conservar_camaras": true,
-  "nota": "Grabación del patio (Edificio A) del 9 de noviembre con dos teléfonos en los lugares de cam01 y cam02. Sin modelo de cámara: cada video se ubica con las referencias del en vivo de su cámara (Test Modelo/Modelo/ubicacion/esan, A* = cam01 y B* = cam02). piso_m es el contorno del patio del plano del sitio; las poses son las de la web (solo dicen desde dónde mira cada cámara) y la sesión no toca la calibración de las cámaras del patio (conservar_camaras). Tiempo: por el audio, EDIFICIOA-CAM1 empezó 14,063 s antes que EDIFICIOA CAM2 (el mismo pico en todas las bandas); se le cortan esos segundos (ffmpeg -ss 14.063, recodificado) y desde ahí los dos empiezan a la vez. Los videos llegaron sin la hora de grabación (metadatos borrados): la de inicio es aproximada, entre el fin de la prueba en vivo del pasillo (11:31) y la llegada de los archivos (11:43).",
+  "nota": "Grabación del patio (Edificio A) del 9 de noviembre con dos teléfonos en los lugares de cam01 y cam02. Sin modelo de cámara: cada video se ubica con las referencias del en vivo de su cámara (Test Modelo/Modelo/ubicacion/esan, A* = cam01 y B* = cam02). piso_m es el contorno del patio del plano del sitio; las poses son las de la web (solo dicen desde dónde mira cada cámara) y la sesión no toca la calibración de las cámaras del patio (conservar_camaras). Tiempo: los videos van recortados a mano para que empiecen a la vez (EDIFICIOA-CAM1 desde el segundo 26,106 del original y EDIFICIOA CAM2 desde el 11,476, medidos con su propio audio). Por el audio de las dos cámaras (el mismo pico en todas las bandas, 14,063 s, confirmado con la gente en el piso) a la CAM1 le sobran 0,567 s: su desfase_s lo compensa. Los videos llegaron sin la hora de grabación (metadatos borrados): la de inicio es aproximada, entre el fin de la prueba en vivo del pasillo (11:31) y la llegada de los archivos (11:43).",
   "piso_m": [[-10.7, 4.45], [-4.86, 4.01], [1.93, 3.63], [2.1, 5.2], [8.11, 5.07], [7.34, 3.11], [10.6, 2.9], [9.3, -4.6], [6.21, -4.46], [6.08, -6.24], [4.08, -5.87], [2.09, -5.58], [-1.14, -5.09], [-2.31, -5.19], [-5.37, -4.95], [-7.87, -5.14], [-12.2, -5.1]],
   "camaras": {
     "cam01": {
       "nombre": "cam01",
-      "video": "EDIFICIOA-CAM1_desde_14.063s.mp4",
+      "video": "EDIFICIOA-CAM1.mp4",
       "inicio": "2026-11-09T11:38:00-05:00",
       "referencias": 1,
       "posicion_m": [-11.499, 4.429],
       "angulo_deg": 343.756,
-      "desfase_s": 0.0
+      "desfase_s": 0.567
     },
     "cam02": {
       "nombre": "cam02",
