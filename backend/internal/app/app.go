@@ -21,8 +21,8 @@ type Option func(*options)
 
 type options struct{ manualTraffic bool }
 
-// WithManualTraffic stops the background work (the traffic aggregates recomputing by themselves and the daily
-// retention pass): the tests ask for it explicitly.
+// WithManualTraffic stops the background work (the traffic aggregates recomputing by themselves, the daily
+// retention pass and the insights precomputing): the tests ask for it explicitly.
 func WithManualTraffic() Option { return func(o *options) { o.manualTraffic = true } }
 
 func New(db *pgxpool.Pool, cfg config.Config, opts ...Option) http.Handler {
@@ -65,6 +65,8 @@ func New(db *pgxpool.Pool, cfg config.Config, opts ...Option) http.Handler {
 	privacy := services.NewPrivacyService(postgres.NewPrivacyRepository(db), accounts)
 	if !o.manualTraffic {
 		go privacy.Run(context.Background())
+		// The insights of the finished sessions are computed before anyone opens them.
+		go sessions.RunWarmer(context.Background())
 	}
 	return httpapi.NewRouter(httpapi.Services{
 		Sites:    sites,

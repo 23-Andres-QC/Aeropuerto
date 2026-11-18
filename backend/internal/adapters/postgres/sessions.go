@@ -261,9 +261,13 @@ func (r *SessionRepository) ReplayTracks(ctx context.Context, sessionID string, 
 	return tracks, maxK, err
 }
 
-// sessionPoints restricts trajectory_points to one session ($1).
-const sessionPoints = `FROM trajectory_points tp JOIN identities i ON i.global_id = tp.global_id
-	JOIN sessions s ON s.session_id = i.session_id WHERE i.session_id = $1::text::uuid`
+// sessionPoints restricts trajectory_points to one session ($1). The points are read person by person through
+// idx_tp_global_time: joining the whole table made every session (even one without points) read all the points of
+// the site.
+const sessionPoints = `FROM identities i JOIN sessions s ON s.session_id = i.session_id
+	CROSS JOIN LATERAL (SELECT p.point_id, p.global_id, p."timestamp", p.x, p.y, p.geom
+		FROM trajectory_points p WHERE p.global_id = i.global_id) tp
+	WHERE i.session_id = $1::text::uuid`
 
 func (r *SessionRepository) Insights(ctx context.Context, site domain.Site, sessionID string) (domain.InsightsData, error) {
 	d := domain.InsightsData{People: []domain.InsightPerson{}, Heat: [][3]float64{}, Zones: []domain.ZoneStat{}}
@@ -312,11 +316,13 @@ func (r *SessionRepository) Insights(ctx context.Context, site domain.Site, sess
 		return d, err
 	}
 
-	// Zones: visitors and seconds-person inside each polygon of the site (PostGIS).
-	err = collect(ctx, r.db, `WITH d AS (
+	// Zones: visitors and seconds-person inside each polygon of the site (PostGIS). The position of each second is
+	// computed once (MATERIALIZED), not again for every zone; point_id breaks the ties of two points at the same
+	// instant (two cameras), so the counts do not change from one call to the next.
+	err = collect(ctx, r.db, `WITH d AS MATERIALIZED (
 		SELECT DISTINCT ON (tp.global_id, floor(EXTRACT(EPOCH FROM tp."timestamp" - s.recording_start)))
 		       tp.global_id, tp.geom `+sessionPoints+` AND tp.geom IS NOT NULL
-		ORDER BY tp.global_id, floor(EXTRACT(EPOCH FROM tp."timestamp" - s.recording_start)), tp."timestamp")
+		ORDER BY tp.global_id, floor(EXTRACT(EPOCH FROM tp."timestamp" - s.recording_start)), tp."timestamp", tp.point_id)
 		SELECT z.id, z.name, z.zone_type, z.area_m2, count(DISTINCT d.global_id), count(d.global_id)
 		FROM zones z LEFT JOIN d ON ST_Covers(z.geom, d.geom)
 		WHERE z.site_id = $2 AND z.active GROUP BY z.id ORDER BY z.id`, []any{sessionID, site.ID}, func(row pgx.Rows) error {

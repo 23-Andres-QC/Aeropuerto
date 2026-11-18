@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"time"
 
@@ -18,10 +19,13 @@ type SessionService struct {
 	cache *cache
 	// changed runs after a session's positions change (imported, or adjusted by Part III).
 	changed func(ctx context.Context, sessionID string)
+	// warm asks RunWarmer for a new pass (buffer of one: several requests in a row are a single pass).
+	warm chan struct{}
 }
 
 func NewSessionService(sites *SiteService, repo ports.SessionRepository) *SessionService {
-	return &SessionService{sites: sites, repo: repo, cache: newCache(64)}
+	// 512 entries: the insights and the replay of every session of both sites fit with room to spare.
+	return &SessionService{sites: sites, repo: repo, cache: newCache(512), warm: make(chan struct{}, 1)}
 }
 
 // OnChange registers what runs after a session's positions change: the traffic aggregates are recomputed from it.
@@ -34,7 +38,72 @@ func (s *SessionService) notify(ctx context.Context, sessionID string) {
 }
 
 // Invalidate drops cached results; a zone or camera change alters insights.
-func (s *SessionService) Invalidate() { s.cache.clear() }
+func (s *SessionService) Invalidate() { s.invalidate() }
+
+// invalidate empties the cache and has RunWarmer compute the insights again.
+func (s *SessionService) invalidate() {
+	s.cache.clear()
+	s.requestWarm()
+}
+
+func (s *SessionService) requestWarm() {
+	select {
+	case s.warm <- struct{}{}:
+	default: // a pass is already pending
+	}
+}
+
+// RunWarmer computes the insights of every finished session in the background, at start and again shortly after each
+// change that empties the cache (an import, a zone or a camera), so opening a session does not wait for them: each one
+// takes up to a few seconds and the cache keeps them. It returns when ctx ends.
+func (s *SessionService) RunWarmer(ctx context.Context) {
+	s.requestWarm()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.warm:
+		}
+		// Several changes in a row (editing the zones) end in a single pass.
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+		s.warmAll(ctx)
+	}
+}
+
+func (s *SessionService) warmAll(ctx context.Context) {
+	start := time.Now()
+	sites, err := s.sites.Sites(ctx)
+	if err != nil {
+		slog.Warn("precarga de insights: no se leyeron los sitios", "error", err)
+		return
+	}
+	n := 0
+	for _, site := range sites {
+		sessions, err := s.repo.Sessions(ctx, site)
+		if err != nil {
+			slog.Warn("precarga de insights: no se leyeron las sesiones", "sitio", site.Slug, "error", err)
+			continue
+		}
+		for _, session := range sessions {
+			if ctx.Err() != nil {
+				return
+			}
+			if !session.Finished() {
+				continue
+			}
+			if _, err := s.Insights(ctx, site.Slug, session.ID); err != nil {
+				slog.Warn("precarga de insights", "sitio", site.Slug, "sesion", session.ID, "error", err)
+				continue
+			}
+			n++
+		}
+	}
+	slog.Info("insights precalculados", "sesiones", n, "segundos", domain.Round2(time.Since(start).Seconds()))
+}
 
 func (s *SessionService) Sessions(ctx context.Context, slug string) ([]domain.Session, error) {
 	site, err := s.sites.Site(ctx, slug)
@@ -56,7 +125,7 @@ func (s *SessionService) Import(ctx context.Context, slug string, p *domain.Impo
 	}
 	r, err := s.repo.Import(ctx, site, p)
 	if err == nil {
-		s.cache.clear()
+		s.invalidate()
 		s.notify(ctx, r.SessionID)
 	}
 	return r, err
@@ -71,7 +140,7 @@ func (s *SessionService) Delete(ctx context.Context, slug, id string) error {
 		return err
 	}
 	if err = s.repo.DeleteSession(ctx, site, id); err == nil {
-		s.cache.clear()
+		s.invalidate()
 	}
 	return err
 }
@@ -99,6 +168,7 @@ func (s *SessionService) Replay(ctx context.Context, slug, id string, step float
 		return domain.Replay{}, err
 	}
 	key := fmt.Sprintf("replay:%s:%g", session.ID, step)
+	gen := s.cache.generation()
 	if v, ok := s.cache.get(key); ok && session.Finished() {
 		return v.(domain.Replay), nil
 	}
@@ -112,7 +182,7 @@ func (s *SessionService) Replay(ctx context.Context, slug, id string, step float
 	}
 	replay := domain.Replay{Session: session, StepS: step, DurationS: domain.Round2(duration), People: tracks}
 	if session.Finished() {
-		s.cache.put(key, replay)
+		s.cache.putIf(gen, key, replay)
 	}
 	return replay, nil
 }
@@ -127,6 +197,7 @@ func (s *SessionService) Insights(ctx context.Context, slug, id string) (domain.
 	}
 	minGroup := domain.EffectiveMinGroup(site.MinGroupSize)
 	key := fmt.Sprintf("insights:%s:%d", session.ID, minGroup)
+	gen := s.cache.generation()
 	if v, ok := s.cache.get(key); ok && session.Finished() {
 		return v.(domain.Insights), nil
 	}
@@ -146,7 +217,7 @@ func (s *SessionService) Insights(ctx context.Context, slug, id string) (domain.
 		Zones:   d.Zones,
 	}
 	if session.Finished() {
-		s.cache.put(key, insights)
+		s.cache.putIf(gen, key, insights)
 	}
 	return insights, nil
 }
@@ -174,7 +245,7 @@ func (s *SessionService) SetRecordingStart(ctx context.Context, slug, id string,
 	}
 	shift, err := s.repo.ShiftSession(ctx, site, session, start.UTC())
 	if err == nil {
-		s.cache.clear()
+		s.invalidate()
 		s.notify(ctx, session.ID)
 	}
 	return shift, err
@@ -201,7 +272,7 @@ func (s *SessionService) SaveAnalytics(ctx context.Context, slug, id string, in 
 	}
 	saved, err := s.repo.SaveAnalytics(ctx, site, session, in)
 	if err == nil {
-		s.cache.clear()
+		s.invalidate()
 		s.notify(ctx, session.ID)
 	}
 	return saved, err
