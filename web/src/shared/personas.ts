@@ -4,7 +4,7 @@ import { colorPersona } from "./format";
 export type CuadroDetecciones = {
   frame_w: number;
   frame_h: number;
-  people: { box: [number, number, number, number]; global_id: number | null; gender: string | null; gender_conf: number | null }[];
+  people: { box: [number, number, number, number]; global_id: number | null }[];
 };
 
 type PersonaMarcada = CuadroDetecciones["people"][number] & { local_id?: number | null };

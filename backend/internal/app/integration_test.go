@@ -131,7 +131,7 @@ func session(id string) map[string]any {
 		"map":     map[string]any{"mapa": map[string]any{"px_por_metro": 40}},
 		"cameras": []map[string]any{{"camera_id": "cam01", "name": "cam01", "fps": 15, "width_px": 1280, "height_px": 720, "timestamp_offset_s": 0, "position": []float64{0, 0}, "angle_deg": 10}},
 		"identities": []map[string]any{{"global_id": "22222222-2222-2222-2222-" + id[24:], "public_number": 1, "first_seen": "2026-09-26T12:00:00Z",
-			"last_seen": "2026-09-26T12:00:05Z", "n_cameras": 1, "gender": "Mujer", "gender_confidence": 0.9, "gender_votes": 4}},
+			"last_seen": "2026-09-26T12:00:05Z", "n_cameras": 1}},
 		"tracklets": []map[string]any{{"tracklet_id": "33333333-3333-3333-3333-" + id[24:], "global_id": "22222222-2222-2222-2222-" + id[24:],
 			"camera_id": "cam01", "local_id": 1, "t_start": "2026-09-26T12:00:00Z", "t_end": "2026-09-26T12:00:05Z", "n_reid_views": 3}},
 		"points": map[string]any{"global_id": []string{"22222222-2222-2222-2222-" + id[24:]}, "tracklet_id": []string{"33333333-3333-3333-3333-" + id[24:]},
@@ -182,7 +182,7 @@ func TestSiteLifecycle(t *testing.T) {
 	var insights domain.Insights
 	w = do("GET", "/api/v1/sites/prueba-a/sessions/"+a+"/insights", nil)
 	json.Unmarshal(w.Body.Bytes(), &insights)
-	if w.Code != 200 || insights.Summary.People != 1 || len(insights.Summary.Gender) != 0 || insights.Summary.GenderHidden != 1 || len(insights.Zones) != 1 || insights.Zones[0].Visitors != 1 {
+	if w.Code != 200 || insights.Summary.People != 1 || len(insights.Zones) != 1 || insights.Zones[0].Visitors != 1 {
 		t.Fatalf("insights: %d %s", w.Code, w.Body)
 	}
 

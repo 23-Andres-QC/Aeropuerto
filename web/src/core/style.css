@@ -884,10 +884,10 @@ main table:not(.mapa-calor) thead th {
 .fila-3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-/* Arriba: Hombres y mujeres a la izquierda, los seis indicadores a su lado. */
+/* Arriba: los seis indicadores. */
 .fila-top {
   display: grid;
-  grid-template-columns: minmax(280px, 0.85fr) minmax(0, 2.4fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   align-items: stretch;
   min-width: 0;
@@ -897,7 +897,7 @@ main table:not(.mapa-calor) thead th {
 }
 .metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
 }
 /* Las tarjetas de métricas y la franja de la sesión van centradas: rótulo, valor y detalle. */
@@ -1097,8 +1097,8 @@ main table:not(.mapa-calor) thead th {
     font-size: 16px;
     padding: 13px 13px;
   }
-  .fila-top {
-    grid-template-columns: minmax(0, 1fr);
+  .metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .fila-3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1234,7 +1234,6 @@ main table:not(.mapa-calor) thead th {
     display: block;
   }
   .fila-top {
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 2fr);
     margin-bottom: 12px;
   }
   .fila-2,
@@ -1349,7 +1348,6 @@ html.modo-pdf .fila {
     display: block;
   }
 html.modo-pdf .fila-top {
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 2fr);
     margin-bottom: 12px;
   }
 html.modo-pdf .fila-2,

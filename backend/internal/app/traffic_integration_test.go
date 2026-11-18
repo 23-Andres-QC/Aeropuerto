@@ -127,8 +127,8 @@ func trafficSession(id string, start string) map[string]any {
 		"map":     map[string]any{"mapa": map[string]any{"px_por_metro": 40}},
 		"cameras": []map[string]any{{"camera_id": "cam01", "name": "cam01", "fps": 5, "width_px": 1280, "height_px": 720, "timestamp_offset_s": 0, "position": []float64{0, 0}, "angle_deg": 10}},
 		"identities": []map[string]any{
-			{"global_id": personA, "public_number": 1, "first_seen": start, "last_seen": start, "n_cameras": 1, "gender": "Mujer", "gender_confidence": 0.9, "gender_votes": 4},
-			{"global_id": personB, "public_number": 2, "first_seen": start, "last_seen": start, "n_cameras": 1, "gender": "Hombre", "gender_confidence": 0.8, "gender_votes": 3},
+			{"global_id": personA, "public_number": 1, "first_seen": start, "last_seen": start, "n_cameras": 1},
+			{"global_id": personB, "public_number": 2, "first_seen": start, "last_seen": start, "n_cameras": 1},
 		},
 		"tracklets": []map[string]any{
 			{"tracklet_id": trackA, "global_id": personA, "camera_id": "cam01", "local_id": 1, "t_start": start, "t_end": start, "n_reid_views": 1},

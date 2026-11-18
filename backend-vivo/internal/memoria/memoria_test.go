@@ -19,8 +19,7 @@ func vectorDePrueba(semilla float32) Vector {
 
 func personaDePrueba() Persona {
 	ahora := time.Date(2026, 9, 30, 1, 0, 0, 0, time.UTC)
-	genero, confianza := "Mujer", float32(0.91)
-	return Persona{ID: 7, Suma: vectorDePrueba(1), Muestras: 12, Genero: &genero, ConfianzaGenero: &confianza,
+	return Persona{ID: 7, Suma: vectorDePrueba(1), Muestras: 12,
 		Camaras: []string{"tel-a1b2c3d4"}, Apariciones: 2, PrimeraVez: ahora.Add(-time.Hour), UltimaVez: ahora,
 		Vistas: []Vista{{Tramo: "s1/tel-a1b2c3d4/L3/T1", Camara: "tel-a1b2c3d4", Prototipo: vectorDePrueba(0.5), Muestras: 6}}}
 }
@@ -84,8 +83,6 @@ func TestValidarPersona(t *testing.T) {
 		"dimensión":      func(p *Persona) { p.Suma = p.Suma[:10] },
 		"no finito":      func(p *Persona) { p.Suma[3] = float32(math.NaN()) },
 		"nulo":           func(p *Persona) { p.Suma = make(Vector, Dimension) },
-		"género":         func(p *Persona) { g := "Otro"; p.Genero = &g },
-		"confianza":      func(p *Persona) { c := float32(1.5); p.ConfianzaGenero = &c },
 		"muestras":       func(p *Persona) { p.Muestras = 0 },
 		"fechas":         func(p *Persona) { p.UltimaVez = p.PrimeraVez.Add(-time.Second) },
 		"tramo repetido": func(p *Persona) { p.Vistas = append(p.Vistas, p.Vistas[0]) },

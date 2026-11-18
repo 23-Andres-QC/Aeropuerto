@@ -1,8 +1,8 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -48,8 +48,8 @@ func TestRolePermissionMatrix(t *testing.T) {
 	business := rg.newStaff(t, "gerente", domain.RoleBusiness)
 	type roles struct{ super, sec, biz, machine bool }
 	all := roles{true, true, true, true}
-	live := roles{true, true, false, true}  // En vivo, Teléfonos, Videos
-	biz := roles{true, false, true, true}   // Ventas e Insights
+	live := roles{true, true, false, true}   // En vivo, Teléfonos, Videos
+	biz := roles{true, false, true, true}    // Ventas e Insights
 	super := roles{true, false, false, true} // Configuración y todo lo que cambia datos
 	only := roles{true, false, false, false} // cuentas, bitácora, privacidad, demo
 	for _, c := range []struct {
@@ -59,7 +59,7 @@ func TestRolePermissionMatrix(t *testing.T) {
 		// Lo que toda pantalla necesita: sitios, su plano y sus sesiones.
 		{"GET", "/api/v1/sites", all}, {"GET", "/api/v1/sites/esan/config", all}, {"GET", "/api/v1/sites/esan/sessions", all},
 		// 1. En vivo (Teléfonos y Videos están en backend-vivo: nginx los cierra con /auth/check, ver TestCheckByModule).
-		{"GET", "/api/v1/sites/esan/sessions/s1/replay", all}, // En vivo la reproduce e Insights dibuja sus mapas con ella
+		{"GET", "/api/v1/sites/esan/sessions/s1/replay", all},                                              // En vivo la reproduce e Insights dibuja sus mapas con ella
 		{"GET", "/api/v1/sites/esan/media/cam01.mp4", live}, {"POST", "/api/v1/sites/esan/sessions", live}, // guardar la captura al apagar En vivo
 		// 2. Insights y 3. Ventas.
 		{"GET", "/api/v1/sites/esan/sessions/s1/insights", biz}, {"GET", "/api/v1/sites/esan/sessions/s1/analytics", biz},
@@ -83,7 +83,6 @@ func TestRolePermissionMatrix(t *testing.T) {
 		// Cuentas, bitácora, privacidad, demo y grupo mínimo: solo el superadmin (la llave de scripts tampoco).
 		{"GET", "/api/v1/usuarios", only}, {"POST", "/api/v1/usuarios", only}, {"PUT", "/api/v1/usuarios/u1/correo", only},
 		{"GET", "/api/v1/auditoria", only}, {"GET", "/api/v1/privacidad", only}, {"POST", "/api/v1/demo", only},
-		{"PUT", "/api/v1/sites/esan/grupo-minimo", only},
 		// Borrar: solo el superadmin, en cualquier módulo.
 		{"DELETE", "/api/v1/sites/esan/zones/1", only}, {"DELETE", "/api/v1/sites/esan/ventas/tickets/1", only},
 		// Algo que nadie listó se cierra a los roles de módulo (por defecto, Configuración).

@@ -588,7 +588,7 @@ func TestLaCamaraWebVeSuProceso(t *testing.T) {
 		switch {
 		case r.URL.Path == "/api/v1/cameras/telefonos/detections/watch":
 			_ = ws.WriteMessage(websocket.TextMessage, []byte(`{"ts":1,"estado":"procesando","personas_total":3,`+
-				`"genero":{"Mujer":2},"telefonos":{"tel-1":{"fps":2.9,"personas_ahora":1},"tel-otro":{"fps":9}}}`))
+				`"telefonos":{"tel-1":{"fps":2.9,"personas_ahora":1},"tel-otro":{"fps":9}}}`))
 		case strings.HasSuffix(r.URL.Path, "/detections/watch"):
 			_ = ws.WriteMessage(websocket.TextMessage, []byte(`{"ts":1,"frame_w":960,"frame_h":720,"people":[]}`))
 		}
@@ -685,7 +685,7 @@ func TestAPIAeropuerto(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/personas/resumen":
 			fmt.Fprint(w, `{"personas":1,"siguiente_id":2}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/personas/fichas":
-			fmt.Fprint(w, `[{"id":1,"genero":"Mujer","camaras":["tel-ab12"]}]`)
+			fmt.Fprint(w, `[{"id":1,"camaras":["tel-ab12"]}]`)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/telefonos/tel-ab12":
 			w.WriteHeader(http.StatusNoContent)
 		default:

@@ -332,14 +332,14 @@ class GrabacionNuevaEmpiezaDeCero(unittest.TestCase):
     def test_al_vaciar_la_memoria_se_olvida_la_sesion_entera(self):
         from types import SimpleNamespace
         reinicios = []
-        motor = SimpleNamespace(genero=SimpleNamespace(enabled=False), reiniciar=lambda fps: reinicios.append(sorted(fps)))
+        motor = SimpleNamespace(reiniciar=lambda fps: reinicios.append(sorted(fps)))
         memoria = memoria_ram()
         sesion = SesionEnVivo(motor, None, None, memoria)
         self.addCleanup(sesion.cerrar)
         sesion.telefonos, sesion.asociador = ["tel-a"], asociador(memoria)
         escena = Escena(sesion.asociador)
         self.assertEqual(sorted(escena.ver(4, {"tel-a": [(1, A, 100), (2, B, 500)]}).values()), [1, 2])
-        sesion.fijos[("tel-a", 1)], sesion._ultimo_id[("tel-a", 1)] = ("Hombre", 0.9), (1, 3.0)
+        sesion._ultimo_id[("tel-a", 1)] = (1, 3.0)
         self.assertFalse(sesion._olvidar_si_se_vacio(), "sin vaciar la memoria no se olvida nada")
 
         memoria._epoca_nueva = memoria.epoca + 1  # la web pidió «Olvidar a todos» (lo nota el hilo escritor)
@@ -347,28 +347,11 @@ class GrabacionNuevaEmpiezaDeCero(unittest.TestCase):
         a = sesion.asociador
         self.assertEqual((a.tracklets, a.globales, a.confirmadas, a.locales, memoria.personas), ({}, {}, {}, {}, {}),
                          "no queda nada de la grabación anterior: ni tramos, ni identidades, ni personas")
-        self.assertEqual((sesion.fijos, sesion._ultimo_id), ({}, {}))
+        self.assertEqual(sesion._ultimo_id, {})
         self.assertEqual(reinicios, [["tel-a"]], "el seguidor de cada teléfono vuelve a empezar")
         # B estaba en la grabación anterior: ahora es una persona nueva y los IDs empiezan en 1.
         self.assertEqual(escena.ver(4, {"tel-a": [(1, B, 500)]})[("tel-a", 1)], 1)
         self.assertFalse(sesion._olvidar_si_se_vacio(), "se olvida una sola vez por vaciado")
-
-
-class PruebasRitmoGenero(unittest.TestCase):
-    """El género se muestrea por tiempo de reloj: a ~3 FPS (CPU) no se esperan 9 frames (3 s) entre muestras."""
-
-    def test_intervalo_segun_fps_medidos(self):
-        from types import SimpleNamespace
-        genero = SimpleNamespace(enabled=True, sample_s=0.6, sample_frames={"tel-a": 9, "tel-b": 9})
-        sesion = SesionEnVivo(SimpleNamespace(genero=genero), None, None, None)
-        sesion.telefonos = ["tel-a", "tel-b"]
-        # tel-a procesa a 3 FPS; tel-b todavía no tiene medida y usa los 15 FPS nominales.
-        sesion.tiempos = {"tel-a": [0.0, 1 / 3, 2 / 3, 1.0], "tel-b": [0.0]}
-        sesion._ritmo_genero()
-        self.assertEqual(genero.sample_frames, {"tel-a": 2, "tel-b": 9})
-        sesion.tiempos["tel-a"] = [0.0, 0.5, 1.0]  # 2 FPS: una muestra por frame procesado
-        sesion._ritmo_genero()
-        self.assertEqual(genero.sample_frames["tel-a"], 1)
 
 
 if __name__ == "__main__":

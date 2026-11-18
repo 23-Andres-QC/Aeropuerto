@@ -1,5 +1,5 @@
 """Sección Videos: ritmo de lectura (qué frame toca en cada modo y cómo se saltan los que el modelo no alcanza), el
-motor aparte con sus ajustes y el género por votos.
+motor aparte con sus ajustes.
 
 Usa un reloj falso, un video sintético (cada frame con su número como nivel de gris) y un motor sin pesos; sin GPU.
 """
@@ -22,8 +22,7 @@ import lap01  # noqa: E402
 from detector_pose import DetectorCuerpo  # noqa: E402
 from reid_videos import ReIDCombinado  # noqa: E402
 from videos_subidos import (ASOCIACION_REID_GPU, ESTATICO_S, MUESTREO_CPU_S, PERSONVIT_VIDEO_GPU, REID_VIDEO_GPU,  # noqa: E402
-                            GrupoVideos, Quietud, Ritmo, VideoEnProceso, VideosSubidos, genero_por_votos, leer_hasta,
-                            motor_aparte)
+                            GrupoVideos, Quietud, Ritmo, VideosSubidos, leer_hasta, motor_aparte)
 
 
 class RitmoTiempoReal(unittest.TestCase):
@@ -96,10 +95,6 @@ def motor_sin_pesos(device):
     motor.trackers, motor.detecciones_actuales = {}, {}
     motor.detector = types.SimpleNamespace(config=config["detector"], model=object())
     motor.mezcla = lap01.MezclaApariencia(config["appearance"]["deep_weight"], *config["appearance"]["calibration"])
-    genero = object.__new__(lap01.ClasificadorGeneroCLIP)
-    genero.enabled, genero.sample_s, genero.min_votes, genero.min_height = True, 0.6, 5, 96
-    genero.memory, genero.sample_frames, genero.stats = {}, {}, {}
-    motor.genero = genero
     return motor
 
 
@@ -112,10 +107,6 @@ class MotorAparte(unittest.TestCase):
         self.assertEqual((motor.detector.config["conf"], motor.detector.config["imgsz"], motor.detector.config["fp16"]), (0.3, 640, False))
         self.assertEqual(otro.config["tracker"]["new_track_confidence"], 0.15)
         self.assertEqual(motor.config["tracker"]["new_track_confidence"], 0.6)
-        self.assertEqual((otro.genero.min_votes, otro.genero.min_height), (1, 1.0))
-        self.assertEqual((motor.genero.min_votes, motor.genero.min_height), (5, 96))
-        otro.genero.memory[("v", 1)] = {"votes": []}
-        self.assertEqual(motor.genero.memory, {}, "los votos de género son de cada motor")
 
     def test_en_los_cruces_el_seguidor_pesa_mas_la_apariencia_sin_tocar_la_de_los_telefonos(self):
         motor = motor_sin_pesos("cuda:0")
@@ -128,11 +119,9 @@ class MotorAparte(unittest.TestCase):
         self.assertEqual((seguidor.appearance_weight, seguidor.active_iou_gate), (0.8, 0.25))
         self.assertEqual(lap01.ColorOcclusionTracker(None, motor.mezcla).appearance_weight, 0.22)
 
-    def test_en_cpu_la_misma_resolucion_sin_media_precision_y_muestreo_cada_2_s(self):
+    def test_en_cpu_la_misma_resolucion_sin_media_precision(self):
         otro = motor_aparte(motor_sin_pesos("cpu"))
         self.assertEqual((otro.detector.config["imgsz"], otro.detector.config["fp16"]), (640, False))
-        self.assertEqual(otro.genero.sample_s, MUESTREO_CPU_S)
-        self.assertEqual(motor_aparte(motor_sin_pesos("cuda:0")).genero.sample_s, 1.0, "con GPU muestrea cada 1 s")
 
     def test_sin_los_puntos_del_cuerpo_de_los_telefonos(self):
         # En el servidor el detector de los teléfonos es un DetectorCuerpo, sin `config`: cada video fallaba al empezar.
@@ -314,39 +303,6 @@ class Simultaneos(unittest.TestCase):
         self.assertEqual(config["overlaps"], [["a", "b"]], "pueden ver a la misma persona a la vez")
         self.assertEqual({(x["from"], x["to"]) for x in config["transitions"]}, {("a", "b"), ("b", "a")})
 
-    def test_con_analisis_genero_cada_video_de_la_tanda_lleva_sus_propios_ids(self):
-        import videos_subidos
-        v, _, _, _ = self.videos()
-        v.reid, v.asociacion = object(), {}
-        abiertos = []
-
-        class Abierto:
-            def __init__(self, info, ruta, motor, reid, asociacion, grupo=None):
-                self.id, self.nombre, self.modo, self.grupo = info["id"], info["nombre"], info["modo"], grupo
-                self.fps, self.ritmo, self.terminado = 15.0, Ritmo(15.0, info["modo"]), False
-                self.ancho = self.alto = 4
-                abiertos.append(self)
-
-            def leer(self):
-                return None
-
-            def cerrar(self):
-                pass
-
-        original, videos_subidos.VideoEnProceso = videos_subidos.VideoEnProceso, Abierto
-        try:
-            with tempfile.TemporaryDirectory() as carpeta:
-                for vid in ("a", "b"):
-                    info = {"id": vid, "nombre": vid, "modo": "tiempo_real", "analisis": "genero", "tanda": "t", "en_tanda": 2}
-                    v.descargas[vid] = (info, threading.Event())
-                    v.descargados.append((info, Path(carpeta) / f"{vid}.video", None))
-                v.paso()
-        finally:
-            videos_subidos.VideoEnProceso = original
-        a, b = abiertos
-        self.assertIsNot(a.grupo, b.grupo, "sin multitracking: cada video con su asociador")
-        self.assertEqual(a.ritmo.cero, b.ritmo.cero, "igual empiezan juntos")
-
     def test_una_tanda_espera_a_que_suban_todos_aunque_el_mas_chico_termine_primero(self):
         import videos_subidos
         v, _, _, _ = self.videos()
@@ -521,41 +477,6 @@ class LectorGPUIgualAOpenCV(unittest.TestCase):
             self.assertEqual(rg.indice, rc.indice)
             gpu.release()
             cpu.release()
-
-
-class GeneroPorVotos(unittest.TestCase):
-    def test_siempre_hay_etiqueta_con_un_voto_y_la_certeza_nunca_baja_del_50(self):
-        self.assertEqual(genero_por_votos([]), (None, None))
-        etiqueta, certeza = genero_por_votos([("Mujer", 0.56)])
-        self.assertEqual(etiqueta, "Mujer")
-        self.assertAlmostEqual(certeza, 0.56)
-        # Hombre: 0,9, 0,8 y 1 - 0,6 = 0,4 -> 0,7 en promedio.
-        etiqueta, certeza = genero_por_votos([("Hombre", 0.9), ("Hombre", 0.8), ("Mujer", 0.6)])
-        self.assertEqual(etiqueta, "Hombre")
-        self.assertAlmostEqual(certeza, 0.7)
-        etiqueta, certeza = genero_por_votos([("Hombre", 0.55), ("Mujer", 0.9), ("Mujer", 0.8)])
-        self.assertEqual(etiqueta, "Mujer")
-        self.assertGreaterEqual(certeza, 0.5)
-
-    def test_el_genero_mostrado_cambia_solo_si_el_otro_gana_claro(self):
-        video = object.__new__(VideoEnProceso)
-        video.id, video.generos = "v", {}
-        video.grupo = types.SimpleNamespace(locales_de={}, mostrados={})
-        votos = []
-        video.motor = types.SimpleNamespace(genero=types.SimpleNamespace(memory={("v", 1): {"votes": votos}}))
-
-        def ver():
-            fila = {"global_id": 7, "local_id": 1}
-            video._genero(fila)
-            return fila["genero"], round(fila["confianza_genero"], 2)
-
-        votos.append(("Mujer", 0.8))
-        self.assertEqual(ver(), ("Mujer", 0.8))
-        votos.append(("Hombre", 0.9))  # Hombre: (0,2 + 0,9) / 2 = 0,55, no basta para cambiarlo
-        self.assertEqual(ver(), ("Mujer", 0.8), "se mantiene con la certeza con que se mostró")
-        self.assertEqual(video.generos[7], "Hombre", "el resumen cuenta todos los votos")
-        votos.append(("Hombre", 0.9))  # (0,2 + 0,9 + 0,9) / 3 = 0,67
-        self.assertEqual(ver(), ("Hombre", 0.67))
 
 
 def fila(lid, x, y, alto=60):

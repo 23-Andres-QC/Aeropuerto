@@ -354,14 +354,13 @@ func procesoDe(estado []byte, telefono string) []byte {
 		Estado        string                     `json:"estado"`
 		PersonasTotal *int                       `json:"personas_total"`
 		Reconocidas   *int                       `json:"reconocidas"`
-		Genero        map[string]int             `json:"genero"`
 		Telefonos     map[string]json.RawMessage `json:"telefonos"`
 	}
 	if json.Unmarshal(estado, &e) != nil {
 		return nil
 	}
 	p, err := json.Marshal(map[string]any{"estado": e.Estado, "personas_total": e.PersonasTotal,
-		"reconocidas": e.Reconocidas, "genero": e.Genero, "camara": e.Telefonos[telefono]})
+		"reconocidas": e.Reconocidas, "camara": e.Telefonos[telefono]})
 	if err != nil {
 		return nil
 	}

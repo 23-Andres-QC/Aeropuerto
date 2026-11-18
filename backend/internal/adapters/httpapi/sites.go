@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"aeropuerto/internal/core/domain"
@@ -401,9 +400,7 @@ func (h siteHandler) saveAnalytics(w http.ResponseWriter, r *http.Request) {
 // map images, CSVs) from <MEDIA_DIR>/<site>/.
 func (h siteHandler) media(w http.ResponseWriter, r *http.Request) {
 	site := r.PathValue("site")
-	// The Build also writes a file with the gender of each person (identidades_genero.csv): it is not served, since
-	// the platform does not show or keep the gender of one person.
-	if !domain.ValidSlug(site) || strings.Contains(strings.ToLower(r.PathValue("file")), "genero") {
+	if !domain.ValidSlug(site) {
 		http.NotFound(w, r)
 		return
 	}

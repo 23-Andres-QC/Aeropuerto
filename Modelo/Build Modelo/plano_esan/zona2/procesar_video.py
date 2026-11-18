@@ -1,7 +1,7 @@
 """Un video grabado en el comedor (zona grabada 2 de ESAN) → sesión de la web: personas sobre el plano del comedor y el video con sus cajas.
 
 Detecta y sigue a las personas con el mismo modelo de la sección Videos (Modelo/Test Modelo/videos_subidos.py): todas las
-cámaras juntas como una tanda, con el mismo detector, seguidor, Re-ID, asociador y género, y los IDs compartidos entre ellas
+cámaras juntas como una tanda, con el mismo detector, seguidor, Re-ID y asociador, y los IDs compartidos entre ellas
 (`--modelo propio` usa el de antes: YOLO26s + ByteTrack y su propia unión de recorridos). La posición en el piso sale del pie de cada caja con un
 modelo de cámara sencillo (altura, distancia focal y horizonte de `camaras_video.json`) y de dónde estaba parada la cámara en el
 dibujo del plano. Es una ubicación aproximada, no una calibración con puntos medidos: se corrige con `posicion_px` y `rumbo_deg`.
@@ -289,24 +289,30 @@ def seguir(video, pesos, cadencia):
     return cuadros, fps / paso, tam
 
 
+def leer_guardado(dato):
+    """(cuadros, fps, tam, numeros, desfase) de un videos_<cámara>.json (las versiones anteriores lo guardaban como lista)."""
+    if isinstance(dato, dict):
+        return dato["cuadros"], dato["fps"], dato["tam"], dato["numeros"], float(dato.get("desfase") or 0.0)
+    return dato[0], dato[1], dato[2], dato[3], float(dato[5]) if len(dato) > 5 else 0.0
+
+
 def seguir_como_videos(camaras, salida, rehacer=False, desfases=None):
     """Pasada 1 con el modelo de la sección Videos, las cámaras juntas como una tanda (videos_subidos.GrupoVideos): mismo
     motor, Re-ID y asociador que carga el servicio del modelo (camara_telefono.cargar_modelo), y en cada pasada todos los
     videos van por el mismo segundo. Se procesa cada cuadro de la cadencia FPS_SALIDA, sin el reloj del tiempo real.
-    `camaras`: {id: ruta}. Devuelve {id: (cuadros, fps, tam, numeros, generos)}: `numeros` es el ID de Videos de cada ID del
-    seguidor (el que más llevó) y `generos`, {ID: (género, certeza)} como en el resumen de Videos.
+    `camaras`: {id: ruta}. Devuelve {id: (cuadros, fps, tam, numeros)}: `numeros` es el ID de Videos de cada ID del
+    seguidor (el que más llevó).
     `desfases`: {id: segundos} en que empezó cada video en el reloj de la sesión (las cámaras no empiezan a la vez): cada pasada lleva
     los cuadros del mismo instante real y los tiempos de los cuadros ya van en el reloj de la sesión."""
     desfases = {cid: float((desfases or {}).get(cid, 0.0)) for cid in camaras}
     guardados = {cid: salida / f"videos_{cid}.json" for cid in camaras}
     if not rehacer and all(g.exists() for g in guardados.values()):
-        leidos = {cid: json.loads(g.read_text()) for cid, g in guardados.items()}
-        rehacer = any((v[5] if len(v) > 5 else 0.0) != desfases[cid] for cid, v in leidos.items())  # otro desfase: hay que volver a pasar
+        leidos = {cid: leer_guardado(json.loads(g.read_text())) for cid, g in guardados.items()}
+        rehacer = any(v[4] != desfases[cid] for cid, v in leidos.items())  # otro desfase: hay que volver a pasar
     if not rehacer and all(g.exists() for g in guardados.values()):
         out = {}
-        for cid, g in guardados.items():
-            cuadros, fps, tam, numeros, generos = leidos[cid][:5]
-            out[cid] = (cuadros, fps, tuple(tam), {int(k): v for k, v in numeros.items()}, {int(k): tuple(v) for k, v in generos.items()})
+        for cid, (cuadros, fps, tam, numeros, _) in leidos.items():
+            out[cid] = (cuadros, fps, tuple(tam), {int(k): v for k, v in numeros.items()})
         return out
     import cv2
 
@@ -315,7 +321,7 @@ def seguir_como_videos(camaras, salida, rehacer=False, desfases=None):
     import videos_subidos
 
     global DISPOSITIVO
-    motor, _, reid, asociacion = camara_telefono.cargar_modelo(genero=False)  # como «Solo multitracking» de Videos: sin género
+    motor, _, reid, asociacion = camara_telefono.cargar_modelo()
     DISPOSITIVO = str(motor.device)
     grupo = videos_subidos.GrupoVideos(list(camaras), reid, asociacion, gpu=str(motor.device).startswith("cuda"))
     estado = {}
@@ -366,10 +372,11 @@ def seguir_como_videos(camaras, salida, rehacer=False, desfases=None):
     for cid, e in estado.items():
         e["cap"].release()
         numeros = {i: c.most_common(1)[0][0] for i, c in e["ids"].items()}
-        generos = {p["id"]: (p["genero"], p["certeza"]) for p in e["video"].personas()}
-        out[cid] = (e["cuadros"], e["fps"] / e["paso"], e["tam"], numeros, generos)
-        guardados[cid].write_text(json.dumps([e["cuadros"], e["fps"] / e["paso"], e["tam"], numeros, generos, e["desfase"]]))
-        print(f"{cid}: {len(e['cuadros'])} cuadros, {len(set(numeros.values()))} personas (Videos cuenta {len(generos)})", flush=True)
+        out[cid] = (e["cuadros"], e["fps"] / e["paso"], e["tam"], numeros)
+        guardados[cid].write_text(json.dumps({"cuadros": e["cuadros"], "fps": e["fps"] / e["paso"], "tam": e["tam"],
+                                              "numeros": numeros, "desfase": e["desfase"]}))
+        print(f"{cid}: {len(e['cuadros'])} cuadros, {len(set(numeros.values()))} personas "
+              f"(Videos cuenta {len(e['video'].personas())})", flush=True)
     return out
 
 
@@ -837,18 +844,6 @@ def dibujar(video, cuadros, numeros, camara_id, salida, fps, tam):
     ff.wait()
 
 
-GENERO_BD = {"Hombre": "HOMBRE", "Mujer": "MUJER"}
-
-
-def genero_de(numero, resultados):
-    """El género de una persona como lo dio Videos (la cámara con más certeza); sin él, SIN_DETERMINAR."""
-    vistos = [r["generos"][numero] for r in resultados if (r.get("generos") or {}).get(numero, ("",))[0] in GENERO_BD]
-    if not vistos:
-        return {"gender": "SIN_DETERMINAR", "gender_confidence": None, "gender_votes": 0}
-    genero, certeza = max(vistos, key=lambda g: g[1] or 0)
-    return {"gender": GENERO_BD[genero], "gender_confidence": certeza, "gender_votes": len(vistos)}
-
-
 def sesion_para_bd(resultados, config):
     """El JSON que recibe POST /api/v1/sites/esan/sessions (mismo formato que publica el Build, sin tocar el mapa del sitio).
 
@@ -885,8 +880,7 @@ def sesion_para_bd(resultados, config):
     for numero, g in sorted(por_numero.items()):
         identidades.append({"global_id": str(uuid.uuid5(ESPACIO, f"{sid}/g{numero}")), "public_number": numero,
                             "first_seen": (inicio + timedelta(seconds=min(p[0] for p in g["pts"]))).isoformat(),
-                            "last_seen": (inicio + timedelta(seconds=max(p[0] for p in g["pts"]))).isoformat(), "n_cameras": len(g["camaras"]),
-                            **genero_de(numero, resultados)})
+                            "last_seen": (inicio + timedelta(seconds=max(p[0] for p in g["pts"]))).isoformat(), "n_cameras": len(g["camaras"])})
     titulo = config.get("titulo", "Comedor")
     nombre = f"{titulo} · video {inicio.strftime('%d/%m %H:%M')}" if len(resultados) == 1 else f"{titulo} · {len(resultados)} perspectivas"
     if config.get("grabacion") and len(resultados) > 1:  # para no confundirla con la primera en la lista de sesiones
@@ -897,7 +891,7 @@ def sesion_para_bd(resultados, config):
                     "ended_at": (inicio + timedelta(seconds=duracion)).isoformat(), "config_version": "", "config_sha256": "",
                     "summary": {"zona": config.get("zona"), "videos": {r["id"]: r["video"] for r in resultados}, "desfases_s": {r["id"]: float(r["cfg"].get("desfase_s", 0.0)) for r in resultados},
                                 "segundos_video": round(duracion, 2), "fps_por_camara": round(primera["fps"], 2), "personas": len(identidades),
-                                "estado": ("Videos procesados con el modelo de la sección Videos" if primera.get("generos") is not None
+                                "estado": ("Videos procesados con el modelo de la sección Videos" if primera.get("como_videos")
                                            else "Videos procesados por el modelo (YOLO26s + ByteTrack)") + "; ubicación aproximada en el plano",
                                 "dispositivo": DISPOSITIVO}},
         "map": None,
@@ -931,11 +925,11 @@ def analizar(camara_id, config, ruta, args, salida, embebedor, seguido=None):
     """Una cámara de video: detecta, saca la apariencia de cada persona y la ubica en el plano (los números se afinan después, entre cámaras).
     Con `seguido` (lo que sacó seguir_como_videos para esta cámara) las cajas y los IDs ya son los de Videos."""
     cfg = config["camaras"][camara_id]
-    numeros = generos = None
+    numeros = None
     # Lo lento se guarda y se reutiliza al ajustar la pose o los umbrales (--rehacer lo vuelve a correr todo).
     guardado = salida / f"cuadros_{camara_id}.json"
     if seguido is not None:
-        cuadros, fps, tam, numeros, generos = seguido
+        cuadros, fps, tam, numeros = seguido
     elif guardado.exists() and not args.rehacer:
         cuadros, fps, tam = json.loads(guardado.read_text())
         tam = tuple(tam)
@@ -981,7 +975,7 @@ def analizar(camara_id, config, ruta, args, salida, embebedor, seguido=None):
     crudas = len({i for c in cuadros for i, _, _ in c["gente"]})
     print(f"{camara_id}: {len(cuadros)} cuadros, {crudas} IDs del seguidor → {len(vectores)} personas")
     etiquetas = {i: (n,) for i, n in numeros.items()} if numeros is not None else None
-    return {"id": camara_id, "cfg": cfg, "camara": camara, "cuadros": cuadros, "personas": personas, "vectores": vectores, "etiquetas": etiquetas, "generos": generos,
+    return {"id": camara_id, "cfg": cfg, "camara": camara, "cuadros": cuadros, "personas": personas, "vectores": vectores, "etiquetas": etiquetas, "como_videos": seguido is not None,
             "mats": mats, "numeros": numeros,
             "duracion": cuadros[-1]["t"] if cuadros else 0.0, "fps": fps, "tam": tam, "ruta": ruta, "video": f"{prefijo(config)}{camara_id}_procesado.mp4"}
 

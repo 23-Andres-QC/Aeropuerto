@@ -23,14 +23,14 @@ assert.match(idDeClave("video:vid-0123456789ab"), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-
 
 // Sin personas, o con todos los videos en error, no hay nada que guardar.
 assert.equal(sesionDeVideos({ clave: "video:c", videos: [lista[2]] }), null);
-assert.equal(sesionDeVideos({ clave: "video:x", videos: [video("x", { resumen: resumen([{ id: 1, genero: "Mujer", desde_s: 0, hasta_s: 5, visible_s: 5 }], { estado: "error" }) })] }), null);
+assert.equal(sesionDeVideos({ clave: "video:x", videos: [video("x", { resumen: resumen([{ id: 1, desde_s: 0, hasta_s: 5, visible_s: 5 }], { estado: "error" }) })] }), null);
 
-// En una tanda, la misma ID en dos videos es una persona vista por dos cámaras; el género queda el de más certeza.
+// En una tanda, la misma ID en dos videos es una persona vista por dos cámaras.
 const tanda = {
   clave: "tanda:t9",
   videos: [
-    video("p", { tanda: "t9", resumen: resumen([{ id: 7, genero: "Hombre", certeza: 0.6, desde_s: 10, hasta_s: 20, visible_s: 10 }, { id: 8, genero: "Sin determinar", desde_s: 1, hasta_s: 2, visible_s: 1 }]) }),
-    video("q", { tanda: "t9", subido: "2026-10-20T15:00:30.000Z", resumen: resumen([{ id: 7, genero: "Mujer", certeza: 0.9, desde_s: 5, hasta_s: 40, visible_s: 30 }]) }),
+    video("p", { tanda: "t9", resumen: resumen([{ id: 7, desde_s: 10, hasta_s: 20, visible_s: 10 }, { id: 8, desde_s: 1, hasta_s: 2, visible_s: 1 }]) }),
+    video("q", { tanda: "t9", subido: "2026-10-20T15:00:30.000Z", resumen: resumen([{ id: 7, desde_s: 5, hasta_s: 40, visible_s: 30 }]) }),
     video("r", { tanda: "t9", resumen: resumen([], { estado: "error" }) }),
   ],
 };
@@ -42,16 +42,14 @@ assert.equal(carga.session.ended_at, "2026-10-20T15:01:30.000Z", "termina cuando
 assert.match(carga.session.name, /^video · .* · p\.mp4, q\.mp4$/, "el nombre lleva solo los videos que terminaron");
 assert.equal(carga.identities.length, 2);
 const siete = carga.identities.find((i) => i.public_number === 7);
-assert.equal(siete.gender, "MUJER");
-assert.equal(siete.gender_confidence, 0.9);
 assert.equal(siete.n_cameras, 2);
 assert.equal(siete.first_seen, "2026-10-20T15:00:10.000Z");
 assert.equal(siete.last_seen, "2026-10-20T15:01:10.000Z");
-assert.equal(carga.identities.find((i) => i.public_number === 8).gender, "SIN_DETERMINAR");
+assert.ok(carga.identities.every((i) => !Object.keys(i).some((k) => k.startsWith("gender"))), "las identidades no llevan género");
 assert.equal(carga.points.t.length, 0, "los videos no dejan recorridos en el plano");
 
 // El nombre cabe en los 120 bytes de la base aunque los archivos tengan nombres largos con tildes.
-const largo = video("l", { nombre: `${"canción ñandú ".repeat(20)}.mp4`, resumen: resumen([{ id: 1, genero: "Hombre", certeza: 0.7, desde_s: 0, hasta_s: 1, visible_s: 1 }]) });
+const largo = video("l", { nombre: `${"canción ñandú ".repeat(20)}.mp4`, resumen: resumen([{ id: 1, desde_s: 0, hasta_s: 1, visible_s: 1 }]) });
 assert.ok(new TextEncoder().encode(sesionDeVideos({ clave: "video:l", videos: [largo] }).session.name).length <= 120);
 
 console.log("videos: todo bien");

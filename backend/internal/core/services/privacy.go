@@ -10,7 +10,7 @@ import (
 )
 
 // PrivacyService applies the retention decided for the platform: raw positions 90 days, finished logins and the audit log
-// as long as they are useful. Aggregates and gender counts are kept. (Appearance vectors, 24 h, live in backend-vivo.)
+// as long as they are useful. Aggregates are kept. (Appearance vectors, 24 h, live in backend-vivo.)
 type PrivacyService struct {
 	repo     ports.PrivacyRepository
 	accounts *AccountService

@@ -145,7 +145,7 @@ func isPublic(r *http.Request) bool {
 
 var (
 	// What only a superadmin login may touch: accounts, the audit log, the demo site, the retention and the minimum group size.
-	adminOnly = regexp.MustCompile(`^/api/v1/(usuarios|auditoria|demo|privacidad)(/|$)|/grupo-minimo$`)
+	adminOnly = regexp.MustCompile(`^/api/v1/(usuarios|auditoria|demo|privacidad)(/|$)`)
 )
 
 // scope applies what each role may reach. It returns false after answering when the request is out of reach. A store

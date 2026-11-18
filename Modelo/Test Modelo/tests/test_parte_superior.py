@@ -1,4 +1,4 @@
-"""Teléfonos: el Re-ID y CLIP ven solo la parte de arriba de cada persona (MITAD_SUPERIOR)."""
+"""Teléfonos: el Re-ID ve el cuerpo entero, salvo que se pida solo la parte de arriba (MODELO_PARTE_SUPERIOR_REID)."""
 import sys
 import unittest
 from pathlib import Path
@@ -7,20 +7,10 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import camara_telefono  # noqa: E402
-from camara_telefono import ReIDMitadSuperior, mitad_superior  # noqa: E402
+from camara_telefono import ReIDMitadSuperior  # noqa: E402
 
 
 class ParteSuperior(unittest.TestCase):
-    def test_se_queda_con_la_mitad_de_arriba(self):
-        recorte = np.zeros((101, 40, 3), np.uint8)
-        recorte[:50] = 255  # arriba blanco, abajo negro
-        arriba = mitad_superior(recorte)
-        self.assertEqual(arriba.shape[:2], (round(101 * camara_telefono.MITAD_SUPERIOR), 40))
-        self.assertTrue((arriba[:50] == 255).all())
-
-    def test_un_recorte_minimo_no_queda_vacio(self):
-        self.assertEqual(mitad_superior(np.zeros((1, 3, 3), np.uint8)).shape[0], 1)
-
     def test_el_reid_es_el_cuerpo_entero_salvo_que_se_pida(self):
         self.assertEqual(camara_telefono.PARTE_SUPERIOR_REID, 1.0, "el Re-ID usa el cuerpo entero, como el Build")
 
@@ -33,9 +23,11 @@ class ParteSuperior(unittest.TestCase):
                 return np.ones((len(crops), 4))
 
         falso = ReIDFalso()
-        reid = ReIDMitadSuperior(falso)
+        reid = ReIDMitadSuperior(falso, 0.5)
         reid([np.zeros((80, 30, 3), np.uint8), np.zeros((40, 20, 3), np.uint8)])
-        self.assertEqual(falso.altos, [round(80 * camara_telefono.MITAD_SUPERIOR), round(40 * camara_telefono.MITAD_SUPERIOR)])
+        self.assertEqual(falso.altos, [40, 20])
+        reid([np.zeros((1, 3, 3), np.uint8)])
+        self.assertEqual(falso.altos, [1], "un recorte mínimo no queda vacío")
         self.assertEqual(reid.dimension, 512)
 
 

@@ -21,10 +21,7 @@ import { sesion } from "../../../core/auth";
       <ul>
         <li><b>Video e imágenes:</b> el video se procesa al instante y no se guarda; tampoco recortes ni fotos de rostros.</li>
         <li><b>Identidad:</b> no sabemos quién es nadie. Una persona es un número dentro de una sesión (por ejemplo «G12»).</li>
-        <li>
-          <b>El género de cada persona:</b> el modelo lo estima del cuerpo (nunca del rostro) solo mientras se mira En vivo. No se guarda junto a ninguna persona.
-          De una sesión solo queda <b>cuántas personas</b> hubo de cada género.
-        </li>
+        <li><b>Género, edad y otros atributos:</b> no se estiman.</li>
       </ul>
 
       <h2>Cuánto tiempo se guarda</h2>
@@ -40,15 +37,9 @@ import { sesion } from "../../../core/auth";
         </tbody>
       </table>
 
-      <h2>El género, solo en conjunto</h2>
-      <p>
-        Cuando se muestra un conteo por género, <b>los grupos de menos de 5 personas no se muestran</b>, aunque el total sí. Si ocultar un solo grupo permitiera
-        deducirlo restando, se oculta también otro, para que nadie pueda descubrir quién es «la única mujer» de un turno pequeño.
-      </p>
-
       <h2>Quién ve qué</h2>
       <ul>
-        <li><b>Administración LAP (superadmin):</b> ve todo el análisis y administra las cuentas; En vivo muestra a cada persona como un número con su estimación, sin guardarse.</li>
+        <li><b>Administración LAP (superadmin):</b> ve todo el análisis y administra las cuentas; En vivo muestra a cada persona como un número, sin guardarse.</li>
         <li><b>Seguridad:</b> En vivo, Teléfonos y Videos. Negocio: Insights y Ventas, solo para mirar. Ninguno de los dos administra cuentas ni cambia la configuración.</li>
         <li><b>Cámaras de teléfono:</b> solo se unen con un código de unión que crea el administrador; no vence y se puede revocar.</li>
       </ul>

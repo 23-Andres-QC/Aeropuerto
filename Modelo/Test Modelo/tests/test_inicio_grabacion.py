@@ -28,7 +28,7 @@ def resultado(inicio, declarado):
                           "direction_deg": [10.0], "confidence": [0.9]})
     return SimpleNamespace(
         inicio_grabacion=inicio, inicio_declarado=declarado, resumen={"session_uuid": "11111111-1111-1111-1111-111111111111", "timeline_end_s": 5},
-        generos=[], identidades=[{"global_id": 1, "global_uuid": gid, "inicio_s": 0, "fin_s": 5, "camaras": ["cam01"]}], global_uuid={1: gid},
+        identidades=[{"global_id": 1, "global_uuid": gid, "inicio_s": 0, "fin_s": 5, "camaras": ["cam01"]}], global_uuid={1: gid},
         tracklets=[{"tracklet_id": "33333333-3333-3333-3333-333333333333", "global_id": 1, "camera_id": "cam01", "local_id": 1, "inicio_s": 0,
                     "fin_s": 5, "samples": 3}],
         trajectory_points=lambda: tabla, metadata={"cam01": {"fps": 15, "width": 1280, "height": 720}}, offsets={"cam01": 0.0})

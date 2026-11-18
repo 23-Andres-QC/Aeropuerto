@@ -6,8 +6,6 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,8 +16,8 @@ import (
 	"aeropuerto/migrations"
 )
 
-// TestPrivacyMigrationsUndoAndRedo undoes migrations 013, 012 and 011 in a transaction that is rolled back (what they made is gone and the
-// gender columns are back) and applies them again.
+// TestPrivacyMigrationsUndoAndRedo undoes migrations 022 back to 011 in a transaction that is rolled back (what they made is gone and
+// the gender columns are back) and applies them again.
 func TestPrivacyMigrationsUndoAndRedo(t *testing.T) {
 	db, _, do := setup(t)
 	ctx := context.Background()
@@ -58,12 +56,12 @@ func TestPrivacyMigrationsUndoAndRedo(t *testing.T) {
 	column := func(tbl, col string) bool {
 		return has("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = $2)", tbl, col)
 	}
-	// The person of the session was counted, and the table of counts has her.
-	var n int
-	if err = tx.QueryRow(ctx, `SELECT c.n FROM session_gender_counts c JOIN sessions s USING (session_id) WHERE s.session_id = '11111111-1111-1111-1111-0000000000e1' AND c.gender = 'MUJER'`).Scan(&n); err != nil || n != 1 {
-		t.Fatalf("el conteo de género de la sesión: %d %v", n, err)
+	run(migrations.DownFS, "down/022_sin_genero.down.sql")
+	if !table("session_gender_counts") || !column("sites", "min_group_size") {
+		t.Error("al deshacer la 022 vuelven la tabla de conteos y min_group_size")
 	}
-
+	run(migrations.DownFS, "down/021_solicitudes_de_cuenta.down.sql")
+	run(migrations.DownFS, "down/020_sesion_video.down.sql")
 	run(migrations.DownFS, "down/019_esan_sin_zona_piso.down.sql")
 	run(migrations.DownFS, "down/018_sin_rol_tienda.down.sql")
 	if !table("store_api_keys") || !column("users", "local_id") {
@@ -134,6 +132,12 @@ func TestPrivacyMigrationsUndoAndRedo(t *testing.T) {
 	}
 	if !column("sites", "is_demo") || !column("sessions", "points_purged_at") {
 		t.Error("las columnas de la migración 013 deben volver")
+	}
+	run(migrations.FS, "020_sesion_video.sql")
+	run(migrations.FS, "021_solicitudes_de_cuenta.sql")
+	run(migrations.FS, "022_sin_genero.sql")
+	if table("session_gender_counts") || column("sites", "min_group_size") {
+		t.Error("la 022 quita los conteos por género y min_group_size")
 	}
 }
 
@@ -279,105 +283,32 @@ func TestAccountsInTheDatabase(t *testing.T) {
 	}
 }
 
-// importWithGenders publishes a session with the given numbers of people of each gender.
-func importWithGenders(t *testing.T, do func(string, string, any) *httptest.ResponseRecorder, slug, id string, women, men, unknown int) {
-	t.Helper()
-	p := session(id)
-	var identities, tracklets []map[string]any
-	pts := map[string][]any{"global_id": {}, "tracklet_id": {}, "camera_id": {}, "local_id": {}, "t": {}, "x": {}, "y": {}, "speed_mps": {}, "direction_deg": {}, "confidence": {}}
-	n := 0
-	add := func(gender string, conf any) {
-		n++
-		person := "22222222-2222-2222-" + id[32:36] + "-" + pad12(n)
-		track := "33333333-3333-3333-" + id[32:36] + "-" + pad12(n)
-		identities = append(identities, map[string]any{"global_id": person, "public_number": n, "first_seen": "2026-09-26T12:00:00Z", "last_seen": "2026-09-26T12:00:05Z",
-			"n_cameras": 1, "gender": gender, "gender_confidence": conf, "gender_votes": 3})
-		tracklets = append(tracklets, map[string]any{"tracklet_id": track, "global_id": person, "camera_id": "cam01", "local_id": n, "t_start": "2026-09-26T12:00:00Z",
-			"t_end": "2026-09-26T12:00:05Z", "n_reid_views": 1})
-		for k, v := range map[string]any{"global_id": person, "tracklet_id": track, "camera_id": "cam01", "local_id": n, "t": 0.5, "x": 1.5, "y": 2.5, "speed_mps": nil, "direction_deg": nil, "confidence": 0.8} {
-			pts[k] = append(pts[k], v)
-		}
-	}
-	for i := 0; i < women; i++ {
-		add("Mujer", 0.9)
-	}
-	for i := 0; i < men; i++ {
-		add("Hombre", 0.8)
-	}
-	for i := 0; i < unknown; i++ {
-		add("SIN_DETERMINAR", nil)
-	}
-	p["identities"], p["tracklets"], p["points"] = identities, tracklets, pts
-	if w := do("POST", "/api/v1/sites/"+slug+"/sessions", p); w.Code != 200 {
-		t.Fatalf("importar: %d %s", w.Code, w.Body)
-	}
-}
-
-func pad12(n int) string { s := strconv.Itoa(n); return strings.Repeat("0", 12-len(s)) + s }
-
-// TestGenderIsOnlyAggregated: the gender of a person is not stored anywhere; the session keeps counts, and the API shows a
-// category only when it has at least 5 people and never lets a hidden one be found by subtracting.
-func TestGenderIsOnlyAggregated(t *testing.T) {
-	db, media, do := setup(t)
+// TestNoGender: the system does not estimate gender. No table or column keeps it, a session exported before it was
+// dropped (its identities still carry the old fields) is published as it is, and no view of the session mentions it.
+func TestNoGender(t *testing.T) {
+	db, _, do := setup(t)
 	ctx := context.Background()
-	const slug = "prueba-genero"
+	const slug, id = "prueba-atributos", "11111111-1111-1111-1111-0000000000c1"
 	db.Exec(ctx, "DELETE FROM sites WHERE slug = $1", slug)
 	t.Cleanup(func() { db.Exec(ctx, "DELETE FROM sites WHERE slug = $1", slug) })
-	do("POST", "/api/v1/sites", map[string]string{"slug": slug, "name": "Género"})
-	const small, big = "11111111-1111-1111-1111-0000000000c1", "11111111-1111-1111-1111-0000000000c2"
-	importWithGenders(t, do, slug, small, 6, 1, 1)
-	importWithGenders(t, do, slug, big, 20, 9, 1)
-
-	// There is no column with a person's gender.
+	do("POST", "/api/v1/sites", map[string]string{"slug": slug, "name": "Atributos"})
+	p := session(id)
+	for k, v := range map[string]any{"gender": "Mujer", "gender_confidence": 0.9, "gender_votes": 4} {
+		p["identities"].([]map[string]any)[0][k] = v
+	}
+	if w := do("POST", "/api/v1/sites/"+slug+"/sessions", p); w.Code != 200 {
+		t.Fatalf("importar una sesión exportada antes: %d %s", w.Code, w.Body)
+	}
 	var n int
-	if err := db.QueryRow(ctx, `SELECT count(*) FROM information_schema.columns WHERE table_name IN ('identities', 'tracklets', 'trajectory_points', 'sales_matches', 'personas') AND column_name ILIKE '%gender%'`).Scan(&n); err != nil || n != 0 {
-		t.Fatalf("hay columnas de género por persona: %d %v", n, err)
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema()
+		AND (table_name ILIKE '%gender%' OR table_name ILIKE '%genero%' OR column_name ILIKE '%gender%' OR column_name ILIKE '%genero%')`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("la base guarda el género: %d %v", n, err)
 	}
-	var women int
-	if err := db.QueryRow(ctx, `SELECT n FROM session_gender_counts WHERE session_id = $1::text::uuid AND gender = 'MUJER'`, small).Scan(&women); err != nil || women != 6 {
-		t.Fatalf("conteo guardado: %d %v", women, err)
-	}
-
-	type view struct {
-		Summary struct {
-			People int            `json:"personas"`
-			Gender map[string]int `json:"genero"`
-			Hidden int            `json:"genero_ocultos"`
-		} `json:"resumen"`
-	}
-	// 6 / 1 / 1: the two small ones are under 5 and together 2, so the 6 is hidden too — total shown, no breakdown.
-	v := decodeJSON[view](t, do("GET", "/api/v1/sites/"+slug+"/sessions/"+small+"/insights", nil).Body.Bytes())
-	if v.Summary.People != 8 || len(v.Summary.Gender) != 0 || v.Summary.Hidden != 8 {
-		t.Errorf("6/1/1: %+v", v.Summary)
-	}
-	// 20 / 9 / 1: SIN_DETERMINAR (1) is hidden, and with it the 9, so total - 20 does not give it away.
-	v = decodeJSON[view](t, do("GET", "/api/v1/sites/"+slug+"/sessions/"+big+"/insights", nil).Body.Bytes())
-	if v.Summary.People != 30 || v.Summary.Gender["HOMBRE"] != 0 || v.Summary.Gender["MUJER"] != 20 || len(v.Summary.Gender) != 1 || v.Summary.Hidden != 10 {
-		t.Errorf("20/9/1: %+v", v.Summary)
-	}
-
-	// No view of a person says her gender: not the replay, not the Part III export.
-	for _, p := range []string{"/replay?paso=1", "/points"} {
-		body := do("GET", "/api/v1/sites/"+slug+"/sessions/"+big+p, nil).Body.String()
-		if strings.Contains(strings.ToLower(body), "genero") || strings.Contains(strings.ToLower(body), "gender") || strings.Contains(body, "confianza") {
-			t.Errorf("%s muestra el género de una persona", p)
+	for _, path := range []string{"/insights", "/replay?paso=1", "/points"} {
+		body := strings.ToLower(do("GET", "/api/v1/sites/"+slug+"/sessions/"+id+path, nil).Body.String())
+		if strings.Contains(body, "genero") || strings.Contains(body, "gender") {
+			t.Errorf("%s menciona el género", path)
 		}
-	}
-	// The file the Build writes with the gender of each person is not served; the others are.
-	dir := filepath.Join(media, slug)
-	os.MkdirAll(dir, 0o755)
-	os.WriteFile(filepath.Join(dir, "identidades_genero.csv"), []byte("id,genero\n1,Mujer\n"), 0o644)
-	os.WriteFile(filepath.Join(dir, "trajectory_points.csv"), []byte("id,x,y\n"), 0o644)
-	if w := do("GET", "/api/v1/sites/"+slug+"/media/identidades_genero.csv", nil); w.Code != 404 {
-		t.Errorf("identidades_genero.csv no debe servirse: %d", w.Code)
-	}
-	if w := do("GET", "/api/v1/sites/"+slug+"/media/trajectory_points.csv", nil); w.Code != 200 {
-		t.Errorf("los demás archivos sí: %d", w.Code)
-	}
-	// Publishing again replaces the counts (the same session id).
-	importWithGenders(t, do, slug, small, 3, 3, 0)
-	if err := db.QueryRow(ctx, `SELECT sum(n) FROM session_gender_counts WHERE session_id = $1::text::uuid`, small).Scan(&n); err != nil || n != 6 {
-		t.Errorf("al publicar otra vez se reemplazan los conteos: %d %v", n, err)
 	}
 }
 

@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { cantidad, colorPersona, segundos } from "../../../shared/format";
-import { api, mapaDelSitio, tramos, GENEROS, type Analitica, type Config, type Insights, type Punto, type Recorrido, type Replay, type Sesion } from "../api";
+import { api, mapaDelSitio, tramos, type Analitica, type Config, type Insights, type Punto, type Recorrido, type Replay, type Sesion } from "../api";
 import PlanoSitio, { type FlechaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
 import { CELDA_CALOR, SESION_VIVO, capturasVersion, entradasPorIntervalo, fijarModoVivo, historiasDe, mensajeGuardado, modoVivo, motorVivo as vivo, type ConteoCamara, type CuentaSentido } from "../enVivo";
 import ContrasteSesiones from "../components/ContrasteSesiones.vue";
@@ -10,7 +10,6 @@ import TraficoSitio from "../components/TraficoSitio.vue";
 import LineaTiempo from "../components/LineaTiempo.vue";
 import { COLORES, LETRAS, nombreRango, recortar, recortarVarios, relativo, type Rango } from "../lineaTiempo";
 import { desdeReplay, entradasPorIntervalo as entradasEntre, resumir, type HistoriaBasica, type ResumenVivo } from "../analisisVivo";
-import { GENEROS_ABREV, suprimirGenero, textoGenero } from "../../../core/roles";
 import { useSitios } from "../useSitios";
 import { perfil } from "../../cuentas/api";
 import { cargarPermisoExportar, puedeExportar, textoPermisoExportar } from "../../cuentas/permisos";
@@ -18,7 +17,7 @@ import { aBase64, aCsv, aPdfPagina, descargar, type TablaReporte } from "../repo
 import type { VistaGuardada } from "../vistaPlano";
 
 const route = useRoute();
-const { slug, actual: sitioActual } = useSitios();
+const { slug } = useSitios();
 const config = ref<Config>();
 const sesiones = ref<Sesion[]>([]);
 const sesionId = ref("");
@@ -146,7 +145,6 @@ const tarjetas = computed<Tarjeta[]>(() => {
   const enZona = zonaId.value != null;
   const l = localSel.value;
   const z = mz.value;
-  const g = res?.genero ?? {};
   const tasa = enZona ? (l?.tasa_captacion ?? null) : totalLocales.value.exposicion ? (100 * totalLocales.value.captados) / totalLocales.value.exposicion : null;
   const serieCaptacion = !a?.series ? undefined : enZona ? (l ? a.series.locales[String(l.local_id)]?.captacion : undefined) : a.series.total.captacion;
   const n = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString());
@@ -154,7 +152,7 @@ const tarjetas = computed<Tarjeta[]>(() => {
     {
       titulo: "Personas",
       valor: n(enZona ? z?.visitantes : res?.personas),
-      detalle: res ? (enZona ? `de ${res.personas} en la sesión` : textoGenero(res.personas, g, res.genero_ocultos ?? 0) || "género no registrado") : "sin sesión",
+      detalle: res ? (enZona ? `de ${res.personas} en la sesión` : "en la sesión") : "sin sesión",
       serie: serie.value?.personas,
     },
     {
@@ -198,10 +196,6 @@ const tarjetasVivo = computed<Tarjeta[]>(() => {
   const enZona = zonaId.value != null;
   const z = enZona ? (res.zonas.find((o) => o.id === zonaId.value) ?? null) : null;
   const hs = a.historias(zonaId.value);
-  const conteo = { HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0 };
-  for (const h of hs) conteo[h.genero === "Hombre" ? "HOMBRE" : h.genero === "Mujer" ? "MUJER" : "SIN_DETERMINAR"]++;
-  // En vivo se cuenta en la pantalla; de una captura guardada, el servidor trae los conteos (sin el género de cada persona).
-  const priv = modoVivo.value ? suprimirGenero(conteo, minimoGenero.value) : { visibles: r.value?.genero ?? {}, ocultas: r.value?.genero_ocultos ?? 0 };
   const tiene = (h: (typeof hs)[number], tipo: string) => zonas.value.some((o) => o.zone_type === tipo && h.zonas.has(o.zone_id));
   const hayLocales = zonas.value.some((o) => o.zone_type === "INTERIOR" || o.zone_type === "FRONTAGE");
   const expuestos = hs.filter((h) => tiene(h, "FRONTAGE"));
@@ -217,7 +211,9 @@ const tarjetasVivo = computed<Tarjeta[]>(() => {
         ? `de ${sesion.value?.identities ?? "—"} en la sesión`
         : enZona
           ? `de ${res.personas} en vivo`
-          : textoGenero(hs.length, priv.visibles, priv.ocultas) || "género no registrado",
+          : modoVivo.value
+            ? "en vivo"
+            : "en la captura",
     },
     { titulo: "Visitas", valor: hayLocales ? entraron.length.toLocaleString() : "—", detalle: hayLocales ? "entraron a un local" : "sin locales" },
     { titulo: "Exposición", valor: hayLocales ? expuestos.length.toLocaleString() : "—", detalle: "pasan por el frente" },
@@ -259,61 +255,29 @@ function sparkline(valores: (number | null)[] | undefined, w = 72, h = 22, pad =
     .join(" ");
 }
 
-// --- Hombres y mujeres: de la sesión o de quienes pasaron por la zona elegida ---
-// Solo cuentas: de una sesión guardada el servidor no guarda el género de nadie, y entrega las categorías con 5 personas o más.
-// En vivo (que no se guarda) se cuenta en la pantalla con el mismo criterio. Una categoría oculta se dice, sin cifra.
-// El mínimo que se aplica: el del sitio (en vivo) o el que usó el servidor para esa sesión. Menos de 5: desglose solo para pruebas.
 /**
  * Conteo por sentido (para validar el modelo): en vivo, lo de ahora; en una captura guardada, lo que se guardó con ella
- * (summary.conteo_direccion). Una fila por cámara y sentido, más el total. El género sigue la regla de grupos pequeños
- * del sitio (Configuración); el total y con o sin ID se ven siempre.
+ * (summary.conteo_direccion). Una fila por cámara y sentido, más el total.
  */
 const conteoSentido = computed<ConteoCamara[] | null>(() => {
   if (modoVivo.value) return vivo.conteo.value;
   const guardado = (sesion.value?.summary as { conteo_direccion?: { camaras?: ConteoCamara[] } } | null | undefined)?.conteo_direccion?.camaras;
   return Array.isArray(guardado) ? guardado : null;
 });
-type FilaConteo = { camara: string; sentido: string; c: CuentaSentido; genero: (number | null)[] };
+type FilaConteo = { camara: string; sentido: string; c: CuentaSentido };
 const filasConteo = computed<FilaConteo[]>(() => {
   const camaras = conteoSentido.value ?? [];
   const suma = (k: "sube" | "regresa"): CuentaSentido => {
-    const t: CuentaSentido = { total: 0, HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0, conId: 0, sinId: 0 };
+    const t: CuentaSentido = { total: 0, conId: 0, sinId: 0 };
     for (const cam of camaras) for (const clave of Object.keys(t) as (keyof CuentaSentido)[]) t[clave] += cam[k][clave] ?? 0;
     return t;
   };
-  // null: la cifra de ese género no se muestra (grupo de menos del mínimo del sitio).
-  const genero = (c: CuentaSentido) => {
-    const { visibles } = suprimirGenero({ HOMBRE: c.HOMBRE, MUJER: c.MUJER, SIN_DETERMINAR: c.SIN_DETERMINAR }, minimoGenero.value);
-    return (["HOMBRE", "MUJER", "SIN_DETERMINAR"] as const).map((g) => (c[g] ? (visibles[g] ?? null) : 0));
-  };
   const filas: FilaConteo[] = [];
   for (const cam of [...camaras.map((c) => ({ camara: c.camara, sube: c.sube, regresa: c.regresa })), ...(camaras.length > 1 ? [{ camara: "Total", sube: suma("sube"), regresa: suma("regresa") }] : [])]) {
-    filas.push({ camara: cam.camara, sentido: "↑ Suben", c: cam.sube, genero: genero(cam.sube) });
-    filas.push({ camara: cam.camara, sentido: "↓ Regresan", c: cam.regresa, genero: genero(cam.regresa) });
+    filas.push({ camara: cam.camara, sentido: "↑ Suben", c: cam.sube });
+    filas.push({ camara: cam.camara, sentido: "↓ Regresan", c: cam.regresa });
   }
   return filas;
-});
-
-const minimoGenero = computed(() => (modoVivo.value ? (sitioActual.value?.min_group_size ?? 5) : (r.value?.genero_minimo ?? sitioActual.value?.min_group_size ?? 5)));
-const generoVisible = computed(() => {
-  if (modoVivo.value) {
-    const n: Record<string, number> = { HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0 };
-    const lista = historiasDe(zonaId.value);
-    for (const h of lista) n[h.genero === "Hombre" ? "HOMBRE" : h.genero === "Mujer" ? "MUJER" : "SIN_DETERMINAR"]++;
-    const p = suprimirGenero(n, minimoGenero.value);
-    return { hay: true, total: lista.length, visibles: p.visibles, ocultas: p.ocultas };
-  }
-  const res = r.value;
-  // El género de cada persona no se guarda: no se puede contar dentro de un rango.
-  if (!res || conRangos.value) return { hay: false, total: 0, visibles: {} as Record<string, number>, ocultas: 0 };
-  return { hay: true, total: res.personas, visibles: res.genero, ocultas: res.genero_ocultos ?? 0 };
-});
-const generos = computed(() => {
-  const v = generoVisible.value;
-  return GENEROS_ABREV.map(([g]) => {
-    const n = v.visibles[g];
-    return { g, nombre: GENEROS[g], n: n ?? null, pct: n != null && v.total ? Math.round((100 * n) / v.total) : 0 };
-  });
 });
 
 // --- Entradas por intervalo --------------------------------------------------
@@ -494,10 +458,7 @@ const tablasReporte = computed<TablaReporte[]>(() => [
   {
     titulo: "Indicadores",
     cabecera: ["Indicador", "Valor", "Detalle"],
-    filas: [
-      ...tarjetas.value.map((t) => [t.titulo, t.valor, t.detalle]),
-      ...generos.value.map((g) => [g.nombre, g.n ?? "no se muestra (grupo de menos de 5)", g.n == null ? "" : `${g.pct} %`]),
-    ],
+    filas: tarjetas.value.map((t) => [t.titulo, t.valor, t.detalle]),
   },
   {
     titulo: "Comparación entre zonas",
@@ -514,8 +475,8 @@ const tablasReporte = computed<TablaReporte[]>(() => [
   {
     titulo: "Conteo por sentido",
     tituloCsv: "Conteo por sentido (línea a media altura de cada cámara)",
-    cabecera: ["Cámara", "Sentido", "Total", "Hombre", "Mujer", "Sin determinar", "Con ID", "Sin ID"],
-    filas: filasConteo.value.map((f) => [f.camara, f.sentido.replace(/^[↑↓] /, ""), f.c.total, ...f.genero.map((n) => n ?? "oculto"), f.c.conId, f.c.sinId]),
+    cabecera: ["Cámara", "Sentido", "Total", "Con ID", "Sin ID"],
+    filas: filasConteo.value.map((f) => [f.camara, f.sentido.replace(/^[↑↓] /, ""), f.c.total, f.c.conId, f.c.sinId]),
   },
   ...(conLinea.value && conRangos.value ? tablasLinea.value : []),
 ]);
@@ -726,33 +687,6 @@ onMounted(async () => {
 
   <div v-if="!vistaSinCapturas" class="spatial-insights">
     <section class="fila-top">
-      <article class="panel panel-genero">
-        <div class="panel-heading">
-          <h2>Hombres y mujeres</h2>
-        </div>
-        <div class="generos">
-          <div v-for="x in generos" :key="x.g" class="genero">
-            <span class="icono-genero" :class="'g-' + x.g" role="img" :aria-label="x.nombre">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="5" r="3" />
-                <path v-if="x.g === 'HOMBRE'" d="M8 10h8a1.2 1.2 0 0 1 1.2 1.2V17h-2.1v5.2h-2.4V17h-1.4v5.2H8.9V17H6.8v-5.8A1.2 1.2 0 0 1 8 10z" />
-                <path v-else-if="x.g === 'MUJER'" d="M9.6 10h4.8l3.8 9h-4.2v3.2h-4V19H5.8z" />
-                <path v-else d="M6 22.2v-3.1a6 6 0 0 1 12 0v3.1z" />
-              </svg>
-            </span>
-            <span class="genero-datos">
-              <strong>{{ x.n ?? "—" }}</strong>
-              <small>{{ x.nombre }}</small>
-              <em v-if="x.n != null">{{ x.pct }} %</em>
-              <em v-else-if="generoVisible.hay" title="Los grupos de menos de 5 personas no se muestran">oculto</em>
-            </span>
-          </div>
-        </div>
-        <div v-if="generos.some((x) => x.n)" class="barra-genero" aria-hidden="true">
-          <span v-for="x in generos.filter((y) => y.n)" :key="x.g" :class="'g-' + x.g" :style="{ flex: x.n ?? 0 }"></span>
-        </div>
-        <p v-if="minimoGenero < 5" class="nota-genero aviso-pruebas" role="note" data-prueba="aviso-pruebas">Modo pruebas · mínimo {{ minimoGenero }}</p>
-      </article>
       <div class="metrics">
         <article v-for="t in tarjetas" :key="t.titulo" class="panel metric" :class="{ vacio: esVacio(t.valor) }">
           <p>{{ t.titulo }}</p>
@@ -986,14 +920,13 @@ onMounted(async () => {
     </div>
     <table>
       <thead>
-        <tr><th>Cámara</th><th>Sentido</th><th>Total</th><th>Hombre</th><th>Mujer</th><th>Sin determinar</th><th>Con ID</th><th>Sin ID</th></tr>
+        <tr><th>Cámara</th><th>Sentido</th><th>Total</th><th>Con ID</th><th>Sin ID</th></tr>
       </thead>
       <tbody>
         <tr v-for="f in filasConteo" :key="f.camara + f.sentido" :class="{ total: f.camara === 'Total' }">
           <td>{{ f.camara }}</td>
           <td>{{ f.sentido }}</td>
           <td><b>{{ f.c.total }}</b></td>
-          <td v-for="(n, i) in f.genero" :key="i" :class="{ oculto: n == null }">{{ n ?? "oculto" }}</td>
           <td>{{ f.c.conId }}</td>
           <td>{{ f.c.sinId }}</td>
         </tr>
@@ -1159,120 +1092,6 @@ onMounted(async () => {
 }
 .ruta {
   font-weight: 600;
-}
-.generos {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 12px;
-  padding: 14px 15px 6px;
-}
-.aviso-pruebas {
-  color: #8a5a00;
-  font-weight: 700;
-}
-.nota-genero {
-  margin: 8px 14px 0;
-  font-size: 11.5px;
-  line-height: 1.35;
-}
-.panel-genero {
-  display: flex;
-  flex-direction: column;
-}
-/* Hombre, mujer y sin determinar uno al lado del otro, cada uno centrado: ícono, número, nombre y porcentaje. */
-.panel-genero .generos {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-content: center;
-  flex: 1;
-  gap: 8px;
-  padding: 14px 14px 6px;
-}
-.panel-genero .icono-genero {
-  width: 40px;
-  height: 40px;
-}
-.panel-genero .icono-genero svg {
-  width: 24px;
-  height: 24px;
-}
-.panel-genero .genero strong {
-  font-size: 24px;
-}
-.panel-genero .genero small,
-.panel-genero .genero em {
-  font-size: 12px;
-}
-.panel-genero .genero {
-  flex-direction: column;
-  gap: 8px;
-  text-align: center;
-}
-.panel-genero .genero-datos {
-  justify-items: center;
-}
-.panel-genero .barra-genero {
-  height: 12px;
-  margin: 8px 14px 12px;
-}
-.genero {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.icono-genero {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  color: #fff;
-}
-.icono-genero svg {
-  width: 26px;
-  height: 26px;
-  fill: currentColor;
-}
-.genero-datos {
-  display: grid;
-  min-width: 0;
-}
-.genero strong {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.8px;
-  line-height: 1.05;
-  font-variant-numeric: tabular-nums;
-}
-.genero small {
-  font-size: 11px;
-  color: var(--ink-soft);
-  white-space: nowrap;
-}
-.genero em {
-  font-style: normal;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--ink-faint);
-}
-.barra-genero {
-  display: flex;
-  height: 10px;
-  margin: 8px 13px 14px;
-  border-radius: 6px;
-  overflow: hidden;
-  gap: 2px;
-}
-.g-HOMBRE {
-  background: #3d8bff;
-}
-.g-MUJER {
-  background: #d9468f;
-}
-.g-SIN_DETERMINAR {
-  background: #8ba4bf;
 }
 /* El valor va sobre la barra: un halo del color del panel lo deja legible aunque la barra lo cubra. */
 .zone-compare-value {

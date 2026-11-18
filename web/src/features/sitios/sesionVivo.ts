@@ -7,8 +7,6 @@ export type TrazaViva = { t: number; x: number; y: number; cam: string };
 
 export type PersonaGuardable = {
   id: number;
-  genero: string | null;
-  conf: number | null;
   primera: number;
   ultima: number;
   trazas: TrazaViva[];
@@ -26,7 +24,6 @@ export function uuid(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-const GENERO_BD: Record<string, "HOMBRE" | "MUJER" | "SIN_DETERMINAR"> = { Hombre: "HOMBRE", Mujer: "MUJER" };
 const redondear = (v: number, d: number) => Math.round(v * 10 ** d) / 10 ** d;
 
 export type CargaSesion = {
@@ -76,18 +73,14 @@ export function construirSesion(
   for (const persona of personas) {
     const trazas = [...persona.trazas].sort((a, b) => a.t - b.t);
     const gid = uuid();
-    const genero = GENERO_BD[persona.genero ?? ""] ?? "SIN_DETERMINAR";
     if (!trazas.length) {
-      // Memorizada (tiene ID) pero sin ubicación en el plano: cuenta como persona, con su género, sin recorrido.
+      // Memorizada (tiene ID) pero sin ubicación en el plano: cuenta como persona, sin recorrido.
       identities.push({
         global_id: gid,
         public_number: persona.id,
         first_seen: iso(Math.max(inicio, persona.primera)),
         last_seen: iso(Math.max(inicio, persona.ultima, persona.primera)),
         n_cameras: Math.max(1, persona.camaras ?? 1),
-        gender: genero,
-        gender_confidence: genero === "SIN_DETERMINAR" ? null : Math.min(1, Math.max(0, persona.conf ?? 0.5)),
-        gender_votes: 0,
       });
       continue;
     }
@@ -97,9 +90,6 @@ export function construirSesion(
       first_seen: iso(Math.max(inicio, trazas[0].t)),
       last_seen: iso(Math.max(inicio, trazas[trazas.length - 1].t)),
       n_cameras: Math.max(1, new Set(trazas.map((z) => z.cam)).size),
-      gender: genero,
-      gender_confidence: genero === "SIN_DETERMINAR" ? null : Math.min(1, Math.max(0, persona.conf ?? 0.5)),
-      gender_votes: 0,
     });
 
     const trackletDe = new Map<string, string>();
@@ -152,7 +142,7 @@ export function construirSesion(
       status: "DONE",
       recording_start: iso(inicio),
       ended_at: iso(Math.max(fin, inicio)),
-      // conteo_direccion: quién cruzó la línea de conteo de cada cámara, por sentido, género y con o sin ID (ver enVivo.ts).
+      // conteo_direccion: quién cruzó la línea de conteo de cada cámara, por sentido y con o sin ID (ver enVivo.ts).
       summary: {
         personas: identities.length,
         estado: opciones.estado ?? "Captura en vivo con teléfonos",

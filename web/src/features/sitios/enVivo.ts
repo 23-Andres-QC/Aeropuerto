@@ -9,7 +9,7 @@ import { json, request, socketPersistente } from "../../core/http";
 import { colorPersona } from "../../shared/format";
 import { api as apiVivo, RELEVO_VIVO, type Detecciones, type EstadoServicio, type EstadoTelefono, type Telefono, type UbicacionPlano } from "../telefonos/api";
 import { api, mapaDelSitio, type Camara, type Config, type Mapa, type Punto } from "./api";
-import { CELDA_CALOR, claveGenero, dentro, entradasPorIntervalo as entradasEntre, resumir, type ResumenVivo } from "./analisisVivo";
+import { CELDA_CALOR, dentro, entradasPorIntervalo as entradasEntre, resumir, type ResumenVivo } from "./analisisVivo";
 import type { PersonaPlano, RecorridoPlano } from "./components/PlanoSitio.vue";
 
 export { CELDA_CALOR };
@@ -84,16 +84,14 @@ export function fijarModoVivo(valor: boolean, limpiar = true, automatico = false
   }
 }
 
-type Observacion = { clave: string; id: number | null; x: number; y: number; alto: number; genero: string | null; conf: number | null; cam: string };
+type Observacion = { clave: string; id: number | null; x: number; y: number; alto: number; cam: string };
 type Cuadro = { llegada: number; observaciones: Observacion[] };
 
-export type PersonaViva = { clave: string; id: number | null; genero: string | null; conf: number | null; camaras: string[] };
+export type PersonaViva = { clave: string; id: number | null; camaras: string[] };
 
 /** Todo lo que se sabe de una persona con ID global desde que empezó el modo en vivo. */
 export type HistoriaViva = {
   id: number;
-  genero: string | null;
-  conf: number | null;
   primera: number;
   ultima: number;
   camaras: Set<string>;
@@ -203,15 +201,14 @@ const suavizadas = new Map<string, Punto>();
  * Personas que el modelo memorizó (con ID global) mientras se graba, las ubique o no el plano: la captura las guarda a
  * todas (con su recorrido si lo tienen). Una caja sin ID no cuenta: puede ser un falso positivo pasajero.
  */
-type Memorizada = { genero: string | null; conf: number | null; primera: number; ultima: number; camaras: Set<string> };
+type Memorizada = { primera: number; ultima: number; camaras: Set<string> };
 const memorizadas = new Map<number, Memorizada>();
 function memorizar(m: Detecciones, cid: string | undefined) {
   const t = Date.now();
   for (const p of m.people ?? []) {
     if (p.global_id == null) continue;
-    const r = memorizadas.get(p.global_id) ?? { genero: null, conf: null, primera: t, ultima: t, camaras: new Set<string>() };
+    const r = memorizadas.get(p.global_id) ?? { primera: t, ultima: t, camaras: new Set<string>() };
     r.ultima = t;
-    if (p.gender && p.gender !== "Sin determinar" && (p.gender_conf ?? 0) >= (r.conf ?? 0)) [r.genero, r.conf] = [p.gender, p.gender_conf ?? null];
     if (cid) r.camaras.add(cid);
     memorizadas.set(p.global_id, r);
   }
@@ -228,7 +225,7 @@ const AUTOGUARDADO_MS = 30_000;
 // Para validar el modelo: en cada cámara se cuenta quién cruza una línea horizontal a media altura del cuadro, por el pie
 // de su caja. «Suben» los que la cruzan hacia arriba de la imagen (se alejan de la cámara) y «regresan» los que la
 // cruzan hacia abajo (vienen hacia ella). Cuenta a cada track del modelo en esa cámara (su local_id), tenga o no ID
-// global y se sepa o no su género: un ID que llega después, o un género que se fija después, se le asigna igual. Cada
+// global: un ID que llega después se le asigna igual. Cada
 // cruce cuenta una vez; quien sube y vuelve cuenta una en cada sentido. No depende de que el teléfono se ubique en el plano.
 /** Altura de la línea de conteo (fracción del alto del cuadro, desde arriba). */
 export const LINEA_CONTEO = 0.5;
@@ -238,10 +235,10 @@ const BANDA_CONTEO = 0.06;
 const VIDA_TRACK_MS = 60_000;
 
 type Sentido = "sube" | "regresa";
-type TrackConteo = { lado: "arriba" | "abajo" | null; visto: number; genero: string | null; id: number | null };
+type TrackConteo = { lado: "arriba" | "abajo" | null; visto: number; id: number | null };
 type Cruce = { camara: string; sentido: Sentido; track: TrackConteo };
-/** Lo contado de un sentido: total, por género y con o sin ID global. */
-export type CuentaSentido = { total: number; HOMBRE: number; MUJER: number; SIN_DETERMINAR: number; conId: number; sinId: number };
+/** Lo contado de un sentido: total y con o sin ID global. */
+export type CuentaSentido = { total: number; conId: number; sinId: number };
 export type ConteoCamara = { camara: string; sube: CuentaSentido; regresa: CuentaSentido };
 
 const tracksConteo = new Map<string, TrackConteo>();
@@ -253,10 +250,9 @@ function contarCruces(tel: string, cid: string, m: Detecciones) {
   const t = Date.now();
   for (const p of m.people ?? []) {
     const clave = `${tel}:${p.local_id}`;
-    const track = tracksConteo.get(clave) ?? { lado: null, visto: t, genero: null, id: null };
+    const track = tracksConteo.get(clave) ?? { lado: null, visto: t, id: null };
     track.visto = t;
     if (p.global_id != null) track.id = p.global_id;
-    if (p.gender === "Hombre" || p.gender === "Mujer") track.genero = p.gender;
     const pie = p.box[3] / m.frame_h;
     const lado = pie < LINEA_CONTEO - BANDA_CONTEO ? "arriba" : pie > LINEA_CONTEO + BANDA_CONTEO ? "abajo" : track.lado;
     if (track.lado && lado && lado !== track.lado) cruces.push({ camara: cid, sentido: lado === "arriba" ? "sube" : "regresa", track });
@@ -265,9 +261,9 @@ function contarCruces(tel: string, cid: string, m: Detecciones) {
   }
 }
 
-const cuentaVacia = (): CuentaSentido => ({ total: 0, HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0, conId: 0, sinId: 0 });
+const cuentaVacia = (): CuentaSentido => ({ total: 0, conId: 0, sinId: 0 });
 
-/** Lo contado por cámara (las de camarasVivo, en su orden), con el género y el ID que cada track tiene ahora. */
+/** Lo contado por cámara (las de camarasVivo, en su orden), con el ID que cada track tiene ahora. */
 function resumirConteo(): ConteoCamara[] {
   const filas = new Map(camarasVivo.value.map((camara) => [camara, { camara, sube: cuentaVacia(), regresa: cuentaVacia() }]));
   for (const c of cruces) {
@@ -275,7 +271,6 @@ function resumirConteo(): ConteoCamara[] {
     if (!fila) continue;
     const cuenta = fila[c.sentido];
     cuenta.total++;
-    cuenta[claveGenero(c.track.genero)]++;
     if (c.track.id != null) cuenta.conId++;
     else cuenta.sinId++;
   }
@@ -315,7 +310,7 @@ const uniones = new Map<string, number>();
 /** ID que se unió a otro (el de la derecha): su captura no debe contarse como otra persona. */
 const idsUnidos = new Map<number, number>();
 
-type Fusionable = { x: number; y: number; peso: number; id: number | null; genero: string | null; conf: number | null; mejor: number; camaras: Set<string>; altoMax: number; camMejor: string };
+type Fusionable = { x: number; y: number; peso: number; id: number | null; camaras: Set<string>; altoMax: number; camMejor: string };
 function unirCercanas(acumulado: Map<string, Fusionable>, t: number): void {
   if (!unirPorPosicion.value || acumulado.size < 2) {
     uniones.clear();
@@ -351,7 +346,6 @@ function unirCercanas(acumulado: Map<string, Fusionable>, t: number): void {
     a.x = (a.x / a.peso) * wa + (b.x / b.peso) * wb;
     a.y = (a.y / a.peso) * wa + (b.y / b.peso) * wb;
     a.peso = wa + wb;
-    if (b.mejor >= a.mejor) [a.genero, a.conf, a.mejor] = [b.genero, b.conf, b.mejor];
     b.camaras.forEach((c) => a.camaras.add(c));
     if (b.altoMax > a.altoMax) a.camMejor = b.camMejor;
     a.altoMax = Math.max(wa, wb);
@@ -373,7 +367,7 @@ const calor = shallowRef<[number, number, number][]>([]);
 const historias = shallowRef<HistoriaViva[]>([]);
 /**
  * Personas con ID que ningún teléfono ubicó en el plano (su cuadro no se parece a las referencias de su cámara): Insights
- * las cuenta (personas, género, cuánto se vieron) aunque no tengan recorrido, y avisa cuántas son. Sin esto, con un
+ * las cuenta (personas y cuánto se vieron) aunque no tengan recorrido, y avisa cuántas son. Sin esto, con un
  * teléfono que no reconoce el patio Insights quedaba en cero aunque el modelo viera e identificara a la gente.
  */
 const sinUbicar = ref(0);
@@ -386,7 +380,7 @@ function fotoHistorias(): HistoriaViva[] {
   for (const [id, r] of memorizadas) {
     // Un ID que se unió a otro por posición es la misma persona: no cuenta como otra.
     if (conRecorrido.has(id) || (idsUnidos.has(id) && conRecorrido.has(idsUnidos.get(id)!))) continue;
-    solas.push({ id, genero: r.genero, conf: r.conf, primera: r.primera, ultima: r.ultima, camaras: new Set(r.camaras), puntos: [], zonas: new Map(), secuencia: [], zonaActual: null, trazas: [] });
+    solas.push({ id, primera: r.primera, ultima: r.ultima, camaras: new Set(r.camaras), puntos: [], zonas: new Map(), secuencia: [], zonaActual: null, trazas: [] });
   }
   sinUbicar.value = solas.length;
   return [...ubicadas, ...solas];
@@ -567,8 +561,6 @@ function alDetecciones(id: string, ev: MessageEvent) {
       x: punto[0],
       y: punto[1],
       alto: Math.max(1, y2 - y1),
-      genero: p.gender,
-      conf: p.gender_conf,
       cam: cid,
     });
   }
@@ -623,7 +615,7 @@ function componer() {
   const dt = ultimaVuelta ? Math.min(1, Math.max(0, (t - ultimaVuelta) / 1000)) : REFRESCO_MS / 1000;
   ultimaVuelta = t;
   const alfa = 1 - Math.exp(-dt / SUAVIZADO_S);
-  type Acum = { x: number; y: number; peso: number; id: number | null; genero: string | null; conf: number | null; mejor: number; camaras: Set<string>; altoMax: number; camMejor: string };
+  type Acum = { x: number; y: number; peso: number; id: number | null; camaras: Set<string>; altoMax: number; camMejor: string };
   const vistas = new Map<string, { tel: string; cid: string | undefined; o: Observacion }[]>();
   for (const [tel, cuadro] of cuadros) {
     if (t - cuadro.llegada > VIGENCIA_MS) continue;
@@ -640,9 +632,8 @@ function componer() {
     const actual = lista.find((v) => v.tel === camaraPreferida.get(clave));
     const elegida = actual && mayor.o.alto <= CAMBIO_DE_CAMARA * actual.o.alto ? actual : mayor;
     camaraPreferida.set(clave, elegida.tel);
-    const a: Acum = { x: elegida.o.x, y: elegida.o.y, peso: 1, id: elegida.o.id, genero: null, conf: null, mejor: 0, camaras: new Set<string>(), altoMax: elegida.o.alto, camMejor: elegida.cid ?? "" };
+    const a: Acum = { x: elegida.o.x, y: elegida.o.y, peso: 1, id: elegida.o.id, camaras: new Set<string>(), altoMax: elegida.o.alto, camMejor: elegida.cid ?? "" };
     for (const v of lista) {
-      if (v.o.genero && v.o.alto >= a.mejor) [a.genero, a.conf, a.mejor] = [v.o.genero, v.o.conf, v.o.alto];
       if (v.cid) a.camaras.add(v.cid);
     }
     acumulado.set(clave, a);
@@ -676,10 +667,9 @@ function componer() {
     // Solo quien tiene ID global entra a las estadísticas: una caja sin ID puede ser un falso positivo pasajero.
     // Y solo mientras se graba una captura: antes de «Iniciar» el mapa muestra a la gente pero no acumula nada.
     if (a.id != null && grabando.value) {
-      const nueva: HistoriaViva = { id: a.id, genero: null, conf: null, primera: t, ultima: t, camaras: new Set(), puntos: [], zonas: new Map(), secuencia: [], zonaActual: null, trazas: [] };
+      const nueva: HistoriaViva = { id: a.id, primera: t, ultima: t, camaras: new Set(), puntos: [], zonas: new Map(), secuencia: [], zonaActual: null, trazas: [] };
       const h = historia.get(a.id) ?? nueva;
       h.ultima = t;
-      if (a.genero) [h.genero, h.conf] = [a.genero, a.conf];
       a.camaras.forEach((c) => h.camaras.add(c));
       const fin = h.puntos[h.puntos.length - 1];
       if (!fin || Math.hypot(punto[0] - fin[0], punto[1] - fin[1]) > 0.05) {
@@ -705,7 +695,7 @@ function componer() {
     }
 
     personas.push({ id: a.id ?? -(personas.length + 1), x: punto[0], y: punto[1], color, etiqueta: a.id != null ? `G${a.id}` : "?", estado: "visto" });
-    lista.push({ clave, id: a.id, genero: a.genero, conf: a.conf, camaras: [...a.camaras].sort() });
+    lista.push({ clave, id: a.id, camaras: [...a.camaras].sort() });
   }
   for (const [zona, n] of porZona) {
     const area = zonas.value.find((z) => z.zone_id === zona)?.area_m2 || 0;
@@ -835,12 +825,12 @@ function prepararCaptura(): Pendiente | null {
   // Las que tienen recorrido en el plano, y además las memorizadas que no se ubicaron (solo cuentan como personas).
   const personas: PersonaGuardable[] = [...historia.values()]
     .filter((h) => h.trazas.length)
-    .map((h) => ({ id: h.id, genero: h.genero, conf: h.conf, primera: h.primera, ultima: h.ultima, trazas: h.trazas }));
+    .map((h) => ({ id: h.id, primera: h.primera, ultima: h.ultima, trazas: h.trazas }));
   const conRecorrido = new Set(personas.map((p) => p.id));
   for (const [id, r] of memorizadas) {
     // Un ID que se unió a otro por posición es la misma persona: no se guarda como otra.
     if (idsUnidos.has(id) && conRecorrido.has(idsUnidos.get(id)!)) continue;
-    if (!conRecorrido.has(id)) personas.push({ id, genero: r.genero, conf: r.conf, primera: r.primera, ultima: r.ultima, trazas: [], camaras: r.camaras.size });
+    if (!conRecorrido.has(id)) personas.push({ id, primera: r.primera, ultima: r.ultima, trazas: [], camaras: r.camaras.size });
   }
   if (!personas.length) return null;
   const hora = new Date(inicio.value).toLocaleString("es-PE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
@@ -954,7 +944,7 @@ let descartarHasta = 0;
 
 /**
  * Empieza una grabación nueva: vacía la memoria de identidades del modelo (backend-vivo sube la época y el modelo, al
- * notarlo, olvida la sesión entera: personas, tramos, seguidores y géneros), así no arrastra las grabaciones anteriores
+ * notarlo, olvida la sesión entera: personas, tramos y seguidores), así no arrastra las grabaciones anteriores
  * ni se va saturando. `automatico`: En vivo se prendió solo (ver tomarOlvido); una acción a mano vacía siempre.
  */
 async function olvidarGrabacionAnterior(automatico = false) {

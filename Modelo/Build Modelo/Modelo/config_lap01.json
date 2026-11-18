@@ -42,18 +42,5 @@
     "threads": 2,
     "batch_size": 8,
     "device": "auto"
-  },
-  "gender": {
-    "enabled": true,
-    "weights": "clip_genero",
-    "device": "auto",
-    "batch_size": 16,
-    "sample_interval_s": 0.6,
-    "min_votes": 2,
-    "max_votes_per_tracklet": 12,
-    "min_confidence": 0.55,
-    "min_margin": 0.1,
-    "min_height": 72,
-    "min_detection_confidence": 0.5
   }
 }

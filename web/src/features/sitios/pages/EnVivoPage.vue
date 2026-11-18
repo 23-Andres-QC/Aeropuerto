@@ -565,7 +565,7 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   </section>
   <p v-if="replay && sesion?.kind === 'BUILD' && verGrabacion && lugar === 'sitio'" class="descargas muted">
     Resultados del build:
-    <template v-for="(archivo, i) in ['mapa_2d.mp4', 'mapa_trayectorias.png', 'trajectory_points.csv', 'identidades_genero.csv']" :key="archivo"
+    <template v-for="(archivo, i) in ['mapa_2d.mp4', 'mapa_trayectorias.png', 'trajectory_points.csv']" :key="archivo"
       >{{ i ? " · " : "" }}<a :href="api.media(slug, archivo)" download>{{ archivo }}</a></template
     >
   </p>

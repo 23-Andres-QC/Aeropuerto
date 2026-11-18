@@ -183,7 +183,7 @@ async function elegidos() {
   await Promise.all(
     archivos.slice(0, libres).map(async (archivo) => {
       const id = ++siguienteSubida;
-      const { promesa, cancelar } = subirVideo(archivo, "tiempo_real", "multitracking", (f) => {
+      const { promesa, cancelar } = subirVideo(archivo, "tiempo_real", (f) => {
         subidas.value = subidas.value.map((x) => (x.id === id ? { ...x, fraccion: f } : x));
       }, tanda);
       subidas.value = [...subidas.value, { id, nombre: archivo.name, fraccion: 0, cancelar }];
@@ -356,7 +356,7 @@ onUnmounted(() => {
       <!-- Un solo visor por video, del primer frame al resumen: guarda sus detecciones y sigue reproduciendo. -->
       <VistaVideo
         v-if="v.resumen || avanceDe(v.id)"
-        :video="v.resumen ? { ...v.resumen, id: v.id, nombre: v.nombre, modo: v.modo, analisis: v.analisis } : { ...avanceDe(v.id)!, analisis: v.analisis }"
+        :video="v.resumen ? { ...v.resumen, id: v.id, nombre: v.nombre, modo: v.modo } : avanceDe(v.id)!"
         :estado="v.resumen ? v.resumen.estado : (avanceDe(v.id)?.estado ?? 'procesando')"
         :mensaje="v.resumen?.mensaje"
         :dispositivo="v.resumen?.dispositivo ?? servicio?.dispositivo"

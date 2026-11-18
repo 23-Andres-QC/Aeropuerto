@@ -1,10 +1,11 @@
 // Package memoria guarda las personas que el modelo de cámaras en vivo ya vio,
 // para que cada una conserve su ID aunque salga y vuelva, cambie de cámara o el
-// modelo se reinicie. Solo guarda apariencia (vectores Re-ID), género y cuándo y
-// dónde se vio: nada de video ni fotos.
+// modelo se reinicie. Solo guarda apariencia (vectores Re-ID) y cuándo y dónde
+// se vio: nada de video ni fotos.
 package memoria
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/binary"
@@ -140,18 +141,36 @@ type Vista struct {
 // modelo en cada guardado (así un guardado repetido no duplica nada). Vistas
 // nil (o ausente en el JSON) conserva las guardadas; una lista las reemplaza.
 type Persona struct {
-	ID              int64     `json:"id"`
-	Suma            Vector    `json:"suma"`
-	Muestras        int       `json:"muestras"`
-	// Genero y ConfianzaGenero se aceptan (el modelo aún los manda) pero NO se guardan: la memoria no conserva el
-	// género de nadie junto a su apariencia, así que al leer vuelven vacíos.
-	Genero          *string   `json:"genero"`
-	ConfianzaGenero *float32  `json:"confianza_genero"`
-	Camaras         []string  `json:"camaras"`
-	Apariciones     int       `json:"apariciones"`
-	PrimeraVez      time.Time `json:"primera_vez"`
-	UltimaVez       time.Time `json:"ultima_vez"`
-	Vistas          []Vista   `json:"vistas"`
+	ID          int64     `json:"id"`
+	Suma        Vector    `json:"suma"`
+	Muestras    int       `json:"muestras"`
+	Camaras     []string  `json:"camaras"`
+	Apariciones int       `json:"apariciones"`
+	PrimeraVez  time.Time `json:"primera_vez"`
+	UltimaVez   time.Time `json:"ultima_vez"`
+	Vistas      []Vista   `json:"vistas"`
+}
+
+// camposRetirados son los que todavía manda un modelo arrancado con una versión anterior y la memoria ya no
+// guarda: se ignoran. Cualquier otro campo desconocido se rechaza.
+var camposRetirados = []string{"genero", "confianza_genero"}
+
+func (p *Persona) UnmarshalJSON(b []byte) error {
+	var campos map[string]json.RawMessage
+	if err := json.Unmarshal(b, &campos); err != nil {
+		return err
+	}
+	for _, c := range camposRetirados {
+		delete(campos, c)
+	}
+	limpio, err := json.Marshal(campos)
+	if err != nil {
+		return err
+	}
+	type simple Persona
+	d := json.NewDecoder(bytes.NewReader(limpio))
+	d.DisallowUnknownFields()
+	return d.Decode((*simple)(p))
 }
 
 // Validar revisa una persona antes de guardarla.
@@ -164,12 +183,6 @@ func (p *Persona) Validar() error {
 	}
 	if p.Muestras <= 0 {
 		return invalido("muestras debe ser positivo")
-	}
-	if p.Genero != nil && *p.Genero != "Hombre" && *p.Genero != "Mujer" {
-		return invalido("genero debe ser Hombre, Mujer o null")
-	}
-	if c := p.ConfianzaGenero; c != nil && (math.IsNaN(float64(*c)) || *c < 0 || *c > 1) {
-		return invalido("confianza_genero debe estar entre 0 y 1")
 	}
 	if len(p.Camaras) > MaxCamaras {
 		return invalido("hasta %d cámaras por persona", MaxCamaras)

@@ -12,7 +12,7 @@ func TestModuleOf(t *testing.T) {
 		{"GET", "/api/v1/sites/esan/trafico/calor", ModInsights}, {"GET", "/api/v1/sites/esan/sessions/s1/insights", ModInsights},
 		{"PUT", "/api/v1/sites/esan/trafico/umbrales", ModConfig}, {"POST", "/api/v1/sites/esan/trafico/recalcular", ModConfig},
 		{"POST", "/api/v1/sites", ModConfig}, {"PUT", "/api/v1/sites/esan/plano", ModConfig}, {"POST", "/api/v1/sites/esan/zones", ModConfig},
-		{"GET", "/api/v1/usuarios", ModUsuarios}, {"GET", "/api/v1/auditoria", ModUsuarios}, {"PUT", "/api/v1/sites/esan/grupo-minimo", ModUsuarios},
+		{"GET", "/api/v1/usuarios", ModUsuarios}, {"GET", "/api/v1/auditoria", ModUsuarios},
 		{"GET", "/api/v1/sites/esan/tiendas/3/llaves", ModUsuarios}, {"POST", "/api/v1/demo", ModUsuarios}, {"GET", "/api/v1/privacidad", ModUsuarios},
 		// lo que nadie listó va al módulo más estricto que puede cambiar cosas
 		{"GET", "/api/v1/algo-nuevo", ModConfig}, {"GET", "/api/v1/sites/esan/otra-cosa", ModConfig},

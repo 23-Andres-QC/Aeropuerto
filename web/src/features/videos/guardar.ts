@@ -57,7 +57,7 @@ function recortar(nombre: string): string {
 export function sesionDeVideos(grupo: GrupoVideos): CargaSesion | null {
   const terminados = grupo.videos.filter((v) => v.resumen?.estado === "terminado");
   if (!terminados.length) return null;
-  const personas = new Map<number, PersonaGuardable & { certeza: number }>();
+  const personas = new Map<number, PersonaGuardable>();
   let inicio = Infinity;
   let fin = -Infinity;
   for (const v of terminados) {
@@ -68,24 +68,21 @@ export function sesionDeVideos(grupo: GrupoVideos): CargaSesion | null {
     for (const p of propias) {
       const primera = base + 1000 * p.desde_s;
       const ultima = base + 1000 * p.hasta_s;
-      const certeza = p.genero === "Hombre" || p.genero === "Mujer" ? (p.certeza ?? 0.5) : -1;
       const previa = personas.get(p.id);
       if (!previa) {
-        personas.set(p.id, { id: p.id, genero: p.genero, conf: p.certeza ?? null, certeza, primera, ultima, trazas: [], camaras: 1 });
+        personas.set(p.id, { id: p.id, primera, ultima, trazas: [], camaras: 1 });
         continue;
       }
       previa.primera = Math.min(previa.primera, primera);
       previa.ultima = Math.max(previa.ultima, ultima);
       previa.camaras = (previa.camaras ?? 1) + 1;
-      // Si las cámaras no coinciden en el género, queda el que se vio con más certeza.
-      if (certeza > previa.certeza) Object.assign(previa, { genero: p.genero, conf: p.certeza ?? null, certeza });
     }
   }
   if (!personas.size) return null;
   const hora = new Date(inicio).toLocaleString("es-PE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const nombres = terminados.map((v) => v.nombre).join(", ");
   return construirSesion(
-    [...personas.values()].map(({ certeza: _, ...p }) => p),
+    [...personas.values()],
     {
       sesionId: idDeClave(grupo.clave),
       nombre: recortar(`video · ${hora} · ${nombres}`),

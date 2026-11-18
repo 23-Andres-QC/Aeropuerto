@@ -184,7 +184,7 @@ func (h *Hub) watchCamera(w http.ResponseWriter, r *http.Request) {
 
 const maxDetectionMessage = 64 * 1024
 
-// publishDetections receives person/gender detection JSON from the
+// publishDetections receives person detection JSON from the
 // model service (camara_telefono.py) for one camera and
 // rebroadcasts it to every browser watching that camera's overlay.
 func (h *Hub) publishDetections(w http.ResponseWriter, r *http.Request) {
@@ -212,7 +212,7 @@ func (h *Hub) publishDetections(w http.ResponseWriter, r *http.Request) {
 }
 
 // watchDetections streams the inference service's JSON results for one
-// camera to a browser drawing the live person/gender overlay.
+// camera to a browser drawing the live person overlay.
 func (h *Hub) watchDetections(w http.ResponseWriter, r *http.Request) {
 	conn, err := relayUpgrader.Upgrade(w, r, nil)
 	if err != nil {

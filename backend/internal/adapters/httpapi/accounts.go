@@ -28,7 +28,6 @@ func (h accountHandler) routes(m *http.ServeMux) {
 	m.HandleFunc("DELETE /api/v1/usuarios/{id}", h.deleteUser)
 	m.HandleFunc("GET /api/v1/auditoria", h.audit)
 	m.HandleFunc("GET /api/v1/auditoria/resumen", h.accessSummary)
-	m.HandleFunc("PUT /api/v1/sites/{site}/grupo-minimo", h.setMinGroup)
 	m.HandleFunc("GET /api/v1/privacidad", h.policy)
 	m.HandleFunc("POST /api/v1/privacidad/depurar", h.purge)
 	m.HandleFunc("POST /api/v1/demo", h.createDemo)
@@ -168,29 +167,6 @@ func (h accountHandler) accessSummary(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	ok(w, v)
-}
-
-// setMinGroup changes the minimum group size of the gender counts of a site (superadmin only; every change is audited).
-func (h accountHandler) setMinGroup(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Min *int `json:"minimo"`
-	}
-	if decode(w, r, 512, &in) != nil || in.Min == nil {
-		fail(w, http.StatusBadRequest, "Falta minimo (un entero de 1 a 50)")
-		return
-	}
-	actor, _ := PrincipalOf(r)
-	ctx, cancel := withTimeout(r, 10*time.Second)
-	defer cancel()
-	site, old, err := h.sites.SetMinGroupSize(ctx, r.PathValue("site"), *in.Min)
-	if err != nil {
-		writeError(w, r, err, dbError)
-		return
-	}
-	if old != *in.Min {
-		h.accounts.Audit(ctx, actor, clientIP(r), "grupo_minimo_cambiado", site.Slug, strconv.Itoa(old)+" -> "+strconv.Itoa(*in.Min))
-	}
-	ok(w, site)
 }
 
 func (h accountHandler) policy(w http.ResponseWriter, r *http.Request) {

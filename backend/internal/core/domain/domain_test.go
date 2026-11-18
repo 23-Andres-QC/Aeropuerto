@@ -60,7 +60,7 @@ func validImport() Import {
 	x, y := 1.5, 2.5
 	var p Import
 	body := `{"session":{"session_id":"11111111-1111-1111-1111-111111111111","name":"prueba","recording_start":"2026-09-26T12:00:00Z","recording_start_declared":true},
-	"identities":[{"global_id":"22222222-2222-2222-2222-222222222222","public_number":1,"first_seen":"2026-09-26T12:00:00Z","last_seen":"2026-09-26T12:00:05Z","n_cameras":1,"gender":"Hombre","gender_confidence":0.8,"gender_votes":5}],
+	"identities":[{"global_id":"22222222-2222-2222-2222-222222222222","public_number":1,"first_seen":"2026-09-26T12:00:00Z","last_seen":"2026-09-26T12:00:05Z","n_cameras":1}],
 	"tracklets":[{"tracklet_id":"33333333-3333-3333-3333-333333333333","global_id":"22222222-2222-2222-2222-222222222222","camera_id":"cam01","local_id":1,"t_start":"2026-09-26T12:00:00Z","t_end":"2026-09-26T12:00:05Z","n_reid_views":3}]}`
 	if err := json.Unmarshal([]byte(body), &p); err != nil {
 		panic(err)
@@ -78,15 +78,13 @@ func TestImportValidate(t *testing.T) {
 	if err := p.Validate(); err != nil {
 		t.Fatalf("payload válido rechazado: %v", err)
 	}
-	if p.Session.Kind != "BUILD" || p.Session.Status != "DONE" || p.Identities[0].Gender != "HOMBRE" {
-		t.Fatalf("valores por defecto o género no normalizados: %+v", p.Session)
+	if p.Session.Kind != "BUILD" || p.Session.Status != "DONE" {
+		t.Fatalf("valores por defecto: %+v", p.Session)
 	}
 	cases := map[string]func(*Import){
 		"columnas desiguales":  func(p *Import) { p.Points.LocalID = append(p.Points.LocalID, 2) },
 		"tracklet desconocido": func(p *Import) { p.Points.TrackletID[0] = "44444444-4444-4444-4444-444444444444" },
 		"x sin y":              func(p *Import) { p.Points.Y[0] = nil },
-		"genero sin confianza": func(p *Import) { p.Identities[0].GenderConf = nil },
-		"genero raro":          func(p *Import) { p.Identities[0].Gender = "otro" },
 		"kind raro":            func(p *Import) { p.Session.Kind = "OTRO" },
 		"hora sin declarar":    func(p *Import) { p.Session.StartDeclared = false },
 		"hora en el futuro":    func(p *Import) { p.Session.RecordingStart = time.Now().Add(48 * time.Hour) },
@@ -179,15 +177,15 @@ func TestSitePlanLayers(t *testing.T) {
 		t.Fatalf("una capa válida debe aceptarse y limpiarse: %v %+v", err, ok.Layers)
 	}
 	for nombre, cambiar := range map[string]func(*PlanLayer){
-		"sin nombre":       func(l *PlanLayer) { l.Name = " " },
-		"sin fondo":        func(l *PlanLayer) { l.Background = nil },
-		"fondo externo":    func(l *PlanLayer) { l.Background.URL = "https://otro.sitio/zona.svg" },
-		"escala cero":      func(l *PlanLayer) { l.PxPerMeter = 0 },
-		"sin tamaño":       func(l *PlanLayer) { l.Size = [2]int{} },
-		"ángulo NaN":       func(l *PlanLayer) { l.AngleDeg = math.NaN() },
-		"ancla fuera":      func(l *PlanLayer) { l.AnchorM = [2]float64{5000, 0} },
-		"contorno chico":   func(l *PlanLayer) { l.Floor = l.Floor[:2] },
-		"obstáculo fuera":  func(l *PlanLayer) { l.Obstacles[0].Points[0] = [2]float64{9999, 0} },
+		"sin nombre":      func(l *PlanLayer) { l.Name = " " },
+		"sin fondo":       func(l *PlanLayer) { l.Background = nil },
+		"fondo externo":   func(l *PlanLayer) { l.Background.URL = "https://otro.sitio/zona.svg" },
+		"escala cero":     func(l *PlanLayer) { l.PxPerMeter = 0 },
+		"sin tamaño":      func(l *PlanLayer) { l.Size = [2]int{} },
+		"ángulo NaN":      func(l *PlanLayer) { l.AngleDeg = math.NaN() },
+		"ancla fuera":     func(l *PlanLayer) { l.AnchorM = [2]float64{5000, 0} },
+		"contorno chico":  func(l *PlanLayer) { l.Floor = l.Floor[:2] },
+		"obstáculo fuera": func(l *PlanLayer) { l.Obstacles[0].Points[0] = [2]float64{9999, 0} },
 	} {
 		l := capa()
 		cambiar(&l)

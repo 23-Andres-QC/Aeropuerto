@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2
 # torch con CUDA: varios GB. En su propia capa para no volver a bajarlo si cambia lo de abajo.
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu130 torch==2.14.0 torchvision==0.29.0
 # Las mismas versiones que en la laptop. Sin TensorRT: su motor compilado es de cada sistema y el detector sigue en PyTorch.
-RUN pip install --no-cache-dir ultralytics==8.4.163 transformers==5.17.0 onnxruntime==1.30.0 onnx==1.21.0 onnx2torch==1.5.15 \
+RUN pip install --no-cache-dir ultralytics==8.4.163 onnxruntime==1.30.0 onnx==1.21.0 onnx2torch==1.5.15 \
     opencv-python==5.0.0.93 numpy==2.5.2 pandas==2.3.3 scipy==1.18.1 pillow==12.3.0 safetensors==0.8.0 lap==0.5.13 \
     websockets==17.1 threadpoolctl==3.7.0 pynvvideocodec==2.2.3 ipython
 # Para dibujar los videos de las zonas grabadas (procesar_video.py) con el mismo contenedor.

@@ -1,14 +1,11 @@
 package domain
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 )
-
-// Genders the model estimates (from the body, never the face).
-var Genders = map[string]bool{"HOMBRE": true, "MUJER": true, "SIN_DETERMINAR": true}
 
 // Import is a whole model session as the Build publishes it to a site
 // (Modelo/Build Modelo/lap01/publicacion.py): the calibrated map, the cameras
@@ -50,14 +47,33 @@ type ImportCamera struct {
 }
 
 type ImportIdentity struct {
-	GlobalID   string    `json:"global_id"`
-	Number     int       `json:"public_number"`
-	FirstSeen  time.Time `json:"first_seen"`
-	LastSeen   time.Time `json:"last_seen"`
-	NCameras   int       `json:"n_cameras"`
-	Gender     string    `json:"gender"`
-	GenderConf *float64  `json:"gender_confidence"`
-	Votes      int       `json:"gender_votes"`
+	GlobalID  string    `json:"global_id"`
+	Number    int       `json:"public_number"`
+	FirstSeen time.Time `json:"first_seen"`
+	LastSeen  time.Time `json:"last_seen"`
+	NCameras  int       `json:"n_cameras"`
+}
+
+// retiredIdentityFields are fields of the sessions exported before the platform stopped keeping them: they are
+// ignored, so those sessions can still be published as they are. Any other unknown field is rejected.
+var retiredIdentityFields = []string{"gender", "gender_confidence", "gender_votes"}
+
+func (i *ImportIdentity) UnmarshalJSON(b []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(b, &fields); err != nil {
+		return err
+	}
+	for _, f := range retiredIdentityFields {
+		delete(fields, f)
+	}
+	clean, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	type plain ImportIdentity
+	d := json.NewDecoder(bytes.NewReader(clean))
+	d.DisallowUnknownFields()
+	return d.Decode((*plain)(i))
 }
 
 type ImportTracklet struct {
@@ -101,7 +117,7 @@ type ImportResult struct {
 func (p *Import) HasMap() bool { return len(p.Map) > 0 && string(p.Map) != "null" }
 
 // Validate checks a session before it touches the database and fills defaults
-// (kind BUILD, status DONE, normalised gender labels).
+// (kind BUILD, status DONE).
 func (p *Import) Validate() error {
 	s := &p.Session
 	if _, err := ParseUUID(s.ID); err != nil {
@@ -151,20 +167,7 @@ func (p *Import) Validate() error {
 		if _, err := ParseUUID(id.GlobalID); err != nil {
 			return err
 		}
-		id.Gender = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(id.Gender), " ", "_"))
-		if id.Gender == "" {
-			id.Gender = "SIN_DETERMINAR"
-		}
-		if !Genders[id.Gender] {
-			return Invalid(fmt.Sprintf("género inválido: %q", id.Gender))
-		}
-		if id.Gender != "SIN_DETERMINAR" && id.GenderConf == nil {
-			return Invalid("una identidad con género necesita su confianza")
-		}
-		if id.GenderConf != nil && (*id.GenderConf < 0 || *id.GenderConf > 1) {
-			return Invalid("gender_confidence fuera de [0, 1]")
-		}
-		if id.Number <= 0 || id.NCameras <= 0 || id.NCameras > 32767 || id.Votes < 0 || id.LastSeen.Before(id.FirstSeen) {
+		if id.Number <= 0 || id.NCameras <= 0 || id.NCameras > 32767 || id.LastSeen.Before(id.FirstSeen) {
 			return Invalid(fmt.Sprintf("identidad inválida: %s", id.GlobalID))
 		}
 		identities[id.GlobalID] = true

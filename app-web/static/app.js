@@ -611,7 +611,7 @@ function dibujarCajas() {
 }
 
 // Un palito que sale de la cabeza de la persona (el borde de arriba de su caja), con un punto de su color y, al lado,
-// su ID global, su ID local y su género (H o M); quien aún no tiene ID global va con el palito claro y su ID local. Sin caja: no tapa a la gente.
+// su ID global y su ID local; quien aún no tiene ID global va con el palito claro y su ID local. Sin caja: no tapa a la gente.
 // (Lo mismo que la web, web/src/shared/personas.ts.)
 // Dónde se dibujó el marcador de cada track: se acerca a la cabeza con una constante de tiempo de SUAVIZADO_MARCADOR_S en
 // vez de saltar con la caja (su borde de arriba salta hasta un 10-20 % de su alto de un cuadro a otro y el marcador temblaba).
@@ -655,11 +655,8 @@ function dibujarMarcador(g, persona, s, ancho) {
   g.lineWidth = 1.5 * s;
   g.strokeStyle = 'rgba(0, 0, 0, 0.6)';
   g.stroke();
-  // «G12 · L5 · H 92%»: ID global, ID local (el del seguidor en esta cámara) y género con su certeza, H o M.
-  const genero = persona.gender === 'Hombre' || persona.gender === 'Mujer'
-    ? `${persona.gender[0]}${persona.gender_conf ? ` ${Math.round(persona.gender_conf * 100)}%` : ''}`
-    : '';
-  const texto = [persona.global_id != null ? `G${persona.global_id}` : '', persona.local_id != null ? `L${persona.local_id}` : '', genero]
+  // «G12 · L5»: ID global e ID local (el del seguidor en esta cámara).
+  const texto = [persona.global_id != null ? `G${persona.global_id}` : '', persona.local_id != null ? `L${persona.local_id}` : '']
     .filter(Boolean).join(' · ');
   if (!texto) return;
   const largo = g.measureText(texto).width + 10 * s;
@@ -709,8 +706,6 @@ function ficha(f, nombres) {
   cabecera.append(id, hace);
   const datos = document.createElement('dl');
   const filas = [
-    ['Género', f.genero || 'Sin determinar'],
-    ['Confianza', f.confianza_genero == null ? '—' : `${Math.round(f.confianza_genero * 100)} %`],
     ['Muestras', String(f.muestras)],
     ['Veces vista', String(f.apariciones)],
     ['Cámaras', (f.camaras || []).map((c) => nombres.get(c) || c).join(', ') || '—'],

@@ -1,4 +1,4 @@
-"""Memoria de identidades de las cámaras en vivo: la misma persona conserva su ID (y su color y género).
+"""Memoria de identidades de las cámaras en vivo: la misma persona conserva su ID (y su color).
 
 El AsociadorMulticamara de LAP01 une a una persona entre cámaras y en regresos cortos dentro de una sesión
 (ventana de 90 s). Esta capa le agrega memoria de largo plazo guardada en backend-vivo, con su propia base:
@@ -15,7 +15,7 @@ El AsociadorMulticamara de LAP01 une a una persona entre cámaras y en regresos 
 * «Olvidar a todos» (desde la web) sube la época de la base: el modelo lo nota (409 o sondeo) y también olvida.
 
 Se guarda solo apariencia (vectores de 512 valores con yolo26s-reid o de 896 con el Re-ID de Videos, el de los
-teléfonos con GPU), género y cuándo y dónde se vio: nada de video ni fotos.
+teléfonos con GPU) y cuándo y dónde se vio: nada de video ni fotos.
 """
 import base64
 import json
@@ -50,7 +50,6 @@ ESPERA_DUDA_S = 3.0
 OCUPADA_S = 1.5           # una persona está «ocupada» (ya es otra identidad visible) si se vio hace menos de esto
 CONTINUIDAD_S = 8.0       # un track nuevo que empieza así de pronto después de otro, en el mismo lugar, es la misma persona
 CONTINUIDAD_ALTURAS = 1.3 # y a menos de esta distancia (en alturas de caja) de donde terminó el anterior
-GENERO_FIJO = 0.8         # con esta certeza o más el género de una persona queda fijo
 DUDA = 0.1                # a menos de esto del umbral, una persona ya vista es «parecida»
 # Misma persona por posición: dos IDs que dos teléfonos distintos ubican en el plano a menos de POSICION_RADIO_M, en
 # POSICION_INSTANTES instantes seguidos, son la misma persona y quedan con el ID más antiguo. Desde dos ángulos una
@@ -84,14 +83,13 @@ def _normal(vector):
 
 
 class Persona:
-    """Alguien ya visto: suma de sus vistas Re-ID, prototipos de sus tramos, género, cámaras y horas."""
+    """Alguien ya visto: suma de sus vistas Re-ID, prototipos de sus tramos, cámaras y horas."""
 
-    def __init__(self, pid, suma, muestras, primera_vez, ultima_vez, camaras=(), vistas=None, genero=None,
-                 confianza_genero=None, apariciones=1):
+    def __init__(self, pid, suma, muestras, primera_vez, ultima_vez, camaras=(), vistas=None, apariciones=1):
         self.id, self.suma, self.muestras = pid, np.asarray(suma, np.float32), int(muestras)
         self.primera_vez, self.ultima_vez = primera_vez, ultima_vez
         self.camaras, self.vistas = set(camaras), dict(vistas or {})  # tramo -> (camara, prototipo, muestras)
-        self.genero, self.confianza_genero, self.apariciones = genero, confianza_genero, int(apariciones)
+        self.apariciones = int(apariciones)
         self.vistas_sucias = vistas is None  # una persona nueva manda sus vistas; una cargada ya las tiene
         self._banco = None
 
@@ -104,8 +102,7 @@ class Persona:
 
     def a_json(self, con_vistas):
         """Estado para PUT /api/v1/personas/{id}; sin vistas, la base conserva las que ya tiene."""
-        dato = {"suma": _b64(self.suma), "muestras": self.muestras, "genero": self.genero,
-                "confianza_genero": self.confianza_genero, "camaras": sorted(self.camaras)[-16:],
+        dato = {"suma": _b64(self.suma), "muestras": self.muestras, "camaras": sorted(self.camaras)[-16:],
                 "apariciones": self.apariciones, "primera_vez": _iso(self.primera_vez),
                 "ultima_vez": _iso(max(self.ultima_vez, self.primera_vez))}
         if con_vistas:
@@ -118,7 +115,7 @@ class Persona:
         return cls(dato["id"], _de_b64(dato["suma"]), dato["muestras"], _de_iso(dato["primera_vez"]),
                    _de_iso(dato["ultima_vez"]), dato.get("camaras") or (),
                    {v["tramo"]: (v["camara"], _de_b64(v["prototipo"]), v["muestras"]) for v in dato.get("vistas") or []},
-                   dato.get("genero"), dato.get("confianza_genero"), dato.get("apariciones", 1))
+                   apariciones=dato.get("apariciones", 1))
 
 
 class MemoriaIdentidades:
@@ -382,15 +379,6 @@ class MemoriaIdentidades:
         self.personas[pid].apariciones += 1
         self._marcar(pid)
 
-    def genero(self, pid, genero, confianza):
-        """Guarda el género si es más confiable que el que ya tenía."""
-        persona = self.personas[pid]
-        if persona.genero is not None and (persona.confianza_genero or 0) >= GENERO_FIJO:
-            return  # ya está fijo: una certeza de 0,8 o más no se cambia
-        if persona.genero is None or confianza > (persona.confianza_genero or 0) + 0.01:
-            persona.genero, persona.confianza_genero = genero, float(confianza)
-            self._marcar(pid)
-
     def fusionar(self, queda, sale):
         """`sale` era la misma persona que `queda`: se juntan en `queda` (el ID más antiguo)."""
         with self._hay:
@@ -404,8 +392,6 @@ class MemoriaIdentidades:
             while len(a.vistas) > MAX_VISTAS:
                 a.vistas.pop(next(iter(a.vistas)))
             a._banco, a.vistas_sucias = None, True
-            if a.genero is None:
-                a.genero, a.confianza_genero = b.genero, b.confianza_genero
             self._reconstruir()
         self._marcar(queda)
         self._marcar(sale, "borrar")

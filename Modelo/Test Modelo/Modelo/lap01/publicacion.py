@@ -11,7 +11,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-GENEROS_BD = {"Hombre": "HOMBRE", "Mujer": "MUJER"}
 
 
 class InicioGrabacionFaltante(ValueError):
@@ -74,21 +73,16 @@ def sesion_para_bd(resultado, *, nombre, kind="BUILD", status="DONE", mapa=None,
     session_id = resumen["session_uuid"]
     duracion = float(resumen.get("timeline_end_s") or 0)
 
-    generos = {item["global_id"]: item for item in resultado.generos}
     identidades = []
     uuid_por_publico = {}
     for item in resultado.identidades:
         publico = int(item["global_id"])
         gid = item.get("global_uuid") or resultado.global_uuid[publico]
         uuid_por_publico[publico] = gid
-        genero = generos.get(publico, {})
-        etiqueta = GENEROS_BD.get(genero.get("genero"), "SIN_DETERMINAR")
-        confianza = _numero(genero.get("confianza_genero"), 4) if etiqueta != "SIN_DETERMINAR" else None
         identidades.append({"global_id": gid, "public_number": publico,
                             "first_seen": (inicio + timedelta(seconds=float(item["inicio_s"]))).isoformat(),
                             "last_seen": (inicio + timedelta(seconds=float(item["fin_s"]))).isoformat(),
-                            "n_cameras": max(1, len(item["camaras"])), "gender": etiqueta, "gender_confidence": confianza,
-                            "gender_votes": int(genero.get("votos_genero") or 0)})
+                            "n_cameras": max(1, len(item["camaras"]))})
 
     tracklets = []
     for t in resultado.tracklets:

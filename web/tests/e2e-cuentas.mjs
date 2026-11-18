@@ -5,7 +5,7 @@
 //      y después abre sus pantallas; el admin restablece, desactiva y borra.
 //   3. Teléfonos: un código de unión con QR y cuenta regresiva; un teléfono se une de verdad por el nginx (WebSocket), se revoca y no vuelve;
 //      un código revocado no deja entrar a nadie.
-//   4. Privacidad: el género de una sesión guardada no se desglosa si son menos de 5; el aviso de privacidad; la retención.
+//   4. Privacidad: el aviso de privacidad y la retención.
 //   5. El sitio Demo se borra escribiendo su nombre; la bitácora no guarda secretos.
 // Sale con error si algo de eso falla.
 //
@@ -221,64 +221,14 @@ try {
   // ---------- Privacidad ----------
   await t.ir("/privacidad", 1500);
   const aviso = await t.texto("body");
-  for (const frase of ["24 horas", "90 días", "no se guarda", "menos de 5"]) assert.ok(aviso.includes(frase), `el aviso de privacidad dice «${frase}»`);
-  await t.ir("/sitios/esan/insights", 3500);
-  await t.hasta(`!!document.querySelector('.panel-genero .generos')`, "el panel de género");
-  const generoPanel = await t.texto(".panel-genero");
-  // ESAN tiene las sesiones que se hayan grabado en esta máquina: se comprueba la regla, no unas cifras fijas (el caso pequeño, con
-  // datos propios, va más abajo en Demo).
-  // El mínimo es el ajuste del sitio (5 por defecto; en una base de pruebas puede estar más bajo, desde Configuración).
-  const minimoEsan = ((await t.api("GET", "/api/v1/sites")).cuerpo ?? []).find((x) => x.slug === "esan")?.min_group_size ?? 5;
-  const cifras = [...generoPanel.matchAll(/(\d+)\s+(?:Hombre|Mujer|Sin determinar)\b/g)].map((m) => Number(m[1]));
-  assert.ok(cifras.every((n) => n >= minimoEsan), `el género de ESAN no muestra grupos de menos de ${minimoEsan}: ${generoPanel}`);
+  for (const frase of ["24 horas", "90 días", "no se guarda", "no se estiman"]) assert.ok(aviso.includes(frase), `el aviso de privacidad dice «${frase}»`);
   await t.ir("/cuentas?ver=privacidad", 2500);
   await t.hasta(`!!document.querySelector('[data-prueba=estado-retencion]')`, "el estado de la retención");
   const retencion = await t.texto("[aria-label='Retención de datos']");
   assert.ok(retencion.includes("24 horas") && retencion.includes("90 días"), "la retención dice 24 horas y 90 días");
   await t.clic("[data-prueba=depurar]");
   await t.hasta(`!!document.querySelector('[data-prueba=depurado]')`, "depurar ahora");
-  paso("el aviso de privacidad, el género sin desglosar en grupos pequeños y la retención a la vista");
-
-  // ---------- Tamaño mínimo de grupo del género (solo admin, desde Configuración) ----------
-  const persona = (n, genero, conf) => ({ g: `22222222-2222-2222-2222-${String(n).padStart(12, "0")}`, t: `33333333-3333-3333-3333-${String(n).padStart(12, "0")}`, n, genero, conf });
-  const gente = [...[1, 2, 3, 4, 5, 6].map((n) => persona(n, "Mujer", 0.9)), persona(7, "Hombre", 0.8), persona(8, "SIN_DETERMINAR", null)];
-  const ses = "11111111-1111-1111-1111-" + Date.now().toString(16).slice(-12).padStart(12, "0");
-  const publicado = await t.api("POST", "/api/v1/sites/demo/sessions", {
-    session: { session_id: ses, name: "género", recording_start: "2026-09-26T12:00:00Z", recording_start_declared: true, ended_at: "2026-09-26T12:00:05Z" },
-    map: { mapa: { px_por_metro: 40, origen_m: [0, 0], tam_px: [2400, 1200], desfases_s: {}, camaras: {} } },
-    cameras: [{ camera_id: "cam01", name: "cam01", fps: 15, width_px: 1280, height_px: 720, timestamp_offset_s: 0, position: [0, 0], angle_deg: 10 }],
-    identities: gente.map((p) => ({ global_id: p.g, public_number: p.n, first_seen: "2026-09-26T12:00:00Z", last_seen: "2026-09-26T12:00:05Z", n_cameras: 1, gender: p.genero, gender_confidence: p.conf, gender_votes: 3 })),
-    tracklets: gente.map((p) => ({ tracklet_id: p.t, global_id: p.g, camera_id: "cam01", local_id: p.n, t_start: "2026-09-26T12:00:00Z", t_end: "2026-09-26T12:00:05Z", n_reid_views: 1 })),
-    points: { global_id: gente.map((p) => p.g), tracklet_id: gente.map((p) => p.t), camera_id: gente.map(() => "cam01"), local_id: gente.map((p) => p.n), t: gente.map(() => 0.5), x: gente.map(() => 1.5), y: gente.map(() => 2.5), speed_mps: gente.map(() => null), direction_deg: gente.map(() => null), confidence: gente.map(() => 0.8) },
-  });
-  assert.equal(publicado.estado, 200, JSON.stringify(publicado.cuerpo));
-  async function panelGenero() {
-    await t.ir("/sitios/demo/insights", 3500);
-    await t.hasta(`!!document.querySelector('.panel-genero .generos')`, "el panel de género del Demo");
-    return t.texto(".panel-genero");
-  }
-  let panel = await panelGenero();
-  assert.match(panel, /grupos de menos de 5/, `por defecto 8 personas no se desglosan: ${panel}`);
-  assert.ok(!(await t.existe("[data-prueba=aviso-pruebas]")), "con 5 no hay aviso de pruebas");
-  await t.ir("/sitios/demo/configuracion", 3000);
-  await t.hasta(`!!document.querySelector('[data-prueba=grupo-minimo]')`, "el ajuste en Configuración").catch(async (e) => { throw new Error(e.message + " · " + (await t.evalua(`location.pathname + ' | ' + document.body.innerText.slice(0, 200)`)) + JSON.stringify(t.consola)); });
-  assert.equal(await t.evalua(`document.querySelector('[data-prueba=grupo-minimo]').value`), "5");
-  assert.ok(!(await t.existe("[data-prueba=aviso-grupo-minimo]")));
-  await t.poner("[data-prueba=grupo-minimo]", "0");
-  await t.hasta(`document.body.innerText.includes('de 1 a 50')`, "avisa un valor fuera de rango");
-  assert.equal(await t.evalua(`document.querySelector('[data-prueba=guardar-grupo-minimo]').disabled`), true);
-  await t.poner("[data-prueba=grupo-minimo]", "1");
-  await t.hasta(`!!document.querySelector('[data-prueba=aviso-grupo-minimo]')`, "aviso al bajar de 5");
-  await t.clic("[data-prueba=guardar-grupo-minimo]");
-  await t.hasta(`!!document.querySelector('[data-prueba=grupo-minimo-guardado]')`, "guardar el mínimo").catch(async (e) => { throw new Error(e.message + " · " + (await t.evalua(`document.querySelector('.grupo-minimo')?.innerText`))); });
-  panel = await panelGenero();
-  assert.ok(await t.existe("[data-prueba=aviso-pruebas]"), "con menos de 5 el panel avisa");
-  assert.match(panel, /Modo pruebas · mínimo/);
-  assert.match(panel, /6\s*Mujer/);
-  assert.match(panel, /1\s*Hombre/);
-  const bit = JSON.stringify((await t.api("GET", "/api/v1/auditoria?limite=100")).cuerpo);
-  assert.ok(bit.includes("grupo_minimo_cambiado") && bit.includes("5 -> 1"), "el cambio queda en la bitácora");
-  paso("el tamaño mínimo de grupo se baja desde Configuración (aviso de pruebas, bitácora) y vuelve el desglose");
+  paso("el aviso de privacidad y la retención a la vista");
 
   // ---------- Borrar el Demo y la bitácora ----------
   assert.ok((await t.api("DELETE", "/api/v1/demo")).estado >= 400, "sin escribir el nombre no se puede borrar");
@@ -291,7 +241,7 @@ try {
   await t.ir("/cuentas", 2500);
   await t.hasta(`!!document.querySelector('[data-prueba=tabla-usuarios]') && !document.querySelector('[data-usuario="${CUENTA_A}"]')`, "las cuentas de prueba se borran");
   const bitacora = JSON.stringify((await t.api("GET", "/api/v1/auditoria?limite=500")).cuerpo);
-  for (const accion of ["grupo_minimo_cambiado", "demo_creado", "usuario_creado", "clave_restablecida", "usuario_desactivado", "usuario_borrado", "demo_borrado"]) {
+  for (const accion of ["demo_creado", "usuario_creado", "clave_restablecida", "usuario_desactivado", "usuario_borrado", "demo_borrado"]) {
     assert.ok(bitacora.includes(accion), `la bitácora tiene «${accion}»`);
   }
   const todo = (await t.texto("body")) + bitacora;

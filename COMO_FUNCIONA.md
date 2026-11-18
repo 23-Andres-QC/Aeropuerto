@@ -129,13 +129,6 @@ La asociación de cada cuadro va en cascada: asociación principal → segunda e
 - Si la caja está cortada por el borde inferior (no se ven los pies), la posición queda vacía.
 - La velocidad y la dirección se calculan sobre 1 s del tramo.
 
-### Género (opcional, solo para reportes agregados)
-
-- Lo estima **CLIP** sin entrenamiento adicional, mirando el cuerpo completo. No estima la edad.
-- Solo se evalúan personas de **72 px o más** con detección ≥ 0,5. Se toma una vista cada 0,6 s, con un máximo de 12 votos por tramo.
-- Con **2 votos** y una certeza de **55 %** el género se fija como Hombre o Mujer.
-- «Sin determinar» queda solo para quien nunca tuvo una vista con evidencia suficiente.
-
 ### Publicación
 
 El Build publica la sesión con `POST /api/v1/sites/<sitio>/sessions`: plano calibrado, cámaras, identidades, tramos y cada punto de trayectoria. La sesión queda como tipo `BUILD`.
@@ -220,7 +213,6 @@ Se activa con el botón de la cabecera, y también entra solo cuando se conecta 
   - su detector a 1280 px con confianza 0,10, sin los puntos del cuerpo;
   - su seguidor, que en los cruces pesa la apariencia (0,8);
   - su Re-ID, **OSNet-AIN y PersonViT juntos** (vectores de 896 valores, también en la memoria de identidades), y su asociador con sus umbrales;
-  - **sin género** (tampoco en Videos): CLIP no se carga y no cambia el multitracking, que no lo usa. `MODELO_GENERO=si` lo vuelve a activar.
   - Con dos teléfonos (dos videos del dataset), el carril rápido tarda una mediana de 88 ms por cuadro, contra 152 ms del algoritmo anterior, que pasaba por los puntos del cuerpo.
   - `MODELO_ALGORITMO=telefonos` vuelve al algoritmo anterior.
   - **Detector en TensorRT** (`detector_tensorrt.py`): el mismo yolo26m compilado para la GPU, con las mismas personas: con dos teléfonos detectar baja de 40 a 31 ms y cada cuadro de 59 a 51 ms. Se compila solo la primera vez (~4 min, en otro proceso) y queda en `Modelo/` como `.engine` (no va al repositorio). Si no se puede, sigue en PyTorch; `MODELO_TENSORRT=no` lo desactiva. Videos usa su propia copia del motor compilado: detecta desde su hilo, a la vez que los teléfonos.
@@ -230,11 +222,10 @@ Se activa con el botón de la cabecera, y también entra solo cuando se conecta 
   - los puntos del cuerpo (`yolo26s-pose`) solo afinan la caja de quien se ve de cerca, sin los brazos. Una caja muy ancha (brazos abiertos) se angosta.
 - **Dos carriles:**
   - el **rápido** (detectar y seguir) publica las cajas enseguida;
-  - el **lento** (género, Re-ID y memoria) va aparte, así las cajas no esperan a lo más pesado.
+  - el **lento** (Re-ID y memoria) va aparte, así las cajas no esperan a lo más pesado.
 - **El video va en directo:** las cajas se adelantan con la velocidad de cada persona, en lugar de atrasar la imagen.
 - **Lo quieto no cuenta:** lo que no se mueve en 3 s no se muestra ni se cuenta (maniquíes, afiches).
-- **Género sin GPU:** mientras no se confirma, se muestra el que va ganando. Con una certeza de 0,8 o más queda fijo.
-- **Memoria de identidades:** cada persona conserva su ID, su color y su género aunque salga y vuelva, pase a otro teléfono o el modelo se reinicie.
+- **Memoria de identidades:** cada persona conserva su ID y su color aunque salga y vuelva, pase a otro teléfono o el modelo se reinicie.
   - Para reconocerla usa los mismos umbrales del asociador: con GPU los de Videos (0,765 / 0,715 entre cámaras y 0,791 con una sola); sin GPU 0,6 / 0,55 entre cámaras y 0,7 / 0,65 con una sola.
   - `vivo-db` acepta vectores de 512 o de 896 valores; quien se guardó con el otro Re-ID no se compara.
   - Un ID nuevo se sigue comparando durante 60 s. Si era alguien ya visto, se fusiona y queda el ID antiguo.
@@ -258,7 +249,6 @@ Se activa con el botón de la cabecera, y también entra solo cuando se conecta 
   - tracks desde 0,15 de confianza y personas desde 12 px;
   - IDs confirmados con 3 vistas y 2 s;
   - lo que no se aleja más de un 20 % de su altura en 4 s no se cuenta.
-- **Solo multitracking**, sin género (ver la sección 8).
 - El modelo procesa en tiempo real: si no alcanza al video, salta cuadros. El video va un poco detrás del modelo y cada caja se interpola entre dos cuadros procesados.
 - **Al terminar** se borran las dos copias del archivo y queda solo el **resumen**: personas, segundos en que aparece cada ID, FPS y ms por cuadro.
   - El resumen vive en memoria hasta que se pulsa **Quitar video**.
@@ -274,11 +264,11 @@ Se activa con el botón de la cabecera, y también entra solo cuando se conecta 
 |---|---|
 | Trayectorias con un ID seudónimo de sesión (`db`) | Rostros: no hay reconocimiento facial |
 | Zonas, eventos y métricas agregadas (`db`) | Imágenes, recortes ni cuadros sueltos en ninguna tabla |
-| En vivo: vectores Re-ID, género y cuándo y dónde se vio a cada persona, **hasta 7 días** (`vivo-db`) | Embeddings en la base de los sitios |
+| En vivo: vectores Re-ID y cuándo y dónde se vio a cada persona, **hasta 7 días** (`vivo-db`) | Embeddings en la base de los sitios |
 | Resumen de un video subido, solo en memoria hasta quitarlo | El video subido (se borra al terminar) |
 
 - El `global_id` es un **seudónimo**, no un dato anónimo en sentido estricto: una trayectoria sigue siendo información sobre una persona y se trata con cuidado.
-- El género es una estimación visual: no identifica a nadie y se usa **solo de forma agregada**.
+- El sistema **no estima el género** ni la edad de nadie.
 
 ---
 
@@ -289,7 +279,7 @@ Se activa con el botón de la cabecera, y también entra solo cuando se conecta 
 - **Sin GPU:** `COMPOSE_PROFILES=modelo` en `.env` corre el modelo en CPU dentro de Docker (`modelo-vivo`).
 - **HTTPS:** los navegadores solo dan la cámara en `localhost` o HTTPS. Por eso la web y `camara-web` usan un certificado autofirmado (Avanzado → Continuar).
 - **nginx** añade `nosniff`, `SAMEORIGIN`, `Referrer-Policy` y un límite de peticiones por IP en `/api/`.
-- **Pesos de CLIP:** van por Git LFS. En un clon nuevo, antes de construir: `git lfs install --local && git lfs pull`.
+- **Pesos de PersonViT:** van por Git LFS. En un clon nuevo, antes de construir: `git lfs install --local && git lfs pull`.
 
 ### Pruebas
 
@@ -297,7 +287,7 @@ Se activa con el botón de la cabecera, y también entra solo cuando se conecta 
 bash scripts/test-integration.sh                                 # backend: unitarias + integración con PostGIS
 cd web && npm ci && npm run build                                # web: tipos y build
 python -m unittest discover -s "Modelo/Insights Modelo/tests"    # Parte III con trayectorias sintéticas
-python -m unittest discover -s "Modelo/Test Modelo/tests"        # memoria de identidades, género y videos
+python -m unittest discover -s "Modelo/Test Modelo/tests"        # memoria de identidades y videos
 ```
 
 Los Dockerfiles de `backend`, `backend-vivo` y `app-web` corren `go vet` y `go test` al construir: si una prueba falla, la imagen no se construye.

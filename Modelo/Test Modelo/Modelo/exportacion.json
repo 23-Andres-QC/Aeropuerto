@@ -21,17 +21,11 @@
     "Modelo/yolo26s-reid.onnx": "1cfff339245e6564f64e9e9a985b11fa55d5be939d1ac72da64ac5fcd9efa271",
     "Modelo/config_lap01.json": "4c7ea90efe23ad0c068528d7f9c0a9b7148c82cfec93e846374ce0898016ed60",
     "Modelo/camaras.json": "8e7a5f9164f33961a43481add525e1c049913d90a91a493293154b60d3519f99",
-    "Modelo/mapa_piso.json": "f34066926454a95285aeaf5c256357a7a682c671e0d32cc270496c816b9f5457",
-    "Modelo/clip_genero\\config.json": "4e5821fb0c597724c7f92b278e540e69fd981dc99dfd241450b8505dc23ba1c6",
-    "Modelo/clip_genero\\model.safetensors": "d5853196afb60ca6373692d9af911aacd8fa821af6d4af54720d4eb9c8f5da0a",
-    "Modelo/clip_genero\\processor_config.json": "4c80980e051e00d48e03c9ba0e1ca0284a1e8bfbd005c68e18d25b15866a9c7a",
-    "Modelo/clip_genero\\tokenizer.json": "eafd713b5c621447fa92db4d23139c0bc3edf326c890d95470e758f054ec147d",
-    "Modelo/clip_genero\\tokenizer_config.json": "90e18128ad2d6bcd21df4e5104757fe4b0de24124263d6dc34d74f7969df3d7a"
+    "Modelo/mapa_piso.json": "f34066926454a95285aeaf5c256357a7a682c671e0d32cc270496c816b9f5457"
   },
   "packages": {
     "torch": "2.14.0+cu130",
     "torchvision": "0.29.0+cu130",
-    "transformers": "5.17.0",
     "ultralytics": "8.4.163",
     "numpy": "2.5.2",
     "scipy": "1.18.1",

@@ -4,7 +4,7 @@ backend-vivo guarda cada archivo solo mientras se procesa (disco temporal, nunca
 procesan al mismo tiempo: en cada pasada se toma el frame que toca de cada video y todos van juntos por el detector (una
 sola pasada de YOLO, como los teléfonos), en un hilo propio que ya lee y detecta la pasada siguiente mientras el lazo
 principal sigue, re-identifica y publica la anterior (cuesta lo que la más lenta de las dos, no la suma); cada video
-sigue con su seguidor y su género en su propio hilo, todos a la vez, y los que se subieron juntos se re-identifican
+sigue con su seguidor en su propio hilo, todos a la vez, y los que se subieron juntos se re-identifican
 juntos: son cámaras del mismo lugar y la misma persona lleva el mismo ID en todas (ver GrupoVideos). Antes se turnaban, un frame de un
 solo video por pasada, y con tres videos de 15 fps cada uno recibía ~10 fps (detectar los tres a 1280 px toma ~60 ms). Aquí se descarga y se lee con
 OpenCV tal cual: cada frame a su resolución original, sin recomprimir ni redimensionar antes del modelo. Se publica como
@@ -24,7 +24,7 @@ import threading
 import time
 import queue
 import urllib.request
-from collections import Counter, deque
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -54,9 +54,9 @@ SIMULTANEOS = int(os.environ.get("VIDEOS_SIMULTANEOS") or 10)
 #   0,3 y media precisión en la GPU: en un video de un centro comercial pasa de ~12 a ~40 personas por frame. La web
 #   reproduce el video original a su velocidad, así que un modelo más lento solo actualiza las cajas menos seguido;
 # - el seguidor toma todas esas detecciones: abre tracks desde 0,15 de confianza (no 0,6) y personas desde 12 px;
-# - el ID se confirma con 3 vistas y 2 s a la vista, y acepta vistas chicas y poco nítidas. Con tanta gente, el género
-#   (lo que más tiempo toma por persona) muestrea cada 1 s y el Re-ID cada 0,4 s, como en el Build: con 1 s los
-#   fragmentos de una persona tardaban más en volver a unirse, y en la GPU no se nota en el tiempo por frame;
+# - el ID se confirma con 3 vistas y 2 s a la vista, y acepta vistas chicas y poco nítidas. El Re-ID muestrea cada
+#   0,4 s, como en el Build: con 1 s los fragmentos de una persona tardaban más en volver a unirse, y en la GPU no se
+#   nota en el tiempo por frame;
 # - IDs estables: con recortes chicos el Re-ID es ruidoso, así que el asociador corta una identidad solo con 3 vistas
 #   seguidas muy distintas (< 0,25, no 2 bajo 0,4), une más fácil a quien reaparece en la cámara (0,6, no 0,7) y el
 #   seguidor recupera a quien perdió un momento con 0,7 de parecido (no 0,8). En un video de un centro comercial: de 70
@@ -87,9 +87,8 @@ SIMULTANEOS = int(os.environ.get("VIDEOS_SIMULTANEOS") or 10)
 #   por segundo de cada video). Casi todo se iba en decodificar en la CPU los cuadros que se saltan y en comparar cada
 #   identidad con todas las vigentes, par por par. Ahora se decodifica en la GPU (ver lector_gpu), cada video en su
 #   hilo, y el asociador compara de una vez (con las mismas decisiones): ~0,85 s por paso. Después, con la GPU llena,
-#   las firmas de color de un cuadro van en una cuenta (mismos valores), CLIP grabado y en media precisión (misma
-#   etiqueta en 284 recortes) y OSNet-AIN en media precisión (coseno ≥ 0,99995): ~0,58 s por paso (1,7 cuadros por
-#   segundo de cada video);
+#   las firmas de color de un cuadro van en una cuenta (mismos valores) y OSNet-AIN en media precisión (coseno ≥
+#   0,99995): ~0,58 s por paso (1,7 cuadros por segundo de cada video);
 # - cruces: cuando dos personas se cruzan, el seguidor elegía casi solo por movimiento y los dos tracks se cambiaban de
 #   persona (la mayoría de los cambios de ID). Ahora el parecido pesa 0,8 en esa elección (no 0,22), cuenta con un 80 %
 #   del vector profundo (no 20 %: el color distingue poco a gente vestida parecida) y un track activo sigue a una caja sin
@@ -97,13 +96,9 @@ SIMULTANEOS = int(os.environ.get("VIDEOS_SIMULTANEOS") or 10)
 #   30–90 personas etiquetadas cada uno: IDF1 de 35 % a 40 %, un tercio menos de cambios de ID (4422 -> 2940) y de 3,8
 #   a 2,9 IDs por persona, con el conteo igual de cerca (error total 109 -> 97) y el mismo tiempo por frame;
 # - lo que no se mueve no cuenta (maniquíes, afiches, estatuas): ver Quietud;
-# - el género vota desde la primera vista, sin mínimos de tamaño, votos ni consenso: se muestra la etiqueta más votada
-#   con su certeza promedio, en vez de «Sin determinar» hasta reunir 5 votos de personas de 96 px o más. La que ya se
-#   mostró sobre un ID cambia solo si la otra gana con CAMBIO_GENERO de certeza: con uno o dos votos parpadeaba (en esos
-#   12 videos, de 248 a 108 de ~1100 IDs con el género cambiando en pantalla);
 # - sin GPU (el servidor) cada frame debe costar poco para que el seguidor no pierda a la gente entre un frame y otro:
-#   sin los puntos del cuerpo de los teléfonos (~120 ms por frame), Re-ID y género muestrean a cada persona cada 2 s y
-#   el Re-ID usa todos los núcleos. En un video de un centro comercial con ~13 personas a la vista pasó de ~570 a ~200 ms
+#   sin los puntos del cuerpo de los teléfonos (~120 ms por frame), el Re-ID muestrea a cada persona cada 2 s y usa
+#   todos los núcleos. En un video de un centro comercial con ~13 personas a la vista pasó de ~570 a ~200 ms
 #   por frame.
 IMGSZ_GPU = 1280
 IMGSZ_VIDEO = int(os.environ["VIDEO_IMGSZ"]) if os.environ.get("VIDEO_IMGSZ") else None
@@ -121,10 +116,7 @@ REID_VIDEO_GPU = "osnet_ain_x1_0_msmt17.onnx"
 PERSONVIT_VIDEO_GPU = "personvit_vit_s_msmt17.safetensors"
 ASOCIACION_REID_GPU = {"threshold": 0.765, "average_threshold": 0.715, "same_camera_threshold": 0.791,
                        "split_threshold": 0.538, "min_link_threshold": 0.6}
-GENERO_VIDEO = {"min_votes": 1, "min_confidence": 0.0, "min_margin": 0.0, "min_height": 1.0,
-                "min_detection_confidence": 0.0, "sample_s": 1.0, "max_votes": 6}
-CAMBIO_GENERO = 0.6
-# Sin GPU: Re-ID y género muestrean a cada persona cada 2 s (ver AJUSTES).
+# Sin GPU: el Re-ID muestrea a cada persona cada 2 s (ver AJUSTES).
 MUESTREO_CPU_S = 2.0
 # Videos subidos juntos (GrupoVideos): quien sale de una cámara puede entrar en otra hasta este tiempo después (como
 # los teléfonos, camara_telefono.TRANSICION_MAX_S).
@@ -132,7 +124,6 @@ TRANSICION_MAX_S = 60.0
 # Una tanda (los videos elegidos juntos en la web) espera a sus en_tanda videos hasta este tiempo desde que bajó el
 # primero; si uno no llega (falló o se canceló su subida), los demás empiezan sin él.
 ESPERA_TANDA_S = 300.0
-GENEROS = ("Hombre", "Mujer")
 # Una persona que en ESTATICO_S segundos a la vista no se aleja de donde apareció más que esta fracción de su altura
 # (descontando el movimiento de la cámara) es algo quieto: no se dibuja ni se cuenta.
 ESTATICO_S = 4.0
@@ -162,7 +153,7 @@ class SinEnvolventes:
 
 
 def motor_aparte(motor):
-    """Otro MotorLAP01 con los mismos pesos (YOLO, apariencia, CLIP) y estado y ajustes propios: los de Videos."""
+    """Otro MotorLAP01 con los mismos pesos (YOLO y apariencia) y estado y ajustes propios: los de Videos."""
     otro = copy.copy(motor)
     otro.config = copy.deepcopy(motor.config)
     otro.config["tracker"].update(SEGUIDOR_VIDEO)
@@ -178,25 +169,8 @@ def motor_aparte(motor):
     if gpu:
         propio.config["fp16"] = True
     otro.detector = SinEnvolventes(propio)
-    otro.genero = copy.copy(motor.genero)
-    if otro.genero.enabled:
-        for clave, valor in GENERO_VIDEO.items():
-            setattr(otro.genero, clave, valor)
-        if not gpu:
-            otro.genero.sample_s = MUESTREO_CPU_S
     otro.reiniciar({})
     return otro
-
-
-def genero_por_votos(votos):
-    """(etiqueta, certeza) de una lista de votos (etiqueta, probabilidad) de CLIP; (None, None) sin votos.
-
-    CLIP elige entre dos etiquetas: un voto «Mujer 0,7» es «Hombre 0,3». La certeza es la probabilidad promedio de la
-    etiqueta ganadora en todas las vistas, así que nunca baja del 50 %."""
-    if not votos:
-        return None, None
-    hombre = sum(p if etiqueta == GENEROS[0] else 1 - p for etiqueta, p in votos) / len(votos)
-    return (GENEROS[0], hombre) if hombre >= 0.5 else (GENEROS[1], 1 - hombre)
 
 
 class Ritmo:
@@ -349,7 +323,7 @@ def duracion_visible(tramos):
 class GrupoVideos:
     """Videos subidos juntos: cámaras del mismo lugar a la misma hora, como las del Build (Modelo/camaras.json) o los
     teléfonos. Comparten el asociador (la misma persona lleva el mismo ID en todos: pueden verla a la vez o una después
-    de otra), el reloj (en cada pasada todos van por el mismo segundo) y los votos de género de cada persona. Antes cada
+    de otra) y el reloj (en cada pasada todos van por el mismo segundo). Antes cada
     video tenía su asociador, sin las otras cámaras, y la misma persona salía con un ID distinto en cada video. Un video
     subido aparte es un grupo de uno."""
 
@@ -368,8 +342,6 @@ class GrupoVideos:
         self.asociador = lap01.AsociadorMulticamara(reid, config)
         self.asociador.quality["margen_borde"] = -1  # quien sale cortado por el borde también cuenta
         self.t = -math.inf
-        self.locales_de = {}  # ID de cada persona -> {(video, track local)}: sus votos de género en todos los videos
-        self.mostrados = {}   # ID -> (género, certeza) que se ve sobre sus cajas
 
     def asociar(self, entradas):
         """Re-ID de una pasada: [(video, frame, t, filas)] de los videos del grupo, en un solo instante del asociador."""
@@ -381,11 +353,10 @@ class GrupoVideos:
 
 
 class VideoEnProceso:
-    """Un video abierto con su propio motor (seguidor y género) en su grupo (asociador); cada paso procesa el frame que toca."""
+    """Un video abierto con su propio motor (seguidor) en su grupo (asociador); cada paso procesa el frame que toca."""
 
     def __init__(self, info, ruta, motor, reid, asociacion, grupo=None):
         self.id, self.nombre, self.modo = info["id"], info["nombre"], info["modo"]
-        self.analisis = info.get("analisis") or "ambos"  # ambos, multitracking (sin género) o genero (IDs de este video)
         self.cap = cv2.VideoCapture(str(ruta))
         if not self.cap.isOpened() or not self.cap.grab():
             self.cap.release()
@@ -404,8 +375,6 @@ class VideoEnProceso:
         self.cap.release()
         self.cap = abrir_video(ruta, primero, motor.device)
         self.motor = motor_aparte(motor)
-        if self.analisis == "multitracking":
-            self.motor.genero.enabled = False  # sin CLIP: todos quedan «Sin determinar»
         # El seguidor cuenta frames procesados, uno tras otro: con el número del frame en el video, los saltos del
         # tiempo real le hacían creer que cada persona había desaparecido un rato y la perdía.
         self.motor.reiniciar({self.id: self.fps if self.modo == "todos" else min(self.fps, FPS_SEGUIDOR)})
@@ -417,7 +386,6 @@ class VideoEnProceso:
         self.ms, self.tiempos = deque(maxlen=30), deque(maxlen=30)
         self.ms_total = 0.0
         self._inicio_paso = 0.0
-        self.generos = {}
         self.quietud = Quietud()
         self.se_movieron = set()  # IDs de personas que se movieron alguna vez: las únicas que cuentan
         self.inicio = time.perf_counter()
@@ -436,13 +404,13 @@ class VideoEnProceso:
         return frame, self.ritmo.indice / self.fps
 
     def procesar(self, frame, t, detecciones=None, extra_s=0.0):
-        """Las filas del frame leído, solo con este video en su grupo: seguidor, Re-ID y género (ver seguir)."""
+        """Las filas del frame leído, solo con este video en su grupo: seguidor y Re-ID (ver seguir)."""
         filas = self.seguir(frame, detecciones, extra_s)
         self.grupo.asociar([(self, frame, t, filas)])
         return self.cerrar_paso(frame, t, filas)
 
     def seguir(self, frame, detecciones=None, extra_s=0.0):
-        """Primera parte de un paso: el seguidor (y los votos de género) de este video. `detecciones`: las de este frame
+        """Primera parte de un paso: el seguidor de este video. `detecciones`: las de este frame
         si ya se detectaron junto con los de los otros videos (si no, se detecta aquí); `extra_s`: lo que tardó esa
         pasada. Después el grupo asocia los videos juntos (GrupoVideos.asociar) y cerrar_paso termina."""
         self._inicio_paso = time.perf_counter() - extra_s
@@ -450,13 +418,12 @@ class VideoEnProceso:
         return self.motor.procesar({self.id: frame}, {self.id: self.procesados}, detecciones)[self.id]
 
     def cerrar_paso(self, frame, t, filas):
-        """Última parte de un paso, ya con los IDs del grupo: lo quieto, el género y los tiempos; las filas a mostrar."""
+        """Última parte de un paso, ya con los IDs del grupo: lo quieto y los tiempos; las filas a mostrar."""
         inicio = self._inicio_paso
         self.quietud.actualizar(t, filas, frame)
         # Lo que no se mueve sigue en el seguidor (si no, volvería como alguien nuevo) pero no se muestra ni cuenta.
         filas = [f for f in filas if not self.quietud.estatico(f["local_id"], t)]
         for fila in filas:
-            self._genero(fila)
             if fila["global_id"] is not None and fila["local_id"] in self.quietud.movidos:
                 self.se_movieron.add(fila["global_id"])
         fin = time.perf_counter()
@@ -466,43 +433,17 @@ class VideoEnProceso:
         self.personas_ahora = len(filas)
         return filas
 
-    @staticmethod
-    def _votos(locales):
-        """Votos de CLIP de unos tracks locales: (video, track local), de este video o de otro de su grupo."""
-        return [voto for video, lid in locales
-                for voto in video.motor.genero.memory.get((video.id, lid), {}).get("votes", [])]
-
-    def _genero(self, fila):
-        """Género de la fila con los votos de todos los tracks de la persona en los videos del grupo (o del suyo mientras
-        no tiene ID): la misma persona lleva el mismo género en todas las cámaras. El que ya se mostró sobre el ID se
-        mantiene, con su certeza, hasta que el otro gane con CAMBIO_GENERO (ver AJUSTES)."""
-        pid = fila["global_id"]
-        locales = {(self, fila["local_id"])}
-        if pid is not None:
-            locales = self.grupo.locales_de.setdefault(pid, set())
-            locales.add((self, fila["local_id"]))
-        etiqueta, certeza = genero_por_votos(self._votos(locales))
-        fila["genero"], fila["confianza_genero"] = (etiqueta, certeza) if etiqueta in GENEROS else ("Sin determinar", None)
-        if pid is not None:
-            self.generos[pid] = fila["genero"]
-            mostrado = self.grupo.mostrados.get(pid)
-            if mostrado is not None and fila["genero"] != mostrado[0] and (certeza or 0) < CAMBIO_GENERO:
-                fila["genero"], fila["confianza_genero"] = mostrado
-            elif fila["genero"] in GENEROS:
-                self.grupo.mostrados[pid] = (fila["genero"], fila["confianza_genero"])
-
     def estado(self):
         """Avance y métricas del video para la web."""
         vigentes = set(self.asociador.confirmadas.values()) & self.se_movieron
         t = self.tiempos
-        return {"id": self.id, "nombre": self.nombre, "modo": self.modo, "analisis": self.analisis, "ancho": self.ancho, "alto": self.alto,
+        return {"id": self.id, "nombre": self.nombre, "modo": self.modo, "ancho": self.ancho, "alto": self.alto,
                 "fps_video": round(self.fps, 2), "duracion_s": round(self.total / self.fps, 1) if self.total else None,
                 "t_s": round(max(self.ritmo.indice, 0) / self.fps, 2), "procesados": self.procesados,
                 "saltados": self.saltados, "segundos": round(time.perf_counter() - self.inicio, 1),
                 "fps": round((len(t) - 1) / (t[-1] - t[0]), 1) if len(t) > 1 and t[-1] > t[0] else 0.0,
                 "ms_por_frame": round(1000 * float(np.median(self.ms))) if self.ms else None,
-                "personas_ahora": self.personas_ahora, "personas_total": len(vigentes),
-                "genero": dict(Counter(g for pid, g in self.generos.items() if pid in vigentes))}
+                "personas_ahora": self.personas_ahora, "personas_total": len(vigentes)}
 
     def resumen(self):
         """Lo que queda en la web al terminar: promedios de todo el video y cada persona que se vio."""
@@ -515,7 +456,7 @@ class VideoEnProceso:
         return r
 
     def personas(self):
-        """Cada persona contada: su ID, su género, entre qué segundos de este video se vio y cuántos estuvo a la vista en él."""
+        """Cada persona contada: su ID, entre qué segundos de este video se vio y cuántos estuvo a la vista en él."""
         a = self.asociador
         personas = {}
         for gid, publico in a.confirmadas.items():
@@ -523,10 +464,7 @@ class VideoEnProceso:
             tramos = [a.tracklets[uid] for uid in a.globales.get(gid, ()) if a.tracklets[uid].camera_id == self.id]
             if not tramos or publico not in self.se_movieron:
                 continue
-            etiqueta, certeza = genero_por_votos(self._votos(self.grupo.locales_de.get(publico, ())))
-            p = personas.setdefault(publico, {"id": publico, "genero": etiqueta or "Sin determinar",
-                                              "certeza": round(certeza, 2) if certeza else None,
-                                              "desde_s": math.inf, "hasta_s": 0.0, "visible_s": 0.0})
+            p = personas.setdefault(publico, {"id": publico, "desde_s": math.inf, "hasta_s": 0.0, "visible_s": 0.0})
             p["desde_s"] = min(p["desde_s"], min(t.inicio_s for t in tramos))
             p["hasta_s"] = max(p["hasta_s"], max(t.fin_s for t in tramos))
             p["visible_s"] += duracion_visible(tramos)
@@ -550,7 +488,7 @@ class VideosSubidos:
         self.espera = []             # (info, ruta) ya descargados que esperan a los demás de su tanda (ver GrupoVideos)
         self.llegada = {}            # tanda -> cuándo bajó su primer video (ver _listos)
         self.hechos = set()          # ids ya procesados, quitados o fallidos: no se repiten
-        # Un hilo por video: el seguidor, el género y el Re-ID de cada uno corren a la vez (cada video tiene los suyos).
+        # Un hilo por video: el seguidor y el Re-ID de cada uno corren a la vez (cada video tiene los suyos).
         self.hilos = ThreadPoolExecutor(max_workers=SIMULTANEOS, thread_name_prefix="video")
         # Y otro por video para leerlo (ver _leer_y_detectar).
         self.lectores = ThreadPoolExecutor(max_workers=SIMULTANEOS, thread_name_prefix="video-lectura")
@@ -706,7 +644,7 @@ class VideosSubidos:
         for grupo, entradas in grupos.items():
             try:
                 grupo.asociar(entradas)
-                # 3) Lo quieto y el género de cada video, ya con los IDs del grupo.
+                # 3) Lo quieto de cada video, ya con los IDs del grupo.
                 hechos = [(video, frame, t, video.cerrar_paso(frame, t, filas)) for video, frame, t, filas in entradas]
             except Exception as error:
                 for video, *_ in entradas:
@@ -767,18 +705,13 @@ class VideosSubidos:
         return grupos
 
     def _abrir_grupo(self, listos):
-        """Abre los videos descargados de una tanda en un grupo por modo y análisis (ver GrupoVideos) y los pone en marcha
-        a la vez: en tiempo real, cada pasada toma de todos el frame del mismo segundo. Con el análisis «genero» cada
-        video va en su propio grupo: sus IDs no se comparten con los otros videos."""
+        """Abre los videos descargados de una tanda en un grupo por modo (ver GrupoVideos) y los pone en marcha a la vez:
+        en tiempo real, cada pasada toma de todos el frame del mismo segundo."""
         gpu = str(self.motor.device).startswith("cuda")
-        clave = lambda info: (info["modo"], info.get("analisis") or "ambos")  # noqa: E731
-        for modo, analisis in sorted({clave(info) for info, _ in listos}):
-            tanda = [(info, ruta) for info, ruta in listos if clave(info) == (modo, analisis)]
-            grupos = [[x] for x in tanda] if analisis == "genero" else [tanda]
-            abiertos = []
-            for miembros in grupos:
-                grupo = GrupoVideos([info["id"] for info, _ in miembros], self.reid, self.asociacion, gpu=gpu)
-                abiertos += [(video, ruta) for info, ruta in miembros if (video := self._abrir(info, ruta, None, grupo, activar=False))]
+        for modo in sorted({info["modo"] for info, _ in listos}):
+            miembros = [(info, ruta) for info, ruta in listos if info["modo"] == modo]
+            grupo = GrupoVideos([info["id"] for info, _ in miembros], self.reid, self.asociacion, gpu=gpu)
+            abiertos = [(video, ruta) for info, ruta in miembros if (video := self._abrir(info, ruta, None, grupo, activar=False))]
             cero = time.perf_counter()
             with self.bloqueo:
                 for video, ruta in abiertos:
@@ -786,8 +719,8 @@ class VideosSubidos:
                     self.activos[video.id] = (video, ruta)
             for video, _ in abiertos:
                 print(f"Procesando el video {video.nombre}: {video.ancho}x{video.alto}, {video.fps:g} FPS, "
-                      f"modo {video.modo}, análisis {analisis} ({len(self.activos)} a la vez)", flush=True)
-            if len(abiertos) > 1 and analisis != "genero":
+                      f"modo {video.modo} ({len(self.activos)} a la vez)", flush=True)
+            if len(abiertos) > 1:
                 print(f"Videos {', '.join(v.nombre for v, _ in abiertos)}: cámaras del mismo lugar, con IDs compartidos", flush=True)
 
     def _abrir(self, info, ruta, error, grupo=None, activar=True):

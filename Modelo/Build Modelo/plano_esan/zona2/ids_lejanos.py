@@ -338,8 +338,6 @@ def asignar(resultados):
         orden.setdefault(t.numero, len(orden) + 1)
     for r in resultados:
         r["numeros"] = {t.lid: orden[t.numero] for t in por_camara.get(r["id"], []) if t.numero is not None}
-        if r.get("generos"):
-            r["generos"] = {orden[n]: g for n, g in r["generos"].items() if n in orden}
     lejanos = sum(t.lejano for t in tramos)
     return (f"{lejanos} de {len(tramos)} tramos lejanos: {len(previo)} siguen el ID del tramo que se perdió, {len(quietas)} cadenas quietas sin número, "
             f"{len(tomadas)} personas lejanas toman el ID de la cámara más cercana y {propias} llevan un número propio; {len(orden)} personas")

@@ -25,7 +25,7 @@ from scipy.optimize import linear_sum_assignment
 from torch import nn
 from threadpoolctl import threadpool_limits
 from .datos import a_h264, inspeccionar_videos
-from .deteccion_apariencia import ClasificadorGeneroCLIP, DetectorPersonas, ExtractorResNet18, MezclaApariencia
+from .deteccion_apariencia import DetectorPersonas, ExtractorResNet18, MezclaApariencia
 from .tracking_local import ColorOcclusionTracker
 from .camaras_reid import ReIDPersonas, ReIDResNet
 from .asociacion_multicamara import AsociadorMulticamara
@@ -53,14 +53,12 @@ class MotorLAP01:
         self.mezcla = MezclaApariencia(float(appearance["deep_weight"]), gain, offset)
         self.trackers = {}
         self.detecciones_actuales = {}
-        self.genero = ClasificadorGeneroCLIP(self.model_dir, self.config.get("gender", {}), device)
         self._flujo = torch.cuda.Stream(device=device) if device.startswith("cuda") else None
 
     def reiniciar(self, fps):
         """Crea un tracker por cámara con ventanas escaladas a sus FPS."""
         reference = float(self.config.get("reference_fps", 15))
         self.trackers, self.detecciones_actuales = {}, {}
-        self.genero.reiniciar(fps)
         for cid, camera_fps in fps.items():
             settings = dict(self.config["tracker"])
             settings["max_age"] = max(1, round(settings["max_age"] * camera_fps / reference))
@@ -76,10 +74,8 @@ class MotorLAP01:
             return self.detector(frames)
 
     def procesar(self, frames, source_frames, detections=None):
-        """Detecta, sigue y estima género en un instante; devuelve las filas por cámara."""
-        rows = self.seguir(frames, source_frames, self.detectar(frames) if detections is None else detections)
-        self.genero.actualizar(frames, source_frames, rows)
-        return rows
+        """Detecta y sigue en un instante; devuelve las filas por cámara."""
+        return self.seguir(frames, source_frames, self.detectar(frames) if detections is None else detections)
 
     def seguir(self, frames, source_frames, detections):
         """Actualiza el tracker de cada cámara con sus detecciones; devuelve las filas por cámara."""
@@ -105,7 +101,7 @@ class MotorLAP01:
 
 
 def procesar_instante(motor, asociador, timestamp, frames, source_frames, detections=None):
-    """Tracking, género y Re-ID de un instante (detecciones ya calculadas o se detecta aquí); devuelve las filas."""
+    """Tracking y Re-ID de un instante (detecciones ya calculadas o se detecta aquí); devuelve las filas."""
     rows = motor.procesar(frames, source_frames, detections)
     asociador.actualizar(timestamp, frames, rows, occluders=motor.detecciones_actuales)
     return rows
@@ -157,22 +153,8 @@ def _color(identity):
     return tuple(int(x) for x in np.random.default_rng(identity).integers(50, 255, 3))
 
 
-def etiqueta_genero(row, compacto=False):
-    """Texto solo para consenso estable; no convierte una predicción débil en una etiqueta visible."""
-    genero = row.get("genero")
-    if genero not in ClasificadorGeneroCLIP.ETIQUETAS:
-        return None
-    try:
-        confianza = float(row.get("confianza_genero"))
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(confianza):
-        return None
-    return f"{genero} {confianza:.0%}" if not compacto else f"{genero[0]} {confianza:.0%}"
-
-
 def dibujar_rotulo(image, texto, punto, color, escala=0.55):
-    """Etiqueta con fondo opaco para que el ID y el consenso se lean sobre cualquier cámara."""
+    """Etiqueta con fondo opaco para que el ID se lea sobre cualquier cámara."""
     grosor = 2
     (ancho, alto), linea_base = cv2.getTextSize(texto, cv2.FONT_HERSHEY_SIMPLEX, escala, grosor)
     x = int(np.clip(punto[0], 2, max(2, image.shape[1] - ancho - 8)))
@@ -182,7 +164,7 @@ def dibujar_rotulo(image, texto, punto, color, escala=0.55):
 
 
 def anotar(frame, camera_id, rows, timestamp_s, display_conf):
-    """Dibuja cajas, IDs y género sobre un frame."""
+    """Dibuja cajas e IDs sobre un frame."""
     image = frame.copy()
     for row in rows:
         if row["confidence"] < display_conf:
@@ -191,9 +173,6 @@ def anotar(frame, camera_id, rows, timestamp_s, display_conf):
         gid = row.get("global_id")
         color = _color(gid if gid is not None else row["local_id"])
         label = f'G{gid} | {camera_id} L{row["local_id"]}' if gid is not None else f'{camera_id} L{row["local_id"]}'
-        genero = etiqueta_genero(row)
-        if genero:
-            label += f" | {genero}"
         cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
         dibujar_rotulo(image, label, (x1, y1 - 6), color)
     cv2.rectangle(image, (0, 0), (image.shape[1], 38), (22, 22, 22), -1)
@@ -251,10 +230,9 @@ class VistaEnVivo:
 
 COLUMNAS_OBSERVACIONES = ["frame_global", "timestamp_s", "camera_id", "frame", "local_id", "tracklet_id",
                           "global_id", "global_id_online", "x1", "y1", "x2", "y2", "confidence",
-                          "genero", "confianza_genero", "X", "Y", "speed", "direction_deg", "projection_valid"]
+                          "X", "Y", "speed", "direction_deg", "projection_valid"]
 COLUMNAS_TRAJECTORY_POINTS = ["point_id", "global_id", "timestamp", "camera_id", "local_id", "tracklet_id",
                               "x", "y", "geom", "zone_id", "speed_mps", "direction_deg", "confidence"]
-COLUMNAS_GENERO = ["global_id", "global_uuid", "genero", "confianza_genero", "votos_genero"]
 
 
 @dataclass
@@ -269,7 +247,6 @@ class ResultadoMulticamara:
     tracklets: list
     identidades: list
     galeria: list
-    generos: list
     enlaces: list
     tracklet_uuid: dict
     global_uuid: dict
@@ -312,38 +289,6 @@ class ResultadoMulticamara:
         self.trajectory_points().drop(columns="point_id").to_csv(temporal, index=False)
         temporal.replace(ruta)
         return ruta
-
-    def tabla_generos(self):
-        """Una fila por identidad global: estimación agregada de las vistas corporales válidas."""
-        tabla = pd.DataFrame(self.generos, columns=COLUMNAS_GENERO)
-        if tabla.empty:
-            return tabla.astype({"global_id": "Int64", "global_uuid": "string", "genero": "string",
-                                 "confianza_genero": "float32", "votos_genero": "int64"})
-        return tabla.astype({"global_id": "int64", "global_uuid": "string", "genero": "string",
-                             "confianza_genero": "float32", "votos_genero": "int64"})
-
-    def guardar_generos(self, ruta):
-        """Escribe identidades_genero.csv."""
-        ruta = Path(ruta)
-        temporal = ruta.with_name(f".{ruta.name}.tmp")
-        self.tabla_generos().to_csv(temporal, index=False)
-        temporal.replace(ruta)
-        return ruta
-
-    def actualizar_generos(self, generos):
-        """Vuelve a agregar el atributo tras una unión o separación decidida por el mapa."""
-        self.generos = list(generos)
-        for item in self.generos:
-            item["global_uuid"] = self.global_uuid.get(item["global_id"])
-        por_global = {item["global_id"]: item for item in self.generos}
-        for tabla in (self.identidades, self.galeria):
-            for item in tabla:
-                genero = por_global.get(item["global_id"])
-                if genero is not None:
-                    item.update({key: genero[key] for key in ("genero", "confianza_genero", "votos_genero")})
-        if "gender" in self.resumen:
-            self.resumen["gender"]["identidades_confirmadas"] = sum(
-                item["genero"] != ClasificadorGeneroCLIP.SIN_DETERMINAR for item in self.generos)
 
     def exportar_videos(self, carpeta, display_conf):
         """Un MP4 por cámara, dibujado con los global_id reconciliados (los mismos de trajectory_points)."""
@@ -594,16 +539,7 @@ def armar_resultado(motor, asociador, filas, *, metadata, inicios, offsets, coun
     for fila in filas:
         track = asociador.resolver(fila["tracklet_id"], fila["timestamp_s"])
         fila["tracklet_id"], fila["global_id"] = track.uid, numeracion.get(track.global_id)
-    generos = motor.genero.consolidar_globales(filas)
-    for item in generos:
-        item["global_uuid"] = asociador.global_uuid(item["global_id"])
-    genero_por_global = {item["global_id"]: item for item in generos}
     identidades, galeria = asociador.identidades(numeracion), asociador.galeria(numeracion)
-    for tabla in (identidades, galeria):
-        for item in tabla:
-            genero = genero_por_global.get(item["global_id"])
-            if genero is not None:
-                item.update({key: genero[key] for key in ("genero", "confianza_genero", "votos_genero")})
     summary = {"session_id": session_id, "session_uuid": str(session_uuid), "status": status,
                "frames_per_camera": min(counts.values()), "frames_by_camera": counts,
                "frames_total": sum(counts.values()),
@@ -613,14 +549,12 @@ def armar_resultado(motor, asociador, filas, *, metadata, inicios, offsets, coun
                "fps_per_camera": sum(counts.values()) / len(counts) / max(busy_s, 1e-9),
                "fps_total": sum(counts.values()) / max(busy_s, 1e-9), "fps_source": fps, "device": motor.device,
                "timestamp_offsets": offsets, "start_frames": inicios, "multicamera": asociador.resumen(),
-               "gender": {**motor.genero.stats, "identidades_confirmadas": sum(
-                   item["genero"] != motor.genero.SIN_DETERMINAR for item in generos)},
                "cameras": {cid: {**tracker.resumen(), "observations": sum(f["camera_id"] == cid for f in filas),
                                  "frames": counts[cid]} for cid, tracker in motor.trackers.items()}}
     return ResultadoMulticamara(
         resumen=summary, filas=filas, metadata=metadata, inicios=inicios, offsets=offsets,
         inicio_grabacion=inicio_grabacion, tracklets=asociador.tabla_tracklets(numeracion),
-        identidades=identidades, galeria=galeria, generos=generos,
+        identidades=identidades, galeria=galeria,
         enlaces=list(asociador.enlaces),
         tracklet_uuid={uid: t.tracklet_uuid for uid, t in asociador.tracklets.items()},
         global_uuid={publico: asociador.global_uuid(publico) for publico in numeracion.values()},

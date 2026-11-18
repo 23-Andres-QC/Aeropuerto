@@ -31,7 +31,6 @@ export type EstadoServicio = {
   segundos?: number;
   personas_total?: number;
   multitelefono?: number;
-  genero?: Record<string, number>;
   /** Personas de esta sesión que ya se habían visto antes (la memoria les devolvió su ID). */
   reconocidas?: number;
   /** Enlace para los teléfonos con la IP de la laptop en la red (lo publica el modelo, que corre en ella). */
@@ -60,8 +59,6 @@ export type PersonaDetectada = {
   local_id: number;
   box: [number, number, number, number];
   conf: number;
-  gender: string | null;
-  gender_conf: number | null;
 };
 
 /** Dónde cae en el plano cada píxel de este cuadro: homografía (de a 3 por fila) de píxeles de un cuadro de `ancho` px a metros. */

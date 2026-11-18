@@ -142,7 +142,7 @@ const enviar = (c, nombre) => {
   if (!c.s || c.s.readyState !== 1) return;
   const caja = cajaDe(nombre, P);
   const ruido = () => (Math.random() - 0.5) * 3;
-  const people = caja ? [{ id: 1, global_id: gid(nombre), local_id: 1, box: caja.map((v) => v + ruido()), conf: 0.9, gender: "Hombre", gender_conf: 0.8 }] : [];
+  const people = caja ? [{ id: 1, global_id: gid(nombre), local_id: 1, box: caja.map((v) => v + ruido()), conf: 0.9 }] : [];
   c.s.send(JSON.stringify({ ts: Date.now() / 1000, frame_w: W, frame_h: HF, people, plano: { sitio, ancho: W, H: homografias[nombre], referencia: "simulada" } }));
 };
 const t0 = Date.now();

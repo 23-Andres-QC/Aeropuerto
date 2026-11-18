@@ -113,6 +113,7 @@ func vector() memoria.Vector {
 func TestMemoriaPorHTTP(t *testing.T) {
 	s, m := servidor(t)
 	ahora := time.Now().UTC().Truncate(time.Second)
+	// genero y confianza_genero: un modelo con una versión anterior todavía los manda; se ignoran.
 	persona := map[string]any{"suma": vector(), "muestras": 9, "genero": "Hombre", "confianza_genero": 0.8,
 		"camaras": []string{"tel-1"}, "apariciones": 1, "primera_vez": ahora, "ultima_vez": ahora,
 		"vistas": []map[string]any{{"tramo": "s/tel-1/L1/T1", "camara": "tel-1", "prototipo": vector(), "muestras": 9}}}
@@ -182,9 +183,8 @@ func TestMemoriaPorHTTP(t *testing.T) {
 
 func TestFichasSinVectores(t *testing.T) {
 	s, m := servidor(t)
-	genero := "Hombre"
 	ahora := time.Now().UTC()
-	m.personas[4] = memoria.Persona{ID: 4, Suma: vector(), Muestras: 9, Genero: &genero, Camaras: []string{"tel-a"},
+	m.personas[4] = memoria.Persona{ID: 4, Suma: vector(), Muestras: 9, Camaras: []string{"tel-a"},
 		Apariciones: 2, PrimeraVez: ahora, UltimaVez: ahora}
 	resp, err := http.Get(s.URL + "/api/v1/personas/fichas")
 	if err != nil {
@@ -194,9 +194,6 @@ func TestFichasSinVectores(t *testing.T) {
 	var fichas []map[string]any
 	if err = json.NewDecoder(resp.Body).Decode(&fichas); err != nil || resp.StatusCode != http.StatusOK || len(fichas) != 1 {
 		t.Fatalf("fichas = %d %v %v", resp.StatusCode, fichas, err)
-	}
-	if _, hay := fichas[0]["genero"]; hay {
-		t.Fatalf("la ficha no debe traer género: %v", fichas[0])
 	}
 	if _, hay := fichas[0]["suma"]; hay || fichas[0]["apariciones"].(float64) != 2 {
 		t.Fatalf("ficha = %v", fichas[0])

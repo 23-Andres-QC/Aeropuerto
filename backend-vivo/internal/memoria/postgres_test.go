@@ -59,7 +59,7 @@ func TestPostgresGuardaYRecuerda(t *testing.T) {
 		t.Fatal(err)
 	}
 	otra := personaDePrueba()
-	otra.ID, otra.Genero, otra.ConfianzaGenero, otra.Vistas = 3, nil, nil, []Vista{}
+	otra.ID, otra.Vistas = 3, []Vista{}
 	if err = repo.Guardar(ctx, otra, epoca); err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestPostgresGuardaYRecuerda(t *testing.T) {
 		t.Fatalf("numeracion=%+v personas=%+v", numeracion, personas)
 	}
 	leida := personas[1]
-	if leida.Muestras != 21 || leida.Apariciones != 3 || len(leida.Vistas) != 2 || leida.Genero != nil || leida.ConfianzaGenero != nil || personas[0].Genero != nil {
+	if leida.Muestras != 21 || leida.Apariciones != 3 || len(leida.Vistas) != 2 {
 		t.Fatalf("persona leída = %+v", leida)
 	}
 	for i := range p.Suma {

@@ -10,8 +10,6 @@ type Persona = {
   local_id: number;
   box: [number, number, number, number];
   conf: number;
-  gender: string | null;
-  gender_conf: number | null;
 };
 type Mensaje = { ts: number; cuadro?: number | null; frame_w: number; frame_h: number; people: Persona[] };
 /** Un cuadro de video recibido: su número (el de la cámara web, o 0 si el modelo no lo manda), su dirección y cuándo llegó. */

@@ -29,7 +29,7 @@ y1, y2 = (int(v) for v in args.recorte.split(","))
 
 torch.set_num_threads(6)
 config = json.loads((ct.MODELO / "config_lap01.json").read_text())
-config["tracker"].update(ct.SEGUIDOR_TELEFONO); config["detector"].update(ct.DETECTOR_TELEFONO); config["gender"]["enabled"] = False
+config["tracker"].update(ct.SEGUIDOR_TELEFONO); config["detector"].update(ct.DETECTOR_TELEFONO)
 config["weights"]["detector"] = "yolo26s.pt"
 motor = lap01.MotorLAP01(ct.MODELO, config, device="cpu", batch=True)
 motor.detector = DetectorCuerpo(motor.detector, ct.MODELO / "yolo26s-pose.pt", "cpu")

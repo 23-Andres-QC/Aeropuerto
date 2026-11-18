@@ -19,7 +19,6 @@ class MotorFalso:
         self.personas = personas
         self.llamadas_seguir = []
         self.detector = object()
-        self.genero = types.SimpleNamespace(enabled=False)
         self.trackers, self.detecciones_actuales = {}, {}
 
     def detectar(self, frames):
@@ -43,9 +42,7 @@ def sesion(personas):
     s.quietud, s._ultimo_id, s._ventanas, s.generacion = {}, {}, {}, 0
     s.ubicador, s._ubicacion, s.asociador = None, None, None
     s._hay_trabajo, s._trabajos = threading.Condition(), {}
-    s._hay_genero, s._trabajos_genero = threading.Condition(), {}
     s._conocido = lambda cid, fila: fila.update(global_id=None)
-    s._genero = lambda cid, fila: None
     return s
 
 

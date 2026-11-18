@@ -50,7 +50,7 @@ func ModulesOf(role string) []string {
 }
 
 var (
-	reOnlySuper = regexp.MustCompile(`^/api/v1/(usuarios|auditoria|demo|privacidad)(/|$)|/llaves(/|$)|/grupo-minimo$`)
+	reOnlySuper = regexp.MustCompile(`^/api/v1/(usuarios|auditoria|demo|privacidad)(/|$)|/llaves(/|$)`)
 	reSales     = regexp.MustCompile(`^/api/v1/sites/[^/]+/(ventas(/|$)|sessions/[^/]+/ventas(/|$))`)
 	reTraffic   = regexp.MustCompile(`^/api/v1/sites/[^/]+/trafico/(resumen|serie|calor|permanencia|embudo|umbrales)$`)
 	reInsights  = regexp.MustCompile(`^/api/v1/sites/[^/]+/sessions/[^/]+/(insights|analytics|points)$`)
@@ -59,7 +59,7 @@ var (
 	reReplay = regexp.MustCompile(`^/api/v1/sites/[^/]+/sessions/[^/]+/replay$`)
 	// Saving a capture is what En vivo does when the live mode is turned off.
 	reSave = regexp.MustCompile(`^/api/v1/sites/[^/]+/sessions$`)
-	reBase      = regexp.MustCompile(`^/api/v1/sites(/[^/]+/(config|sessions))?$`)
+	reBase = regexp.MustCompile(`^/api/v1/sites(/[^/]+/(config|sessions))?$`)
 )
 
 // ModuleOf says which module an API request belongs to. What it does not recognize belongs to the strictest one that can

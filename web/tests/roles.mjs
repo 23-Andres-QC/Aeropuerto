@@ -8,10 +8,7 @@ import {
   normalizarCodigo,
   problemaConClave,
   requisitosClave,
-  resumenGenero,
   rutaPermitida,
-  suprimirGenero,
-  textoGenero,
 } from "../src/core/roles.ts";
 
 // Dónde empieza cada rol.
@@ -71,42 +68,4 @@ assert.equal(normalizarCodigo(" k7qm-2xpa "), "K7QM2XPA");
 assert.equal(enlaceConCodigo("https://192.168.1.5:8444/", "K7QM-2XPA"), "https://192.168.1.5:8444/#c=K7QM2XPA");
 assert.equal(enlaceConCodigo("https://sitio/camara/#viejo", "ABCD2345"), "https://sitio/camara/#c=ABCD2345", "reemplaza el fragmento que hubiera");
 
-// Género: solo las categorías que se pueden mostrar, sin la cifra de ninguna categoría pequeña.
-let g = resumenGenero({ MUJER: 20 }, 10);
-assert.deepEqual(g.visibles, [["MUJER", 20]]);
-g = resumenGenero({}, 8);
-assert.deepEqual(g.visibles, []);
-g = resumenGenero({ HOMBRE: 12, MUJER: 9, SIN_DETERMINAR: 5 }, 0);
-assert.equal(g.visibles.length, 3);
-// El mismo criterio que el servidor (domain.PrivateGender): los casos de su prueba.
-const caso = (entrada, visibles, ocultas) => {
-  const r = suprimirGenero(entrada);
-  assert.deepEqual(r.visibles, visibles, JSON.stringify(entrada));
-  assert.equal(r.ocultas, ocultas, JSON.stringify(entrada));
-};
-caso({ HOMBRE: 12, MUJER: 9, SIN_DETERMINAR: 5 }, { HOMBRE: 12, MUJER: 9, SIN_DETERMINAR: 5 }, 0);
-caso({ HOMBRE: 20, MUJER: 1 }, {}, 21);
-caso({ HOMBRE: 20, MUJER: 3, SIN_DETERMINAR: 3 }, { HOMBRE: 20 }, 6);
-caso({ HOMBRE: 20, MUJER: 9, SIN_DETERMINAR: 1 }, { HOMBRE: 20 }, 10);
-caso({ HOMBRE: 7, MUJER: 0, SIN_DETERMINAR: 0 }, { HOMBRE: 7 }, 0);
-caso({ HOMBRE: 3 }, {}, 3);
-caso({}, {}, 0);
-// Para cualquier combinación: lo visible tiene al menos 5, todo suma, y nada pequeño se deduce restando.
-for (let h = 0; h <= 12; h++)
-  for (let m = 0; m <= 12; m++)
-    for (let s = 0; s <= 12; s++) {
-      const r = suprimirGenero({ HOMBRE: h, MUJER: m, SIN_DETERMINAR: s });
-      const vistas = Object.values(r.visibles);
-      assert.ok(vistas.every((n) => n >= 5));
-      assert.equal(vistas.reduce((a, b) => a + b, 0) + r.ocultas, h + m + s);
-      assert.ok(!(r.ocultas > 0 && r.ocultas < 5 && vistas.length > 0), `${h}/${m}/${s} se deduce restando`);
-    }
-assert.equal(textoGenero(26, { HOMBRE: 12, MUJER: 9, SIN_DETERMINAR: 5 }, 0), "12 H · 9 M · 5 s/d");
-assert.equal(textoGenero(30, { MUJER: 20 }, 10), "20 M · 10 sin desglosar");
-assert.equal(textoGenero(8, {}, 8), "género oculto");
-assert.equal(textoGenero(0, {}, 0), "");
-// Con otro mínimo (el ajuste del sitio, solo para pruebas): 1 muestra todo; 2 oculta a los solitarios juntos.
-assert.deepEqual(suprimirGenero({ HOMBRE: 1, MUJER: 1, SIN_DETERMINAR: 1 }, 1), { visibles: { HOMBRE: 1, MUJER: 1, SIN_DETERMINAR: 1 }, ocultas: 0 });
-assert.deepEqual(suprimirGenero({ HOMBRE: 6, MUJER: 1, SIN_DETERMINAR: 1 }, 2), { visibles: { HOMBRE: 6 }, ocultas: 2 });
-assert.deepEqual(suprimirGenero({ HOMBRE: 6, MUJER: 1 }, 2), { visibles: {}, ocultas: 7 }, "un solo grupo pequeño arrastra al otro");
 console.log("roles y privacidad: todo bien");

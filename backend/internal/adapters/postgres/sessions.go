@@ -159,22 +159,14 @@ func (r *SessionRepository) Import(ctx context.Context, site domain.Site, p *dom
 	sid, _ := domain.ParseUUID(s.ID)
 
 	identityRows := make([][]any, 0, len(p.Identities))
-	genderCounts := map[string]int{}
 	for _, i := range p.Identities {
 		g, _ := domain.ParseUUID(i.GlobalID)
 		identityRows = append(identityRows, []any{g, sid, int32(i.Number), i.FirstSeen, i.LastSeen, int16(i.NCameras)})
-		genderCounts[i.Gender]++
 	}
 	if _, err = tx.CopyFrom(ctx, pgx.Identifier{"identities"},
 		[]string{"global_id", "session_id", "public_number", "first_seen", "last_seen", "n_cameras"},
 		pgx.CopyFromRows(identityRows)); err != nil {
 		return domain.ImportResult{}, rejected(err)
-	}
-	// The gender of each person is not kept: only how many people of each gender the session had.
-	for g, n := range genderCounts {
-		if _, err = tx.Exec(ctx, `INSERT INTO session_gender_counts (session_id, gender, n) VALUES ($1::text::uuid, $2, $3)`, s.ID, g, n); err != nil {
-			return domain.ImportResult{}, rejected(err)
-		}
 	}
 
 	trackletRows := make([][]any, 0, len(p.Tracklets))
@@ -273,20 +265,7 @@ func (r *SessionRepository) Insights(ctx context.Context, site domain.Site, sess
 	d := domain.InsightsData{People: []domain.InsightPerson{}, Heat: [][3]float64{}, Zones: []domain.ZoneStat{}}
 	id := []any{sessionID}
 
-	d.Gender = map[string]int{}
-	err := collect(ctx, r.db, `SELECT gender, n FROM session_gender_counts WHERE session_id = $1::text::uuid`, id, func(row pgx.Rows) error {
-		var g string
-		var n int
-		if err := row.Scan(&g, &n); err != nil {
-			return err
-		}
-		d.Gender[g] = n
-		return nil
-	})
-	if err != nil {
-		return d, err
-	}
-	err = collect(ctx, r.db, `SELECT EXTRACT(EPOCH FROM last_seen - first_seen)::float8
+	err := collect(ctx, r.db, `SELECT EXTRACT(EPOCH FROM last_seen - first_seen)::float8
 		FROM identities WHERE session_id = $1::text::uuid`, id, func(row pgx.Rows) error {
 		var p domain.InsightPerson
 		if err := row.Scan(&p.DwellS); err != nil {

@@ -1,7 +1,5 @@
 """Con GPU los teléfonos usan el multitracking de Videos (camara_telefono.ALGORITMO_VIDEOS): su motor, su Re-ID (896
-valores, también en la memoria de identidades), su asociador con sus umbrales y su género por votos. Sin GPU, el de
-siempre."""
-import math
+valores, también en la memoria de identidades) y su asociador con sus umbrales. Sin GPU, el de siempre."""
 import sys
 import time
 import types
@@ -15,7 +13,7 @@ TEST = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TEST))
 import camara_telefono as ct  # noqa: E402
 import memoria_identidades as mi  # noqa: E402
-from videos_subidos import ASOCIACION_REID_GPU, ASOCIACION_VIDEO, CAMBIO_GENERO  # noqa: E402
+from videos_subidos import ASOCIACION_REID_GPU, ASOCIACION_VIDEO  # noqa: E402
 
 
 def persona_json(pid, dimension):
@@ -80,50 +78,6 @@ class ModeloDeLosTelefonos(unittest.TestCase):
         with mock.patch.object(ct, "ALGORITMO_VIDEOS", False):
             _, _, _, como_videos = ct.modelo_telefonos(types.SimpleNamespace(device="cuda:0"), None, {})
         self.assertFalse(como_videos)
-
-
-class GeneroComoVideos(unittest.TestCase):
-    def sesion(self):
-        s = object.__new__(ct.SesionEnVivo)
-        s.como_videos, s.locales_de, s.mostrados, s.generos = True, {}, {}, {}
-        s.motor = types.SimpleNamespace(genero=types.SimpleNamespace(memory={}))
-        return s
-
-    def mostrar(self, s, cid, lid, pid):
-        fila = {"global_id": pid, "local_id": lid}
-        s._genero(cid, fila)
-        return fila["genero"], fila["confianza_genero"]
-
-    def test_vota_desde_la_primera_vista(self):
-        s = self.sesion()
-        s.motor.genero.memory[("tel-1", 4)] = {"votes": [("Mujer", 0.7)]}
-        self.assertEqual(self.mostrar(s, "tel-1", 4, 7), ("Mujer", 0.7))
-        self.assertEqual(s.generos[7], "Mujer")
-
-    def test_junta_los_votos_de_la_persona_en_todos_los_telefonos(self):
-        s = self.sesion()
-        s.motor.genero.memory[("tel-1", 4)] = {"votes": [("Hombre", 0.9)]}
-        s.motor.genero.memory[("tel-2", 2)] = {"votes": [("Hombre", 0.7)]}
-        self.mostrar(s, "tel-1", 4, 7)
-        genero, certeza = self.mostrar(s, "tel-2", 2, 7)
-        self.assertEqual(genero, "Hombre")
-        self.assertTrue(math.isclose(certeza, 0.8))
-
-    def test_lo_mostrado_cambia_solo_con_certeza(self):
-        s = self.sesion()
-        votos = s.motor.genero.memory.setdefault(("tel-1", 4), {"votes": [("Mujer", 0.9)]})["votes"]
-        self.mostrar(s, "tel-1", 4, 7)
-        votos[:] = [("Hombre", CAMBIO_GENERO - 0.05)]
-        self.assertEqual(self.mostrar(s, "tel-1", 4, 7)[0], "Mujer")
-        votos[:] = [("Hombre", CAMBIO_GENERO + 0.1)]
-        self.assertEqual(self.mostrar(s, "tel-1", 4, 7)[0], "Hombre")
-
-    def test_sin_votos_sin_determinar(self):
-        self.assertEqual(self.mostrar(self.sesion(), "tel-1", 4, None), ("Sin determinar", None))
-
-    def test_siempre_sigue_muestreando(self):
-        s = self.sesion()
-        self.assertTrue(s._falta_genero("tel-1", {"global_id": 7, "local_id": 4}))
 
 
 class VentanasDelSeguidor(unittest.TestCase):

@@ -76,8 +76,7 @@ type Replay struct {
 	People    []*Track `json:"personas"`
 }
 
-// InsightPerson is what the summary needs of each person: how long they were seen. The gender of a person is never
-// stored (see InsightsData.Gender): only the counts of the session are.
+// InsightPerson is what the summary needs of each person: how long they were seen.
 type InsightPerson struct {
 	DwellS float64
 }
@@ -96,8 +95,6 @@ type ZoneStat struct {
 // turns it into Insights.
 type InsightsData struct {
 	People []InsightPerson
-	// Gender counts the session's people by estimated gender (HOMBRE, MUJER, SIN_DETERMINAR).
-	Gender map[string]int
 	Heat   [][3]float64
 	Zones  []ZoneStat
 }
@@ -109,14 +106,8 @@ type DwellStats struct {
 }
 
 type InsightsSummary struct {
-	People int `json:"personas"`
-	// Gender holds only the categories big enough to show (see PrivateGender); GenderHidden is how many people
-	// belong to the ones left out, so the total still adds up.
-	Gender       map[string]int `json:"genero"`
-	GenderHidden int            `json:"genero_ocultos"`
-	// GenderMin is the minimum group size that was applied (below 5 the breakdown is for tests only).
-	GenderMin int `json:"genero_minimo"`
-	Dwell        DwellStats     `json:"permanencia"`
+	People int        `json:"personas"`
+	Dwell  DwellStats `json:"permanencia"`
 }
 
 type Heat struct {
@@ -124,7 +115,7 @@ type Heat struct {
 	Cells [][3]float64 `json:"celdas"`
 }
 
-// Insights summarises a session with SQL alone: people, gender and dwell, and
+// Insights summarises a session with SQL alone: people and dwell, and
 // the 1 m heat map and visitors per zone the dashboard shows until Part III runs.
 type Insights struct {
 	Session Session         `json:"session"`

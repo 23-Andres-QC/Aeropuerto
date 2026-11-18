@@ -22,7 +22,7 @@ Por qué el modelo le daba otro ID a la misma persona:
 - al cerrar el modelo se perdía todo.
 
 Ahora:
-- **Comparación en RAM:** `Modelo/Test Modelo/memoria_identidades.py` compara cada identidad nueva con todas las personas guardadas. Usa el prototipo Re-ID y el enlace promedio de sus tramos, con los mismos umbrales calibrados del asociador (0,6 / 0,55 entre cámaras; 0,7 / 0,65 con una sola). Si coincide sin ambigüedad, recupera su ID, su color y su género.
+- **Comparación en RAM:** `Modelo/Test Modelo/memoria_identidades.py` compara cada identidad nueva con todas las personas guardadas. Usa el prototipo Re-ID y el enlace promedio de sus tramos, con los mismos umbrales calibrados del asociador (0,6 / 0,55 entre cámaras; 0,7 / 0,65 con una sola). Si coincide sin ambigüedad, recupera su ID y su color.
 - **Corrección de IDs nuevos:** un ID recién creado se sigue comparando durante 60 s. Si era alguien ya visto, se fusionan y queda el ID antiguo.
 - **La sesión no se reinicia:** cuando entra o sale un teléfono, los que siguen conservan su tracking.
 - **Guardado en segundo plano:** el modelo compara en RAM y escribe en la base cada 2 s, así nunca espera a la red.
@@ -31,10 +31,9 @@ Qué se guarda por persona:
 - el ID público;
 - la suma de sus vectores Re-ID (512 valores de `yolo26s-reid`);
 - hasta 16 prototipos de sus tramos;
-- su género;
 - las cámaras donde se vio, la primera y la última vez, y cuántas veces reapareció.
 
-**No se guarda video ni fotos.** Quien no se vuelve a ver en `RETENCION_HORAS` (por defecto **24 horas**) se borra solo. La memoria **no guarda el género** de nadie (migración `002_sin_genero.sql`): el modelo lo sigue calculando en vivo y se muestra solo en En vivo, para el admin. **Olvidar a todos** en Teléfonos vacía la memoria y reinicia la numeración en 1: la base sube de «época» y rechaza (409) cualquier guardado anterior, así el modelo no resucita a nadie y olvida también lo suyo.
+**No se guarda video ni fotos.** Quien no se vuelve a ver en `RETENCION_HORAS` (por defecto **24 horas**) se borra solo. El sistema no estima el género de nadie. **Olvidar a todos** en Teléfonos vacía la memoria y reinicia la numeración en 1: la base sube de «época» y rechaza (409) cualquier guardado anterior, así el modelo no resucita a nadie y olvida también lo suyo.
 
 ## Videos
 

@@ -6,8 +6,6 @@ import type { Punto, Replay, Zona } from "./api";
 /** Lo que hace falta saber de cada persona para las métricas. Los tiempos van en milisegundos. */
 export type HistoriaBasica = {
   id: number;
-  /** «Hombre», «Mujer» o cualquier otro valor (= sin determinar). */
-  genero: string | null;
   primera: number;
   ultima: number;
   /** Segundos que pasó dentro de cada zona (una zona dentro de otra cuenta en las dos). */
@@ -18,7 +16,6 @@ export type HistoriaBasica = {
 
 export type ResumenVivo = {
   personas: number;
-  genero: Record<"HOMBRE" | "MUJER" | "SIN_DETERMINAR", number>;
   permanenciaMedia: number | null;
   permanenciaMediana: number | null;
   densidadMax: { valor: number; zona: string } | null;
@@ -42,8 +39,6 @@ export function dentro([x, y]: Punto, pol: Punto[]) {
   return c;
 }
 
-export const claveGenero = (g: string | null): "HOMBRE" | "MUJER" | "SIN_DETERMINAR" => (g === "Hombre" ? "HOMBRE" : g === "Mujer" ? "MUJER" : "SIN_DETERMINAR");
-
 const mediana = (xs: number[]) => {
   if (!xs.length) return null;
   const o = [...xs].sort((a, b) => a - b);
@@ -53,8 +48,6 @@ const mediana = (xs: number[]) => {
 /** Métricas por zona, rutas y flujos a partir de las personas; `densidad` es la máxima (personas/m²) que vio cada zona. */
 export function resumir(hs: HistoriaBasica[], zonas: { zone_id: number; name: string }[], densidad: Map<number, number>): ResumenVivo {
   const nombre = (id: number) => zonas.find((z) => z.zone_id === id)?.name ?? `Zona ${id}`;
-  const genero = { HOMBRE: 0, MUJER: 0, SIN_DETERMINAR: 0 };
-  for (const h of hs) genero[claveGenero(h.genero)]++;
   const visibles = hs.map((h) => (h.ultima - h.primera) / 1000);
 
   const porZona = zonas.map((z) => {
@@ -93,7 +86,6 @@ export function resumir(hs: HistoriaBasica[], zonas: { zone_id: number; name: st
   }
   return {
     personas: hs.length,
-    genero,
     permanenciaMedia: visibles.length ? visibles.reduce((a, b) => a + b, 0) / visibles.length : null,
     permanenciaMediana: mediana(visibles),
     densidadMax: pico,
@@ -169,8 +161,6 @@ export function desdeReplay(replay: Replay, inicio: number, zonas: Zona[]): Anal
     });
     historias.push({
       id: p.numero,
-      // El género de una persona no se guarda: de una captura guardada solo hay conteos (Insights los trae del servidor).
-      genero: null,
       primera: inicio + p.inicio_s * 1000,
       ultima: inicio + p.fin_s * 1000,
       zonas: tiempos,

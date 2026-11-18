@@ -171,7 +171,7 @@ try {
     session: { session_id: sesionId, name: "Sesión de prueba", recording_start: inicio, recording_start_declared: true, ended_at: "2026-09-26T10:03:00-05:00" },
     map: { mapa: { px_por_metro: 40, origen_m: [0, 12], tam_px: [800, 480], desfases_s: {}, camaras: {}, piso_L_m: rect(0, 0, 20, 12) } },
     cameras: [{ camera_id: "cam01", name: "cam01", fps: 5, width_px: 1280, height_px: 720, timestamp_offset_s: 0, position: [0, 0], angle_deg: 10 }],
-    identities: [A, B].map((g, i) => ({ global_id: g, public_number: i + 1, first_seen: inicio, last_seen: inicio, n_cameras: 1, gender: "Mujer", gender_confidence: 0.9, gender_votes: 4 })),
+    identities: [A, B].map((g, i) => ({ global_id: g, public_number: i + 1, first_seen: inicio, last_seen: inicio, n_cameras: 1 })),
     tracklets: [{ tracklet_id: tA, global_id: A, camera_id: "cam01", local_id: 1, t_start: inicio, t_end: inicio, n_reid_views: 1 }, { tracklet_id: tB, global_id: B, camera_id: "cam01", local_id: 2, t_start: inicio, t_end: inicio, n_reid_views: 1 }],
     points: col,
   }), "importar la sesión");

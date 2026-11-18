@@ -6,7 +6,7 @@ import { cajasAl, type Instantanea } from "../../videos/interpolacion";
 import type { Detecciones, EstadoServicio } from "../api";
 
 // Sala del servicio de cámara web (app-web, vía nginx): todas las cámaras de la
-// lista con su pantalla desde que se unen, y encima las cajas, el ID y el género
+// lista con su pantalla desde que se unen, y encima las cajas y el ID
 // que publica el modelo cuando está corriendo.
 //
 // Una cámara web se ve a su ritmo (~15 fps) y el modelo devuelve las cajas de
@@ -393,7 +393,7 @@ function dibujarCajas(id: string) {
     capa.height = det.frame_h;
   }
   ctx.clearRect(0, 0, capa.width, capa.height);
-  // Un palito sobre la cabeza de cada persona con su ID y su género (no una caja: no tapa a la gente).
+  // Un palito sobre la cabeza de cada persona con su ID (no una caja: no tapa a la gente).
   const escala = det.frame_w / 640;
   ctx.font = `600 ${Math.round(12 * escala)}px system-ui, sans-serif`;
   for (const persona of det.people) dibujarMarcador(ctx, persona, escala, det.frame_w);
