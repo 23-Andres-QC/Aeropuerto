@@ -1,7 +1,7 @@
 // Línea de tiempo de Insights: la sesión por intervalos y hasta MAX_RANGOS rangos de tiempo elegidos, cada uno con los mismos
 // indicadores que el tablero, para ver cómo cambian a lo largo de la sesión. Todo sale de la reproducción (una posición por
 // persona cada paso_s), igual para cualquier tipo de sesión. Módulo puro: sin Vue ni red.
-import { desdeReplay, dentro, resumir } from "./analisisVivo";
+import { desdeReplay, dentro, horaReloj, resumir } from "./analisisVivo.ts";
 import type { Replay, Zona } from "./api";
 import type { Celda, TablaReporte } from "./reporte";
 
@@ -120,8 +120,7 @@ export function indicadores(replay: Replay, zonas: Zona[], zonaId: number | null
 }
 
 /** Hora del reloj de un instante de la sesión (`inicio` en ms). */
-export const hora = (inicio: number, s: number) =>
-  new Date(inicio + s * 1000).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+export const hora = (inicio: number, s: number) => horaReloj(inicio + s * 1000);
 
 export const nombreRango = (inicio: number, r: Rango, i: number) =>
   `${LETRAS[i]} · ${relativo(r.desde)}–${relativo(r.hasta)} (${hora(inicio, r.desde)}–${hora(inicio, r.hasta)})`;

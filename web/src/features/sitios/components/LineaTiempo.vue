@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import type { Replay, Zona } from "../api";
 import {
   COLORES, LETRAS, MAX_RANGOS, deRelativo, duracionDe, filasSerie, hora, indicadores, nombreRango, pasoSerie, relativo, serieTiempo, tablaRangos,
-  tablasRangos, textoCambio, type Rango,
+  tablasRangos, textoCambio, type Indicadores, type Rango,
 } from "../lineaTiempo";
 import { aCsv, descargar, type TablaReporte } from "../reporte";
 import { puedeExportar, textoPermisoExportar } from "../../cuentas/permisos";
@@ -127,13 +127,20 @@ function agregar() {
 
 // --- Comparación y exportación ------------------------------------------------------
 const nombres = computed(() => rangos.value.map((r, i) => nombreRango(props.inicio, r, i)));
-const tabla = computed(() =>
-  tablaRangos(
-    indicadores(props.replay, props.zonas, props.zonaId, { desde: 0, hasta: duracion.value + 1e-6 }),
-    rangos.value.map((r) => indicadores(props.replay, props.zonas, props.zonaId, r)),
-    nombres.value,
-  ),
-);
+// Los indicadores de la sesión completa no dependen de los rangos, y los de cada rango se guardan: marcar, mover o quitar un
+// rango calcula solo los rangos nuevos. Cambiar de sesión, de zonas o de zona elegida empieza otra memoria.
+const deSesion = computed(() => indicadores(props.replay, props.zonas, props.zonaId, { desde: 0, hasta: duracion.value + 1e-6 }));
+const memoria = computed(() => {
+  void [props.replay, props.zonas, props.zonaId];
+  return new Map<string, Indicadores>();
+});
+function deRango(r: Rango): Indicadores {
+  const clave = `${r.desde}|${r.hasta}`;
+  let x = memoria.value.get(clave);
+  if (!x) memoria.value.set(clave, (x = indicadores(props.replay, props.zonas, props.zonaId, r)));
+  return x;
+}
+const tabla = computed(() => tablaRangos(deSesion.value, rangos.value.map(deRango), nombres.value));
 const tablas = computed(() =>
   rangos.value.length ? tablasRangos(tabla.value, rangos.value.map((r, i) => ({ nombre: nombres.value[i], filas: filasSerie(serie.value, r, props.inicio) }))) : [],
 );

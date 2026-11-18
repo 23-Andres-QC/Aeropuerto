@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, shallowRef, watch } from "vue";
 import { useRoute } from "vue-router";
 import { colorPersona } from "../../../shared/format";
 import { api, type Config, type Replay, type Sesion } from "../../sitios/api";
@@ -79,7 +79,7 @@ const compraron = computed(() => datos.value?.matched ?? []);
 const sinPersona = computed(() => datos.value?.unmatched ?? []);
 // Ver por dónde caminó la persona de una pareja: el recorrido de la sesión se baja una vez y se reutiliza.
 const elegido = ref<Ticket | null>(null);
-const replay = ref<Replay | null>(null);
+const replay = shallowRef<Replay | null>(null);
 const cargandoReplay = ref(false);
 const panelRecorrido = ref<HTMLElement>();
 async function verRecorrido(t: Ticket) {

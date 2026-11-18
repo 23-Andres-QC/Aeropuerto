@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, shallowRef, watch } from "vue";
 import { useRoute } from "vue-router";
 import { cantidad, colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, type Analitica, type Config, type Insights, type Punto, type Recorrido, type Replay, type Sesion } from "../api";
@@ -18,13 +18,15 @@ import type { VistaGuardada } from "../vistaPlano";
 
 const route = useRoute();
 const { slug } = useSitios();
-const config = ref<Config>();
+// El sitio, el tablero y la reproducción solo se leen y se reemplazan enteros: van en shallowRef para que Vue no envuelva cada
+// posición de cada persona. Con ref, cada lectura de un punto pasaba por un proxy y marcar un rango tardaba de 3 a 6 s.
+const config = shallowRef<Config>();
 const sesiones = ref<Sesion[]>([]);
 const sesionId = ref("");
 const zonaId = ref<number | null>(null);
-const datos = ref<Insights>();
-const analitica = ref<Analitica | null>(null);
-const replay = ref<Replay>();
+const datos = shallowRef<Insights>();
+const analitica = shallowRef<Analitica | null>(null);
+const replay = shallowRef<Replay>();
 const error = ref("");
 const cargando = ref(true);
 const capaCalor = ref<"ocupacion" | "visitantes">("ocupacion");

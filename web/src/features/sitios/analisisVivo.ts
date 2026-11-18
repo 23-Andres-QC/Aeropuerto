@@ -24,6 +24,10 @@ export type ResumenVivo = {
   flujos: { desde: number; hacia: number; desde_nombre: string; hacia_nombre: string; personas: number }[];
 };
 
+/** Hora del reloj (hh:mm:ss): un solo formateador, porque crear uno por llamada (toLocaleTimeString) es lento con cientos de filas. */
+const RELOJ = new Intl.DateTimeFormat("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+export const horaReloj = (ms: number) => RELOJ.format(new Date(ms));
+
 /** Lado de cada celda del calor, en metros. */
 export const CELDA_CALOR = 0.5;
 /** Ancho de cada intervalo de «Entradas por intervalo», en segundos. */
@@ -37,6 +41,38 @@ export function dentro([x, y]: Punto, pol: Punto[]) {
     if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
   }
   return c;
+}
+
+/**
+ * Las zonas que contienen un punto, de la más pequeña a la más grande. Se calcula una vez por punto (al centímetro) y lista de
+ * zonas: cada rango de la línea de tiempo vuelve a pasar por los mismos puntos, y el punto en polígono de cada punto contra cada
+ * zona era lo que más demoraba Insights. La lista de zonas no debe cambiar en el lugar (se reemplaza al recargar el sitio).
+ */
+const zonasPorLista = new WeakMap<Zona[], { ordenadas: Zona[]; porPunto: Map<number, Zona[]>; conjuntos: Map<string, Zona[]> }>();
+const MAX_PUNTOS_GUARDADOS = 400_000;
+const NINGUNA: Zona[] = [];
+
+export function zonasDelPunto(punto: Punto, zonas: Zona[]): Zona[] {
+  let c = zonasPorLista.get(zonas);
+  if (!c) {
+    c = { ordenadas: [...zonas].sort((a, b) => a.area_m2 - b.area_m2), porPunto: new Map(), conjuntos: new Map() };
+    zonasPorLista.set(zonas, c);
+  }
+  const [cx, cy] = [Math.round(punto[0] * 100), Math.round(punto[1] * 100)];
+  // Clave numérica (más rápida que un texto) para puntos a menos de 50 km del origen del plano; los demás no se guardan.
+  const clave = Math.abs(cx) < 5e6 && Math.abs(cy) < 5e6 ? (cx + 5e6) * 1e7 + (cy + 5e6) : null;
+  const guardada = clave == null ? undefined : c.porPunto.get(clave);
+  if (guardada) return guardada;
+  const contenidas = c.ordenadas.filter((z) => dentro(punto, z.points));
+  // Muchos puntos caen en las mismas zonas: comparten una sola lista.
+  const id = contenidas.map((z) => z.zone_id).join(",");
+  let conjunto = contenidas.length ? c.conjuntos.get(id) : NINGUNA;
+  if (!conjunto) c.conjuntos.set(id, (conjunto = contenidas));
+  if (clave != null) {
+    if (c.porPunto.size >= MAX_PUNTOS_GUARDADOS) c.porPunto.clear();
+    c.porPunto.set(clave, conjunto);
+  }
+  return conjunto;
 }
 
 const mediana = (xs: number[]) => {
@@ -116,7 +152,7 @@ export function entradasPorIntervalo(hs: HistoriaBasica[], inicio: number, fin: 
   }
   return cuentas.map((v, i) => ({
     v,
-    hora: new Date(inicio + (desde + i) * paso).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }),
+    hora: horaReloj(inicio + (desde + i) * paso),
   }));
 }
 
@@ -131,7 +167,6 @@ export type AnalisisGuardado = {
 /** Reconstruye las personas de una captura guardada desde su reproducción (una posición por paso de `paso_s`). */
 export function desdeReplay(replay: Replay, inicio: number, zonas: Zona[]): AnalisisGuardado {
   const paso = replay.paso_s || 0.2;
-  const ordenadas = [...zonas].sort((a, b) => a.area_m2 - b.area_m2);
   const celdas = new Map<string, [number, number, number]>();
   const ocupacion = new Map<number, Map<number, number>>();
   const historias: HistoriaBasica[] = [];
@@ -142,7 +177,7 @@ export function desdeReplay(replay: Replay, inicio: number, zonas: Zona[]): Anal
     let actual: number | null = null;
     p.k.forEach((k, i) => {
       const punto: Punto = [p.x[i], p.y[i]];
-      const contenidas = ordenadas.filter((z) => dentro(punto, z.points));
+      const contenidas = zonasDelPunto(punto, zonas);
       for (const z of contenidas) {
         tiempos.set(z.zone_id, (tiempos.get(z.zone_id) ?? 0) + paso);
         const m = ocupacion.get(k) ?? new Map<number, number>();

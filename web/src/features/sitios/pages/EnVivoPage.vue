@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from "vue";
 import { colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, type Config, type Replay, type Sesion } from "../api";
 import VistaTelefono from "../../telefonos/components/VistaTelefono.vue";
@@ -14,10 +14,11 @@ const route = useRoute();
 const soloCaptura = route.meta.captura === true;
 const enVivo = computed(() => modoVivo.value && !soloCaptura);
 const { slug } = useSitios();
-const config = ref<Config>();
+// El sitio y la reproducción se reemplazan enteros: shallowRef evita que Vue envuelva cada posición (la animación las lee todas).
+const config = shallowRef<Config>();
 const sesiones = ref<Sesion[]>([]);
 const sesionId = ref("");
-const replay = ref<Replay>();
+const replay = shallowRef<Replay>();
 const error = ref("");
 const cargando = ref(true);
 const t = ref(0);
