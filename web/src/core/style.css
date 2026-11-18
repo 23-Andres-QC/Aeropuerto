@@ -1182,6 +1182,8 @@ main table:not(.mapa-calor) thead th {
   .workspace-header,
   .replay-filters,
   .export-actions,
+  .plano-sitio > .controles-zoom,
+  .plano-sitio > .ver-campus,
   footer {
     display: none !important;
   }
@@ -1296,6 +1298,8 @@ html.modo-pdf .linea-tiempo .heading-meta button,
 html.modo-pdf .linea-tiempo .segmentado,
 html.modo-pdf .linea-tiempo .quitar,
 html.modo-pdf .linea-tiempo .nuevo,
+html.modo-pdf .plano-sitio > .controles-zoom,
+html.modo-pdf .plano-sitio > .ver-campus,
 html.modo-pdf footer {
     display: none !important;
   }
