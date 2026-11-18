@@ -404,6 +404,16 @@ onMounted(async () => {
   }
 });
 onUnmounted(() => cancelAnimationFrame(cuadro));
+
+/** La cámara cuyo video se ve en grande, flotando sobre la página (es el mismo video: sigue sincronizado con la reproducción). */
+const videoAmpliado = ref<string | null>(null);
+const ampliado = computed(() => (videoAmpliado.value && camarasVideo.value.includes(videoAmpliado.value) ? videoAmpliado.value : null));
+const alternarVideo = (cid: string) => (videoAmpliado.value = videoAmpliado.value === cid ? null : cid);
+const cerrarConEsc = (e: KeyboardEvent) => {
+  if (e.key === "Escape" && videoAmpliado.value) videoAmpliado.value = null;
+};
+onMounted(() => window.addEventListener("keydown", cerrarConEsc));
+onUnmounted(() => window.removeEventListener("keydown", cerrarConEsc));
 </script>
 
 <template>
@@ -533,37 +543,46 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
           El modelo no está publicando.
         </p>
       </div>
-      <aside v-else class="panel presentes">
-        <div class="panel-heading"><h2>En este instante</h2><span class="pill">{{ presentes.length }}</span></div>
-        <ul>
-          <li v-for="p in presentes" :key="p.numero">
-            <span class="punto" :style="{ background: colorPersona(p.numero) }"></span>
-            <b>G{{ p.numero }}</b>
-            <small class="muted">{{ p.camaras.join(", ") }} · {{ segundos(p.fin_s - p.inicio_s) }}</small>
-          </li>
-          <li v-if="!presentes.length" class="muted vacio">{{ replay || !verGrabacion ? "Sin observaciones en este instante." : "Sin sesión." }}</li>
-        </ul>
-      </aside>
+      <!-- Los videos de la sesión, chicos al costado; con un clic, uno se ve en grande flotando sobre la página. -->
+      <section v-else-if="replay && camarasVideo.length" class="videos-esan" data-prueba="videos-sesion">
+        <article v-for="cid in camarasVideo" :key="cid" class="panel video-caja" :class="{ ampliado: ampliado === cid }" :role="ampliado === cid ? 'dialog' : undefined" :aria-label="ampliado === cid ? `Video de ${cid}` : undefined">
+          <div class="panel-heading">
+            <h2 class="dato">{{ cid }}</h2>
+            <span class="muted">desfase {{ (desfases[cid] ?? 0).toFixed(1) }} s</span>
+            <a v-if="ampliado === cid" class="descarga" :href="api.media(slug, archivosVideo[cid])" download>⬇ Descargar</a>
+            <button v-if="ampliado === cid" type="button" class="cerrar-video" aria-label="Cerrar" title="Cerrar (Esc)" @click="videoAmpliado = null">✕</button>
+          </div>
+          <video
+            :ref="(el) => { if (el) videos[cid] = el as HTMLVideoElement }"
+            :src="api.media(slug, archivosVideo[cid])"
+            muted
+            playsinline
+            preload="auto"
+            tabindex="0"
+            :title="ampliado === cid ? undefined : 'Ver en grande'"
+            :aria-label="ampliado === cid ? undefined : `Ver ${cid} en grande`"
+            data-prueba="video-sesion"
+            @click="alternarVideo(cid)"
+            @keydown.enter="alternarVideo(cid)"
+            @loadedmetadata="videoListo(cid, $event)"
+          ></video>
+        </article>
+      </section>
     </div>
   </div>
+  <div v-if="ampliado" class="fondo-video" aria-hidden="true" @click="videoAmpliado = null"></div>
 
-  <section v-if="replay && camarasVideo.length" class="videos-esan">
-    <article v-for="cid in camarasVideo" :key="cid" class="panel">
-      <div class="panel-heading">
-        <h2 class="dato">{{ cid }}</h2>
-        <span class="muted">desfase {{ (desfases[cid] ?? 0).toFixed(1) }} s</span>
-      </div>
-      <video
-        :ref="(el) => { if (el) videos[cid] = el as HTMLVideoElement }"
-        :src="api.media(slug, archivosVideo[cid])"
-        muted
-        playsinline
-        preload="auto"
-        @loadedmetadata="videoListo(cid, $event)"
-      ></video>
-      <a class="descarga" :href="api.media(slug, archivosVideo[cid])" download>⬇ Descargar</a>
-    </article>
-  </section>
+  <aside v-if="mapa && !enVivo" class="panel presentes debajo">
+    <div class="panel-heading"><h2>En este instante</h2><span class="pill">{{ presentes.length }}</span></div>
+    <ul>
+      <li v-for="p in presentes" :key="p.numero">
+        <span class="punto" :style="{ background: colorPersona(p.numero) }"></span>
+        <b>G{{ p.numero }}</b>
+        <small class="muted">{{ p.camaras.join(", ") }} · {{ segundos(p.fin_s - p.inicio_s) }}</small>
+      </li>
+      <li v-if="!presentes.length" class="muted vacio">{{ replay || !verGrabacion ? "Sin observaciones en este instante." : "Sin sesión." }}</li>
+    </ul>
+  </aside>
   <p v-if="replay && sesion?.kind === 'BUILD' && verGrabacion && lugar === 'sitio'" class="descargas muted">
     Resultados del build:
     <template v-for="(archivo, i) in ['mapa_2d.mp4', 'mapa_trayectorias.png', 'trajectory_points.csv']" :key="archivo"
@@ -810,18 +829,66 @@ onUnmounted(() => cancelAnimationFrame(cuadro));
   background: #d92d4a;
   border-color: transparent;
 }
+/* Videos al costado: chicos, de a dos por fila; con un clic, uno flota sobre la página casi a pantalla completa. */
 .videos-esan {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   gap: 8px;
-  margin-top: 14px;
+}
+.video-caja .panel-heading {
+  gap: 6px;
+  padding: 6px 8px;
+}
+.video-caja:not(.ampliado) .panel-heading .muted {
+  font-size: 10.5px;
 }
 .videos-esan video {
   display: block;
   width: 100%;
-  max-height: 560px;
+  height: 230px;
   object-fit: contain;
   background: #000;
+  cursor: zoom-in;
+}
+.video-caja.ampliado {
+  position: fixed;
+  inset: 3vh 3vw;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  box-shadow: 0 24px 60px rgba(3, 16, 38, 0.45);
+}
+.video-caja.ampliado .panel-heading {
+  padding: 8px 12px;
+}
+.video-caja.ampliado .panel-heading .muted {
+  margin-left: auto;
+}
+.video-caja.ampliado video {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  cursor: zoom-out;
+}
+.cerrar-video {
+  min-width: 34px;
+  padding: 5px 10px;
+  font-weight: 700;
+}
+.fondo-video {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  background: rgba(3, 16, 38, 0.6);
+}
+/* «En este instante», debajo del plano: las personas en columnas. */
+.presentes.debajo {
+  margin-top: 8px;
+}
+.presentes.debajo ul {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  max-height: 260px;
 }
 .descarga {
   display: inline-block;
