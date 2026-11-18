@@ -141,7 +141,7 @@ export async function aPdfPagina(raiz: HTMLElement): Promise<Uint8Array> {
     doc.setPage(i);
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text(`AEROVISION · Página ${i} de ${paginas}`, ancho - margen, alto - 14, { align: "right" });
+    doc.text(`TRACKFLOW · Página ${i} de ${paginas}`, ancho - margen, alto - 14, { align: "right" });
   }
   return new Uint8Array(doc.output("arraybuffer"));
 }

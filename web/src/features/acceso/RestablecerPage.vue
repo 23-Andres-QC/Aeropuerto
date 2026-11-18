@@ -60,12 +60,12 @@ async function guardar() {
     <VisualAcceso />
     <section class="login-panel">
       <div class="login-card">
-        <!-- Entre las tres dicen «Bienvenido a AeroVision», una después de otra: el otorongo, el cóndor y Maru. -->
-        <Maru class="maru-acceso" entrada saludo="AeroVision" :inicio-burbuja="2.9" :fin-burbuja="6.5" />
-        <Amigo class="amigo-ave" tipo="ave" src="/amigo-ave.png" alt="Cóndor piloto, otra mascota de AeroVision" :retraso="0.7" texto="a" :inicio-texto="2.0" :fin-texto="6.5" lado="arriba" />
-        <Amigo class="amigo-jaguar" tipo="felino" src="/amigo-jaguar.png" alt="Otorongo piloto con un cartel de AeroVision" cartel="AEROVISION" :retraso="0.9" texto="Bienvenido" :inicio-texto="1.2" :fin-texto="6.5" lado="izquierda" />
+        <!-- Entre las tres dicen «Bienvenido a TrackFlow», una después de otra: el otorongo, el cóndor y Maru. -->
+        <Maru class="maru-acceso" entrada saludo="TrackFlow" :inicio-burbuja="2.9" :fin-burbuja="6.5" />
+        <Amigo class="amigo-ave" tipo="ave" src="/amigo-ave.png" alt="Cóndor piloto, otra mascota de TrackFlow" :retraso="0.7" texto="a" :inicio-texto="2.0" :fin-texto="6.5" lado="arriba" />
+        <Amigo class="amigo-jaguar" tipo="felino" src="/amigo-jaguar.png" alt="Otorongo piloto con un cartel de TrackFlow" cartel="TRACKFLOW" :retraso="0.9" texto="Bienvenido" :inicio-texto="1.2" :fin-texto="6.5" lado="izquierda" />
         <div class="login-card-heading">
-          <div class="login-card-marca"><span class="brand-icon">✈</span>AeroVision</div>
+          <div class="login-card-marca"><span class="brand-icon">✈</span>TrackFlow</div>
           <h2>Elige una contraseña nueva</h2>
         </div>
 

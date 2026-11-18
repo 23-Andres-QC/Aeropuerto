@@ -1,6 +1,6 @@
-# AeroVision · cómo funciona y sus reglas
+# TrackFlow · cómo funciona y sus reglas
 
-AeroVision convierte video de cámaras en **trayectorias anónimas sobre un plano 2D** y, a partir de ellas, en **indicadores operativos y comerciales**: visitas, permanencia, captación, mapas de calor, rutas, flujos y congestión. Funciona igual para cualquier **sitio** (LAP · Jorge Chávez, ESAN o uno nuevo).
+TrackFlow convierte video de cámaras en **trayectorias anónimas sobre un plano 2D** y, a partir de ellas, en **indicadores operativos y comerciales**: visitas, permanencia, captación, mapas de calor, rutas, flujos y congestión. Funciona igual para cualquier **sitio** (LAP · Jorge Chávez, ESAN o uno nuevo).
 
 Este documento explica las reglas con las que trabaja el sistema: qué hace cada pieza, qué decide el modelo y con qué umbrales, cómo se calculan las métricas y qué se guarda y qué no. Para instalar y ejecutar, ver [README.md](README.md).
 

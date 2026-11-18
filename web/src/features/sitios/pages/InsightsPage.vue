@@ -716,7 +716,7 @@ onMounted(async () => {
     <p>Todavía no hay capturas guardadas.</p>
   </section>
   <div class="print-header">
-    <p class="print-marca">AEROVISION · Lima Airport Partners</p>
+    <p class="print-marca">TRACKFLOW · Lima Airport Partners</p>
     <h1>{{ config?.site.name ?? slug }} · Comportamiento de personas</h1>
     <p>Sesión: {{ sesion?.name ?? "—" }} · Zona: {{ alcance }}</p>
     <p v-if="conRangos">Rangos: {{ textoRangos }}</p>

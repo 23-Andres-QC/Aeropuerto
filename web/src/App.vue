@@ -118,7 +118,7 @@ function elegirSitio(s: Sitio) {
   <div v-else-if="!sesion && !route.meta.abierta"></div>
   <div v-else-if="simple" class="shell-simple">
     <header class="simple-cabecera">
-      <RouterLink class="brand simple-marca" to="/"><span class="brand-icon">✈</span><span>AEROVISION</span></RouterLink>
+      <RouterLink class="brand simple-marca" to="/"><span class="brand-icon">✈</span><span>TRACKFLOW</span></RouterLink>
       <span v-if="sesion" class="simple-quien" data-prueba="quien">{{ sesion.nombre || sesion.usuario }} · {{ NOMBRE_ROL[sesion.rol] ?? sesion.rol }}</span>
       <button v-if="sesion" class="logout-button" type="button" @click="salir">Salir</button>
     </header>
@@ -127,7 +127,7 @@ function elegirSitio(s: Sitio) {
   <div v-else class="app-shell">
     <aside class="sidebar">
       <RouterLink class="brand" to="/"
-        ><span class="brand-icon">✈</span><span>AEROVISION<small>LIMA AIRPORT PARTNERS</small></span></RouterLink
+        ><span class="brand-icon">✈</span><span>TRACKFLOW<small>LIMA AIRPORT PARTNERS</small></span></RouterLink
       >
       <SelectorSitio :sitios="sitios" :slug="sitioNav" :actual="actual ?? sitios.find((s) => s.slug === sitioNav)" @elegir="elegirSitio" />
       <p class="nav-caption">ESPACIO DE TRABAJO</p>
@@ -151,12 +151,12 @@ function elegirSitio(s: Sitio) {
       </nav>
       <div class="maru-lateral">
         <Maru class="maru-lateral-img" burbuja="derecha" :saludo="holaUsuario" :repite="holaUsuario" />
-        <span>Maru, tu copiloto en AeroVision</span>
+        <span>Maru, tu copiloto en TrackFlow</span>
       </div>
     </aside>
     <div class="workspace">
       <header class="workspace-header">
-        <div class="titulo-cab"><span class="breadcrumb">AEROVISION /</span> {{ title }}</div>
+        <div class="titulo-cab"><span class="breadcrumb">TRACKFLOW /</span> {{ title }}</div>
         <div class="workspace-meta">
           <PaletaComandos :oscuro="theme === 'dark'" :vivo="modoVivo" :alternar-tema="toggleTheme" :alternar-vivo="alternarVivo" :salir="salir" />
           <button

@@ -32,7 +32,7 @@ async function enviar() {
         <!-- Aquí solo Maru, la serpiente: dice «Es Ssssuper fácil» (como habla una serpiente). -->
         <Maru class="maru-acceso" entrada :vuelo="1.4" saludo="Es Ssssuper fácil" :inicio-burbuja="1.7" :fin-burbuja="5.5" />
         <div class="login-card-heading">
-          <div class="login-card-marca"><span class="brand-icon">✈</span>AeroVision</div>
+          <div class="login-card-marca"><span class="brand-icon">✈</span>TrackFlow</div>
           <h2>¿Olvidaste tu contraseña?</h2>
         </div>
 

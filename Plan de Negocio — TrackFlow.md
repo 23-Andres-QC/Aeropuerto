@@ -1,4 +1,4 @@
-# Plan de Negocio — AeroVision Flow Analytics
+# Plan de Negocio — TrackFlow
 
 Oct 27, 2026 · @Andres
 
@@ -6,7 +6,7 @@ Oct 27, 2026 · @Andres
 
 **Problema:** en cualquier lugar con público (tiendas a la calle o en galerías, malls, supermercados, farmacias, estaciones, terminales y aeropuertos) hay dos preguntas de dinero que nadie responde con datos: (1) una tienda no sabe cuántas de las personas que pasan por su puerta entran, ni cuántas compran; (2) quien vende o compra publicidad no sabe cuánta gente ve realmente cada pantalla o espacio.
 
-**Idea:** AeroVision usa las cámaras que ya existen y una PC que procesa las grabaciones de noche para medir dos cosas: la **captación de una tienda** (pasan → se detienen frente a la vitrina → entran → compran) y la **audiencia de un lugar** (cuántos lo ven y cuánto tiempo). Se vende como estudio puntual y como informe mensual.
+**Idea:** TrackFlow usa las cámaras que ya existen y una PC que procesa las grabaciones de noche para medir dos cosas: la **captación de una tienda** (pasan → se detienen frente a la vitrina → entran → compran) y la **audiencia de un lugar** (cuántos lo ven y cuánto tiempo). Se vende como estudio puntual y como informe mensual.
 
 ## 1. El problema: dos preguntas sin respuesta
 
@@ -55,7 +55,7 @@ Con los mismos datos se calcula, como extra para el operador, el valor de cada l
 
 ## 4. Por qué podemos resolverlo: lo que ya está construido
 
-AeroVision ya funciona como plataforma: el repositorio [23-Andres-QC/Aeropuerto](https://github.com/23-Andres-QC/Aeropuerto) suma 121 commits en la rama principal entre el 14 y el 28 de octubre de 2026, de tres autores.
+TrackFlow ya funciona como plataforma: el repositorio [23-Andres-QC/Aeropuerto](https://github.com/23-Andres-QC/Aeropuerto) suma 121 commits en la rama principal entre el 14 y el 28 de octubre de 2026, de tres autores.
 
 | Capa | Qué hace hoy | Valor comercial |
 | --- | --- | --- |
@@ -84,7 +84,7 @@ El TAM no incluye bodegas (\~535 mil en el país), universidades, clínicas ni b
 
 ### Competidores
 
-| Competidor | Tipo | Precio de referencia | Diferencia de AeroVision |
+| Competidor | Tipo | Precio de referencia | Diferencia de TrackFlow |
 | --- | --- | --- | --- |
 | [V-Count](https://v-count.com/?p=54156) | Sensor 3D propio + nube | \~US$ 50 por sensor al mes (anual), sensor incluido | Usa la cámara que la tienda ya tiene y mide también a quienes pasan y se detienen |
 | [FootfallCam](https://www.footfallcam.com/Home/WhereToBuy/Peru) (socio en Perú: IA Prods) | Contador en puerta, compra o alquiler; también analítica de pasillos con el CCTV existente | Soporte \~US$ 8.90 por equipo al mes + hardware | Diagnóstico corto en soles, sin equipos, con prueba de vitrina y soporte en Lima |
@@ -99,7 +99,7 @@ Usar el CCTV existente ya no es una ventaja única ([FootfallCam](https://www.fo
 
 ## 6. FODA
 
-&#91;embedded content: FODA de AeroVision · octubre 2026\]
+&#91;embedded content: FODA de TrackFlow · octubre 2026\]
 
 **Estrategias cruzadas:**
 
@@ -277,7 +277,7 @@ Cifras de fuentes públicas consultadas el 27 de octubre de 2026. Los montos mar
 
 **Proyecto**
 
-- [Repositorio del proyecto AeroVision](https://github.com/23-Andres-QC/Aeropuerto) (README.md, COMO\_FUNCIONA.md y `procesar_grabacion.py`)
+- [Repositorio del proyecto TrackFlow](https://github.com/23-Andres-QC/Aeropuerto) (README.md, COMO\_FUNCIONA.md y `procesar_grabacion.py`)
 - Estimación de costos en la nube del proyecto (GCP, AWS, Azure), 26 oct 2026, documento del equipo
 
 **Problema y clientes**

@@ -1,4 +1,4 @@
-# AeroVision · analítica espacial de personas por sitio
+# TrackFlow · analítica espacial de personas por sitio
 
 Plataforma para Lima Airport Partners: transforma video de cámaras en trayectorias anónimas sobre un plano 2D y, a partir de ellas, en indicadores operativos y comerciales. Funciona igual para cualquier **sitio** (LAP · Jorge Chávez, ESAN o uno nuevo): cada sitio tiene su plano calibrado, cámaras, locales, zonas y las sesiones que procesa el modelo.
 

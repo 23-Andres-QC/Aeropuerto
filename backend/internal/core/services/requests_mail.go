@@ -34,7 +34,7 @@ func kindLabel(q domain.AccountRequest) string {
 
 func mailFrame(body string) string {
 	return `<!doctype html><html lang="es"><body style="font-family:Segoe UI,Arial,sans-serif;color:#0f172a;max-width:560px">` + body +
-		`<p style="font-size:12px;color:#475569;margin-top:24px">AeroVision · Lima Airport Partners</p></body></html>`
+		`<p style="font-size:12px;color:#475569;margin-top:24px">TrackFlow · Lima Airport Partners</p></body></html>`
 }
 
 // notifyAdmins tells every active administrator with an address that an account filed a request.
@@ -64,7 +64,7 @@ func (s *RequestService) notifyAdmins(q domain.AccountRequest) {
 		text := fmt.Sprintf("Hola.\n\n%s (%s) pide %s.\n%s\nResponde en %s\n", who, q.Role, kindLabel(q), textNote, link)
 		for _, u := range users {
 			if u.Role == domain.RoleAdmin && u.Active && u.Email != "" {
-				s.send(u.Email, "Nueva solicitud de "+q.Username+" · AeroVision", mailFrame(body), text)
+				s.send(u.Email, "Nueva solicitud de "+q.Username+" · TrackFlow", mailFrame(body), text)
 			}
 		}
 	}()
@@ -87,20 +87,20 @@ func (s *RequestService) notifyAnswer(q domain.AccountRequest, approved bool, un
 		var subject, line string
 		switch {
 		case !approved:
-			subject = "Tu solicitud no fue aprobada · AeroVision"
+			subject = "Tu solicitud no fue aprobada · TrackFlow"
 			line = "Tu solicitud para " + kindLabel(q) + " no fue aprobada. Si la necesitas, habla con quien administra la plataforma."
 		case q.Kind == domain.RequestEmail:
-			subject = "Tu cambio de correo fue aprobado · AeroVision"
+			subject = "Tu cambio de correo fue aprobado · TrackFlow"
 			line = "Tu solicitud fue aprobada: desde ahora el correo de tu cuenta es " + q.NewEmail + "."
 		default:
-			subject = "Ya puedes exportar los reportes · AeroVision"
+			subject = "Ya puedes exportar los reportes · TrackFlow"
 			line = "Tu solicitud fue aprobada: puedes descargar y enviar por correo los reportes de Insights"
 			if until != nil {
 				line += " hasta el " + until.In(lima()).Format("02/01/2006 15:04")
 			}
 			line += "."
 		}
-		body := fmt.Sprintf(`<p>Hola, %s.</p><p>%s</p><p><a href="%s" style="background:#2563eb;color:#fff;padding:9px 16px;border-radius:8px;text-decoration:none">Abrir AeroVision</a></p>`,
+		body := fmt.Sprintf(`<p>Hola, %s.</p><p>%s</p><p><a href="%s" style="background:#2563eb;color:#fff;padding:9px 16px;border-radius:8px;text-decoration:none">Abrir TrackFlow</a></p>`,
 			html.EscapeString(name), html.EscapeString(line), html.EscapeString(s.accounts.baseURL))
 		s.send(rec.Email, subject, mailFrame(body), "Hola, "+name+".\n\n"+line+"\n\n"+strings.TrimSpace(s.accounts.baseURL)+"\n")
 	}()

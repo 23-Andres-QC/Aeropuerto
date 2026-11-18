@@ -263,11 +263,11 @@ func (s *RequestService) SendExport(ctx context.Context, p domain.Principal, ip,
 	if who == "" {
 		who = rec.Username
 	}
-	subject := "Reporte de Insights · AeroVision"
+	subject := "Reporte de Insights · TrackFlow"
 	htmlBody := fmt.Sprintf(`<!doctype html><html lang="es"><body style="font-family:Segoe UI,Arial,sans-serif;color:#0f172a"><p>Hola, %s.</p>
-<p>Adjuntamos el reporte de Insights que pediste (%s).</p><p style="font-size:12px;color:#475569">Lo enviaste tú desde AeroVision con un permiso temporal. Si no fuiste tú, avisa a quien administra la plataforma.</p></body></html>`,
+<p>Adjuntamos el reporte de Insights que pediste (%s).</p><p style="font-size:12px;color:#475569">Lo enviaste tú desde TrackFlow con un permiso temporal. Si no fuiste tú, avisa a quien administra la plataforma.</p></body></html>`,
 		html.EscapeString(who), strings.ToUpper(format))
-	text := fmt.Sprintf("Hola, %s.\n\nAdjuntamos el reporte de Insights que pediste (%s).\n\nLo enviaste tú desde AeroVision con un permiso temporal. Si no fuiste tú, avisa a quien administra la plataforma.\n", who, strings.ToUpper(format))
+	text := fmt.Sprintf("Hola, %s.\n\nAdjuntamos el reporte de Insights que pediste (%s).\n\nLo enviaste tú desde TrackFlow con un permiso temporal. Si no fuiste tú, avisa a quien administra la plataforma.\n", who, strings.ToUpper(format))
 	if err := s.mailer.SendAttachment(ctx, rec.Email, subject, htmlBody, text, name, ctype, data); err != nil {
 		slog.Error("no se pudo enviar el reporte por correo", "usuario", p.User, "error", err)
 		return "", domain.Unavailable("No se pudo enviar el correo", err)
