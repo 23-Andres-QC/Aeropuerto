@@ -219,10 +219,10 @@ func (s *RequestService) ExportAllowed(ctx context.Context, p domain.Principal) 
 	return false, nil
 }
 
-// SendExport e-mails a report (PDF or CSV, made by the web from what Insights shows) to the address of the account. It needs the
-// permission to export; the file goes only to the address stored for the account, never to one the caller names. It returns that
-// address with its middle hidden, for the web to say where it went.
-func (s *RequestService) SendExport(ctx context.Context, p domain.Principal, ip, format, name string, data []byte) (string, error) {
+// SendExport e-mails a report (PDF or CSV, made by the web from what Insights shows) to the address the person typed (`to`, one
+// address), or to the account's own when `to` is empty. It needs the permission to export, and the audit log keeps where each report
+// went. It returns the address for the web to say where it went: the account's own with its middle hidden.
+func (s *RequestService) SendExport(ctx context.Context, p domain.Principal, ip, format, name, to string, data []byte) (string, error) {
 	allowed, err := s.ExportAllowed(ctx, p)
 	if err != nil {
 		return "", err
@@ -249,8 +249,16 @@ func (s *RequestService) SendExport(ctx context.Context, p domain.Principal, ip,
 	if err != nil {
 		return "", err
 	}
-	if rec.Email == "" {
-		return "", domain.Invalid("Tu cuenta no tiene un correo registrado: pídelo en Mi perfil")
+	// The address the person typed, or the account's own when none came.
+	to = strings.ToLower(strings.TrimSpace(to))
+	own := to == "" || strings.EqualFold(to, rec.Email)
+	switch {
+	case to == "" && rec.Email == "":
+		return "", domain.Invalid("Escribe el correo de destino")
+	case to == "":
+		to = rec.Email
+	case !domain.ValidEmail(to):
+		return "", domain.Invalid("El correo de destino no es válido")
 	}
 	if s.mailer == nil {
 		return "", domain.Unavailable("El envío de correo no está configurado", nil)
@@ -268,12 +276,22 @@ func (s *RequestService) SendExport(ctx context.Context, p domain.Principal, ip,
 <p>Adjuntamos el reporte de Insights que pediste (%s).</p><p style="font-size:12px;color:#475569">Lo enviaste tú desde TrackFlow con un permiso temporal. Si no fuiste tú, avisa a quien administra la plataforma.</p></body></html>`,
 		html.EscapeString(who), strings.ToUpper(format))
 	text := fmt.Sprintf("Hola, %s.\n\nAdjuntamos el reporte de Insights que pediste (%s).\n\nLo enviaste tú desde TrackFlow con un permiso temporal. Si no fuiste tú, avisa a quien administra la plataforma.\n", who, strings.ToUpper(format))
-	if err := s.mailer.SendAttachment(ctx, rec.Email, subject, htmlBody, text, name, ctype, data); err != nil {
+	if !own {
+		// To someone else: the message says who sent it.
+		htmlBody = fmt.Sprintf(`<!doctype html><html lang="es"><body style="font-family:Segoe UI,Arial,sans-serif;color:#0f172a"><p>Hola.</p>
+<p>%s te envía un reporte de Insights de TrackFlow (%s).</p><p style="font-size:12px;color:#475569">Si no esperabas este correo, puedes ignorarlo.</p></body></html>`,
+			html.EscapeString(who), strings.ToUpper(format))
+		text = fmt.Sprintf("Hola.\n\n%s te envía un reporte de Insights de TrackFlow (%s).\n\nSi no esperabas este correo, puedes ignorarlo.\n", who, strings.ToUpper(format))
+	}
+	if err := s.mailer.SendAttachment(ctx, to, subject, htmlBody, text, name, ctype, data); err != nil {
 		slog.Error("no se pudo enviar el reporte por correo", "usuario", p.User, "error", err)
 		return "", domain.Unavailable("No se pudo enviar el correo", err)
 	}
-	s.accounts.Audit(ctx, p, ip, "exportacion_enviada", p.User, fmt.Sprintf("%s · %d bytes", format, len(data)))
-	return maskEmail(rec.Email), nil
+	s.accounts.Audit(ctx, p, ip, "exportacion_enviada", p.User, fmt.Sprintf("%s · %d bytes · a %s", format, len(data), to))
+	if own {
+		return maskEmail(to), nil
+	}
+	return to, nil
 }
 
 // maskEmail hides the middle of the local part: an****@gmail.com.

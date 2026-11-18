@@ -96,7 +96,8 @@ func (h requestHandler) requestExport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, q)
 }
 
-// sendExport e-mails a report the web made. The file travels as base64 inside the JSON; it goes to the address of the account only.
+// sendExport e-mails a report the web made. The file travels as base64 inside the JSON; it goes to the address typed in
+// "para", or to the account's own when it is empty.
 func (h requestHandler) sendExport(w http.ResponseWriter, r *http.Request) {
 	p, good := own(w, r)
 	if !good {
@@ -106,6 +107,7 @@ func (h requestHandler) sendExport(w http.ResponseWriter, r *http.Request) {
 		Format  string `json:"formato"`
 		Name    string `json:"nombre"`
 		Content string `json:"contenido"`
+		To      string `json:"para"`
 	}
 	if decode(w, r, services.MaxExportBytes*4/3+4096, &in) != nil {
 		fail(w, http.StatusBadRequest, "Pedido inválido o archivo demasiado grande")
@@ -118,7 +120,7 @@ func (h requestHandler) sendExport(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := withTimeout(r, 40*time.Second)
 	defer cancel()
-	to, err := h.svc.SendExport(ctx, p, clientIP(r), in.Format, in.Name, data)
+	to, err := h.svc.SendExport(ctx, p, clientIP(r), in.Format, in.Name, in.To, data)
 	if errors.Is(err, services.ErrNoExportPermission) {
 		fail(w, http.StatusForbidden, "No tienes permiso para enviar reportes. Pídelo en Mi perfil.")
 		return

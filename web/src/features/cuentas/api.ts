@@ -94,8 +94,8 @@ export const perfil = {
   pedirCambioCorreo: (correo: string) => request<Solicitud>("/api/v1/mi/cambio-correo", json("POST", { correo })),
   pedirExportacion: (motivo: string) => request<Solicitud>("/api/v1/mi/exportacion/solicitar", json("POST", { motivo })),
   /** Envía por correo (a la dirección de la cuenta) un reporte hecho en la web: `contenido` va en base64. */
-  enviarReporte: (formato: "pdf" | "csv", nombre: string, contenido: string) =>
-    request<{ enviado_a: string }>("/api/v1/mi/exportacion/enviar", json("POST", { formato, nombre, contenido })),
+  enviarReporte: (formato: "pdf" | "csv", nombre: string, contenido: string, para: string) =>
+    request<{ enviado_a: string }>("/api/v1/mi/exportacion/enviar", json("POST", { formato, nombre, contenido, para })),
 };
 
 export const solicitudes = {

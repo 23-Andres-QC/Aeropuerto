@@ -523,8 +523,30 @@ function exportarCSV() {
 const enviando = ref<"" | "pdf" | "csv">("");
 const mensajeEnvio = ref("");
 const errorEnvio = ref(false);
+/** El formato cuyo envío pide el correo de destino ("" = cerrado). */
+const envioAbierto = ref<"" | "pdf" | "csv">("");
+const CLAVE_DESTINO = "insights.correo-destino";
+const correoDestino = ref(leerDestino());
+const campoCorreo = ref<HTMLInputElement | null>(null);
+function leerDestino() {
+  try {
+    return localStorage.getItem(CLAVE_DESTINO) ?? "";
+  } catch {
+    return "";
+  }
+}
+async function abrirEnvio(formato: "pdf" | "csv") {
+  envioAbierto.value = envioAbierto.value === formato ? "" : formato;
+  mensajeEnvio.value = "";
+  if (!envioAbierto.value) return;
+  await nextTick();
+  campoCorreo.value?.focus();
+  campoCorreo.value?.select();
+}
 async function enviarPorCorreo(formato: "pdf" | "csv") {
   if (!puedeExportar.value || enviando.value) return;
+  const para = correoDestino.value.trim();
+  if (!para) return;
   enviando.value = formato;
   mensajeEnvio.value = "";
   errorEnvio.value = false;
@@ -533,8 +555,14 @@ async function enviarPorCorreo(formato: "pdf" | "csv") {
       formato === "csv"
         ? new TextEncoder().encode(aCsv(encabezadoReporte.value, tablasReporte.value))
         : await pdfDelTablero();
-    const r = await perfil.enviarReporte(formato, nombreArchivo(formato), aBase64(bytes));
+    const r = await perfil.enviarReporte(formato, nombreArchivo(formato), aBase64(bytes), para);
     mensajeEnvio.value = `Enviado a ${r.enviado_a}`;
+    envioAbierto.value = "";
+    try {
+      localStorage.setItem(CLAVE_DESTINO, para);
+    } catch {
+      // sin almacenamiento, la próxima vez se vuelve a escribir
+    }
   } catch (e) {
     errorEnvio.value = true;
     mensajeEnvio.value = (e as Error).message;
@@ -645,9 +673,27 @@ onMounted(async () => {
       <span class="export-actions">
         <button type="button" :disabled="sinPermiso || sinDatos || generandoPdf" :title="sinPermiso ? textoPermisoExportar : 'Descarga el tablero completo en PDF, con los mapas'" data-prueba="exportar-pdf" @click="exportarPDF">{{ generandoPdf ? "Generando…" : "Exportar PDF" }}</button>
         <button type="button" :disabled="sinPermiso || sinDatos" :title="sinPermiso ? textoPermisoExportar : 'Tablas para Excel'" data-prueba="exportar-csv" @click="exportarCSV">Exportar CSV</button>
-        <button type="button" :disabled="sinPermiso || sinDatos || !!enviando" :title="sinPermiso ? textoPermisoExportar : 'Te manda el mismo PDF que se descarga a tu correo'" data-prueba="enviar-pdf" @click="enviarPorCorreo('pdf')">{{ enviando === "pdf" ? "Enviando…" : "✉ Enviar PDF" }}</button>
-        <button type="button" :disabled="sinPermiso || sinDatos || !!enviando" :title="sinPermiso ? textoPermisoExportar : 'Te manda las tablas en CSV a tu correo'" data-prueba="enviar-csv" @click="enviarPorCorreo('csv')">{{ enviando === "csv" ? "Enviando…" : "✉ Enviar CSV" }}</button>
+        <button type="button" :class="{ activo: envioAbierto === 'pdf' }" :aria-expanded="envioAbierto === 'pdf'" :disabled="sinPermiso || sinDatos || !!enviando" :title="sinPermiso ? textoPermisoExportar : 'Envía el mismo PDF que se descarga a un correo'" data-prueba="enviar-pdf" @click="abrirEnvio('pdf')">{{ enviando === "pdf" ? "Enviando…" : "✉ Enviar PDF" }}</button>
+        <button type="button" :class="{ activo: envioAbierto === 'csv' }" :aria-expanded="envioAbierto === 'csv'" :disabled="sinPermiso || sinDatos || !!enviando" :title="sinPermiso ? textoPermisoExportar : 'Envía las tablas en CSV a un correo'" data-prueba="enviar-csv" @click="abrirEnvio('csv')">{{ enviando === "csv" ? "Enviando…" : "✉ Enviar CSV" }}</button>
       </span>
+      <form v-if="envioAbierto && !sinPermiso" class="envio-correo" data-prueba="envio-correo" @submit.prevent="enviarPorCorreo(envioAbierto)" @keydown.esc="envioAbierto = ''">
+        <input
+          ref="campoCorreo"
+          v-model="correoDestino"
+          type="email"
+          required
+          maxlength="254"
+          autocomplete="email"
+          placeholder="correo de destino"
+          aria-label="Correo de destino"
+          :disabled="!!enviando"
+          data-prueba="correo-destino"
+        />
+        <button type="submit" class="primary-button" :disabled="!!enviando || !correoDestino.trim()" data-prueba="enviar-correo">
+          {{ enviando ? "Enviando…" : `Enviar ${envioAbierto.toUpperCase()}` }}
+        </button>
+        <button type="button" class="cerrar-envio" aria-label="Cancelar" title="Cancelar" :disabled="!!enviando" @click="envioAbierto = ''">✕</button>
+      </form>
       <span v-if="textoPermisoExportar" class="permiso-exportar" :class="{ vigente: puedeExportar }" data-prueba="permiso-exportar">
         {{ textoPermisoExportar }}<RouterLink v-if="sinPermiso" to="/perfil"> · Pedir permiso</RouterLink>
       </span>
@@ -1039,6 +1085,25 @@ onMounted(async () => {
 .permiso-exportar.vigente {
   color: var(--good, #0e9b74);
   font-weight: 650;
+}
+.envio-correo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.envio-correo input {
+  width: 230px;
+  min-height: 30px;
+  padding: 4px 9px;
+  font-size: 13px;
+}
+.envio-correo .cerrar-envio {
+  min-width: 30px;
+  padding: 4px 8px;
+}
+.export-actions button.activo {
+  border-color: var(--blue-600);
+  color: var(--blue-600);
 }
 .mensaje-envio {
   font-size: 12.5px;
