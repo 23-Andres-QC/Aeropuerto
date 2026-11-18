@@ -30,27 +30,52 @@ export function aCsv(encabezado: string[][], tablas: TablaReporte[]): string {
 /** Ancho (px) con el que se arma la hoja: el de una A4 vertical, como en la impresión del navegador. */
 const ANCHO_HOJA = 794;
 
+/**
+ * Cada imagen de fondo de los mapas, ya convertida en datos: se baja y se convierte una sola vez (antes, una vez por bloque y por
+ * cada mapa de la página). Guarda pocas, porque son los planos del sitio y casi no cambian.
+ */
+const imagenesComoDatos = new Map<string, Promise<string | null>>();
+function comoDatos(url: string): Promise<string | null> {
+  let datos = imagenesComoDatos.get(url);
+  if (!datos) {
+    datos = fetch(url, { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
+      .then(
+        (blob) =>
+          new Promise<string>((ok, mal) => {
+            const lector = new FileReader();
+            lector.onload = () => ok(String(lector.result));
+            lector.onerror = () => mal(lector.error);
+            lector.readAsDataURL(blob);
+          }),
+      )
+      .catch(() => {
+        imagenesComoDatos.delete(url); // otro intento la próxima vez
+        return null;
+      });
+    if (imagenesComoDatos.size >= 12) imagenesComoDatos.delete(imagenesComoDatos.keys().next().value!);
+    imagenesComoDatos.set(url, datos);
+  }
+  return datos;
+}
+
 /** Las imágenes de un SVG no cargan solas cuando se dibuja como imagen (el fondo de los mapas): se incrustan antes, como datos. */
-async function incrustarImagenes(doc: Document) {
-  const pendientes = Array.from(doc.querySelectorAll("svg image")).map(async (img) => {
+async function incrustarImagenes(raiz: ParentNode) {
+  const pendientes = Array.from(raiz.querySelectorAll("svg image")).map(async (img) => {
     const url = img.getAttribute("href") ?? img.getAttributeNS("http://www.w3.org/1999/xlink", "href");
     if (!url || url.startsWith("data:")) return;
-    try {
-      const blob = await (await fetch(url, { credentials: "same-origin" })).blob();
-      const datos = await new Promise<string>((ok, mal) => {
-        const lector = new FileReader();
-        lector.onload = () => ok(String(lector.result));
-        lector.onerror = () => mal(lector.error);
-        lector.readAsDataURL(blob);
-      });
-      img.setAttribute("href", datos);
-      img.removeAttributeNS("http://www.w3.org/1999/xlink", "href");
-    } catch {
-      // sin esa imagen el mapa sale igual, solo sin el fondo
-    }
+    const datos = await comoDatos(url);
+    if (!datos) return; // sin esa imagen el mapa sale igual, solo sin el fondo
+    img.setAttribute("href", datos);
+    img.removeAttributeNS("http://www.w3.org/1999/xlink", "href");
   });
   await Promise.all(pendientes);
 }
+
+/** Lo pesado de la página (mapas, gráficos e imágenes) que no está en el bloque que se dibuja ni lo contiene. */
+const PESADOS = new Set(["svg", "canvas", "img", "video", "iframe", "table"]);
+const fueraDelBloque = (bloque: HTMLElement) => (el: Element) =>
+  PESADOS.has(el.tagName.toLowerCase()) && !bloque.contains(el) && !el.contains(bloque);
 
 /** Los bloques del tablero, de arriba abajo: cada uno se dibuja aparte para que ningún panel quede partido entre dos páginas. */
 function bloquesDe(raiz: HTMLElement): HTMLElement[] {
@@ -88,16 +113,19 @@ export async function aPdfPagina(raiz: HTMLElement): Promise<Uint8Array> {
   let y = margen;
 
   for (const bloque of bloquesDe(raiz)) {
+    // html2canvas copia la página entera para dibujar cada bloque: la copia deja fuera los mapas, gráficos y tablas de los demás
+    // bloques (antes se copiaban, y se les incrustaban los planos, una vez por bloque) y solo incrusta las imágenes del bloque.
     const lienzo = await html2canvas(bloque, {
       scale: escala,
       backgroundColor: "#ffffff",
       windowWidth: ANCHO_HOJA,
       useCORS: true,
       logging: false,
-      onclone: async (d) => {
+      ignoreElements: fueraDelBloque(bloque),
+      onclone: async (d, copia) => {
         d.documentElement.classList.add("modo-pdf");
         d.documentElement.setAttribute("data-theme", "light");
-        await incrustarImagenes(d);
+        await incrustarImagenes(copia);
       },
     });
     if (lienzo.width < 2 || lienzo.height < 2) continue;
