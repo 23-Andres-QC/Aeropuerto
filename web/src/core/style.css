@@ -331,8 +331,10 @@ button:disabled {
 }
 
 /* ---------- acceso ---------- */
-/* La foto del avión cubre siempre toda la pantalla, fija aunque la página se desplace. El velo oscurece abajo a la
-   izquierda, donde van los títulos, y deja el avión claro arriba; a la derecha queda solo la tarjeta del acceso. */
+/* La imagen de fondo (cámara que sigue a personas) cubre siempre toda la pantalla, fija aunque la página se desplace.
+   La escena va a la izquierda (en el teléfono se recorta alrededor de las personas) y la derecha, oscura y lisa, queda
+   para la tarjeta del acceso; arriba a la izquierda va solo la marca. index.html la pide de entrada (preload): desde
+   el CSS llegaba al final, después del JS y el CSS. */
 .login-page {
   position: relative;
   isolation: isolate;
@@ -346,10 +348,7 @@ button:disabled {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background:
-    linear-gradient(0deg, rgba(3, 16, 38, 0.9) 0%, rgba(3, 16, 38, 0.45) 38%, rgba(3, 16, 38, 0.12) 68%),
-    linear-gradient(90deg, rgba(3, 16, 38, 0.5) 0%, rgba(3, 16, 38, 0) 55%),
-    url("/login-fondo.jpg") center top / cover no-repeat;
+  background: url("/login-fondo.jpg") 27% top / cover no-repeat;
 }
 .login-visual {
   position: relative;
@@ -364,14 +363,6 @@ button:disabled {
 .login-brand-row { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .login-brand { position: relative; z-index: 1; display: flex; align-items: center; gap: 11px; font-size: 17px; font-weight: 700; letter-spacing: 2px; }
 .login-brand .brand-icon { width: 35px; height: 35px; }
-.login-visual-copy { position: relative; z-index: 1; max-width: 560px; margin: auto 0 26px; }
-.eyebrow, .login-kicker { color: #75c5ff; font-size: 10px; font-weight: 700; letter-spacing: 2px; }
-.login-visual h1 { margin: 12px 0 14px; font-size: clamp(34px, 3.4vw, 50px); line-height: 1.04; letter-spacing: -1px; color: #fff; }
-.login-visual h1 em { color: #ffd08a; font-style: normal; }
-.login-visual .eyebrow { color: #9fd4ff; }
-.login-visual-copy p { max-width: 360px; color: #e4eef9; font-size: 14px; line-height: 1.65; }
-.login-visual-footer { position: relative; z-index: 1; color: #d2e2f3; font-size: 9px; font-weight: 700; letter-spacing: 1.8px; }
-.login-visual-footer span { margin: 0 8px; color: #5ec2ff; }
 .login-panel { display: grid; place-items: center; padding: 40px clamp(24px, 6vw, 96px); background: transparent; }
 .login-card { position: relative; width: min(100%, 420px); padding: 32px 36px 24px; border: 1px solid rgba(255, 255, 255, .7); border-radius: 16px; background: rgba(255, 255, 255, .94); box-shadow: 0 24px 60px rgba(3, 16, 38, .35); }
 /* Maru asoma por encima de la tarjeta del acceso. */
@@ -1135,12 +1126,8 @@ main table:not(.mapa-calor) thead th {
 }
 @media (max-width: 600px) {
   .login-page { display: block; }
-  .login-visual { min-height: 270px; padding: 24px; }
-  .login-visual-copy { margin-top: 42px; }
-  .login-visual h1 { margin: 10px 0 12px; font-size: 34px; letter-spacing: -1.5px; }
-  .login-visual-copy p { display: none; }
-  .login-visual-footer { margin-top: 34px; font-size: 8px; }
-  .login-panel { min-height: calc(100vh - 270px); padding: 36px 22px; align-items: start; }
+  .login-visual { min-height: 220px; padding: 24px; }
+  .login-panel { min-height: calc(100vh - 220px); padding: 36px 22px; align-items: start; }
   .login-card-heading { margin-bottom: 20px; }
   .login-card-heading h2 { font-size: 22px; }
   .workspace-meta { gap: 5px; }
