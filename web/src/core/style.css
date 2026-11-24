@@ -334,7 +334,8 @@ button:disabled {
 /* La imagen de fondo (una cámara que sigue a la gente de un pasillo) cubre siempre toda la pantalla, fija aunque la página
    se desplace; en el teléfono se recorta alrededor de la persona del centro. La tarjeta del acceso va a la derecha, donde
    la imagen se oscurece, y abajo a la izquierda va solo la marca. index.html la pide de entrada (preload): desde
-   el CSS llegaba al final, después del JS y el CSS. */
+   el CSS llegaba al final, después del JS y el CSS. Va en src/assets y no en public/: así su nombre lleva un hash y al
+   cambiarla nadie ve la vieja (Cloudflare guardaba la anterior hasta 2 h). */
 .login-page {
   position: relative;
   isolation: isolate;
@@ -348,7 +349,7 @@ button:disabled {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background: url("/login-fondo.jpg") 37% top / cover no-repeat;
+  background: url("../assets/login-fondo.jpg") 37% top / cover no-repeat;
 }
 .login-visual {
   position: relative;
