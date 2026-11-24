@@ -127,7 +127,7 @@ function elegirSitio(s: Sitio) {
   <div v-else class="app-shell">
     <aside class="sidebar">
       <RouterLink class="brand" to="/"
-        ><span class="brand-icon">✈</span><span>TRACKFLOW<small>LIMA AIRPORT PARTNERS</small></span></RouterLink
+        ><span class="brand-icon">✈</span><span>TRACKFLOW</span></RouterLink
       >
       <SelectorSitio :sitios="sitios" :slug="sitioNav" :actual="actual ?? sitios.find((s) => s.slug === sitioNav)" @elegir="elegirSitio" />
       <p class="nav-caption">ESPACIO DE TRABAJO</p>

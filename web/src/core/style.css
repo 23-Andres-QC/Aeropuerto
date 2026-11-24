@@ -429,14 +429,6 @@ input::-ms-reveal, input::-ms-clear { display: none; }
   color: #fff;
   padding: 2px 4px 16px;
 }
-.brand small {
-  display: block;
-  font-size: 10.5px;
-  letter-spacing: 2px;
-  font-weight: 600;
-  color: #7fb2e8;
-  margin-top: 2px;
-}
 .brand-icon {
   display: grid;
   place-items: center;
