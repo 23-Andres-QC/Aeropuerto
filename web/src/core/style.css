@@ -378,9 +378,10 @@ button:disabled {
 }
 /* La marca va abajo a la izquierda, grande. */
 .login-brand-row { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: auto; }
-.login-brand { position: relative; z-index: 1; display: flex; align-items: center; gap: 22px; font-size: 34px; font-weight: 600; letter-spacing: 9px; }
-.login-brand .brand-icon { width: 64px; height: 64px; border-radius: 15px; font-size: 32px; letter-spacing: 0; background: linear-gradient(145deg, #2f86ff, #1453d8); box-shadow: 0 8px 22px rgba(20, 83, 216, .45); }
-.login-brand-nombre { padding-left: 24px; border-left: 2px solid rgba(255, 255, 255, .35); line-height: 1.15; }
+.login-brand { position: relative; z-index: 1; display: flex; align-items: center; gap: 26px; font-size: clamp(40px, 3.4vw, 58px); font-weight: 800; letter-spacing: 7px; }
+.login-brand .brand-icon { width: 84px; height: 84px; border-radius: 20px; font-size: 42px; letter-spacing: 0; background: linear-gradient(145deg, #2f86ff, #1453d8); box-shadow: 0 8px 22px rgba(20, 83, 216, .45); }
+/* El nombre, del mismo alto que el icono y con la línea que los separa de ese alto. */
+.login-brand-nombre { display: flex; align-items: center; height: 84px; padding-left: 28px; border-left: 3px solid rgba(255, 255, 255, .55); line-height: 1; text-shadow: 0 2px 4px rgba(0, 0, 0, .55), 0 0 26px rgba(40, 130, 255, .55); }
 .login-panel { display: grid; place-items: center; padding: 40px clamp(24px, 6vw, 96px); background: transparent; }
 /* La tarjeta: blanca, muy redondeada y con borde de luz azul. */
 .login-card {
