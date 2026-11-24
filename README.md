@@ -23,7 +23,11 @@ docker compose up -d --build                                    # web, API, back
 python "Modelo/Test Modelo/camara_telefono.py"                  # el modelo en vivo, fuera de Docker y con la GPU
 # Si Windows bloquea PyTorch (Control inteligente de aplicaciones), el modelo en vivo dentro de Docker, también con la GPU:
 ENLACE_CAMARA=https://IP-de-la-laptop:8444 docker compose --profile gpu up -d modelo-gpu
+# El modelo de la laptop (GPU) para la web del servidor, que no tiene modelo: túnel SSH y modelo-gpu (Ctrl+C lo detiene)
+python scripts/modelo_local.py
 ```
+
+Con `scripts/modelo_local.py` los teléfonos se unen al servidor (https://169.58.17.19:8444), el modelo corre en la laptop y las cajas, la ubicación en el plano y los IDs vuelven a En vivo del servidor. Pide la contraseña del servidor (o `SERVIDOR_CLAVE` en `.env`), detiene mientras corre los backend-vivo, camara-web y modelo-gpu locales (usan los mismos puertos) y al salir vuelve a levantar los dos primeros. La laptop tiene que llegar al puerto 22 del servidor: las redes de ESAN lo bloquean, así que va en otra (el punto de acceso de un celular) y los teléfonos, con sus datos móviles.
 
 | | |
 |---|---|
