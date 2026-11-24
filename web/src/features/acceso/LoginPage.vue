@@ -2,6 +2,7 @@
 import Amigo from "../../shared/Amigo.vue";
 import Maru from "../../shared/Maru.vue";
 import { ref } from "vue";
+import IconoAcceso from "./IconoAcceso.vue";
 import VisualAcceso from "./VisualAcceso.vue";
 import { useRouter } from "vue-router";
 import { login as iniciarSesion } from "../../core/auth";
@@ -57,19 +58,23 @@ async function login() {
         </div>
 
         <form @submit.prevent="login" novalidate>
-          <label for="username">Correo o usuario</label>
-          <input
-            id="username"
-            v-model="username"
-            name="username"
-            type="text"
-            autocomplete="username"
-            placeholder="nombre@empresa.com"
-            autofocus
-          />
+          <label for="username"><IconoAcceso nombre="correo" />Correo o usuario</label>
+          <div class="campo-icono">
+            <IconoAcceso nombre="correo" />
+            <input
+              id="username"
+              v-model="username"
+              name="username"
+              type="text"
+              autocomplete="username"
+              placeholder="nombre@empresa.com"
+              autofocus
+            />
+          </div>
 
-          <label for="password">Contraseña</label>
-          <div class="password-field">
+          <label for="password"><IconoAcceso nombre="candado" />Contraseña</label>
+          <div class="password-field campo-icono">
+            <IconoAcceso nombre="candado" />
             <input
               id="password"
               v-model="password"
@@ -82,8 +87,9 @@ async function login() {
               type="button"
               class="password-toggle"
               :aria-label="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+              :title="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
               @click="showPassword = !showPassword"
-            >{{ showPassword ? "Ocultar" : "Mostrar" }}</button>
+            ><IconoAcceso :nombre="showPassword ? 'ojo' : 'ojo-tachado'" /></button>
           </div>
 
           <p v-if="motivoCierre === 'inactividad' && !error" class="login-error" role="status" data-prueba="cierre-por-inactividad">
@@ -95,7 +101,7 @@ async function login() {
           <p v-if="error" class="login-error" role="alert">{{ error }}</p>
           <p class="olvide"><RouterLink to="/olvide" data-prueba="ir-olvide">¿Olvidaste tu contraseña?</RouterLink></p>
           <button class="primary-button login-submit" type="submit" :disabled="submitting">
-            {{ submitting ? "Validando…" : "Ingresar al sistema" }}
+            {{ submitting ? "Validando…" : "Ingresar al sistema" }}<IconoAcceso v-if="!submitting" nombre="flecha" />
           </button>
         </form>
 

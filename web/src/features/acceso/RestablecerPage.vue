@@ -3,6 +3,7 @@ import Amigo from "../../shared/Amigo.vue";
 import Maru from "../../shared/Maru.vue";
 import RequisitosClave from "../../shared/RequisitosClave.vue";
 import { computed, onMounted, ref } from "vue";
+import IconoAcceso from "./IconoAcceso.vue";
 import VisualAcceso from "./VisualAcceso.vue";
 import { useRoute, useRouter } from "vue-router";
 import { restablecerClave, validarEnlace } from "../../core/auth";
@@ -82,19 +83,23 @@ async function guardar() {
         </template>
 
         <form v-else novalidate @submit.prevent="guardar">
-          <label for="nueva">Contraseña nueva</label>
-          <div class="password-field">
+          <label for="nueva"><IconoAcceso nombre="candado" />Contraseña nueva</label>
+          <div class="password-field campo-icono">
+            <IconoAcceso nombre="candado" />
             <input id="nueva" v-model="nueva" :type="mostrar ? 'text' : 'password'" autocomplete="new-password" autofocus data-prueba="clave-nueva" />
-            <button type="button" class="password-toggle" :aria-label="mostrar ? 'Ocultar contraseña' : 'Mostrar contraseña'" @click="mostrar = !mostrar">
-              {{ mostrar ? "Ocultar" : "Mostrar" }}
+            <button type="button" class="password-toggle" :aria-label="mostrar ? 'Ocultar contraseña' : 'Mostrar contraseña'" :title="mostrar ? 'Ocultar contraseña' : 'Mostrar contraseña'" @click="mostrar = !mostrar">
+              <IconoAcceso :nombre="mostrar ? 'ojo' : 'ojo-tachado'" />
             </button>
           </div>
-          <label for="repetida">Repite la contraseña</label>
-          <input id="repetida" v-model="repetida" :type="mostrar ? 'text' : 'password'" autocomplete="new-password" data-prueba="clave-repetida" />
+          <label for="repetida"><IconoAcceso nombre="candado" />Repite la contraseña</label>
+          <div class="campo-icono">
+            <IconoAcceso nombre="candado" />
+            <input id="repetida" v-model="repetida" :type="mostrar ? 'text' : 'password'" autocomplete="new-password" data-prueba="clave-repetida" />
+          </div>
           <RequisitosClave :clave="nueva" :repetida="repetida" />
           <p v-if="error" class="login-error" role="alert">{{ error }}</p>
           <button class="primary-button login-submit" type="submit" :disabled="enviando" data-prueba="guardar-clave">
-            {{ enviando ? "Guardando…" : "Guardar contraseña" }}
+            {{ enviando ? "Guardando…" : "Guardar contraseña" }}<IconoAcceso v-if="!enviando" nombre="flecha" />
           </button>
         </form>
       </div>

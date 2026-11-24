@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Maru from "../../shared/Maru.vue";
 import { ref } from "vue";
+import IconoAcceso from "./IconoAcceso.vue";
 import VisualAcceso from "./VisualAcceso.vue";
 import { solicitarRecuperacion } from "../../core/auth";
 
@@ -38,11 +39,14 @@ async function enviar() {
 
         <p v-if="enviado" class="login-ok" role="status" data-prueba="recuperacion-enviada">{{ enviado }}</p>
         <form v-else novalidate @submit.prevent="enviar">
-          <label for="correo">Correo</label>
-          <input id="correo" v-model="correo" name="email" type="email" autocomplete="email" placeholder="nombre@empresa.com" autofocus data-prueba="correo-recuperar" />
+          <label for="correo"><IconoAcceso nombre="correo" />Correo</label>
+          <div class="campo-icono">
+            <IconoAcceso nombre="correo" />
+            <input id="correo" v-model="correo" name="email" type="email" autocomplete="email" placeholder="nombre@empresa.com" autofocus data-prueba="correo-recuperar" />
+          </div>
           <p v-if="error" class="login-error" role="alert">{{ error }}</p>
           <button class="primary-button login-submit" type="submit" :disabled="enviando" data-prueba="enviar-recuperacion">
-            {{ enviando ? "Enviando…" : "Enviarme el enlace" }}
+            {{ enviando ? "Enviando…" : "Enviarme el enlace" }}<IconoAcceso v-if="!enviando" nombre="flecha" />
           </button>
         </form>
 

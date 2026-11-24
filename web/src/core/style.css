@@ -349,7 +349,22 @@ button:disabled {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background: url("../assets/login-fondo.jpg") 34% top / cover no-repeat;
+  background:
+    linear-gradient(0deg, rgba(3, 16, 38, .9) 0%, rgba(3, 16, 38, .4) 20%, rgba(3, 16, 38, 0) 40%),
+    linear-gradient(90deg, rgba(3, 16, 38, 0) 50%, rgba(3, 16, 38, .55) 100%),
+    url("../assets/login-fondo.jpg") 34% top / cover no-repeat;
+}
+/* Dos arcos de luz azul en las esquinas de abajo. */
+.login-page::after {
+  content: "";
+  position: fixed;
+  inset: auto 0 0 0;
+  height: 40vh;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(24% 64% at 0% 100%, transparent 90%, rgba(70, 160, 255, .85) 94%, rgba(20, 90, 220, .45) 97%, transparent 100%),
+    radial-gradient(34% 38% at 100% 100%, transparent 86%, rgba(70, 160, 255, .9) 91%, rgba(20, 90, 220, .45) 95%, transparent 100%);
 }
 .login-visual {
   position: relative;
@@ -363,15 +378,38 @@ button:disabled {
 }
 /* La marca va abajo a la izquierda, grande. */
 .login-brand-row { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: auto; }
-.login-brand { position: relative; z-index: 1; display: flex; align-items: center; gap: 18px; font-size: 34px; font-weight: 700; letter-spacing: 4px; }
-.login-brand .brand-icon { width: 64px; height: 64px; border-radius: 15px; font-size: 32px; }
+.login-brand { position: relative; z-index: 1; display: flex; align-items: center; gap: 22px; font-size: 34px; font-weight: 600; letter-spacing: 9px; }
+.login-brand .brand-icon { width: 64px; height: 64px; border-radius: 15px; font-size: 32px; letter-spacing: 0; background: linear-gradient(145deg, #2f86ff, #1453d8); box-shadow: 0 8px 22px rgba(20, 83, 216, .45); }
+.login-brand-nombre { padding-left: 24px; border-left: 2px solid rgba(255, 255, 255, .35); line-height: 1.15; }
 .login-panel { display: grid; place-items: center; padding: 40px clamp(24px, 6vw, 96px); background: transparent; }
-.login-card { position: relative; width: min(100%, 420px); padding: 32px 36px 24px; border: 1px solid rgba(255, 255, 255, .7); border-radius: 16px; background: rgba(255, 255, 255, .94); box-shadow: 0 24px 60px rgba(3, 16, 38, .35); }
+/* La tarjeta: blanca, muy redondeada y con borde de luz azul. */
+.login-card {
+  position: relative;
+  width: min(100%, 470px);
+  padding: 40px 44px 30px;
+  border: 2px solid rgba(125, 205, 255, .95);
+  border-radius: 28px;
+  background: linear-gradient(170deg, rgba(255, 255, 255, .98) 0%, rgba(234, 243, 255, .96) 100%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .5) inset, 0 0 22px rgba(64, 170, 255, .6), 0 0 60px rgba(40, 130, 255, .3), 0 28px 60px rgba(3, 16, 38, .45);
+}
+/* Una ola azul en la esquina de abajo a la derecha. */
+.login-card::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 62%;
+  height: 86px;
+  border-bottom-right-radius: 26px;
+  pointer-events: none;
+  background: radial-gradient(130% 160% at 100% 155%, rgba(30, 110, 255, .95) 0 44%, rgba(80, 160, 255, .45) 45% 50%, transparent 51%);
+}
+.login-card > form, .login-card > .login-card-heading, .login-card > .login-security { position: relative; z-index: 1; }
 /* Maru asoma por encima de la tarjeta del acceso. */
-.login-card > .maru.maru-acceso { position: absolute; top: -78px; right: 22px; width: 116px; filter: drop-shadow(0 6px 10px rgba(3, 16, 38, .35)); }
+.login-card > .maru.maru-acceso { position: absolute; top: -104px; right: -10px; width: 150px; filter: drop-shadow(0 6px 10px rgba(3, 16, 38, .35)); }
 /* Sus amigas y amigos asoman por las otras esquinas: el ave sobre el borde de arriba, a la izquierda, y el jaguar sentado en la esquina de abajo. */
-.login-card > .amigo.amigo-ave { position: absolute; top: -104px; left: 22px; width: 78px; z-index: 3; filter: drop-shadow(0 6px 10px rgba(3, 16, 38, .3)); }
-.login-card > .amigo.amigo-jaguar { position: absolute; bottom: -10px; left: -64px; width: 98px; z-index: 3; filter: drop-shadow(0 6px 10px rgba(3, 16, 38, .35)); }
+.login-card > .amigo.amigo-ave { position: absolute; top: -124px; left: 46px; width: 96px; z-index: 3; filter: drop-shadow(0 6px 10px rgba(3, 16, 38, .3)); }
+.login-card > .amigo.amigo-jaguar { position: absolute; bottom: -22px; left: -96px; width: 134px; z-index: 3; filter: drop-shadow(0 6px 10px rgba(3, 16, 38, .35)); }
 @media (max-width: 600px) { .login-card > .amigo.amigo-jaguar { display: none; } }
 /* Y acompaña al pie del menú lateral. */
 .maru-lateral { margin-top: auto; padding: 14px 6px 4px; display: grid; justify-items: center; gap: 4px; text-align: center; font-size: 11.5px; letter-spacing: .3px; color: #8fb4dc; }
@@ -383,20 +421,32 @@ button:disabled {
 @media (max-height: 520px) { .maru-lateral { display: none; } }
 .login-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 27px; color: var(--ink-faint); font-size: 10px; font-weight: 650; letter-spacing: .4px; }
 .login-card-mark { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; color: var(--blue-600); background: var(--ice); }
-.login-card-heading { margin-bottom: 22px; text-align: center; }
-.login-card-marca { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 14px; color: var(--ink); font-size: 18px; font-weight: 700; letter-spacing: 1.4px; }
-.login-card-heading h2 { margin: 0; color: var(--ink); font-size: 26px; letter-spacing: 0.5px; }
+.login-card-heading { margin-bottom: 24px; text-align: center; }
+.login-card-marca { display: inline-flex; align-items: center; gap: 14px; margin-bottom: 18px; color: #0b2246; font-size: 34px; font-weight: 800; letter-spacing: 0; }
+.login-card-marca .brand-icon { width: 54px; height: 54px; border-radius: 13px; font-size: 27px; background: linear-gradient(145deg, #2f86ff, #1453d8); }
+.login-card-heading h2 { margin: 0; color: #0b2246; font-size: 42px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
 .login-card-heading p { color: var(--ink-soft); font-size: 13px; }
-.login-card form > label { display: block; margin: 18px 0 7px; color: var(--ink); font-size: 12px; font-weight: 650; }
+.login-card form > label { display: flex; align-items: center; gap: 9px; margin: 20px 0 9px; color: #0b2246; font-size: 14px; font-weight: 700; }
+.login-card form > label .icono-acceso { width: 19px; height: 19px; flex: none; }
+/* Campos con su icono adentro, a la izquierda. */
+.campo-icono { position: relative; }
+.campo-icono > .icono-acceso { position: absolute; top: 50%; left: 15px; width: 19px; height: 19px; color: #51627a; transform: translateY(-50%); pointer-events: none; }
+.login-page .login-card input:not([type="checkbox"]) { min-height: 50px; padding: 10px 14px; border: 1px solid #d3deec; border-radius: 11px; background: #fff; color: #0b2246; font-size: 15px; box-shadow: 0 1px 2px rgba(3, 16, 38, .06); }
+.login-page .login-card .campo-icono input:not([type="checkbox"]) { padding-left: 46px; }
 .password-field { position: relative; }
-.password-field input { padding-right: 72px; }
+.login-page .login-card .password-field input:not([type="checkbox"]) { padding-right: 54px; }
 /* Edge agrega su propio ojito a las contraseñas: se quita, ya está el botón «Mostrar». */
 input::-ms-reveal, input::-ms-clear { display: none; }
-.password-toggle { position: absolute; top: 50%; right: 7px; min-height: 0; padding: 5px 7px; border: 0; background: transparent; box-shadow: none; color: var(--blue-700); font-size: 11px; transform: translateY(-50%); }
+/* El ojo: muestra u oculta la contraseña. */
+.password-toggle { position: absolute; top: 50%; right: 8px; display: grid; place-items: center; width: 38px; height: 38px; min-height: 0; padding: 0; border: 0; border-radius: 9px; background: transparent; box-shadow: none; color: #0b2246; transform: translateY(-50%); }
 .password-toggle:hover { transform: translateY(-50%); background: rgba(22, 104, 227, 0.08); }
+.password-toggle .icono-acceso { width: 21px; height: 21px; }
 .login-error { margin-top: 13px; padding: 9px 11px; border: 1px solid rgba(207, 64, 64, .23); border-radius: 9px; background: var(--danger-soft); color: var(--danger); font-size: 12px; }
-.login-submit { width: 100%; justify-content: center; margin-top: 22px; padding: 12px 15px; }
-.login-security { margin-top: 20px; color: var(--ink-faint); font-size: 11px; text-align: center; }
+.login-submit { width: 100%; justify-content: center; gap: 10px; margin-top: 24px; min-height: 56px; padding: 14px 18px; border: 0; border-radius: 14px; background: linear-gradient(90deg, #1450e0, #1f7dff); font-size: 17px; font-weight: 700; box-shadow: 0 12px 26px rgba(20, 80, 224, .38); }
+.login-submit:hover:not(:disabled) { background: linear-gradient(90deg, #1146c8, #1a6ff0); }
+.login-submit .icono-acceso { width: 21px; height: 21px; }
+.login-security { margin-top: 22px; color: #6b7c93; font-size: 13px; text-align: center; }
+.login-security a { color: inherit; }
 .login-security span { margin-right: 5px; color: var(--good); font-size: 16px; vertical-align: -1px; }
 .logout-button { padding: 0 10px; border: 0; background: transparent; box-shadow: none; color: var(--ink-soft); font-size: 13.5px; }
 .logout-button:hover { color: var(--danger); background: rgba(207, 64, 64, .08); }
@@ -1122,12 +1172,17 @@ main table:not(.mapa-calor) thead th {
 }
 @media (max-width: 600px) {
   .login-page { display: block; }
-  .login-visual { min-height: 220px; padding: 24px; }
-  .login-brand { gap: 13px; font-size: 24px; letter-spacing: 3px; }
-  .login-brand .brand-icon { width: 46px; height: 46px; border-radius: 11px; font-size: 23px; }
-  .login-panel { min-height: calc(100vh - 220px); padding: 36px 22px; align-items: start; }
+  /* En el teléfono la marca de abajo se cruzaba con las mascotas: basta la de la tarjeta. */
+  .login-visual { min-height: 150px; padding: 24px; }
+  .login-brand-row { display: none; }
+  .login-panel { min-height: calc(100vh - 150px); padding: 36px 22px; align-items: start; }
+  .login-card > .maru.maru-acceso { top: -84px; width: 118px; }
+  .login-card > .amigo.amigo-ave { top: -100px; left: 30px; width: 78px; }
   .login-card-heading { margin-bottom: 20px; }
-  .login-card-heading h2 { font-size: 22px; }
+  .login-card { padding: 30px 24px 24px; }
+  .login-card-marca { font-size: 26px; }
+  .login-card-marca .brand-icon { width: 44px; height: 44px; font-size: 22px; }
+  .login-card-heading h2 { font-size: 30px; }
   .workspace-meta { gap: 5px; }
   .logout-button { padding-left: 4px; padding-right: 4px; }
   h1 {
@@ -1360,8 +1415,8 @@ html.modo-pdf .metrics {
   }
 
 
-.olvide { margin: 10px 0 0; font-size: 12px; text-align: right; }
-.olvide a { color: var(--accent, #2563eb); font-weight: 600; }
+.olvide { margin: 12px 0 0; font-size: 14px; text-align: right; }
+.olvide a { color: #1453d8; font-weight: 700; }
 a.avatar { text-decoration: none; transition: box-shadow .15s, transform .15s; }
 a.avatar:hover, a.avatar:focus-visible { box-shadow: 0 0 0 3px rgba(37, 99, 235, .35); transform: translateY(-1px); }
 
