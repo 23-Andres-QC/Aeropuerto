@@ -1,7 +1,8 @@
 """Modelo en vivo en esta laptop (con su GPU) para la web del servidor.
 
 El servidor tiene la web y todo el backend, sin modelo (servidor.env): los teléfonos se unen a su camara-web
-(https://<servidor>:8444), pero sin este script nadie procesa su video y En vivo dice «El modelo no está publicando».
+(https://aeropuerto.tujuegoya.com/camara/), pero sin este script nadie procesa su video y En vivo dice «El modelo no
+está publicando».
 Este script abre un túnel SSH a los dos puertos que el modelo usa y que en el servidor solo escuchan en 127.0.0.1:
 
     127.0.0.1:8093 -> backend-vivo   lista de teléfonos y videos, relevo de cajas y memoria de identidades
@@ -63,19 +64,22 @@ def leer_env(nombre):
     return None
 
 
-def host_de_servidor_env():
-    """PUBLIC_HOST de servidor.env (versionado): la IP del servidor actual."""
+def de_servidor_env(nombre):
+    """Un ajuste de servidor.env (versionado), o None."""
     try:
         for linea in (RAIZ / "servidor.env").read_text(encoding="utf-8").splitlines():
             clave, igual, valor = linea.strip().partition("=")
-            if igual and clave.strip() == "PUBLIC_HOST" and valor.strip():
+            if igual and clave.strip() == nombre and valor.strip():
                 return valor.strip()
     except OSError:
         pass
-    return "169.58.17.19"
+    return None
 
 
-SERVIDOR = leer_env("MODELO_SERVIDOR") or f"root@{host_de_servidor_env()}"
+HOST_SERVIDOR = de_servidor_env("PUBLIC_HOST") or "169.58.17.19"
+SERVIDOR = leer_env("MODELO_SERVIDOR") or f"root@{HOST_SERVIDOR}"
+# La web del servidor (su dominio): los teléfonos se unen en <WEB>/camara/, con certificado válido y sin puerto.
+WEB_SERVIDOR = (de_servidor_env("APP_BASE_URL") or f"https://{HOST_SERVIDOR}:8443").rstrip("/")
 COMPOSE = ["docker", "compose", "--profile", "gpu"]
 CONTENEDOR = "aeropuerto-modelo-servidor"  # el modelo-gpu de este script: así se lo detiene y no se confunde con el local
 # Servicios locales que escuchan en los mismos puertos que el túnel (y el modelo local, que publicaría en ellos).
@@ -370,9 +374,9 @@ def main():
             reenvios.append(reenvio)
         esperar_servidor()
         print(f"Túnel listo con {host}: backend-vivo y cámaras en 127.0.0.1:{PUERTOS[0]} y :{PUERTOS[1]}", flush=True)
-        entorno = {**AJUSTES_REMOTO, **os.environ,
-                   # Enlace que Teléfonos muestra para unir un teléfono: el de camara-web del servidor, no la IP de la laptop.
-                   "ENLACE_CAMARA": os.environ.get("ENLACE_CAMARA") or f"https://{host}:8444"}
+        # Enlace que Teléfonos muestra para unir un teléfono: el de la web del servidor, no la IP de la laptop.
+        enlace = f"{WEB_SERVIDOR}/camara/" if host == HOST_SERVIDOR else f"https://{host}:8444"
+        entorno = {**AJUSTES_REMOTO, **os.environ, "ENLACE_CAMARA": os.environ.get("ENLACE_CAMARA") or enlace}
         codigo = correr_modelo(entorno, args.directo)
     except KeyboardInterrupt:
         pass

@@ -27,7 +27,7 @@ ENLACE_CAMARA=https://IP-de-la-laptop:8444 docker compose --profile gpu up -d mo
 python scripts/modelo_local.py
 ```
 
-Con `scripts/modelo_local.py` los teléfonos se unen al servidor (https://169.58.17.19:8444), el modelo corre en la laptop y las cajas, la ubicación en el plano y los IDs vuelven a En vivo del servidor. Pide la contraseña del servidor (o `SERVIDOR_CLAVE` en `.env`), detiene mientras corre los backend-vivo, camara-web y modelo-gpu locales (usan los mismos puertos) y al salir vuelve a levantar los dos primeros. La laptop tiene que llegar al puerto 22 del servidor: las redes de ESAN lo bloquean, así que va en otra (el punto de acceso de un celular) y los teléfonos, con sus datos móviles.
+La web del servidor es **https://aeropuerto.tujuegoya.com** (el nginx del sistema la pasa al 8443 según `servidor.nginx.conf`; ver `servidor.env`). Con `scripts/modelo_local.py` los teléfonos se unen al servidor (https://aeropuerto.tujuegoya.com/camara/), el modelo corre en la laptop y las cajas, la ubicación en el plano y los IDs vuelven a En vivo del servidor. Pide la contraseña del servidor (o `SERVIDOR_CLAVE` en `.env`), detiene mientras corre los backend-vivo, camara-web y modelo-gpu locales (usan los mismos puertos) y al salir vuelve a levantar los dos primeros. La laptop tiene que llegar al puerto 22 del servidor: las redes de ESAN lo bloquean, así que va en otra (el punto de acceso de un celular) y los teléfonos, con sus datos móviles.
 
 | | |
 |---|---|
