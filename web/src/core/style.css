@@ -333,7 +333,7 @@ button:disabled {
 /* ---------- acceso ---------- */
 /* La imagen de fondo (cámara que sigue a personas) cubre siempre toda la pantalla, fija aunque la página se desplace.
    La escena va a la izquierda (en el teléfono se recorta alrededor de las personas) y la derecha, oscura y lisa, queda
-   para la tarjeta del acceso; arriba a la izquierda va solo la marca. index.html la pide de entrada (preload): desde
+   para la tarjeta del acceso; abajo a la izquierda va solo la marca. index.html la pide de entrada (preload): desde
    el CSS llegaba al final, después del JS y el CSS. */
 .login-page {
   position: relative;
@@ -360,9 +360,10 @@ button:disabled {
   color: white;
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
 }
-.login-brand-row { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.login-brand { position: relative; z-index: 1; display: flex; align-items: center; gap: 11px; font-size: 17px; font-weight: 700; letter-spacing: 2px; }
-.login-brand .brand-icon { width: 35px; height: 35px; }
+/* La marca va abajo a la izquierda, grande. */
+.login-brand-row { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: auto; }
+.login-brand { position: relative; z-index: 1; display: flex; align-items: center; gap: 18px; font-size: 34px; font-weight: 700; letter-spacing: 4px; }
+.login-brand .brand-icon { width: 64px; height: 64px; border-radius: 15px; font-size: 32px; }
 .login-panel { display: grid; place-items: center; padding: 40px clamp(24px, 6vw, 96px); background: transparent; }
 .login-card { position: relative; width: min(100%, 420px); padding: 32px 36px 24px; border: 1px solid rgba(255, 255, 255, .7); border-radius: 16px; background: rgba(255, 255, 255, .94); box-shadow: 0 24px 60px rgba(3, 16, 38, .35); }
 /* Maru asoma por encima de la tarjeta del acceso. */
@@ -1127,6 +1128,8 @@ main table:not(.mapa-calor) thead th {
 @media (max-width: 600px) {
   .login-page { display: block; }
   .login-visual { min-height: 220px; padding: 24px; }
+  .login-brand { gap: 13px; font-size: 24px; letter-spacing: 3px; }
+  .login-brand .brand-icon { width: 46px; height: 46px; border-radius: 11px; font-size: 23px; }
   .login-panel { min-height: calc(100vh - 220px); padding: 36px 22px; align-items: start; }
   .login-card-heading { margin-bottom: 20px; }
   .login-card-heading h2 { font-size: 22px; }
