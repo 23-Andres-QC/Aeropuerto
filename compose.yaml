@@ -135,6 +135,20 @@ services:
       retries: 12
       start_period: 5s
     restart: unless-stopped
+  # Solo en el servidor (perfil servidor): el modelo de la laptop (scripts/modelo_local.py) desde redes que bloquean
+  # el puerto 22, como las de ESAN. Su túnel SSH viaja por wss://<dominio>/tunel-ssh: el nginx del sistema lo pasa a
+  # este puente (127.0.0.1:PUENTE_SSH_PORT) y el puente al SSH del servidor, con la clave TUNEL_CLAVE del .env.
+  puente-ssh:
+    image: python:3.12-alpine
+    profiles: [servidor]
+    network_mode: host
+    command: ["python", "-u", "/puente/puente_ssh.py"]
+    volumes:
+      - ./scripts/puente_ssh.py:/puente/puente_ssh.py:ro
+    environment:
+      TUNEL_CLAVE: ${TUNEL_CLAVE:-}
+      PUENTE_PUERTO: ${PUENTE_SSH_PORT:-8095}
+    restart: unless-stopped
   # Modelo en vivo (camara_telefono.py) en CPU, para una máquina sin GPU. Con GPU
   # corre directo con Python, así que va con perfil: se levanta solo con
   # COMPOSE_PROFILES=modelo en .env (o docker compose --profile modelo).

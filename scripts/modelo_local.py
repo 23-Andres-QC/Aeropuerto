@@ -19,25 +19,31 @@ que responda; y si el modelo se cae, lo vuelve a levantar.
     python scripts/modelo_local.py --directo             # el modelo con el Python de esta laptop, sin Docker
 
 Los mismos puertos los usan backend-vivo y camara-web locales: si están levantados se detienen mientras corre (y el
-modelo-gpu local, que publicaría en la web de la laptop) y al salir se vuelven a levantar los dos primeros. La red tiene
-que llegar al servidor por SSH (puerto 22): las redes de ESAN lo bloquean, así que la laptop va en otra (ej. el punto
-de acceso de un celular). Los teléfonos, en cualquier red que llegue al servidor (sus datos móviles).
+modelo-gpu local, que publicaría en la web de la laptop) y al salir se vuelven a levantar los dos primeros. El túnel va
+directo al SSH del servidor (puerto 22); si la red no llega a ese puerto (las de ESAN lo bloquean), va por el dominio:
+la misma conexión SSH dentro de un WebSocket a wss://aeropuerto.tujuegoya.com/tunel-ssh (el puente del servidor,
+scripts/puente_ssh.py), que pide TUNEL_CLAVE del .env. --via ssh o --via dominio lo fijan. Los teléfonos, en cualquier
+red: entran por el dominio.
 
 Entra siempre con la contraseña del servidor: SERVIDOR_CLAVE, del entorno o del .env de la raíz (no versionado),
 igual que MODELO_SERVIDOR. Sin ella la pide una vez. Requiere paramiko (pip install paramiko). Ctrl+C detiene el
 modelo y el túnel. Con la web en esta misma laptop (docker compose local) no hace falta.
 """
 import argparse
+import base64
 import getpass
+import hashlib
 import logging
 import os
 import select
 import socket
 import socketserver
+import ssl
 import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -104,6 +110,155 @@ ABRIR_CANAL_S = 10
 VIGILAR_CADA_S = 10  # cada cuánto se prueba cada conexión aunque no haya pedidos
 # El modelo se reinicia solo si se cae; si se cae enseguida otra vez, se espera más (hasta REINICIO_MAX_S).
 REINICIO_S, REINICIO_MAX_S, ESTABLE_S = 5, 60, 120
+RUTA_TUNEL = "/tunel-ssh"  # el puente del servidor (scripts/puente_ssh.py, servidor.nginx.conf)
+GUID_WS = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"  # el del protocolo WebSocket (RFC 6455)
+
+
+class ClaveTunelIncorrecta(Exception):
+    """El puente del servidor rechazó TUNEL_CLAVE."""
+
+
+def enmascarar(datos, mascara):
+    n = len(datos)
+    if not n:
+        return b""
+    m = (mascara * (n // 4 + 1))[:n]
+    return (int.from_bytes(datos, "big") ^ int.from_bytes(m, "big")).to_bytes(n, "big")
+
+
+def marco_ws(opcode, datos):
+    """Un marco WebSocket de la laptop al servidor (con máscara, como pide el protocolo al cliente)."""
+    n, mascara = len(datos), os.urandom(4)
+    if n < 126:
+        cabecera = bytes((0x80 | opcode, 0x80 | n))
+    elif n < 1 << 16:
+        cabecera = bytes((0x80 | opcode, 0x80 | 126)) + n.to_bytes(2, "big")
+    else:
+        cabecera = bytes((0x80 | opcode, 0x80 | 127)) + n.to_bytes(8, "big")
+    return cabecera + mascara + enmascarar(datos, mascara)
+
+
+def sacar_marco(buffer):
+    """Saca del buffer el primer marco WebSocket completo: (opcode, datos), o None si aún no llegó entero."""
+    if len(buffer) < 2:
+        return None
+    largo, pos = buffer[1] & 0x7F, 2
+    if largo == 126:
+        if len(buffer) < 4:
+            return None
+        largo, pos = int.from_bytes(buffer[2:4], "big"), 4
+    elif largo == 127:
+        if len(buffer) < 10:
+            return None
+        largo, pos = int.from_bytes(buffer[2:10], "big"), 10
+    mascara = None
+    if buffer[1] & 0x80:
+        if len(buffer) < pos + 4:
+            return None
+        mascara, pos = bytes(buffer[pos:pos + 4]), pos + 4
+    if len(buffer) < pos + largo:
+        return None
+    opcode, datos = buffer[0] & 0x0F, bytes(buffer[pos:pos + largo])
+    del buffer[:pos + largo]
+    return opcode, enmascarar(datos, mascara) if mascara else datos
+
+
+def por_dominio(web, clave):
+    """Un socket para paramiko cuyo otro extremo es un WebSocket con el puente del servidor (<web>/tunel-ssh).
+
+    La red solo tiene que llegar al dominio (HTTPS, puerto 443): la conexión SSH viaja dentro del WebSocket y el puente
+    la une al SSH del servidor. Un hilo (_pasar) lleva los bytes entre los dos extremos.
+    """
+    url = urllib.parse.urlsplit(web)
+    seguro = url.scheme == "https"
+    host, puerto = url.hostname, url.port or (443 if seguro else 80)
+    conexion = socket.create_connection((host, puerto), timeout=10)
+    conexion.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    try:
+        if seguro:
+            conexion = ssl.create_default_context().wrap_socket(conexion, server_hostname=host)
+        llave = base64.b64encode(os.urandom(16)).decode()
+        conexion.sendall((f"GET {RUTA_TUNEL} HTTP/1.1\r\nHost: {url.netloc}\r\nUpgrade: websocket\r\n"
+                          f"Connection: Upgrade\r\nSec-WebSocket-Key: {llave}\r\nSec-WebSocket-Version: 13\r\n"
+                          f"User-Agent: aeropuerto-modelo-local\r\nX-Tunel-Clave: {clave}\r\n\r\n").encode())
+        respuesta = bytearray()
+        while b"\r\n\r\n" not in respuesta:
+            parte = conexion.recv(4096)
+            if not parte or len(respuesta) > 65536:
+                raise ConnectionError("el puente cortó la conexión sin responder")
+            respuesta += parte
+        cabecera, _, resto = bytes(respuesta).partition(b"\r\n\r\n")
+        estado = cabecera.split(b"\r\n", 1)[0].decode("latin-1")
+        codigo = (estado.split() + ["", ""])[1]
+        if codigo == "403":
+            raise ClaveTunelIncorrecta("El servidor rechazó TUNEL_CLAVE: no es la de su .env.")
+        aceptada = base64.b64encode(hashlib.sha1((llave + GUID_WS).encode()).digest())
+        if codigo != "101" or aceptada not in cabecera:
+            raise ConnectionError(f"el puente respondió «{estado}»")
+    except BaseException:
+        conexion.close()
+        raise
+    propio, otro = socket.socketpair()
+    threading.Thread(target=_pasar, args=(conexion, otro, bytearray(resto)), daemon=True).start()
+    return propio
+
+
+def _pasar(conexion, otro, buffer):
+    """Hilo de por_dominio: WebSocket <-> socket de paramiko, hasta que uno de los dos se cierre.
+
+    Un solo hilo usa la conexión TLS (leer y escribir desde dos hilos a la vez no es seguro con OpenSSL). La lectura
+    tiene plazo corto: un registro TLS sin datos no deja esperando lo que paramiko quiere mandar.
+    """
+    try:
+        while True:
+            marco = sacar_marco(buffer)
+            while marco is not None:
+                opcode, datos = marco
+                if opcode in (0, 2):
+                    otro.sendall(datos)
+                elif opcode == 8:
+                    return
+                elif opcode == 9:
+                    conexion.settimeout(None)
+                    conexion.sendall(marco_ws(10, datos))
+                marco = sacar_marco(buffer)
+            pendiente = conexion.pending() if hasattr(conexion, "pending") else 0
+            listos = [conexion] if pendiente else select.select([conexion, otro], [], [], 30)[0]
+            if conexion in listos:
+                conexion.settimeout(1)
+                try:
+                    datos = conexion.recv(65536)
+                except socket.timeout:
+                    datos = None
+                if datos == b"":
+                    return
+                if datos:
+                    buffer += datos
+            if otro in listos:
+                datos = otro.recv(65536)
+                if not datos:
+                    return
+                conexion.settimeout(None)  # un marco se manda entero: cortarlo a medias rompería el WebSocket
+                conexion.sendall(marco_ws(2, datos))
+    except (OSError, ValueError):
+        return
+    finally:
+        try:
+            conexion.settimeout(2)
+            conexion.sendall(marco_ws(8, b""))
+        except OSError:
+            pass
+        conexion.close()
+        otro.close()
+
+
+def llega(host, puerto):
+    """Si esta red llega a host:puerto (las de ESAN no llegan al 22 del servidor)."""
+    try:
+        socket.create_connection((host, puerto), timeout=5).close()
+        return True
+    except OSError:
+        return False
 
 
 def sin_demora(transporte):
@@ -114,7 +269,10 @@ def sin_demora(transporte):
     punta basta la opción del socket; sshd solo la activa en su lado cuando una sesión pide terminal (pty), así que se
     pide una para un comando que termina enseguida. Con las dos, el cuadro cruza en ~100 ms (ping ~72 ms).
     """
-    transporte.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    try:
+        transporte.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    except OSError:
+        pass  # por el dominio paramiko usa un par de sockets locales; el WebSocket ya va sin demora
     try:
         sesion = transporte.open_session(timeout=10)
         sesion.get_pty()
@@ -131,8 +289,9 @@ class ClaveIncorrecta(Exception):
 class Tunel:
     """Conexión SSH de un reenvío; se rehace si se cayó o si quedó colgada."""
 
-    def __init__(self, host, usuario, puerto, clave, destino):
+    def __init__(self, host, usuario, puerto, clave, destino, web=None, clave_tunel=None):
         self.host, self.usuario, self.puerto, self.clave, self.destino = host, usuario, puerto, clave, destino
+        self.web, self.clave_tunel = web, clave_tunel  # con web, la conexión SSH va por el dominio (por_dominio)
         self._cliente, self._lock, self._conexiones = None, threading.Lock(), 0
 
     def transporte(self):
@@ -175,18 +334,25 @@ class Tunel:
             cliente = paramiko.SSHClient()
             cliente.load_system_host_keys()
             cliente.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            sock = None
             try:
+                sock = por_dominio(self.web, self.clave_tunel) if self.web else None
                 # Solo con la contraseña: sin probar antes las llaves de esta PC.
                 cliente.connect(self.host, self.puerto, self.usuario, password=self.clave, timeout=10,
-                                look_for_keys=False, allow_agent=False)
+                                look_for_keys=False, allow_agent=False, sock=sock)
             except paramiko.AuthenticationException:
                 raise ClaveIncorrecta(f"La contraseña no es la de {self.usuario}@{self.host}.")
-            except (paramiko.SSHException, OSError) as error:
+            except (paramiko.SSHException, OSError, EOFError) as error:
+                cliente.close()
+                if sock is not None:
+                    sock.close()
                 intentos += 1
-                print(f"No se pudo conectar a {self.host} ({error}); reintento en 3 s", flush=True)
-                if intentos == 2:
-                    print(f"Si sigue así, esta red no llega al puerto {self.puerto} del servidor (las de ESAN lo bloquean): "
-                          "conectar la laptop a otra, como el punto de acceso de un celular.", flush=True)
+                destino = f"{self.web}{RUTA_TUNEL}" if self.web else self.host
+                print(f"No se pudo conectar a {destino} ({str(error) or type(error).__name__}); reintento en 3 s",
+                      flush=True)
+                if intentos == 2 and not self.web:
+                    print(f"Si sigue así, esta red ya no llega al puerto {self.puerto} del servidor (las de ESAN lo "
+                          "bloquean): volver a correr el script, que entonces va por el dominio.", flush=True)
                 time.sleep(3)
                 continue
             transporte = cliente.get_transport()
@@ -337,20 +503,40 @@ def main():
     parser.add_argument("servidor", nargs="?", default=SERVIDOR, help=f"usuario@host del servidor (por defecto {SERVIDOR})")
     parser.add_argument("--ssh-port", type=int, default=22)
     parser.add_argument("--directo", action="store_true", help="el modelo con el Python de esta laptop, sin Docker")
+    parser.add_argument("--via", choices=("auto", "ssh", "dominio"), default="auto",
+                        help="por dónde va el túnel: auto prueba el puerto SSH y, si la red lo bloquea (ESAN), va por "
+                             f"el dominio ({WEB_SERVIDOR}{RUTA_TUNEL})")
     args = parser.parse_args()
     usuario, _, host = args.servidor.rpartition("@")
     if not usuario:
         parser.error("indicar el servidor como usuario@host")
 
+    web = clave_tunel = None
+    if args.via == "dominio" or (args.via == "auto" and not llega(host, args.ssh_port)):
+        if host != HOST_SERVIDOR:
+            raise SystemExit(f"Esta red no llega al puerto {args.ssh_port} de {host}, y el dominio es solo para "
+                             f"{HOST_SERVIDOR}: usar otra red.")
+        clave_tunel = leer_env("TUNEL_CLAVE")
+        if not clave_tunel:
+            raise SystemExit("Para ir por el dominio falta TUNEL_CLAVE en el .env de la raíz (la misma del .env del "
+                             "servidor).")
+        web = WEB_SERVIDOR
+        print(f"El túnel va por el dominio: {web}{RUTA_TUNEL} (esta red no llega al puerto {args.ssh_port} del servidor "
+              "o se pidió --via dominio).", flush=True)
+
     locales = locales_levantados(args.directo)
     clave = leer_env("SERVIDOR_CLAVE")
     while True:  # la red y la contraseña se prueban antes de tocar nada en la laptop
         clave = clave or getpass.getpass(f"Contraseña de {usuario}@{host}: ")
-        tuneles = [Tunel(host, usuario, args.ssh_port, clave, puerto) for puerto in PUERTOS]
+        tuneles = [Tunel(host, usuario, args.ssh_port, clave, puerto, web, clave_tunel) for puerto in PUERTOS]
         try:
             for tunel in tuneles:
                 tunel.transporte()
             break
+        except ClaveTunelIncorrecta as error:
+            for tunel in tuneles:
+                tunel.cerrar()
+            raise SystemExit(f"{error} Copiar la del servidor en TUNEL_CLAVE del .env de esta laptop.")
         except ClaveIncorrecta as error:
             for tunel in tuneles:
                 tunel.cerrar()
