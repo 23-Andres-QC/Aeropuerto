@@ -2,16 +2,18 @@
 // Maru, la mascota de LAP: al aparecer saluda (se mece de lado a lado mientras dice «¡Hola!») y luego flota; al pasarle el ratón (o
 // tocarla) vuelve a saludar. Con `entrada` llega volando desde la izquierda de la pantalla, da una voltereta y aterriza en su lugar;
 // recién ahí saluda. Con «reducir movimiento» en el sistema se queda quieta y solo muestra el saludo.
-import { ref } from "vue";
+import { ref, watch } from "vue";
 
 // `inicioBurbuja` y `finBurbuja` (segundos desde que carga la página) fijan cuándo aparece y cuándo se va el primer globo; así las mascotas
-// pueden decir una frase entre todas, una después de otra. Al pasarle el ratón dice siempre «¡Hola!».
-const props = withDefaults(defineProps<{ saludo?: string; burbuja?: "izquierda" | "derecha"; entrada?: boolean; inicioBurbuja?: number; finBurbuja?: number; vuelo?: number; repite?: string }>(), { vuelo: 2.6, repite: "¡Hola!", saludo: "¡Hola!", burbuja: "izquierda", entrada: false });
+// pueden decir una frase entre todas, una después de otra. Al pasarle el ratón dice `repite` (con varias frases, una distinta cada vez);
+// si cambia `saludo` (otro sitio elegido), lo vuelve a decir.
+const props = withDefaults(defineProps<{ saludo?: string; burbuja?: "izquierda" | "derecha"; entrada?: boolean; inicioBurbuja?: number; finBurbuja?: number; vuelo?: number; repite?: string | string[] }>(), { vuelo: 2.6, repite: "¡Hola!", saludo: "¡Hola!", burbuja: "izquierda", entrada: false });
 
 const ENTRADA_MS = props.vuelo * 1000; // lo que dura el vuelo con la voltereta (`vuelo`, en segundos; --vuelo en el estilo)
 
 // Cada saludo reinicia las animaciones: cambiar la clave vuelve a montar la imagen.
 const vez = ref(0);
+const texto = ref(props.saludo);
 const saludando = ref(true);
 const entrando = ref(props.entrada);
 const conEntrada = props.entrada; // el primer saludo espera a que termine el vuelo
@@ -19,12 +21,23 @@ const escalonada = props.inicioBurbuja != null; // el primer globo sale a su hor
 const estiloBurbuja = escalonada ? { "--b-ini": `${props.inicioBurbuja}s`, "--b-fin": `${props.finBurbuja ?? 12}s` } : undefined;
 let reloj: number | undefined;
 
-function saludar() {
-  if (saludando.value || entrando.value) return;
+function decir(frase: string) {
   vez.value++;
+  texto.value = frase;
   saludando.value = true;
   fin();
 }
+function saludar() {
+  if (saludando.value || entrando.value) return;
+  const frases = Array.isArray(props.repite) ? props.repite : [props.repite];
+  decir(frases[vez.value % frases.length] ?? props.saludo);
+}
+watch(
+  () => props.saludo,
+  (nuevo) => {
+    if (!entrando.value) decir(nuevo);
+  },
+);
 function fin() {
   window.clearTimeout(reloj);
   const primero = vez.value === 0;
@@ -37,7 +50,7 @@ if (entrando.value) window.setTimeout(() => (entrando.value = false), ENTRADA_MS
 
 <template>
   <span class="maru" :class="[burbuja, { entra: entrando }]" :style="{ '--vuelo': `${vuelo}s` }" data-prueba="maru" @mouseenter="saludar" @click="saludar">
-    <span v-if="saludando" :key="'b' + vez" class="maru-burbuja" :class="{ tarde: conEntrada && vez === 0, escalonada: escalonada && vez === 0 }" :style="vez === 0 ? estiloBurbuja : undefined" role="status">{{ vez === 0 ? saludo : repite }}</span>
+    <span v-if="saludando" :key="'b' + vez" class="maru-burbuja" :class="{ tarde: conEntrada && vez === 0, escalonada: escalonada && vez === 0 }" :style="vez === 0 ? estiloBurbuja : undefined" role="status">{{ texto }}</span>
     <span class="maru-vuelo"
       ><img :key="'i' + vez" class="maru-img" :class="{ saludando, tarde: conEntrada && vez === 0 }" src="/maru.png" alt="Maru, la mascota de LAP" draggable="false"
     /></span>

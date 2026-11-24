@@ -17,8 +17,8 @@ import type { Sitio } from "./features/sitios/api";
 import { recordarSitio, ultimoSitio, useSitios, vaciarSitios } from "./features/sitios/useSitios";
 
 /**
- * El saludo de Maru en la barra lateral: «¡Hola, <usuario>!», con el nombre de usuario tal como está en la base de datos (si está todo en
- * minúsculas se le pone la primera en mayúscula).
+ * «¡Hola, <usuario>!», con el nombre de usuario tal como está en la base de datos (si está todo en minúsculas se le pone la primera en
+ * mayúscula).
  */
 const holaUsuario = computed(() => {
   const usuario = (sesion.value?.usuario || "").trim();
@@ -57,6 +57,30 @@ function toggleTheme() {
 
 const seccion = computed(() => (route.meta.seccion as string | undefined) ?? "");
 const sitioNav = computed(() => slug.value || ultimoSitio());
+// Lo que dice Maru depende del sitio elegido: en el aeropuerto (LAP), del terminal; en ESAN, del campus. Al cambiar de sitio
+// vuelve a saludar; al pasarle el ratón dice una frase de ese sitio.
+const FRASES_MARU: Record<string, { saludo: string; frases: string[]; pie: string }> = {
+  lap: {
+    saludo: "¡Bienvenido al aeropuerto!",
+    frases: ["¡Listos para despegar!", "Sigo el flujo de pasajeros", "¿Vemos el terminal?"],
+    pie: "Maru, tu copiloto en el aeropuerto",
+  },
+  esan: {
+    saludo: "¡Bienvenido a ESAN!",
+    frases: ["Sigo a todos en el campus", "¿Vemos el patio?", "¿Revisamos el comedor?"],
+    pie: "Maru, tu copiloto en ESAN",
+  },
+};
+const maru = computed(() => {
+  const propias = FRASES_MARU[sitioNav.value];
+  if (propias) return { ...propias, frases: [...propias.frases, holaUsuario.value] };
+  const nombre = sitios.value.find((s) => s.slug === sitioNav.value)?.name;
+  return {
+    saludo: nombre ? `¡Bienvenido a ${nombre}!` : holaUsuario.value,
+    frases: [holaUsuario.value, "¿Vemos el plano?"],
+    pie: "Maru, tu copiloto en TrackFlow",
+  };
+});
 const telefonos = computed(() => route.path === "/telefonos");
 const cuentas = computed(() => route.path === "/cuentas");
 const solicitudesRuta = computed(() => route.path === "/solicitudes");
@@ -150,8 +174,8 @@ function elegirSitio(s: Sitio) {
         >
       </nav>
       <div class="maru-lateral">
-        <Maru class="maru-lateral-img" burbuja="derecha" :saludo="holaUsuario" :repite="holaUsuario" />
-        <span>Maru, tu copiloto en TrackFlow</span>
+        <Maru class="maru-lateral-img" burbuja="derecha" :saludo="maru.saludo" :repite="maru.frases" />
+        <span>{{ maru.pie }}</span>
       </div>
     </aside>
     <div class="workspace">
