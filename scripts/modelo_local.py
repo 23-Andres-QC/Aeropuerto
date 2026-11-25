@@ -1,39 +1,34 @@
-"""Modelo en vivo en esta laptop (con su GPU) para la web del servidor.
+"""Modelo en vivo en esta laptop (con su GPU) para la web del servidor, por la API del dominio.
 
 El servidor tiene la web y todo el backend, sin modelo (servidor.env): los teléfonos se unen a su camara-web
 (https://aeropuerto.tujuegoya.com/camara/), pero sin este script nadie procesa su video y En vivo dice «El modelo no
 está publicando».
-Este script abre un túnel SSH a los dos puertos que el modelo usa y que en el servidor solo escuchan en 127.0.0.1:
+El modelo usa dos servicios que en el servidor solo escuchan en 127.0.0.1; este script los trae a los mismos puertos
+de la laptop por la API del modelo en el dominio (scripts/puente_modelo.py en el servidor):
 
-    127.0.0.1:8093 -> backend-vivo   lista de teléfonos y videos, relevo de cajas y memoria de identidades
-    127.0.0.1:8092 -> camara-web     cuadros de cada teléfono (backend-vivo da esas URL con 127.0.0.1:8092)
+    127.0.0.1:8093 -> https://aeropuerto.tujuegoya.com/api-modelo/8093   backend-vivo: teléfonos, videos, cajas, memoria
+    127.0.0.1:8092 -> https://aeropuerto.tujuegoya.com/api-modelo/8092   camara-web: cuadros de cada teléfono
 
 y corre el modelo de siempre (modelo-gpu de compose.yaml, en Docker con la GPU; --directo, camara_telefono.py con el
-Python de esta laptop), así que En vivo, Teléfonos y Videos del servidor funcionan sin cambios: el video baja por el
-túnel, el modelo lo procesa aquí y las cajas, la ubicación en el plano, los IDs y la memoria de identidades vuelven al
-servidor. Si la conexión se corta o queda colgada, el túnel se rehace solo; si el servidor está arrancando, espera a
-que responda; y si el modelo se cae, lo vuelve a levantar.
+Python de esta laptop), así que En vivo, Teléfonos y Videos del servidor funcionan sin cambios: el video baja, el
+modelo lo procesa aquí y las cajas, la ubicación en el plano, los IDs y la memoria de identidades vuelven al servidor.
+Va por HTTPS (puerto 443), así que sirve en cualquier red que abra la web, también las de ESAN; sin SSH ni contraseña
+del servidor: pide solo TUNEL_CLAVE del .env de la raíz (la misma del .env del servidor), porque por ahí se ve el video
+de los teléfonos. Si la red se corta, cada conexión se rehace sola; si el servidor está arrancando, espera a que
+responda; y si el modelo se cae, lo vuelve a levantar.
 
-    python scripts/modelo_local.py                       # servidor por defecto (MODELO_SERVIDOR o el de servidor.env)
-    python scripts/modelo_local.py usuario@IP            # otro servidor
-    python scripts/modelo_local.py --directo             # el modelo con el Python de esta laptop, sin Docker
+    python scripts/modelo_local.py               # la web de servidor.env (APP_BASE_URL)
+    python scripts/modelo_local.py --directo     # el modelo con el Python de esta laptop, sin Docker
+    python scripts/modelo_local.py --web URL     # otra web con su API del modelo
 
 Los mismos puertos los usan backend-vivo y camara-web locales: si están levantados se detienen mientras corre (y el
-modelo-gpu local, que publicaría en la web de la laptop) y al salir se vuelven a levantar los dos primeros. El túnel va
-directo al SSH del servidor (puerto 22); si la red no llega a ese puerto (las de ESAN lo bloquean), va por el dominio:
-la misma conexión SSH dentro de un WebSocket a wss://aeropuerto.tujuegoya.com/tunel-ssh (el puente del servidor,
-scripts/puente_ssh.py), que pide TUNEL_CLAVE del .env. --via ssh o --via dominio lo fijan. Los teléfonos, en cualquier
-red: entran por el dominio.
-
-Entra siempre con la contraseña del servidor: SERVIDOR_CLAVE, del entorno o del .env de la raíz (no versionado),
-igual que MODELO_SERVIDOR. Sin ella la pide una vez. Requiere paramiko (pip install paramiko). Ctrl+C detiene el
-modelo y el túnel. Con la web en esta misma laptop (docker compose local) no hace falta.
+modelo-gpu local, que publicaría en la web de la laptop) y al salir se vuelven a levantar los dos primeros. Los
+teléfonos, en cualquier red: entran por el dominio. Ctrl+C detiene el modelo. Con la web en esta misma laptop
+(docker compose local) no hace falta.
 """
 import argparse
 import base64
-import getpass
 import hashlib
-import logging
 import os
 import select
 import socket
@@ -47,12 +42,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-import paramiko
-
 RAIZ = Path(__file__).resolve().parent.parent
 MODELO = RAIZ / "Modelo" / "Test Modelo" / "camara_telefono.py"
-# Mientras el servidor no responde, paramiko escribe un traceback por intento; basta el aviso de _conectar.
-logging.getLogger("paramiko").setLevel(logging.CRITICAL)
 
 
 def leer_env(nombre):
@@ -82,13 +73,12 @@ def de_servidor_env(nombre):
     return None
 
 
-HOST_SERVIDOR = de_servidor_env("PUBLIC_HOST") or "169.58.17.19"
-SERVIDOR = leer_env("MODELO_SERVIDOR") or f"root@{HOST_SERVIDOR}"
-# La web del servidor (su dominio): los teléfonos se unen en <WEB>/camara/, con certificado válido y sin puerto.
-WEB_SERVIDOR = (de_servidor_env("APP_BASE_URL") or f"https://{HOST_SERVIDOR}:8443").rstrip("/")
+# La web del servidor (su dominio): la API del modelo va en <WEB>/api-modelo/ y los teléfonos se unen en <WEB>/camara/.
+WEB_SERVIDOR = (leer_env("MODELO_WEB") or de_servidor_env("APP_BASE_URL") or "https://aeropuerto.tujuegoya.com").rstrip("/")
+RUTA_API = "/api-modelo/"  # + el puerto: la del puente del servidor (scripts/puente_modelo.py, servidor.nginx.conf)
 COMPOSE = ["docker", "compose", "--profile", "gpu"]
 CONTENEDOR = "aeropuerto-modelo-servidor"  # el modelo-gpu de este script: así se lo detiene y no se confunde con el local
-# Servicios locales que escuchan en los mismos puertos que el túnel (y el modelo local, que publicaría en ellos).
+# Servicios locales que escuchan en los mismos puertos que la API (y el modelo local, que publicaría en ellos).
 LOCALES = ("modelo-gpu", "camara-web", "backend-vivo")
 # Ajustes del modelo con la web en otra máquina (camara_telefono.py los explica):
 # - cada teléfono se lee pidiendo su cuadro más nuevo (no el MJPEG, que por internet acumulaba segundos de cuadros
@@ -98,24 +88,18 @@ LOCALES = ("modelo-gpu", "camara-web", "backend-vivo")
 AJUSTES_REMOTO = {"LECTURA_TELEFONOS": "foto", "MJPEG_ANCHO": "1280", "RELEVO_VIDEO_FPS": "1", "RELEVO_VIDEO_KBPS": "120"}
 VARIABLES = (*AJUSTES_REMOTO, "ENLACE_CAMARA")  # las que pasan al contenedor del modelo
 PUERTOS = (8093, 8092)  # mismos números en las dos puntas: las URL que reparte backend-vivo valen tal cual
-# Cada puerto va por su propia conexión SSH: si compartieran una, el MJPEG de los teléfonos (que llena el enlace)
-# dejaría esperando segundos las consultas del modelo a backend-vivo. Ventana SSH de cada canal: cuánto puede quedar
-# en camino sin leer; chica, alcanza para la velocidad del enlace (~1 MB/s), no demora a los demás canales de la misma
-# conexión (bajar un video subido) y el MJPEG salta cuadros en vez de atrasarse (camara-web da a cada lector su último
-# cuadro).
-VENTANAS = {8093: 256 * 2 ** 10, 8092: 256 * 2 ** 10}  # 8092: un cuadro por pedido, sin cola
-# Abrir un canal es una ida y vuelta (~0,1 s): si en este tiempo no hay respuesta, la conexión SSH quedó colgada (la
-# red cambió o se cortó sin aviso) y se rehace. Sin esto paramiko espera hasta 1 h y el túnel no se recupera solo.
-ABRIR_CANAL_S = 10
-VIGILAR_CADA_S = 10  # cada cuánto se prueba cada conexión aunque no haya pedidos
+# Abrir un WebSocket es una conexión TLS más su saludo (unas décimas de segundo por Cloudflare) y el modelo abre
+# conexiones a menudo (la lista de teléfonos cada 2 s): cada conexión toma uno ya abierto de reserva. Las reservas que
+# pasan RESERVA_VIDA_S sin usarse se cambian por otras (Cloudflare corta las que pasan ~100 s calladas).
+RESERVAS = {8093: 3, 8092: 2}
+RESERVA_VIDA_S = 45
 # El modelo se reinicia solo si se cae; si se cae enseguida otra vez, se espera más (hasta REINICIO_MAX_S).
 REINICIO_S, REINICIO_MAX_S, ESTABLE_S = 5, 60, 120
-RUTA_TUNEL = "/tunel-ssh"  # el puente del servidor (scripts/puente_ssh.py, servidor.nginx.conf)
 GUID_WS = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"  # el del protocolo WebSocket (RFC 6455)
 
 
-class ClaveTunelIncorrecta(Exception):
-    """El puente del servidor rechazó TUNEL_CLAVE."""
+class ClaveIncorrecta(Exception):
+    """La API del modelo rechazó TUNEL_CLAVE."""
 
 
 def enmascarar(datos, mascara):
@@ -163,51 +147,56 @@ def sacar_marco(buffer):
     return opcode, enmascarar(datos, mascara) if mascara else datos
 
 
-def por_dominio(web, clave):
-    """Un socket para paramiko cuyo otro extremo es un WebSocket con el puente del servidor (<web>/tunel-ssh).
-
-    La red solo tiene que llegar al dominio (HTTPS, puerto 443): la conexión SSH viaja dentro del WebSocket y el puente
-    la une al SSH del servidor. Un hilo (_pasar) lleva los bytes entre los dos extremos.
-    """
+def abrir_ws(web, puerto, clave):
+    """Un WebSocket con la API del modelo para `puerto` (<web>/api-modelo/<puerto>): (conexión, bytes ya leídos)."""
     url = urllib.parse.urlsplit(web)
     seguro = url.scheme == "https"
-    host, puerto = url.hostname, url.port or (443 if seguro else 80)
-    conexion = socket.create_connection((host, puerto), timeout=10)
+    host = url.hostname
+    conexion = socket.create_connection((host, url.port or (443 if seguro else 80)), timeout=10)
     conexion.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     try:
         if seguro:
             conexion = ssl.create_default_context().wrap_socket(conexion, server_hostname=host)
         llave = base64.b64encode(os.urandom(16)).decode()
-        conexion.sendall((f"GET {RUTA_TUNEL} HTTP/1.1\r\nHost: {url.netloc}\r\nUpgrade: websocket\r\n"
-                          f"Connection: Upgrade\r\nSec-WebSocket-Key: {llave}\r\nSec-WebSocket-Version: 13\r\n"
-                          f"User-Agent: aeropuerto-modelo-local\r\nX-Tunel-Clave: {clave}\r\n\r\n").encode())
+        conexion.sendall((f"GET {url.path.rstrip('/')}{RUTA_API}{puerto} HTTP/1.1\r\nHost: {url.netloc}\r\n"
+                          f"Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {llave}\r\n"
+                          f"Sec-WebSocket-Version: 13\r\nUser-Agent: aeropuerto-modelo-local\r\n"
+                          f"X-Tunel-Clave: {clave}\r\n\r\n").encode())
         respuesta = bytearray()
         while b"\r\n\r\n" not in respuesta:
             parte = conexion.recv(4096)
             if not parte or len(respuesta) > 65536:
-                raise ConnectionError("el puente cortó la conexión sin responder")
+                raise ConnectionError("la API cortó la conexión sin responder")
             respuesta += parte
         cabecera, _, resto = bytes(respuesta).partition(b"\r\n\r\n")
         estado = cabecera.split(b"\r\n", 1)[0].decode("latin-1")
         codigo = (estado.split() + ["", ""])[1]
         if codigo == "403":
-            raise ClaveTunelIncorrecta("El servidor rechazó TUNEL_CLAVE: no es la de su .env.")
+            raise ClaveIncorrecta("La API del modelo rechazó TUNEL_CLAVE: no es la del .env del servidor.")
         aceptada = base64.b64encode(hashlib.sha1((llave + GUID_WS).encode()).digest())
         if codigo != "101" or aceptada not in cabecera:
-            raise ConnectionError(f"el puente respondió «{estado}»")
+            raise ConnectionError(f"la API respondió «{estado}»")
     except BaseException:
         conexion.close()
         raise
-    propio, otro = socket.socketpair()
-    threading.Thread(target=_pasar, args=(conexion, otro, bytearray(resto)), daemon=True).start()
-    return propio
+    return conexion, resto
 
 
-def _pasar(conexion, otro, buffer):
-    """Hilo de por_dominio: WebSocket <-> socket de paramiko, hasta que uno de los dos se cierre.
+def abierto(conexion):
+    """Si un WebSocket de reserva sigue abierto: el servidor no manda nada antes del primer dato del modelo."""
+    try:
+        if getattr(conexion, "pending", lambda: 0)():
+            return False
+        return not select.select([conexion], [], [], 0)[0]
+    except (OSError, ValueError):
+        return False
+
+
+def pasar(conexion, local, buffer):
+    """WebSocket <-> conexión local del modelo, hasta que uno de los dos se cierre.
 
     Un solo hilo usa la conexión TLS (leer y escribir desde dos hilos a la vez no es seguro con OpenSSL). La lectura
-    tiene plazo corto: un registro TLS sin datos no deja esperando lo que paramiko quiere mandar.
+    tiene plazo corto: un registro TLS sin datos no deja esperando lo que el modelo quiere mandar.
     """
     try:
         while True:
@@ -215,15 +204,15 @@ def _pasar(conexion, otro, buffer):
             while marco is not None:
                 opcode, datos = marco
                 if opcode in (0, 2):
-                    otro.sendall(datos)
+                    local.sendall(datos)
                 elif opcode == 8:
                     return
                 elif opcode == 9:
                     conexion.settimeout(None)
                     conexion.sendall(marco_ws(10, datos))
                 marco = sacar_marco(buffer)
-            pendiente = conexion.pending() if hasattr(conexion, "pending") else 0
-            listos = [conexion] if pendiente else select.select([conexion, otro], [], [], 30)[0]
+            pendiente = getattr(conexion, "pending", lambda: 0)()
+            listos = [conexion] if pendiente else select.select([conexion, local], [], [], 30)[0]
             if conexion in listos:
                 conexion.settimeout(1)
                 try:
@@ -234,8 +223,8 @@ def _pasar(conexion, otro, buffer):
                     return
                 if datos:
                     buffer += datos
-            if otro in listos:
-                datos = otro.recv(65536)
+            if local in listos:
+                datos = local.recv(65536)
                 if not datos:
                     return
                 conexion.settimeout(None)  # un marco se manda entero: cortarlo a medias rompería el WebSocket
@@ -249,170 +238,91 @@ def _pasar(conexion, otro, buffer):
         except OSError:
             pass
         conexion.close()
-        otro.close()
+        local.close()
 
 
-def llega(host, puerto):
-    """Si esta red llega a host:puerto (las de ESAN no llegan al 22 del servidor)."""
-    try:
-        socket.create_connection((host, puerto), timeout=5).close()
-        return True
-    except OSError:
-        return False
+class Reservas:
+    """WebSockets ya abiertos con la API del modelo para un puerto: una conexión nueva del modelo no espera el saludo."""
 
+    def __init__(self, web, clave, puerto):
+        self.web, self.clave, self.puerto, self.cantidad = web, clave, puerto, RESERVAS[puerto]
+        self._listas, self._lock, self._falta = [], threading.Lock(), threading.Event()
 
-def sin_demora(transporte):
-    """Desactiva Nagle en las dos puntas de la conexión SSH (TCP_NODELAY).
-
-    Con Nagle, un mensaje chico espera el ACK del anterior, y el ACK diferido de la otra punta tarda decenas de ms:
-    cada cuadro de un teléfono tardaba ~190 ms en cruzar el túnel y las cajas de vuelta se retrasaban igual. En esta
-    punta basta la opción del socket; sshd solo la activa en su lado cuando una sesión pide terminal (pty), así que se
-    pide una para un comando que termina enseguida. Con las dos, el cuadro cruza en ~100 ms (ping ~72 ms).
-    """
-    try:
-        transporte.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-    except OSError:
-        pass  # por el dominio paramiko usa un par de sockets locales; el WebSocket ya va sin demora
-    try:
-        sesion = transporte.open_session(timeout=10)
-        sesion.get_pty()
-        sesion.exec_command("true")
-        sesion.close()
-    except (paramiko.SSHException, OSError) as error:
-        print(f"No se pudo pedir terminal al servidor ({error}): el túnel funciona, pero más lento.", flush=True)
-
-
-class ClaveIncorrecta(Exception):
-    """El servidor rechazó la contraseña: se vuelve a pedir."""
-
-
-class Tunel:
-    """Conexión SSH de un reenvío; se rehace si se cayó o si quedó colgada."""
-
-    def __init__(self, host, usuario, puerto, clave, destino, web=None, clave_tunel=None):
-        self.host, self.usuario, self.puerto, self.clave, self.destino = host, usuario, puerto, clave, destino
-        self.web, self.clave_tunel = web, clave_tunel  # con web, la conexión SSH va por el dominio (por_dominio)
-        self._cliente, self._lock, self._conexiones = None, threading.Lock(), 0
-
-    def transporte(self):
+    def tomar(self):
+        """Una reserva vigente o, si no hay, un WebSocket nuevo."""
         with self._lock:
-            if self._cliente is None or not self._cliente.get_transport() or not self._cliente.get_transport().is_active():
-                self._conectar()
-            return self._cliente.get_transport()
+            while self._listas:
+                hora, conexion, resto = self._listas.pop(0)
+                if time.monotonic() - hora < RESERVA_VIDA_S and abierto(conexion):
+                    self._falta.set()
+                    return conexion, resto
+                conexion.close()
+        self._falta.set()
+        return abrir_ws(self.web, self.puerto, self.clave)
 
-    def abrir(self, origen):
-        """Canal al puerto `destino` del servidor; si la conexión no responde, la rehace (y avisa con el error)."""
-        transporte = self.transporte()
-        try:
-            return transporte.open_channel("direct-tcpip", ("127.0.0.1", self.destino), origen,
-                                           window_size=VENTANAS[self.destino], timeout=ABRIR_CANAL_S)
-        except paramiko.ChannelException:
-            raise  # el servidor respondió que el puerto no atiende (ej. reiniciando el contenedor): el túnel está bien
-        except (paramiko.SSHException, EOFError, OSError) as error:
-            self.reiniciar(transporte, f"no respondió al abrir un canal ({str(error) or type(error).__name__})")
-            raise
-
-    def reiniciar(self, transporte, motivo):
-        """Cierra la conexión si sigue siendo `transporte`: sus canales se cortan y el próximo pedido reconecta."""
-        with self._lock:
-            if self._cliente is not None and self._cliente.get_transport() is transporte:
-                print(f"Túnel {self.destino}: la conexión SSH {motivo}; se rehace.", flush=True)
-                self._cliente.close()
-                self._cliente = None
-
-    def vigilar(self, parar):
-        """Hilo: abre y cierra un canal cada VIGILAR_CADA_S; así una conexión colgada se rehace aunque nadie pida nada."""
-        while not parar.wait(VIGILAR_CADA_S):
-            try:
-                self.abrir(("127.0.0.1", 0)).close()
-            except Exception:
-                pass  # abrir() ya rehízo la conexión si hacía falta
-
-    def _conectar(self):
-        intentos = 0
-        while True:
-            cliente = paramiko.SSHClient()
-            cliente.load_system_host_keys()
-            cliente.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            sock = None
-            try:
-                sock = por_dominio(self.web, self.clave_tunel) if self.web else None
-                # Solo con la contraseña: sin probar antes las llaves de esta PC.
-                cliente.connect(self.host, self.puerto, self.usuario, password=self.clave, timeout=10,
-                                look_for_keys=False, allow_agent=False, sock=sock)
-            except paramiko.AuthenticationException:
-                raise ClaveIncorrecta(f"La contraseña no es la de {self.usuario}@{self.host}.")
-            except (paramiko.SSHException, OSError, EOFError) as error:
-                cliente.close()
-                if sock is not None:
-                    sock.close()
-                intentos += 1
-                destino = f"{self.web}{RUTA_TUNEL}" if self.web else self.host
-                print(f"No se pudo conectar a {destino} ({str(error) or type(error).__name__}); reintento en 3 s",
-                      flush=True)
-                if intentos == 2 and not self.web:
-                    print(f"Si sigue así, esta red ya no llega al puerto {self.puerto} del servidor (las de ESAN lo "
-                          "bloquean): volver a correr el script, que entonces va por el dominio.", flush=True)
-                time.sleep(3)
+    def mantener(self, parar):
+        """Hilo: repone las reservas que se usan y cambia las viejas o cerradas."""
+        avisado = False
+        while not parar.is_set():
+            with self._lock:
+                vigentes = []
+                for hora, conexion, resto in self._listas:
+                    if time.monotonic() - hora < RESERVA_VIDA_S and abierto(conexion):
+                        vigentes.append((hora, conexion, resto))
+                    else:
+                        conexion.close()
+                self._listas = vigentes
+                faltan = self.cantidad - len(vigentes)
+            if faltan <= 0:
+                self._falta.wait(1)
+                self._falta.clear()
                 continue
-            transporte = cliente.get_transport()
-            transporte.set_keepalive(15)
-            sin_demora(transporte)
-            if self._conexiones:
-                print(f"Túnel {self.destino}: SSH reconectado.", flush=True)
-            if self._cliente is not None:
-                self._cliente.close()
-            self._cliente, self._conexiones = cliente, self._conexiones + 1
-            return
+            try:
+                conexion, resto = abrir_ws(self.web, self.puerto, self.clave)
+            except Exception as error:
+                if not avisado:
+                    print(f"API del modelo {self.puerto}: no se pudo abrir una conexión ({error}); se reintenta.",
+                          flush=True)
+                    avisado = True
+                parar.wait(3)
+                continue
+            if avisado:
+                print(f"API del modelo {self.puerto}: conexión otra vez.", flush=True)
+                avisado = False
+            with self._lock:
+                self._listas.append((time.monotonic(), conexion, resto))
 
     def cerrar(self):
         with self._lock:
-            if self._cliente is not None:
-                self._cliente.close()
-                self._cliente = None
+            for _, conexion, _ in self._listas:
+                conexion.close()
+            self._listas = []
 
 
 class Reenvio(socketserver.ThreadingTCPServer):
-    """Escucha en 127.0.0.1:<puerto> y pasa cada conexión al mismo puerto del servidor por el túnel."""
+    """Escucha en 127.0.0.1:<puerto> y pasa cada conexión a la API del modelo, al mismo puerto del servidor."""
 
     daemon_threads = True
     allow_reuse_address = False  # en Windows permitiría compartir el puerto con otro proceso
 
-    def __init__(self, tunel, puerto):
-        self.tunel, self.puerto = tunel, puerto
+    def __init__(self, reservas, puerto):
+        self.reservas, self.puerto = reservas, puerto
         super().__init__(("127.0.0.1", puerto), Conexion)
 
 
 class Conexion(socketserver.BaseRequestHandler):
     def handle(self):
-        servidor = self.server
         self.request.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         try:
-            canal = servidor.tunel.abrir(self.request.getpeername())
+            conexion, resto = self.server.reservas.tomar()
         except Exception as error:
-            print(f"Túnel {servidor.puerto}: {error}", flush=True)
+            print(f"API del modelo {self.server.puerto}: {error}", flush=True)
             return
-        try:
-            while True:
-                listos, _, _ = select.select([self.request, canal], [], [], 30)
-                if self.request in listos:
-                    datos = self.request.recv(65536)
-                    if not datos:
-                        break
-                    canal.sendall(datos)
-                if canal in listos:
-                    datos = canal.recv(65536)
-                    if not datos:
-                        break
-                    self.request.sendall(datos)
-        except OSError:
-            pass
-        finally:
-            canal.close()
+        pasar(conexion, self.request, bytearray(resto))
 
 
 def esperar_servidor():
-    """Espera a que backend-vivo responda por el túnel: el servidor puede estar recién encendido."""
+    """Espera a que backend-vivo responda por la API: el servidor puede estar recién encendido."""
     avisado = False
     while True:
         try:
@@ -461,8 +371,8 @@ def comando_modelo(directo):
     api = f"http://127.0.0.1:{PUERTOS[0]}"
     if directo:
         return [sys.executable, "-u", str(MODELO), "--api", api], MODELO.parent
-    # modelo-gpu va con network_mode: host, así que su 127.0.0.1 llega al túnel de la laptop. Las variables (-e sin
-    # valor) se toman del entorno de este proceso; sin --no-deps levantaría backend-vivo y camara-web locales.
+    # modelo-gpu va con network_mode: host, así que su 127.0.0.1 llega a los puertos de este script. Las variables (-e
+    # sin valor) se toman del entorno de este proceso; sin --no-deps levantaría backend-vivo y camara-web locales.
     variables = [a for v in VARIABLES for a in ("-e", v)]
     return [*COMPOSE, "run", "--rm", "--no-deps", "-T", "--name", CONTENEDOR, *variables, "modelo-gpu", "--api", api], RAIZ
 
@@ -479,7 +389,7 @@ def correr_modelo(entorno, directo):
         try:
             codigo = modelo.wait()
         except KeyboardInterrupt:
-            # Ctrl+C: se deja que el modelo avise a la web que se detuvo antes de cerrar el túnel.
+            # Ctrl+C: se deja que el modelo avise a la web que se detuvo antes de cerrar las conexiones.
             if not directo:
                 detener_contenedor()
             try:
@@ -500,69 +410,53 @@ def correr_modelo(entorno, directo):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("servidor", nargs="?", default=SERVIDOR, help=f"usuario@host del servidor (por defecto {SERVIDOR})")
-    parser.add_argument("--ssh-port", type=int, default=22)
+    parser.add_argument("--web", default=WEB_SERVIDOR, help=f"la web con la API del modelo (por defecto {WEB_SERVIDOR})")
     parser.add_argument("--directo", action="store_true", help="el modelo con el Python de esta laptop, sin Docker")
-    parser.add_argument("--via", choices=("auto", "ssh", "dominio"), default="auto",
-                        help="por dónde va el túnel: auto prueba el puerto SSH y, si la red lo bloquea (ESAN), va por "
-                             f"el dominio ({WEB_SERVIDOR}{RUTA_TUNEL})")
     args = parser.parse_args()
-    usuario, _, host = args.servidor.rpartition("@")
-    if not usuario:
-        parser.error("indicar el servidor como usuario@host")
+    web = args.web.rstrip("/")
+    clave = leer_env("TUNEL_CLAVE")
+    if not clave:
+        raise SystemExit("Falta TUNEL_CLAVE en el .env de la raíz: la misma del .env del servidor.")
 
-    web = clave_tunel = None
-    if args.via == "dominio" or (args.via == "auto" and not llega(host, args.ssh_port)):
-        if host != HOST_SERVIDOR:
-            raise SystemExit(f"Esta red no llega al puerto {args.ssh_port} de {host}, y el dominio es solo para "
-                             f"{HOST_SERVIDOR}: usar otra red.")
-        clave_tunel = leer_env("TUNEL_CLAVE")
-        if not clave_tunel:
-            raise SystemExit("Para ir por el dominio falta TUNEL_CLAVE en el .env de la raíz (la misma del .env del "
-                             "servidor).")
-        web = WEB_SERVIDOR
-        print(f"El túnel va por el dominio: {web}{RUTA_TUNEL} (esta red no llega al puerto {args.ssh_port} del servidor "
-              "o se pidió --via dominio).", flush=True)
+    avisado = False
+    while True:  # la red y la clave se prueban antes de tocar nada en la laptop
+        try:
+            conexion, _ = abrir_ws(web, PUERTOS[0], clave)
+            conexion.close()
+            break
+        except ClaveIncorrecta as error:
+            raise SystemExit(f"{error} Copiar la del servidor en TUNEL_CLAVE del .env de esta laptop.")
+        except OSError as error:
+            if not avisado:
+                print(f"No se llega a la API del modelo en {web}{RUTA_API} ({error}); se reintenta cada 3 s. "
+                      "Ctrl+C para salir.", flush=True)
+                avisado = True
+            time.sleep(3)
 
     locales = locales_levantados(args.directo)
-    clave = leer_env("SERVIDOR_CLAVE")
-    while True:  # la red y la contraseña se prueban antes de tocar nada en la laptop
-        clave = clave or getpass.getpass(f"Contraseña de {usuario}@{host}: ")
-        tuneles = [Tunel(host, usuario, args.ssh_port, clave, puerto, web, clave_tunel) for puerto in PUERTOS]
-        try:
-            for tunel in tuneles:
-                tunel.transporte()
-            break
-        except ClaveTunelIncorrecta as error:
-            for tunel in tuneles:
-                tunel.cerrar()
-            raise SystemExit(f"{error} Copiar la del servidor en TUNEL_CLAVE del .env de esta laptop.")
-        except ClaveIncorrecta as error:
-            for tunel in tuneles:
-                tunel.cerrar()
-            print(error, flush=True)
-            clave = None
     if locales:
         print(f"Se detienen los servicios locales que usan los puertos {PUERTOS[0]} y {PUERTOS[1]}: {', '.join(locales)}.",
               flush=True)
         docker(*COMPOSE, "stop", *locales)
-    reenvios, parar = [], threading.Event()
+    reenvios, reservas, parar = [], [], threading.Event()
     codigo = 1
     try:
-        for tunel, puerto in zip(tuneles, PUERTOS):
+        for puerto in PUERTOS:
+            reserva = Reservas(web, clave, puerto)
             try:
-                reenvio = Reenvio(tunel, puerto)
+                reenvio = Reenvio(reserva, puerto)
             except OSError:
                 raise SystemExit(f"El puerto {puerto} ya está en uso en esta laptop (¿camara_telefono.py corriendo?). "
                                  "Detenerlo antes de usar el modelo con el servidor.")
             threading.Thread(target=reenvio.serve_forever, daemon=True).start()
-            threading.Thread(target=tunel.vigilar, args=(parar,), daemon=True).start()
+            threading.Thread(target=reserva.mantener, args=(parar,), daemon=True).start()
             reenvios.append(reenvio)
+            reservas.append(reserva)
         esperar_servidor()
-        print(f"Túnel listo con {host}: backend-vivo y cámaras en 127.0.0.1:{PUERTOS[0]} y :{PUERTOS[1]}", flush=True)
+        print(f"API del modelo lista ({web}{RUTA_API}): backend-vivo y cámaras en 127.0.0.1:{PUERTOS[0]} y "
+              f":{PUERTOS[1]}", flush=True)
         # Enlace que Teléfonos muestra para unir un teléfono: el de la web del servidor, no la IP de la laptop.
-        enlace = f"{WEB_SERVIDOR}/camara/" if host == HOST_SERVIDOR else f"https://{host}:8444"
-        entorno = {**AJUSTES_REMOTO, **os.environ, "ENLACE_CAMARA": os.environ.get("ENLACE_CAMARA") or enlace}
+        entorno = {**AJUSTES_REMOTO, **os.environ, "ENLACE_CAMARA": os.environ.get("ENLACE_CAMARA") or f"{web}/camara/"}
         codigo = correr_modelo(entorno, args.directo)
     except KeyboardInterrupt:
         pass
@@ -571,8 +465,8 @@ def main():
         for reenvio in reenvios:
             reenvio.shutdown()
             reenvio.server_close()
-        for tunel in tuneles:
-            tunel.cerrar()
+        for reserva in reservas:
+            reserva.cerrar()
         vuelven = [s for s in locales if s != "modelo-gpu"]
         if vuelven:
             print(f"Se vuelven a levantar los servicios locales: {', '.join(vuelven)}.", flush=True)

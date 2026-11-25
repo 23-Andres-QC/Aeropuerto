@@ -1,0 +1,183 @@
+"""API del modelo en el dominio: une los WebSockets de la laptop con backend-vivo y camara-web del servidor.
+
+Corre en el servidor (puente-modelo de compose.yaml, perfil servidor) y escucha solo en 127.0.0.1:PUENTE_PUERTO; el nginx
+del sistema le pasa https://aeropuerto.tujuegoya.com/api-modelo/ (servidor.nginx.conf). scripts/modelo_local.py abre
+un WebSocket por cada conexión del modelo y el puente la une al puerto de la ruta, que en el servidor solo escucha en
+127.0.0.1:
+
+    /api-modelo/8093 -> backend-vivo   lista de teléfonos y videos, relevo de cajas y memoria de identidades
+    /api-modelo/8092 -> camara-web     cuadros de cada teléfono
+
+Sin SSH ni contraseña del servidor: solo pasa quien trae la clave TUNEL_CLAVE (la del .env del servidor y de la
+laptop), porque por ahí se ve el video de los teléfonos. Sin TUNEL_CLAVE no deja pasar a nadie. Solo la biblioteca
+estándar de Python.
+"""
+import asyncio
+import base64
+import hashlib
+import hmac
+import os
+import struct
+
+CLAVE = os.environ.get("TUNEL_CLAVE", "")
+PUERTO = int(os.environ.get("PUENTE_PUERTO") or 8095)
+RUTAS = {"/api-modelo/8093": 8093, "/api-modelo/8092": 8092}
+GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"  # el del protocolo WebSocket (RFC 6455)
+MAX_MARCO = 1 << 20  # los marcos del modelo son de hasta 64 KB
+# La laptop deja WebSockets abiertos de reserva; el puente se une al servicio recién con el primer dato, así esas
+# reservas no ocupan conexiones de backend-vivo ni de camara-web. La laptop los renueva antes de este plazo.
+ESPERA_PRIMER_DATO_S = 120
+
+
+def desenmascarar(datos, mascara):
+    n = len(datos)
+    if not n:
+        return b""
+    m = (mascara * (n // 4 + 1))[:n]
+    return (int.from_bytes(datos, "big") ^ int.from_bytes(m, "big")).to_bytes(n, "big")
+
+
+def marco(opcode, datos):
+    """Un marco del servidor al cliente (sin máscara)."""
+    n = len(datos)
+    if n < 126:
+        cabecera = struct.pack(">BB", 0x80 | opcode, n)
+    elif n < 1 << 16:
+        cabecera = struct.pack(">BBH", 0x80 | opcode, 126, n)
+    else:
+        cabecera = struct.pack(">BBQ", 0x80 | opcode, 127, n)
+    return cabecera + datos
+
+
+async def leer_marco(lector):
+    """El próximo marco del cliente: (opcode, datos). Los del cliente van siempre con máscara."""
+    b0, b1 = await lector.readexactly(2)
+    largo = b1 & 0x7F
+    if largo == 126:
+        largo = struct.unpack(">H", await lector.readexactly(2))[0]
+    elif largo == 127:
+        largo = struct.unpack(">Q", await lector.readexactly(8))[0]
+    if largo > MAX_MARCO or not b1 & 0x80:
+        raise ConnectionError("marco inválido")
+    mascara = await lector.readexactly(4)
+    return b0 & 0x0F, desenmascarar(await lector.readexactly(largo), mascara)
+
+
+async def primer_dato(lector, escritor):
+    """Espera el primer dato del cliente (contesta los ping); None si cerró antes."""
+    while True:
+        opcode, datos = await leer_marco(lector)
+        if opcode in (0, 2) and datos:
+            return datos
+        if opcode == 8:
+            return None
+        if opcode == 9:
+            escritor.write(marco(10, datos))
+            await escritor.drain()
+
+
+async def ws_a_servicio(lector, escritor, servicio):
+    try:
+        while True:
+            opcode, datos = await leer_marco(lector)
+            if opcode in (0, 2):
+                servicio.write(datos)
+                await servicio.drain()
+            elif opcode == 8:
+                return
+            elif opcode == 9:
+                escritor.write(marco(10, datos))
+                await escritor.drain()
+    except (asyncio.IncompleteReadError, ConnectionError):
+        return
+
+
+async def servicio_a_ws(servicio, escritor):
+    try:
+        while True:
+            datos = await servicio.read(65536)
+            if not datos:
+                return
+            escritor.write(marco(2, datos))
+            await escritor.drain()
+    except ConnectionError:
+        return
+
+
+async def responder(escritor, estado):
+    escritor.write(f"HTTP/1.1 {estado}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".encode())
+    try:
+        await escritor.drain()
+    except ConnectionError:
+        pass
+    escritor.close()
+
+
+async def atender(lector, escritor):
+    try:
+        pedido = await asyncio.wait_for(lector.readuntil(b"\r\n\r\n"), 10)
+    except (asyncio.IncompleteReadError, asyncio.LimitOverrunError, asyncio.TimeoutError, ConnectionError):
+        escritor.close()
+        return
+    lineas = pedido.decode("latin-1").split("\r\n")
+    partes = lineas[0].split()
+    ruta = partes[1].split("?", 1)[0] if len(partes) > 1 else ""
+    campos = {}
+    for linea in lineas[1:]:
+        nombre, _, valor = linea.partition(":")
+        campos[nombre.strip().lower()] = valor.strip()
+    ip = campos.get("x-real-ip", "?")
+    destino = RUTAS.get(ruta)
+    if destino is None:
+        await responder(escritor, "404 Not Found")
+        return
+    if not CLAVE:
+        await responder(escritor, "503 Service Unavailable")
+        return
+    if not hmac.compare_digest(campos.get("x-tunel-clave", "").encode(), CLAVE.encode()):
+        print(f"{ip}: clave incorrecta", flush=True)
+        await responder(escritor, "403 Forbidden")
+        return
+    llave = campos.get("sec-websocket-key", "")
+    if campos.get("upgrade", "").lower() != "websocket" or not llave:
+        await responder(escritor, "400 Bad Request")
+        return
+    acepta = base64.b64encode(hashlib.sha1((llave + GUID).encode()).digest()).decode()
+    escritor.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                    f"Sec-WebSocket-Accept: {acepta}\r\n\r\n").encode())
+    try:
+        await escritor.drain()
+        datos = await asyncio.wait_for(primer_dato(lector, escritor), ESPERA_PRIMER_DATO_S)
+        if datos is None:
+            escritor.close()
+            return
+        servicio_lector, servicio = await asyncio.wait_for(asyncio.open_connection("127.0.0.1", destino), 10)
+    except (asyncio.IncompleteReadError, asyncio.TimeoutError, ConnectionError, OSError):
+        escritor.close()
+        return
+    servicio.write(datos)
+    tareas = {asyncio.create_task(ws_a_servicio(lector, escritor, servicio)),
+              asyncio.create_task(servicio_a_ws(servicio_lector, escritor))}
+    await asyncio.wait(tareas, return_when=asyncio.FIRST_COMPLETED)
+    for tarea in tareas:
+        tarea.cancel()
+    servicio.close()
+    try:
+        escritor.write(marco(8, b""))
+    except (ConnectionError, RuntimeError):
+        pass
+    escritor.close()
+
+
+async def main():
+    if not CLAVE:
+        print("Sin TUNEL_CLAVE en el .env: la API del modelo no deja pasar a nadie.", flush=True)
+    servidor = await asyncio.start_server(atender, "127.0.0.1", PUERTO)
+    print(f"API del modelo en 127.0.0.1:{PUERTO}: " + ", ".join(f"{r} -> 127.0.0.1:{p}" for r, p in RUTAS.items()),
+          flush=True)
+    async with servidor:
+        await servidor.serve_forever()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
