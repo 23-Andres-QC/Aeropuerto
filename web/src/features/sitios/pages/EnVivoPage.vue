@@ -520,7 +520,7 @@ onUnmounted(() => window.removeEventListener("keydown", cerrarConEsc));
                 <h2 class="dato">{{ r.camara }}</h2>
                 <span class="pill warn">libre</span>
               </div>
-              <p class="ranura-datos muted">Esperando el {{ r.camara === "cam01" ? "primer" : "segundo" }} teléfono.</p>
+              <p class="ranura-datos muted">Esperando el {{ ["primer", "segundo", "tercer"][camarasVivo.indexOf(r.camara)] ?? "siguiente" }} teléfono.</p>
             </article>
             <p v-if="r.telefono && r.sinCalibracion" class="aviso-ranura">{{ r.camara }} no reconoce el patio: apunta el teléfono al piso.</p>
           </div>

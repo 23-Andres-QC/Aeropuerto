@@ -37,8 +37,10 @@ export const zonasDelPlano = (capas: { nombre: string }[] | null | undefined) =>
 ];
 /** Una detección más vieja que esto ya no se dibuja. */
 const VIGENCIA_MS = 2000;
-/** Cuánto se conserva el rastro en pantalla de quien dejó de verse. */
+/** Sin grabar, cuánto se conserva el rastro en pantalla de quien dejó de verse (grabando queda toda la captura). */
 const RASTRO_MS = 8000;
+/** Grabando, recorridos que quedan en el mapa: los de las personas vistas más recientemente. */
+const MAX_RECORRIDOS_VIVO = 150;
 const PUNTOS_RASTRO = 80;
 /** Puntos que se guardan de la historia de cada persona (para su recorrido en Insights). */
 const PUNTOS_HISTORIA = 600;
@@ -703,12 +705,23 @@ function componer() {
   }
   for (const clave of [...suavizadas.keys()]) if (!acumulado.has(clave)) suavizadas.delete(clave);
   const recorridos: RecorridoPlano[] = [];
+  // Grabando, el recorrido de cada persona queda en el mapa toda la captura (es lo que se guarda en Registros): el de quien
+  // sigue a la vista, marcado; el de quien ya no se ve, como recorrido. Sin grabar, solo el rastro de los últimos segundos.
+  const conHistoria = new Set<string>();
+  if (grabando.value) {
+    const recientes = [...historia.values()].filter((h) => h.puntos.length > 1).sort((a, b) => b.ultima - a.ultima).slice(0, MAX_RECORRIDOS_VIVO);
+    for (const h of recientes) {
+      const clave = `g${h.id}`;
+      conHistoria.add(clave);
+      recorridos.push({ id: clave, color: colorPersona(h.id), puntos: [...h.puntos], activo: acumulado.has(clave) });
+    }
+  }
   for (const [clave, r] of [...rastros]) {
     if (t - r.visto > RASTRO_MS) {
       rastros.delete(clave);
       continue;
     }
-    if (r.puntos.length > 1) recorridos.push({ id: clave, color: r.color, puntos: [...r.puntos], activo: acumulado.has(clave) });
+    if (r.puntos.length > 1 && !conHistoria.has(clave)) recorridos.push({ id: clave, color: r.color, puntos: [...r.puntos], activo: acumulado.has(clave) });
   }
   lista.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9));
   vivas.value = { personas, recorridos, lista };

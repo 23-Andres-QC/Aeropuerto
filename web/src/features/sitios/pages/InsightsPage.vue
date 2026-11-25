@@ -4,7 +4,7 @@ import { useRoute } from "vue-router";
 import { cantidad, colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, type Analitica, type Config, type Insights, type Punto, type Recorrido, type Replay, type Sesion } from "../api";
 import PlanoSitio, { type FlechaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
-import { CELDA_CALOR, SESION_VIVO, capturasVersion, entradasPorIntervalo, fijarModoVivo, historiasDe, mensajeGuardado, modoVivo, motorVivo as vivo, type ConteoCamara, type CuentaSentido } from "../enVivo";
+import { CELDA_CALOR, SESION_VIVO, capturasVersion, claveVivo, entradasPorIntervalo, fijarModoVivo, historiasDe, mensajeGuardado, modoVivo, motorVivo as vivo, type ConteoCamara, type CuentaSentido } from "../enVivo";
 import ContrasteSesiones from "../components/ContrasteSesiones.vue";
 import TraficoSitio from "../components/TraficoSitio.vue";
 import LineaTiempo from "../components/LineaTiempo.vue";
@@ -94,6 +94,16 @@ const valorSesion = computed({
 
 const mapa = computed(() => mapaDelSitio(config.value));
 const sesion = computed(() => sesiones.value.find((s) => s.session_id === sesionId.value));
+/**
+ * Los mapas van solos al lugar de lo que se mira (y solo lo dibujan): en vivo, la zona que se graba; una captura o un video, la
+ * zona grabada que declara (`zona`; sin ella, el patio). Un sitio sin zonas grabadas se ve entero.
+ */
+const lugarMapas = computed(() => {
+  if (!mapa.value?.capas?.length) return null;
+  if (modoVivo.value) return claveVivo.value;
+  const zona = sesion.value?.summary?.zona;
+  return typeof zona === "string" ? zona : "sitio";
+});
 const r = computed(() => datos.value?.resumen);
 const p3 = computed(() => analitica.value?.results);
 const comando = computed(() => `python "Modelo/Insights Modelo/insights_historicos.py" --sitio ${slug.value}`);
@@ -767,7 +777,7 @@ onMounted(async () => {
           <h2>Mapa de movimiento · {{ c.titulo }}</h2>
           <span class="pill">{{ cantidad(c.personas, "recorrido") }}</span>
         </div>
-        <PlanoSitio v-if="mapa" class="plano-tablero" :mapa="mapa" :zonas="zonas" :recorridos="c.recorridos" :zona-activa="zonaId" :mostrar-camaras="false" zoom v-model:enlace="vistaPlanos" />
+        <PlanoSitio v-if="mapa" class="plano-tablero" :mapa="mapa" :zonas="zonas" :recorridos="c.recorridos" :zona-activa="zonaId" :mostrar-camaras="false" :solo="lugarMapas" zoom v-model:enlace="vistaPlanos" />
       </article>
       <article class="panel">
         <div class="panel-heading">
@@ -783,6 +793,7 @@ onMounted(async () => {
           :flechas="c.sel == null ? flechas : []"
           :zona-activa="zonaId"
           :mostrar-camaras="false"
+          :solo="lugarMapas"
           zoom
           v-model:enlace="vistaPlanos"
         />
@@ -819,6 +830,7 @@ onMounted(async () => {
           :recorridos="recorridos"
           :zona-activa="zonaId"
           :mostrar-camaras="false"
+          :solo="lugarMapas"
           zoom
           v-model:enlace="vistaPlanos"
           @zona="elegirZona"
@@ -861,6 +873,7 @@ onMounted(async () => {
           :flechas="flechas"
           :zona-activa="zonaId"
           :mostrar-camaras="false"
+          :solo="lugarMapas"
           zoom
           v-model:enlace="vistaPlanos"
           @zona="elegirZona"
