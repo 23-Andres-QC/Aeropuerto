@@ -48,25 +48,25 @@ func TestConfigEnabled(t *testing.T) {
 	}
 }
 
-// A mail whose HTML shows Maru (cid:maru) carries her as an inline image, so it shows without loading anything from the web.
-func TestBuildMessageCarriesMaru(t *testing.T) {
+// A mail whose HTML shows the owl (cid:buho) carries it as an inline image, so it shows without loading anything from the web.
+func TestBuildMessageCarriesOwl(t *testing.T) {
 	from, _ := mail.ParseAddress("LAP <no-responder@lap.test>")
 	to, _ := mail.ParseAddress("ana@lap.test")
-	msg, err := build(from, to, "Hola", `<p><img src="cid:maru"></p>`, "hola")
+	msg, err := build(from, to, "Hola", `<p><img src="cid:buho"></p>`, "hola")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(msg)
-	for _, want := range []string{"multipart/related", "multipart/alternative", "Content-ID: <maru>", "Content-Disposition: inline", "image/gif"} {
+	for _, want := range []string{"multipart/related", "multipart/alternative", "Content-ID: <buho>", "Content-Disposition: inline", "image/gif"} {
 		if !strings.Contains(s, want) {
-			t.Errorf("falta %q en el mensaje con Maru", want)
+			t.Errorf("falta %q en el mensaje con el búho", want)
 		}
 	}
-	if len(maru) < 1000 {
-		t.Errorf("Maru no viene incluida en el programa: %d bytes", len(maru))
+	if len(buho) < 1000 {
+		t.Errorf("el búho no viene incluido en el programa: %d bytes", len(buho))
 	}
 	plain, _ := build(from, to, "Hola", "<p>sin imagen</p>", "hola")
 	if strings.Contains(string(plain), "multipart/related") || strings.Contains(string(plain), "Content-ID") {
-		t.Error("un correo sin Maru no debe llevar la imagen")
+		t.Error("un correo sin el búho no debe llevar la imagen")
 	}
 }

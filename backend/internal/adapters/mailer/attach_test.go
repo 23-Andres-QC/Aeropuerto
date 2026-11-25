@@ -14,7 +14,7 @@ import (
 func TestAttachKeepsBodyAndFile(t *testing.T) {
 	from := &mail.Address{Address: "lap@example.com"}
 	to := &mail.Address{Address: "ana@example.com"}
-	msg, err := build(from, to, "Reporte", "<p>Hola <img src=\"cid:maru\"></p>", "Hola")
+	msg, err := build(from, to, "Reporte", "<p>Hola <img src=\"cid:buho\"></p>", "Hola")
 	if err != nil {
 		t.Fatal(err)
 	}

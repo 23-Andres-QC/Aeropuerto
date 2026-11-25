@@ -13,7 +13,7 @@ func ResetMail(name, link string, minutes int) (htmlBody, text string) {
 <html lang="es"><body style="margin:0;background:#eef3fb;font-family:Segoe UI,Arial,sans-serif;color:#0f172a">
 <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="padding:24px 12px"><tr><td align="center">
 <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #dbe4f3">
-<tr><td style="background:#0b3b8f;padding:6px 24px;color:#ffffff"><table role="presentation" width="100%%" cellpadding="0" cellspacing="0"><tr><td style="font-size:18px;font-weight:700;color:#ffffff">LAP <span style="font-weight:400;font-size:12px;letter-spacing:1px">· LIMA AIRPORT PARTNERS</span></td><td align="right"><img src="cid:maru" width="110" alt="Maru, la mascota de LAP" style="display:block;border:0;width:110px;height:auto"></td></tr></table></td></tr>
+<tr><td style="background:#0b3b8f;padding:6px 24px;color:#ffffff"><table role="presentation" width="100%%" cellpadding="0" cellspacing="0"><tr><td style="font-size:18px;font-weight:700;color:#ffffff">LAP <span style="font-weight:400;font-size:12px;letter-spacing:1px">· LIMA AIRPORT PARTNERS</span></td><td align="right"><img src="cid:buho" width="84" alt="Búho de TrackFlow" style="display:block;border:0;width:84px;height:auto"></td></tr></table></td></tr>
 <tr><td style="padding:24px">
 <p style="margin:0 0 12px;font-size:16px">Hola, %s.</p>
 <p style="margin:0 0 16px;line-height:1.5">Recibimos una solicitud para restablecer tu contraseña. Pulsa el botón para elegir una nueva. El enlace sirve <b>una sola vez</b> y vence en %d minutos.</p>
@@ -33,7 +33,7 @@ func PasswordChangedMail(name, when string) (htmlBody, text string) {
 <html lang="es"><body style="margin:0;background:#eef3fb;font-family:Segoe UI,Arial,sans-serif;color:#0f172a">
 <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="padding:24px 12px"><tr><td align="center">
 <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #dbe4f3">
-<tr><td style="background:#0b3b8f;padding:6px 24px;color:#ffffff"><table role="presentation" width="100%%" cellpadding="0" cellspacing="0"><tr><td style="font-size:18px;font-weight:700;color:#ffffff">LAP <span style="font-weight:400;font-size:12px;letter-spacing:1px">· LIMA AIRPORT PARTNERS</span></td><td align="right"><img src="cid:maru" width="110" alt="Maru, la mascota de LAP" style="display:block;border:0;width:110px;height:auto"></td></tr></table></td></tr>
+<tr><td style="background:#0b3b8f;padding:6px 24px;color:#ffffff"><table role="presentation" width="100%%" cellpadding="0" cellspacing="0"><tr><td style="font-size:18px;font-weight:700;color:#ffffff">LAP <span style="font-weight:400;font-size:12px;letter-spacing:1px">· LIMA AIRPORT PARTNERS</span></td><td align="right"><img src="cid:buho" width="84" alt="Búho de TrackFlow" style="display:block;border:0;width:84px;height:auto"></td></tr></table></td></tr>
 <tr><td style="padding:24px">
 <p style="margin:0 0 12px;font-size:16px">Hola, %s.</p>
 <p style="margin:0 0 16px;line-height:1.5"><b>Tu contraseña se cambió con éxito</b> el %s (hora de Lima). Ya puedes entrar con la nueva.</p>

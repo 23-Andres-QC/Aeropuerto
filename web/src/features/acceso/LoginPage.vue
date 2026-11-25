@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import Amigo from "../../shared/Amigo.vue";
-import Maru from "../../shared/Maru.vue";
+import Buho from "../../shared/Buho.vue";
 import { ref } from "vue";
 import IconoAcceso from "./IconoAcceso.vue";
 import VisualAcceso from "./VisualAcceso.vue";
@@ -48,10 +48,11 @@ async function login() {
 
     <section class="login-panel">
       <div class="login-card">
-        <!-- Entre las tres dicen «Bienvenido a TrackFlow», una después de otra: el otorongo, el cóndor y Maru. -->
-        <Maru class="maru-acceso" entrada saludo="TrackFlow" :inicio-burbuja="2.9" :fin-burbuja="6.5" />
-        <Amigo class="amigo-ave" tipo="ave" src="/amigo-ave.png" alt="Cóndor piloto, otra mascota de TrackFlow" :retraso="0.7" texto="a" :inicio-texto="2.0" :fin-texto="6.5" lado="arriba" />
-        <Amigo class="amigo-jaguar" tipo="felino" src="/amigo-jaguar.png" alt="Otorongo piloto con un cartel de TrackFlow" cartel="TRACKFLOW" :retraso="0.9" texto="Bienvenido" :inicio-texto="1.2" :fin-texto="6.5" lado="izquierda" />
+        <!-- Entre los tres dicen «Bienvenido a TrackFlow», uno después de otro. El de la derecha piensa mientras se valida y se pone
+             triste con un error; el de abajo duerme si la sesión se cerró por inactividad y se sorprende si fue por volver atrás. -->
+        <Buho class="buho-acceso" entrada saludo="TrackFlow" :pose="error ? 'triste' : submitting ? 'pensando' : 'feliz'" :inicio-burbuja="2.9" :fin-burbuja="6.5" />
+        <Amigo class="amigo-arriba" movimiento="planea" pose="guino" :retraso="0.7" texto="a" :inicio-texto="2.0" :fin-texto="6.5" lado="arriba" />
+        <Amigo class="amigo-abajo" movimiento="salta" :pose="motivoCierre === 'inactividad' ? 'dormido' : motivoCierre === 'atras' ? 'sorpresa' : 'tableta'" :retraso="0.9" texto="Bienvenido" :inicio-texto="1.2" :fin-texto="6.5" lado="izquierda" />
         <div class="login-card-heading">
           <div class="login-card-marca"><span class="brand-icon">✈</span>TrackFlow</div>
           <h2>Bienvenido</h2>

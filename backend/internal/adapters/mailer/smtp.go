@@ -19,13 +19,13 @@ import (
 	"time"
 )
 
-// maru is the LAP mascot, small enough to travel inside the mail: a message whose HTML says `<img src="cid:maru">` carries it as
+// buho is the TrackFlow owl, small enough to travel inside the mail: a message whose HTML says `<img src="cid:buho">` carries it as
 // an inline image (mail apps block remote images, and the web may not be reachable from the reader's network).
 //
-//go:embed maru.gif
-var maru []byte
+//go:embed buho.gif
+var buho []byte
 
-const maruRef = "cid:maru"
+const buhoRef = "cid:buho"
 
 // Config is the SMTP account. Empty Host disables sending.
 type Config struct {
@@ -80,7 +80,7 @@ func build(from, to *mail.Address, subject, htmlBody, text string) ([]byte, erro
 		return nil, err
 	}
 	boundary := "lap-" + hex.EncodeToString(b)
-	related := strings.Contains(htmlBody, maruRef)
+	related := strings.Contains(htmlBody, buhoRef)
 	outer := boundary + "-r"
 	var sb strings.Builder
 	w := func(k, v string) { sb.WriteString(k + ": " + v + "\r\n") }
@@ -112,8 +112,8 @@ func build(from, to *mail.Address, subject, htmlBody, text string) ([]byte, erro
 	part("text/html", htmlBody)
 	sb.WriteString("--" + boundary + "--\r\n")
 	if related {
-		sb.WriteString("\r\n--" + outer + "\r\nContent-Type: image/gif; name=\"maru.gif\"\r\nContent-Transfer-Encoding: base64\r\nContent-ID: <maru>\r\nContent-Disposition: inline; filename=\"maru.gif\"\r\n\r\n")
-		lines(maru)
+		sb.WriteString("\r\n--" + outer + "\r\nContent-Type: image/gif; name=\"buho.gif\"\r\nContent-Transfer-Encoding: base64\r\nContent-ID: <buho>\r\nContent-Disposition: inline; filename=\"buho.gif\"\r\n\r\n")
+		lines(buho)
 		sb.WriteString("--" + outer + "--\r\n")
 	}
 	return []byte(sb.String()), nil

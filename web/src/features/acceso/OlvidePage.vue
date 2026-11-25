@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Maru from "../../shared/Maru.vue";
+import Buho from "../../shared/Buho.vue";
 import { ref } from "vue";
 import IconoAcceso from "./IconoAcceso.vue";
 import VisualAcceso from "./VisualAcceso.vue";
@@ -30,8 +30,8 @@ async function enviar() {
     <VisualAcceso />
     <section class="login-panel">
       <div class="login-card">
-        <!-- Aquí solo Maru, la serpiente: dice «Es Ssssuper fácil» (como habla una serpiente). -->
-        <Maru class="maru-acceso" entrada :vuelo="1.4" saludo="Es Ssssuper fácil" :inicio-burbuja="1.7" :fin-burbuja="5.5" />
+        <!-- Aquí solo el búho de la idea: trabaja mientras se manda el correo, levanta el pulgar cuando salió y se pone triste con un error. -->
+        <Buho class="buho-acceso" entrada :vuelo="1.4" saludo="Es súper fácil" :pose="error ? 'triste' : enviando ? 'laptop' : enviado ? 'guino' : 'idea'" :inicio-burbuja="1.7" :fin-burbuja="5.5" />
         <div class="login-card-heading">
           <div class="login-card-marca"><span class="brand-icon">✈</span>TrackFlow</div>
           <h2>¿Olvidaste tu contraseña?</h2>

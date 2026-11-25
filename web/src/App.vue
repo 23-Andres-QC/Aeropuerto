@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import Maru from "./shared/Maru.vue";
+import Buho from "./shared/Buho.vue";
+import type { Frase } from "./shared/buho";
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { logout, sesion } from "./core/auth";
@@ -57,28 +58,38 @@ function toggleTheme() {
 
 const seccion = computed(() => (route.meta.seccion as string | undefined) ?? "");
 const sitioNav = computed(() => slug.value || ultimoSitio());
-// Lo que dice Maru depende del sitio elegido: en el aeropuerto (LAP), del terminal; en ESAN, del campus. Al cambiar de sitio
-// vuelve a saludar; al pasarle el ratón dice una frase de ese sitio.
-const FRASES_MARU: Record<string, { saludo: string; frases: string[]; pie: string }> = {
+// Lo que dice el búho depende del sitio elegido: en el aeropuerto (LAP), del terminal; en ESAN, del campus. Al cambiar de sitio
+// vuelve a saludar (feliz); al pasarle el ratón dice una frase de ese sitio, cada una con su cara.
+const FRASES_BUHO: Record<string, { saludo: string; frases: Frase[]; pie: string }> = {
   lap: {
     saludo: "¡Bienvenido al aeropuerto!",
-    frases: ["¡Listos para despegar!", "Sigo el flujo de pasajeros", "¿Vemos el terminal?"],
-    pie: "Maru, tu copiloto en el aeropuerto",
+    frases: [
+      { texto: "¡Listos para despegar!", pose: "feliz" },
+      { texto: "Sigo el flujo de pasajeros", pose: "lupa" },
+      { texto: "¿Vemos el terminal?", pose: "idea" },
+    ],
+    pie: "Tu copiloto en el aeropuerto",
   },
   esan: {
     saludo: "¡Bienvenido a ESAN!",
-    frases: ["Sigo a todos en el campus", "¿Vemos el patio?", "¿Revisamos el comedor?"],
-    pie: "Maru, tu copiloto en ESAN",
+    frases: [
+      { texto: "Sigo a todos en el campus", pose: "lupa" },
+      { texto: "¿Vemos el patio?", pose: "idea" },
+      { texto: "¿Revisamos el comedor?", pose: "laptop" },
+    ],
+    pie: "Tu copiloto en ESAN",
   },
 };
-const maru = computed(() => {
-  const propias = FRASES_MARU[sitioNav.value];
-  if (propias) return { ...propias, frases: [...propias.frases, holaUsuario.value] };
+const buho = computed(() => {
+  const hola: Frase = { texto: holaUsuario.value, pose: "guino" };
+  const propias = FRASES_BUHO[sitioNav.value];
+  if (propias) return { ...propias, frases: [...propias.frases, hola] };
   const nombre = sitios.value.find((s) => s.slug === sitioNav.value)?.name;
+  const plano: Frase = { texto: "¿Vemos el plano?", pose: "idea" };
   return {
     saludo: nombre ? `¡Bienvenido a ${nombre}!` : holaUsuario.value,
-    frases: [holaUsuario.value, "¿Vemos el plano?"],
-    pie: "Maru, tu copiloto en TrackFlow",
+    frases: [hola, plano],
+    pie: "Tu copiloto en TrackFlow",
   };
 });
 const telefonos = computed(() => route.path === "/telefonos");
@@ -173,9 +184,9 @@ function elegirSitio(s: Sitio) {
           ><span v-if="solicitudesPendientes" class="nav-insignia" data-prueba="pendientes">{{ solicitudesPendientes }}</span></RouterLink
         >
       </nav>
-      <div class="maru-lateral">
-        <Maru class="maru-lateral-img" burbuja="derecha" :saludo="maru.saludo" :repite="maru.frases" />
-        <span>{{ maru.pie }}</span>
+      <div class="buho-lateral">
+        <Buho class="buho-lateral-img" pose-saludo="feliz" :saludo="buho.saludo" :repite="buho.frases" />
+        <span>{{ buho.pie }}</span>
       </div>
     </aside>
     <div class="workspace">
