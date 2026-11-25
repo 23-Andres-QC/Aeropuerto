@@ -1,15 +1,14 @@
-"""API del modelo en el dominio: une los WebSockets de la laptop con backend-vivo y camara-web del servidor.
+"""API del modelo en el dominio: une los WebSockets de la laptop con backend-vivo del servidor.
 
 Corre en el servidor (puente-modelo de compose.yaml, perfil servidor) y escucha solo en 127.0.0.1:PUENTE_PUERTO; el nginx
 del sistema le pasa https://aeropuerto.tujuegoya.com/api-modelo/ (servidor.nginx.conf). scripts/modelo_local.py abre
-un WebSocket por cada conexión del modelo y el puente la une al puerto de la ruta, que en el servidor solo escucha en
+un WebSocket por cada conexión de su réplica y el puente la une al puerto de la ruta, que en el servidor solo escucha en
 127.0.0.1:
 
-    /api-modelo/8093 -> backend-vivo   lista de teléfonos y videos, relevo de cajas y memoria de identidades
-    /api-modelo/8092 -> camara-web     cuadros de cada teléfono
+    /api-modelo/8093 -> backend-vivo   los resultados del modelo de la laptop: teléfonos, cajas, IDs, ubicación y estado
 
 Sin SSH ni contraseña del servidor: solo pasa quien trae la clave TUNEL_CLAVE (la del .env del servidor y de la
-laptop), porque por ahí se ve el video de los teléfonos. Sin TUNEL_CLAVE no deja pasar a nadie. Solo la biblioteca
+laptop), porque por ahí se escribe en backend-vivo. Sin TUNEL_CLAVE no deja pasar a nadie. Solo la biblioteca
 estándar de Python.
 """
 import asyncio
@@ -21,11 +20,11 @@ import struct
 
 CLAVE = os.environ.get("TUNEL_CLAVE", "")
 PUERTO = int(os.environ.get("PUENTE_PUERTO") or 8095)
-RUTAS = {"/api-modelo/8093": 8093, "/api-modelo/8092": 8092}
+RUTAS = {"/api-modelo/8093": 8093}
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"  # el del protocolo WebSocket (RFC 6455)
 MAX_MARCO = 1 << 20  # los marcos del modelo son de hasta 64 KB
 # La laptop deja WebSockets abiertos de reserva; el puente se une al servicio recién con el primer dato, así esas
-# reservas no ocupan conexiones de backend-vivo ni de camara-web. La laptop los renueva antes de este plazo.
+# reservas no ocupan conexiones de backend-vivo. La laptop los renueva antes de este plazo.
 ESPERA_PRIMER_DATO_S = 120
 
 

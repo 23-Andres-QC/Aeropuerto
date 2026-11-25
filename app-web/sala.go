@@ -161,12 +161,8 @@ func (s *Sala) Espectadores() int {
 	return s.espectadores
 }
 
-// seguir mantiene una suscripción al relevo del backend, reconectando cada 2 s. Sin relevo (SALA_RELEVO=no) no sigue
-// nada.
+// seguir mantiene una suscripción al relevo del backend, reconectando cada 2 s.
 func (s *Sala) seguir(ctx context.Context, ruta string, alRecibir func([]byte)) {
-	if s.relevo == "" {
-		return
-	}
 	for {
 		ws, _, err := websocket.DefaultDialer.DialContext(ctx, s.relevo+"/"+ruta, nil)
 		if err == nil {

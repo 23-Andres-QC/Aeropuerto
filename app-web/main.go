@@ -41,13 +41,7 @@ func main() {
 	home, _ := os.UserHomeDir()
 	// Los códigos de unión no vencen: se guardan en el volumen camara-datos y sobreviven a reiniciar el servicio.
 	camaras.GuardarCodigosEn(env("CODIGOS_ARCHIVO", filepath.Join(home, "datos", "codigos.json")))
-	// Con scripts/modelo_local.py los teléfonos de la laptop se registran en el servidor: la sala de la laptop no la mira
-	// nadie y seguir los relevos bajaría del servidor el mismo video que el modelo le sube. SALA_RELEVO=no la deja sin.
-	relevo := relevoDe(api)
-	if os.Getenv("SALA_RELEVO") == "no" {
-		relevo = ""
-	}
-	sala := NuevaSala(ctx, relevo, camaras)
+	sala := NuevaSala(ctx, relevoDe(api), camaras)
 	s := NuevoServidor(camaras, sala)
 	s.Personas = aeropuerto.Personas
 	cert, err := certificado(env("CERT_DIR", filepath.Join(home, "certs")))

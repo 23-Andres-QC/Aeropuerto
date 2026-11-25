@@ -1,31 +1,31 @@
-"""Modelo en vivo en esta laptop (con su GPU) para la web del servidor, por la API del dominio.
+"""Modelo en vivo en esta laptop (con su GPU): todo el proceso aquí y al servidor solo los resultados.
 
-El servidor tiene la web y todo el backend, sin modelo (servidor.env). Este script corre el modelo aquí y le manda al
-servidor solo los resultados, por la API del modelo en el dominio (scripts/puente_modelo.py en el servidor):
+Los teléfonos se unen a esta laptop en su red (https://<IP de la laptop>:8444, la de ESAN 5G); el camara-web y el
+backend-vivo de la laptop los reciben y el modelo lee su video aquí mismo, sin internet de por medio. La web de la
+laptop muestra el video con las cajas (Teléfonos).
 
-    127.0.0.1:8093 -> https://aeropuerto.tujuegoya.com/api-modelo/8093   backend-vivo: teléfonos, cajas, IDs, mapa, video
+Al servidor (la web y todo el backend, sin modelo) no sube video: una réplica manda solo los resultados a su
+backend-vivo, por la API del modelo en el dominio (https://aeropuerto.tujuegoya.com/api-modelo/8093,
+scripts/puente_modelo.py):
+- los teléfonos que procesa el modelo (se registran allá con el mismo nombre y se quitan al salir);
+- lo que ve cada uno: cajas, IDs y su ubicación en el plano (si la red se atrasa, el más nuevo);
+- el estado del modelo (cuadros por segundo, personas).
+Con eso En vivo del servidor pinta el mapa y guarda cada captura en Registros, igual que con el modelo allá. Cuando el
+servidor empieza una grabación (vacía la memoria de identidades), el modelo de la laptop también empieza de cero.
 
-Los teléfonos se unen a esta laptop, en su red (https://<IP de la laptop>:8444, la de ESAN 5G): el camara-web de la
-laptop los registra en el servidor y el modelo lee su video aquí mismo, sin bajarlo de internet (cada cuadro por
-internet costaba ~0,3 s de ida y vuelta y el modelo veía ~3 por segundo). Al servidor solo suben las cajas, los IDs, la
-ubicación en el plano, la memoria de identidades y un video chico para la web (RELEVO_VIDEO_FPS, dosificado), así que
-En vivo, Teléfonos y Videos del servidor funcionan sin cambios.
-Con --camaras-servidor los teléfonos se unen al servidor (https://aeropuerto.tujuegoya.com/camara/) y el modelo baja
-sus cuadros por la API (/api-modelo/8092): sirve con la laptop en otra red que los teléfonos, pero es más lento.
+    python scripts/modelo_local.py            # el modelo con el Python de esta laptop
+    python scripts/modelo_local.py --docker   # el modelo en modelo-gpu (Docker)
 
-    python scripts/modelo_local.py                       # teléfonos a la laptop; el modelo solo envía al servidor
-    python scripts/modelo_local.py --camaras-servidor    # teléfonos al servidor; el modelo baja sus cuadros
-    python scripts/modelo_local.py --docker              # el modelo en modelo-gpu (Docker) en vez del Python de aquí
-
-Va por HTTPS (puerto 443), así que sirve en cualquier red que abra la web, también las de ESAN; sin SSH ni contraseña
-del servidor: pide solo TUNEL_CLAVE del .env de la raíz (la misma del .env del servidor). Necesita Docker Desktop
-abierto (camara-web de la laptop). Mientras corre detiene backend-vivo y modelo-gpu locales (usan los mismos puertos) y
-al salir deja los servicios locales como estaban. Si la red se corta, cada conexión se rehace sola; si el servidor está
-arrancando, espera a que responda; y si el modelo se cae, lo vuelve a levantar. Ctrl+C detiene el modelo.
+Va por HTTPS (puerto 443): sirve en cualquier red que abra la web, también las de ESAN; sin SSH ni contraseña del
+servidor, pide solo TUNEL_CLAVE del .env de la raíz (la misma del .env del servidor). Necesita Docker Desktop abierto
+(backend-vivo y camara-web de la laptop). Si la red se corta, la réplica se rehace sola y el modelo sigue; si el modelo
+se cae, lo vuelve a levantar. Ctrl+C detiene el modelo.
 """
 import argparse
 import base64
 import hashlib
+import http.client
+import json
 import os
 import select
 import socket
@@ -70,32 +70,26 @@ def de_servidor_env(nombre):
     return None
 
 
-# La web del servidor (su dominio): la API del modelo va en <WEB>/api-modelo/ y los teléfonos se unen en <WEB>/camara/.
+# La web del servidor (su dominio): la API del modelo va en <WEB>/api-modelo/8093.
 WEB_SERVIDOR = (leer_env("MODELO_WEB") or de_servidor_env("APP_BASE_URL") or "https://aeropuerto.tujuegoya.com").rstrip("/")
-RUTA_API = "/api-modelo/"  # + el puerto: la del puente del servidor (scripts/puente_modelo.py, servidor.nginx.conf)
-COMPOSE = ["docker", "compose", "--profile", "gpu"]
-CONTENEDOR = "aeropuerto-modelo-servidor"  # el modelo-gpu de este script: así se lo detiene y no se confunde con el local
-# Servicios locales que escuchan en los mismos puertos que la API (y el modelo local, que publicaría en ellos).
-LOCALES = ("modelo-gpu", "camara-web", "backend-vivo")
-# Ajustes del modelo con la web en otra máquina (camara_telefono.py los explica):
-# - cada teléfono se lee pidiendo su cuadro más nuevo (no el MJPEG, que por internet acumulaba segundos de cuadros
-#   viejos), reducido a 1280 px: la resolución del detector de Videos que usan los teléfonos;
-# - el video del relevo (solo de respaldo: la web muestra el de la sala de camara-web) va a 1 cuadro por segundo y
-#   dosificado (120 KB/s): un cuadro entero ocupaba la subida de la laptop ~90 ms y las cajas esperaban detrás.
-AJUSTES_CAMARAS_SERVIDOR = {"LECTURA_TELEFONOS": "foto", "MJPEG_ANCHO": "1280", "RELEVO_VIDEO_FPS": "1",
-                            "RELEVO_VIDEO_KBPS": "120"}
-# Con los teléfonos en la laptop el modelo lee su video aquí (el MJPEG de siempre) y la subida solo lleva el video de la
-# web: 10 cuadros por segundo de 640 px, dosificado a 500 KB/s para que nunca tape las cajas.
-AJUSTES_CAMARAS_LAPTOP = {"RELEVO_VIDEO_FPS": "10", "RELEVO_VIDEO_KBPS": "500"}
-VARIABLES = (*AJUSTES_CAMARAS_SERVIDOR, "ENLACE_CAMARA")  # las que pasan al contenedor del modelo (--docker)
-PUERTOS = (8093, 8092)  # mismos números en las dos puntas: las URL que reparte backend-vivo valen tal cual
-# camara-web de la laptop (en Docker) llega al 8093 de este script por host.docker.internal.
-API_VIVO_PARA_CAMARA = f"http://host.docker.internal:{PUERTOS[0]}"
-# Abrir un WebSocket es una conexión TLS más su saludo (unas décimas de segundo por Cloudflare) y el modelo abre
-# conexiones a menudo (la lista de teléfonos cada 2 s): cada conexión toma uno ya abierto de reserva. Las reservas que
-# pasan RESERVA_VIDA_S sin usarse se cambian por otras (Cloudflare corta las que pasan ~100 s calladas).
-RESERVAS = {8093: 3, 8092: 2}
-RESERVA_VIDA_S = 45
+RUTA_API = "/api-modelo/8093"  # backend-vivo del servidor (scripts/puente_modelo.py, servidor.nginx.conf)
+COMPOSE = ["docker", "compose", "--profile", "gpu", "--profile", "modelo"]
+CONTENEDOR = "aeropuerto-modelo-laptop"  # el modelo-gpu de este script (--docker): así se lo detiene
+SERVICIOS = ("backend-vivo", "camara-web")  # lo de la laptop que hace falta (vivo-db sube con backend-vivo)
+# Otros modelos de la laptop publicarían en el mismo backend-vivo: se detienen mientras corre este.
+OTROS_MODELOS = ("modelo-gpu", "modelo-vivo")
+PUERTO_VIVO = int(leer_env("VIVO_API_PORT") or 8093)  # backend-vivo de la laptop
+PUERTO_CAMARA = int(leer_env("CAMARA_MJPEG_PORT") or 8092)  # camara-web de la laptop
+PUERTO_SERVIDOR = 18093  # en la laptop: cada conexión aquí va al backend-vivo del servidor por la API
+# Abrir un WebSocket por la API es una conexión TLS más su saludo (unas décimas de segundo por Cloudflare): cada
+# conexión de la réplica toma uno ya abierto de reserva. Las que pasan RESERVA_VIDA_S sin usarse se cambian por otras
+# (Cloudflare corta las que pasan ~100 s calladas).
+RESERVAS, RESERVA_VIDA_S = 3, 45
+SONDEO_S = 2  # cada cuánto la réplica compara los teléfonos y mira si el servidor empezó una grabación
+RESUMEN_S = 10  # cada cuánto se muestra aquí cómo va el proceso
+PONG_S = 10  # backend-vivo corta a quien publica si en 30 s no le llega un pong (un ping no cuenta)
+# Los teléfonos de esta laptop en el servidor: su URL dice de qué laptop y de qué teléfono son (sin token: no es su video).
+ESPEJO = f"http://modelo-laptop/{hashlib.sha1(socket.gethostname().encode()).hexdigest()[:8]}/"
 # El modelo se reinicia solo si se cae; si se cae enseguida otra vez, se espera más (hasta REINICIO_MAX_S).
 REINICIO_S, REINICIO_MAX_S, ESTABLE_S = 5, 60, 120
 GUID_WS = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"  # el del protocolo WebSocket (RFC 6455)
@@ -103,6 +97,10 @@ GUID_WS = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"  # el del protocolo WebSocket (
 
 class ClaveIncorrecta(Exception):
     """La API del modelo rechazó TUNEL_CLAVE."""
+
+
+class Rechazo(Exception):
+    """backend-vivo respondió con un error (no es la red)."""
 
 
 def enmascarar(datos, mascara):
@@ -114,7 +112,7 @@ def enmascarar(datos, mascara):
 
 
 def marco_ws(opcode, datos):
-    """Un marco WebSocket de la laptop al servidor (con máscara, como pide el protocolo al cliente)."""
+    """Un marco WebSocket del cliente (con máscara, como pide el protocolo)."""
     n, mascara = len(datos), os.urandom(4)
     if n < 126:
         cabecera = bytes((0x80 | opcode, 0x80 | n))
@@ -126,7 +124,7 @@ def marco_ws(opcode, datos):
 
 
 def sacar_marco(buffer):
-    """Saca del buffer el primer marco WebSocket completo: (opcode, datos), o None si aún no llegó entero."""
+    """Saca del buffer el primer marco WebSocket completo: (opcode, datos, fin), o None si aún no llegó entero."""
     if len(buffer) < 2:
         return None
     largo, pos = buffer[1] & 0x7F, 2
@@ -145,13 +143,13 @@ def sacar_marco(buffer):
         mascara, pos = bytes(buffer[pos:pos + 4]), pos + 4
     if len(buffer) < pos + largo:
         return None
-    opcode, datos = buffer[0] & 0x0F, bytes(buffer[pos:pos + largo])
+    fin, opcode, datos = bool(buffer[0] & 0x80), buffer[0] & 0x0F, bytes(buffer[pos:pos + largo])
     del buffer[:pos + largo]
-    return opcode, enmascarar(datos, mascara) if mascara else datos
+    return opcode, enmascarar(datos, mascara) if mascara else datos, fin
 
 
-def abrir_ws(web, puerto, clave):
-    """Un WebSocket con la API del modelo para `puerto` (<web>/api-modelo/<puerto>): (conexión, bytes ya leídos)."""
+def abrir_ws(web, clave):
+    """Un WebSocket con la API del modelo (<web>/api-modelo/8093): (conexión, bytes ya leídos)."""
     url = urllib.parse.urlsplit(web)
     seguro = url.scheme == "https"
     host = url.hostname
@@ -161,7 +159,7 @@ def abrir_ws(web, puerto, clave):
         if seguro:
             conexion = ssl.create_default_context().wrap_socket(conexion, server_hostname=host)
         llave = base64.b64encode(os.urandom(16)).decode()
-        conexion.sendall((f"GET {url.path.rstrip('/')}{RUTA_API}{puerto} HTTP/1.1\r\nHost: {url.netloc}\r\n"
+        conexion.sendall((f"GET {url.path.rstrip('/')}{RUTA_API} HTTP/1.1\r\nHost: {url.netloc}\r\n"
                           f"Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {llave}\r\n"
                           f"Sec-WebSocket-Version: 13\r\nUser-Agent: aeropuerto-modelo-local\r\n"
                           f"X-Tunel-Clave: {clave}\r\n\r\n").encode())
@@ -186,7 +184,7 @@ def abrir_ws(web, puerto, clave):
 
 
 def abierto(conexion):
-    """Si un WebSocket de reserva sigue abierto: el servidor no manda nada antes del primer dato del modelo."""
+    """Si un WebSocket de reserva sigue abierto: el servidor no manda nada antes del primer dato."""
     try:
         if getattr(conexion, "pending", lambda: 0)():
             return False
@@ -196,16 +194,16 @@ def abierto(conexion):
 
 
 def pasar(conexion, local, buffer):
-    """WebSocket <-> conexión local del modelo, hasta que uno de los dos se cierre.
+    """WebSocket <-> conexión local de la réplica, hasta que uno de los dos se cierre.
 
     Un solo hilo usa la conexión TLS (leer y escribir desde dos hilos a la vez no es seguro con OpenSSL). La lectura
-    tiene plazo corto: un registro TLS sin datos no deja esperando lo que el modelo quiere mandar.
+    tiene plazo corto: un registro TLS sin datos no deja esperando lo que la réplica quiere mandar.
     """
     try:
         while True:
             marco = sacar_marco(buffer)
             while marco is not None:
-                opcode, datos = marco
+                opcode, datos, _ = marco
                 if opcode in (0, 2):
                     local.sendall(datos)
                 elif opcode == 8:
@@ -245,10 +243,10 @@ def pasar(conexion, local, buffer):
 
 
 class Reservas:
-    """WebSockets ya abiertos con la API del modelo para un puerto: una conexión nueva del modelo no espera el saludo."""
+    """WebSockets ya abiertos con la API del modelo: una conexión nueva de la réplica no espera el saludo."""
 
-    def __init__(self, web, clave, puerto):
-        self.web, self.clave, self.puerto, self.cantidad = web, clave, puerto, RESERVAS[puerto]
+    def __init__(self, web, clave):
+        self.web, self.clave = web, clave
         self._listas, self._lock, self._falta = [], threading.Lock(), threading.Event()
 
     def tomar(self):
@@ -261,11 +259,10 @@ class Reservas:
                     return conexion, resto
                 conexion.close()
         self._falta.set()
-        return abrir_ws(self.web, self.puerto, self.clave)
+        return abrir_ws(self.web, self.clave)
 
     def mantener(self, parar):
         """Hilo: repone las reservas que se usan y cambia las viejas o cerradas."""
-        avisado = False
         while not parar.is_set():
             with self._lock:
                 vigentes = []
@@ -275,23 +272,16 @@ class Reservas:
                     else:
                         conexion.close()
                 self._listas = vigentes
-                faltan = self.cantidad - len(vigentes)
+                faltan = RESERVAS - len(vigentes)
             if faltan <= 0:
                 self._falta.wait(1)
                 self._falta.clear()
                 continue
             try:
-                conexion, resto = abrir_ws(self.web, self.puerto, self.clave)
-            except Exception as error:
-                if not avisado:
-                    print(f"API del modelo {self.puerto}: no se pudo abrir una conexión ({error}); se reintenta.",
-                          flush=True)
-                    avisado = True
-                parar.wait(3)
+                conexion, resto = abrir_ws(self.web, self.clave)
+            except Exception:
+                parar.wait(3)  # sin red: la réplica avisa; se reintenta
                 continue
-            if avisado:
-                print(f"API del modelo {self.puerto}: conexión otra vez.", flush=True)
-                avisado = False
             with self._lock:
                 self._listas.append((time.monotonic(), conexion, resto))
 
@@ -303,14 +293,14 @@ class Reservas:
 
 
 class Reenvio(socketserver.ThreadingTCPServer):
-    """Escucha en 127.0.0.1:<puerto> y pasa cada conexión a la API del modelo, al mismo puerto del servidor."""
+    """Escucha en 127.0.0.1:PUERTO_SERVIDOR y pasa cada conexión a la API del modelo (backend-vivo del servidor)."""
 
     daemon_threads = True
     allow_reuse_address = False  # en Windows permitiría compartir el puerto con otro proceso
 
-    def __init__(self, reservas, puerto):
-        self.reservas, self.puerto = reservas, puerto
-        super().__init__(("127.0.0.1", puerto), Conexion)
+    def __init__(self, reservas):
+        self.reservas = reservas
+        super().__init__(("127.0.0.1", PUERTO_SERVIDOR), Conexion)
 
 
 class Conexion(socketserver.BaseRequestHandler):
@@ -318,26 +308,275 @@ class Conexion(socketserver.BaseRequestHandler):
         self.request.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         try:
             conexion, resto = self.server.reservas.tomar()
-        except Exception as error:
-            print(f"API del modelo {self.server.puerto}: {error}", flush=True)
-            return
+        except Exception:
+            return  # quien pidió ve la conexión cerrada y reintenta
         pasar(conexion, self.request, bytearray(resto))
 
 
-def esperar_servidor():
-    """Espera a que backend-vivo responda por la API: el servidor puede estar recién encendido."""
-    avisado = False
-    while True:
+class Ws:
+    """Un WebSocket sin cifrar a 127.0.0.1: el relevo de la laptop, o el del servidor por PUERTO_SERVIDOR."""
+
+    def __init__(self, puerto, ruta):
+        self.sock = socket.create_connection(("127.0.0.1", puerto), timeout=20)
+        self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self.buffer, self.partes = bytearray(), []
         try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{PUERTOS[0]}/salud", timeout=10) as respuesta:
-                respuesta.read()
-            return
-        except OSError as error:
-            if not avisado:
-                print(f"backend-vivo no responde en el servidor ({error}); se espera a que levante "
-                      "(el comando de servidor.env). Ctrl+C para salir.", flush=True)
-                avisado = True
-            time.sleep(5)
+            llave = base64.b64encode(os.urandom(16)).decode()
+            self.sock.sendall((f"GET {ruta} HTTP/1.1\r\nHost: 127.0.0.1:{puerto}\r\nUpgrade: websocket\r\n"
+                               f"Connection: Upgrade\r\nSec-WebSocket-Key: {llave}\r\n"
+                               f"Sec-WebSocket-Version: 13\r\n\r\n").encode())
+            respuesta = bytearray()
+            while b"\r\n\r\n" not in respuesta:
+                parte = self.sock.recv(4096)
+                if not parte or len(respuesta) > 65536:
+                    raise ConnectionError(f"{ruta}: se cortó sin responder")
+                respuesta += parte
+            cabecera, _, resto = bytes(respuesta).partition(b"\r\n\r\n")
+            if cabecera.split(b" ", 2)[1:2] != [b"101"]:
+                estado = cabecera.split(b"\r\n", 1)[0].decode("latin-1")
+                raise ConnectionError(f"{ruta}: {estado}")
+            self.buffer += resto
+        except BaseException:
+            self.sock.close()
+            raise
+
+    def enviar(self, texto):
+        self.sock.sendall(marco_ws(1, texto.encode()))
+
+    def pong(self):
+        self.sock.sendall(marco_ws(10, b""))
+
+    def leer(self):
+        """Lee lo que llegó (llamarla con datos listos) y devuelve los mensajes de texto completos."""
+        datos = self.sock.recv(65536)
+        if not datos:
+            raise ConnectionError("se cerró")
+        self.buffer += datos
+        mensajes = []
+        while (marco := sacar_marco(self.buffer)) is not None:
+            opcode, datos, fin = marco
+            if opcode in (0, 1):  # un mensaje largo llega en varios marcos
+                self.partes.append(datos)
+                if fin:
+                    mensajes.append(b"".join(self.partes).decode("utf-8", "replace"))
+                    self.partes = []
+            elif opcode == 8:
+                raise ConnectionError("se cerró")
+            elif opcode == 9:
+                self.sock.sendall(marco_ws(10, datos))
+        return mensajes
+
+    def cerrar(self):
+        try:
+            self.sock.settimeout(2)
+            self.sock.sendall(marco_ws(8, b""))
+        except OSError:
+            pass
+        self.sock.close()
+
+
+class Replica:
+    """Manda al backend-vivo del servidor los resultados del modelo de la laptop: teléfonos, cajas y estado (sin video)."""
+
+    def __init__(self, parar):
+        self.parar = parar
+        self.mapa = {}  # id del teléfono en la laptop -> su id en el servidor
+        self.hilos = {}
+        self.epoca = None  # la de la memoria del servidor: si cambia, empezó una grabación
+        self.servidor = None  # una sola conexión HTTP abierta: cada conexión nueva es un WebSocket por la API
+        self.rechazados = set()
+        self.avisado = False
+        self.estado = None  # el último que publicó el modelo (ids de la laptop)
+        self.enviados = {}  # id local -> mensajes de cajas mandados al servidor
+        self.resumido = (time.monotonic(), {})
+
+    def local(self, metodo, ruta):
+        pedido = urllib.request.Request(f"http://127.0.0.1:{PUERTO_VIVO}{ruta}", method=metodo)
+        with urllib.request.urlopen(pedido, timeout=10) as respuesta:
+            cuerpo = respuesta.read()
+        return json.loads(cuerpo) if cuerpo else None
+
+    def remoto(self, metodo, ruta, datos=None):
+        cuerpo = json.dumps(datos).encode() if datos is not None else None
+        cabeceras = {"Content-Type": "application/json"} if cuerpo else {}
+        for intento in (1, 2):  # la conexión que quedó abierta pudo haberse cortado: se abre otra
+            if self.servidor is None:
+                self.servidor = http.client.HTTPConnection("127.0.0.1", PUERTO_SERVIDOR, timeout=20)
+            try:
+                self.servidor.request(metodo, ruta, body=cuerpo, headers=cabeceras)
+                respuesta = self.servidor.getresponse()
+                contenido = respuesta.read()
+            except (OSError, http.client.HTTPException):
+                self.servidor.close()
+                self.servidor = None
+                if intento == 2:
+                    raise
+                continue
+            if respuesta.status >= 400:
+                raise Rechazo(f"{respuesta.status} {contenido.decode('utf-8', 'replace')[:200]}")
+            return json.loads(contenido) if contenido else None
+
+    def iniciar(self):
+        self.sondeo = threading.Thread(target=self.correr, daemon=True)
+        self.sondeo.start()
+        self.hilos["estado"] = threading.Thread(
+            target=self.pasar, args=("/api/v1/cameras/telefonos/detections/watch",
+                                     lambda: "/api/v1/cameras/telefonos/detections/publish", self.traducir_estado),
+            daemon=True)
+        self.hilos["estado"].start()
+
+    def correr(self):
+        while not self.parar.is_set():
+            try:
+                self.sincronizar()
+                if self.avisado:
+                    print("Réplica: el servidor recibe los resultados otra vez.", flush=True)
+                    self.avisado = False
+            except (OSError, http.client.HTTPException, ValueError, Rechazo) as error:
+                if not self.avisado:
+                    print(f"Réplica: {error}; se reintenta cada {SONDEO_S} s (el modelo sigue).", flush=True)
+                    self.avisado = True
+            if time.monotonic() - self.resumido[0] >= RESUMEN_S:
+                self.resumir()
+            self.parar.wait(SONDEO_S)
+
+    def resumir(self):
+        """Una línea con cómo va cada teléfono (lo mismo que Teléfonos) y cuántas cajas por segundo llegan al servidor."""
+        ahora, enviados = time.monotonic(), dict(self.enviados)
+        antes, previos = self.resumido
+        self.resumido = (ahora, enviados)
+        estado = self.estado or {}
+        partes = []
+        for lid, t in (estado.get("telefonos") or {}).items():
+            texto = f"{t.get('nombre', lid)}: {t.get('estado', '?')}"
+            if t.get("estado") == "procesando":
+                texto += f" {t.get('fps') or 0:.1f} cuadros/s, {t.get('personas_ahora') or 0} personas"
+                if t.get("latencia_ms") is not None:
+                    texto += f", {t['latencia_ms']:.0f} ms"
+            elif t.get("mensaje"):
+                texto += f" ({t['mensaje']})"
+            if lid in self.mapa:
+                texto += f", al servidor {(enviados.get(lid, 0) - previos.get(lid, 0)) / (ahora - antes):.1f}/s"
+            else:
+                texto += ", aún no en el servidor"
+            partes.append(texto)
+        if not self.estado:
+            linea = "el modelo aún no publica su estado"
+        elif partes:
+            linea = " | ".join(partes)
+        else:
+            linea = f"sin teléfonos; se unen en {estado.get('enlace') or 'https://<IP de la laptop>:8444'}"
+        total = f" | {estado['personas_total']} personas en total" if estado.get("personas_total") else ""
+        print(f"[en vivo] {linea}{total}", flush=True)
+
+    def sincronizar(self):
+        """Los teléfonos de la laptop quedan en el servidor (y solo ellos), y una grabación nueva allá llega al modelo."""
+        locales = {t["id"]: t for t in self.local("GET", "/api/v1/telefonos")}
+        espejos = {t["url"][len(ESPEJO):]: t["id"] for t in self.remoto("GET", "/api/v1/telefonos")
+                   if t["url"].startswith(ESPEJO)}
+        for lid, sid in espejos.items():
+            if lid not in locales:  # se fue de la laptop, o quedó de una vez anterior
+                try:
+                    self.remoto("DELETE", f"/api/v1/telefonos/{sid}")
+                except Rechazo:
+                    pass
+        mapa = {}
+        for lid, t in locales.items():
+            sid = espejos.get(lid)
+            if sid is None:
+                try:
+                    sid = self.remoto("POST", "/api/v1/telefonos", {"nombre": t["nombre"], "url": ESPEJO + lid,
+                                                                    "simulado": bool(t.get("simulado"))})["id"]
+                except Rechazo as error:
+                    if lid not in self.rechazados:
+                        print(f"Réplica: el servidor no aceptó «{t['nombre']}»: {error}", flush=True)
+                        self.rechazados.add(lid)
+                    continue
+                print(f"Réplica: «{t['nombre']}» ya figura en el servidor.", flush=True)
+            mapa[lid] = sid
+        self.mapa = mapa
+        for lid in mapa:
+            if not (lid in self.hilos and self.hilos[lid].is_alive()):
+                self.hilos[lid] = threading.Thread(
+                    target=self.pasar, args=(f"/api/v1/cameras/{lid}/detections/watch",
+                                             lambda lid=lid: self.publicar(lid), None, lid), daemon=True)
+                self.hilos[lid].start()
+
+        epoca = self.remoto("GET", "/api/v1/personas/resumen").get("epoca")
+        if self.epoca is not None and epoca != self.epoca:
+            self.local("DELETE", "/api/v1/personas")
+            print("Réplica: el servidor empezó una grabación; el modelo olvida a las personas de antes.", flush=True)
+        self.epoca = epoca
+
+    def publicar(self, lid):
+        """Dónde van las cajas de un teléfono en el servidor (None si ya no está)."""
+        sid = self.mapa.get(lid)
+        return f"/api/v1/cameras/{sid}/detections/publish" if sid else None
+
+    def traducir_estado(self, texto):
+        """El estado del modelo con los ids del servidor; los teléfonos que allá aún no figuran no van."""
+        try:
+            estado = json.loads(texto)
+        except ValueError:
+            return None
+        self.estado = estado
+        telefonos = estado.get("telefonos")
+        if isinstance(telefonos, dict):
+            mapa = self.mapa
+            estado = {**estado, "telefonos": {mapa[lid]: t for lid, t in telefonos.items() if lid in mapa}}
+        return json.dumps(estado)
+
+    def pasar(self, ruta_local, destino, traducir, lid=None):
+        """Hilo: lee un canal del relevo de la laptop y lo publica en el del servidor. Si la red se atrasa, solo el
+        mensaje más nuevo: cada uno trae el cuadro entero (cajas, IDs y ubicación) y lo viejo ya no sirve en el mapa."""
+        while not self.parar.is_set():
+            ruta = destino()
+            if ruta is None:
+                return
+            local = servidor = None
+            try:
+                local = Ws(PUERTO_VIVO, ruta_local)
+                servidor = Ws(PUERTO_SERVIDOR, ruta)
+                pong = time.monotonic()
+                while not self.parar.is_set() and destino() == ruta:
+                    listos = select.select([local.sock, servidor.sock], [], [], 1)[0]
+                    if servidor.sock in listos:
+                        servidor.leer()
+                    if local.sock in listos:
+                        mensajes = local.leer()
+                        texto = mensajes[-1] if mensajes else None
+                        if texto and traducir:
+                            texto = traducir(texto)
+                        if texto:
+                            servidor.enviar(texto)
+                            if lid:
+                                self.enviados[lid] = self.enviados.get(lid, 0) + 1
+                    if time.monotonic() - pong > PONG_S:
+                        servidor.pong()
+                        pong = time.monotonic()
+            except (OSError, ValueError):
+                self.parar.wait(2)
+            finally:
+                for ws in (local, servidor):
+                    if ws is not None:
+                        ws.cerrar()
+
+    def cerrar(self):
+        """Avisa al servidor que el modelo se detuvo y quita de allá los teléfonos de la laptop."""
+        self.parar.set()
+        for hilo in [getattr(self, "sondeo", None), *list(self.hilos.values())]:
+            if hilo is not None:
+                hilo.join(5)  # la conexión con el servidor queda libre para lo que sigue
+        try:
+            ws = Ws(PUERTO_SERVIDOR, "/api/v1/cameras/telefonos/detections/publish")
+            ws.enviar(json.dumps({"ts": time.time(), "estado": "detenido", "telefonos": {}}))
+            ws.cerrar()
+            for t in self.remoto("GET", "/api/v1/telefonos"):
+                if t["url"].startswith(ESPEJO):
+                    self.remoto("DELETE", f"/api/v1/telefonos/{t['id']}")
+        except (OSError, http.client.HTTPException, ValueError, Rechazo) as error:
+            print(f"Réplica: no se pudieron quitar los teléfonos del servidor ({error}); se quitan la próxima vez.",
+                  flush=True)
 
 
 def docker(*argumentos, entorno=None):
@@ -358,41 +597,33 @@ def ip_laptop():
         s.close()
 
 
-def camara_web_local(api_vivo=None):
-    """(Re)crea camara-web de la laptop: con api_vivo registra sus teléfonos ahí (el servidor); sin él, en el local.
-
-    Al recrearlo el anterior se apaga y borra sus teléfonos de donde los había registrado.
-    """
-    entorno = {k: v for k, v in os.environ.items() if k not in ("CAMARA_API_VIVO", "CAMARA_SALA_RELEVO")}
-    if api_vivo:
-        # Su sala no sigue los relevos: nadie la mira y bajaría del servidor el mismo video que el modelo le sube.
-        entorno.update(CAMARA_API_VIVO=api_vivo, CAMARA_SALA_RELEVO="no")
-    r = docker("docker", "compose", "up", "-d", "--build", "--no-deps", "--force-recreate", "camara-web",
-               entorno=entorno)
-    if r.returncode != 0:
-        raise SystemExit(f"No se pudo levantar camara-web de la laptop: {r.stderr.strip()}")
-    for _ in range(60):
-        try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{PUERTOS[1]}/salud", timeout=2) as respuesta:
-                respuesta.read()
-            return
-        except OSError:
-            time.sleep(1)
-    raise SystemExit("camara-web de la laptop no respondió en 60 s.")
-
-
-def locales_levantados(directo):
-    """Los servicios de LOCALES que corren en esta laptop. Sin Docker, ninguno (si directo, no hace falta)."""
+def levantar_locales():
+    """backend-vivo y camara-web de la laptop (con su configuración de siempre) y espera a que respondan."""
     try:
-        resultado = docker(*COMPOSE, "ps", "--status", "running", "--services")
+        r = docker(*COMPOSE, "up", "-d", *SERVICIOS)
     except OSError:
-        resultado = None
-    if resultado is None or resultado.returncode != 0:
-        if directo:
-            return []
-        raise SystemExit("Docker no responde: abrir Docker Desktop (camara-web de la laptop y modelo-gpu corren ahí).")
-    corriendo = set(resultado.stdout.split())
-    return [s for s in LOCALES if s in corriendo]
+        r = None
+    if r is None or r.returncode != 0:
+        detalle = f": {r.stderr.strip()}" if r is not None and r.stderr.strip() else ""
+        raise SystemExit(f"No se pudieron levantar {' y '.join(SERVICIOS)} de la laptop{detalle}. "
+                         "¿Docker Desktop está abierto?")
+    for nombre, puerto in (("backend-vivo", PUERTO_VIVO), ("camara-web", PUERTO_CAMARA)):
+        for _ in range(90):
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/salud", timeout=2) as respuesta:
+                    respuesta.read()
+                break
+            except OSError:
+                time.sleep(1)
+        else:
+            raise SystemExit(f"{nombre} de la laptop no respondió en 90 s.")
+
+
+def otros_modelos():
+    """Los modelos de compose.yaml que corren en la laptop (publicarían en el mismo backend-vivo)."""
+    r = docker(*COMPOSE, "ps", "--status", "running", "--services")
+    corriendo = set(r.stdout.split()) if r.returncode == 0 else set()
+    return [s for s in OTROS_MODELOS if s in corriendo]
 
 
 def detener_contenedor():
@@ -406,14 +637,12 @@ def detener_contenedor():
 
 
 def comando_modelo(directo):
-    """El modelo que se corre y su carpeta: modelo-gpu de compose.yaml, o camara_telefono.py con este Python."""
-    api = f"http://127.0.0.1:{PUERTOS[0]}"
+    """El modelo que se corre y su carpeta: camara_telefono.py con este Python, o modelo-gpu de compose.yaml."""
     if directo:
-        return [sys.executable, "-u", str(MODELO), "--api", api], MODELO.parent
-    # modelo-gpu va con network_mode: host, así que su 127.0.0.1 llega a los puertos de este script. Las variables (-e
-    # sin valor) se toman del entorno de este proceso; sin --no-deps levantaría backend-vivo y camara-web locales.
-    variables = [a for v in VARIABLES for a in ("-e", v)]
-    return [*COMPOSE, "run", "--rm", "--no-deps", "-T", "--name", CONTENEDOR, *variables, "modelo-gpu", "--api", api], RAIZ
+        return [sys.executable, "-u", str(MODELO), "--api", f"http://127.0.0.1:{PUERTO_VIVO}"], MODELO.parent
+    # modelo-gpu ya apunta al backend-vivo de la laptop; dentro de Docker no ve la IP de la laptop, así que el enlace
+    # para los teléfonos (ENLACE_CAMARA) va del entorno de este proceso. Sin --no-deps tocaría los demás servicios.
+    return [*COMPOSE, "run", "--rm", "--no-deps", "-T", "--name", CONTENEDOR, "-e", "ENLACE_CAMARA", "modelo-gpu"], RAIZ
 
 
 def correr_modelo(entorno, directo):
@@ -428,7 +657,7 @@ def correr_modelo(entorno, directo):
         try:
             codigo = modelo.wait()
         except KeyboardInterrupt:
-            # Ctrl+C: se deja que el modelo avise a la web que se detuvo antes de cerrar las conexiones.
+            # Ctrl+C: el modelo avisa que se detuvo (la réplica lo pasa al servidor) antes de cerrar.
             if not directo:
                 detener_contenedor()
             try:
@@ -450,13 +679,10 @@ def correr_modelo(entorno, directo):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--web", default=WEB_SERVIDOR, help=f"la web con la API del modelo (por defecto {WEB_SERVIDOR})")
-    parser.add_argument("--camaras-servidor", action="store_true",
-                        help="los teléfonos se unen al servidor y el modelo baja sus cuadros (más lento)")
     parser.add_argument("--docker", action="store_true",
                         help="el modelo en modelo-gpu (Docker) en vez del Python de esta laptop")
     args = parser.parse_args()
-    web, directo, en_laptop = args.web.rstrip("/"), not args.docker, not args.camaras_servidor
-    puertos = PUERTOS if args.camaras_servidor else PUERTOS[:1]
+    web, directo = args.web.rstrip("/"), not args.docker
     clave = leer_env("TUNEL_CLAVE")
     if not clave:
         raise SystemExit("Falta TUNEL_CLAVE en el .env de la raíz: la misma del .env del servidor.")
@@ -464,7 +690,7 @@ def main():
     avisado = False
     while True:  # la red y la clave se prueban antes de tocar nada en la laptop
         try:
-            conexion, _ = abrir_ws(web, PUERTOS[0], clave)
+            conexion, _ = abrir_ws(web, clave)
             conexion.close()
             break
         except ClaveIncorrecta as error:
@@ -476,66 +702,41 @@ def main():
                 avisado = True
             time.sleep(3)
 
-    # Con los teléfonos en la laptop, camara-web se queda (se recrea apuntando al servidor) y hace falta Docker.
-    locales = locales_levantados(directo and not en_laptop)
-    detener = [s for s in locales if not (en_laptop and s == "camara-web")]
-    if detener:
-        print(f"Se detienen los servicios locales que usan los mismos puertos: {', '.join(detener)}.", flush=True)
-        docker(*COMPOSE, "stop", *detener)
-    reenvios, reservas, parar = [], [], threading.Event()
-    camara_apuntada = False
+    levantar_locales()
+    otros = otros_modelos()
+    if otros:
+        print(f"Se detiene mientras tanto: {', '.join(otros)} (publicaría en el mismo backend-vivo).", flush=True)
+        docker(*COMPOSE, "stop", *otros)
+    parar = threading.Event()
+    reservas = Reservas(web, clave)
+    try:
+        reenvio = Reenvio(reservas)
+    except OSError:
+        raise SystemExit(f"El puerto {PUERTO_SERVIDOR} ya está en uso en esta laptop (¿otro modelo_local.py corriendo?).")
+    threading.Thread(target=reenvio.serve_forever, daemon=True).start()
+    threading.Thread(target=reservas.mantener, args=(parar,), daemon=True).start()
+    replica = Replica(parar)
     codigo = 1
     try:
-        for puerto in puertos:
-            reserva = Reservas(web, clave, puerto)
-            try:
-                reenvio = Reenvio(reserva, puerto)
-            except OSError:
-                raise SystemExit(f"El puerto {puerto} ya está en uso en esta laptop (¿camara_telefono.py corriendo?). "
-                                 "Detenerlo antes de usar el modelo con el servidor.")
-            threading.Thread(target=reenvio.serve_forever, daemon=True).start()
-            threading.Thread(target=reserva.mantener, args=(parar,), daemon=True).start()
-            reenvios.append(reenvio)
-            reservas.append(reserva)
-        esperar_servidor()
-        if en_laptop:
-            camara_web_local(API_VIVO_PARA_CAMARA)
-            camara_apuntada = True
-            enlace = f"https://{ip_laptop()}:{os.environ.get('CAMARA_PORT') or 8444}"
-            ajustes = AJUSTES_CAMARAS_LAPTOP
-            print(f"API del modelo lista ({web}{RUTA_API}{PUERTOS[0]}). Los teléfonos se unen a esta laptop: {enlace} "
-                  "(misma red). El modelo lee su video aquí y solo envía los resultados al servidor.", flush=True)
-        else:
-            enlace = f"{web}/camara/"
-            ajustes = AJUSTES_CAMARAS_SERVIDOR
-            print(f"API del modelo lista ({web}{RUTA_API}): backend-vivo y cámaras en 127.0.0.1:{PUERTOS[0]} y "
-                  f":{PUERTOS[1]}. Los teléfonos se unen al servidor: {enlace}", flush=True)
-        # Enlace que Teléfonos muestra para unir un teléfono.
-        entorno = {**ajustes, **os.environ, "ENLACE_CAMARA": os.environ.get("ENLACE_CAMARA") or enlace}
+        replica.iniciar()
+        en_laptop = f"https://{ip_laptop()}:{leer_env('CAMARA_PORT') or 8444}"
+        print(f"Todo el proceso en esta laptop: los teléfonos se unen en {en_laptop} (misma red) y la web de la laptop "
+              f"muestra sus cajas. Al servidor ({web}) solo van los resultados, para En vivo y Registros.", flush=True)
+        entorno = dict(os.environ)
+        if not directo:
+            entorno["ENLACE_CAMARA"] = entorno.get("ENLACE_CAMARA") or en_laptop
         codigo = correr_modelo(entorno, directo)
     except KeyboardInterrupt:
         pass
     finally:
+        replica.cerrar()
         parar.set()
-        # camara-web vuelve a lo local antes de cerrar la API: al apagarse borra sus teléfonos del servidor.
-        if camara_apuntada:
-            if "backend-vivo" in locales:
-                docker(*COMPOSE, "start", "backend-vivo")
-            try:
-                camara_web_local()
-            except SystemExit as error:
-                print(error, flush=True)
-            if "camara-web" not in locales:
-                docker(*COMPOSE, "stop", "camara-web")
-        for reenvio in reenvios:
-            reenvio.shutdown()
-            reenvio.server_close()
-        for reserva in reservas:
-            reserva.cerrar()
-        vuelven = [s for s in detener if s != "modelo-gpu" and not (camara_apuntada and s == "backend-vivo")]
-        if vuelven:
-            print(f"Se vuelven a levantar los servicios locales: {', '.join(vuelven)}.", flush=True)
-            docker(*COMPOSE, "start", *vuelven)
+        reenvio.shutdown()
+        reenvio.server_close()
+        reservas.cerrar()
+        if otros:
+            print(f"Se vuelve a levantar: {', '.join(otros)}.", flush=True)
+            docker(*COMPOSE, "start", *otros)
     sys.exit(codigo)
 
 
