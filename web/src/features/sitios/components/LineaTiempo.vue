@@ -2,7 +2,7 @@
 import { computed, ref, watch } from "vue";
 import type { Replay, Zona } from "../api";
 import {
-  COLORES, LETRAS, MAX_RANGOS, deRelativo, duracionDe, filasSerie, hora, indicadores, nombreRango, pasoSerie, relativo, serieTiempo, tablaRangos,
+  COLORES, LETRAS, MAX_RANGOS, deHora, duracionDe, filasSerie, hora, indicadores, nombreRango, pasoSerie, serieTiempo, tablaRangos,
   tablasRangos, textoCambio, type Indicadores, type Rango,
 } from "../lineaTiempo";
 import { aCsv, descargar, type TablaReporte } from "../reporte";
@@ -36,7 +36,7 @@ function rangoDeBarra(i: number) {
 
 const marcas = computed(() => {
   const n = 6;
-  return Array.from({ length: n + 1 }, (_, i) => (duracion.value * i) / n).map((s) => ({ x: x(s), texto: relativo(s) }));
+  return Array.from({ length: n + 1 }, (_, i) => (duracion.value * i) / n).map((s) => ({ x: x(s), texto: hora(props.inicio, s) }));
 });
 
 // --- En el gráfico: arrastrar marca un rango; un clic fija el campo elegido (inicio o fin) en ese instante ------------
@@ -78,10 +78,10 @@ function fijar(s: number) {
   const c = activo.value!;
   if (c.i === "nuevo") {
     if (c.extremo === "desde") {
-      nuevoDesde.value = relativo(s);
+      nuevoDesde.value = hora(props.inicio, s);
       activo.value = nuevoHasta.value ? null : { i: "nuevo", extremo: "hasta" };
     } else {
-      nuevoHasta.value = relativo(s);
+      nuevoHasta.value = hora(props.inicio, s);
       activo.value = nuevoDesde.value ? null : { i: "nuevo", extremo: "desde" };
     }
     if (nuevoDesde.value && nuevoHasta.value) agregar();
@@ -101,23 +101,23 @@ function quitar(i: number) {
   activo.value = null;
 }
 
-/** Editar los extremos con el tiempo desde el inicio (m:ss); lo que no se entiende vuelve a lo que estaba. */
+/** Editar los extremos con la hora del reloj (hh:mm:ss); lo que no se entiende vuelve a lo que estaba. */
 function editar(ev: Event, i: number, extremo: "desde" | "hasta") {
   const campo = ev.target as HTMLInputElement;
-  const s = deRelativo(campo.value);
+  const s = deHora(props.inicio, campo.value, duracion.value);
   const r = s == null ? null : { ...rangos.value[i], [extremo]: Math.min(Math.max(0, s), duracion.value) };
   if (!r || r.hasta - r.desde < 1) {
-    campo.value = relativo(rangos.value[i][extremo]);
+    campo.value = hora(props.inicio, rangos.value[i][extremo]);
     return;
   }
   rangos.value = rangos.value.map((o, j) => (j === i ? r : o));
 }
 
-/** Agregar un rango escrito a mano (m:ss a m:ss). */
+/** Agregar un rango escrito a mano (de una hora a otra). */
 const nuevoDesde = ref("");
 const nuevoHasta = ref("");
 function agregar() {
-  const [a, b] = [deRelativo(nuevoDesde.value), deRelativo(nuevoHasta.value)];
+  const [a, b] = [deHora(props.inicio, nuevoDesde.value, duracion.value), deHora(props.inicio, nuevoHasta.value, duracion.value)];
   if (a == null || b == null || lleno.value) return;
   const r = { desde: Math.max(0, Math.min(a, b)), hasta: Math.min(duracion.value, Math.max(a, b)) };
   if (r.hasta - r.desde < 1) return;
@@ -214,7 +214,7 @@ function exportar() {
         :fill="rangoDeBarra(i) >= 0 ? COLORES[rangoDeBarra(i)] : 'var(--blue-500)'"
         :fill-opacity="rangoDeBarra(i) >= 0 ? 1 : 0.45"
       >
-        <title>{{ relativo(i * serie.paso_s) }} ({{ hora(inicio, i * serie.paso_s) }}) · {{ v }}</title>
+        <title>{{ hora(inicio, i * serie.paso_s) }} · {{ v }}</title>
       </rect>
       <g v-for="(r, i) in rangos" :key="'l' + i">
         <line :x1="x(r.desde)" :x2="x(r.desde)" y1="0" :y2="ALTO" :stroke="COLORES[i]" stroke-width="2" vector-effect="non-scaling-stroke" />
@@ -243,17 +243,17 @@ function exportar() {
       />
     </svg>
     <div class="guia" aria-hidden="true">
-      <span v-if="activo && puntero != null" :style="{ left: `${(100 * x(puntero)) / ANCHO}%` }">{{ relativo(puntero) }}</span>
+      <span v-if="activo && puntero != null" :style="{ left: `${(100 * x(puntero)) / ANCHO}%` }">{{ hora(inicio, puntero) }}</span>
     </div>
     <div class="marcas" aria-hidden="true">
       <span v-for="(m, i) in marcas" :key="i" :style="{ left: `${(100 * m.x) / ANCHO}%` }">{{ m.texto }}</span>
     </div>
 
     <ul class="rangos">
-      <li v-for="(r, i) in rangos" :key="`${i}-${r.desde}-${r.hasta}`" :style="{ '--c': COLORES[i] }" :title="`${hora(inicio, r.desde)}–${hora(inicio, r.hasta)}`">
+      <li v-for="(r, i) in rangos" :key="`${i}-${r.desde}-${r.hasta}`" :style="{ '--c': COLORES[i] }">
         <b>{{ LETRAS[i] }}</b>
         <input
-          :value="relativo(r.desde)"
+          :value="hora(inicio, r.desde)"
           inputmode="numeric"
           :class="{ activo: esActivo(i, 'desde') }"
           :aria-label="`Inicio del rango ${LETRAS[i]}`"
@@ -263,7 +263,7 @@ function exportar() {
         />
         <span>–</span>
         <input
-          :value="relativo(r.hasta)"
+          :value="hora(inicio, r.hasta)"
           inputmode="numeric"
           :class="{ activo: esActivo(i, 'hasta') }"
           :aria-label="`Fin del rango ${LETRAS[i]}`"
@@ -278,7 +278,7 @@ function exportar() {
         <input
           v-model="nuevoDesde"
           inputmode="numeric"
-          placeholder="0:00"
+          :placeholder="hora(inicio, 0)"
           :class="{ activo: esActivo('nuevo', 'desde') }"
           aria-label="Inicio del nuevo rango"
           @focus="activo = { i: 'nuevo', extremo: 'desde' }"
@@ -289,7 +289,7 @@ function exportar() {
         <input
           v-model="nuevoHasta"
           inputmode="numeric"
-          :placeholder="relativo(duracion)"
+          :placeholder="hora(inicio, duracion)"
           :class="{ activo: esActivo('nuevo', 'hasta') }"
           aria-label="Fin del nuevo rango"
           @focus="activo = { i: 'nuevo', extremo: 'hasta' }"
@@ -391,8 +391,8 @@ function exportar() {
   color: var(--c);
 }
 .rangos input {
-  flex: 0 0 64px;
-  width: 64px;
+  flex: 0 0 72px;
+  width: 72px;
   min-width: 0;
   font-size: 12px;
   padding: 2px 4px;

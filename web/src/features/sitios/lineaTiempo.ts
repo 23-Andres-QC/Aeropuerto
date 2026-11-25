@@ -50,14 +50,6 @@ export function relativo(s: number): string {
   return h ? `${h}:${dos(m)}:${dos(r)}` : `${m}:${dos(r)}`;
 }
 
-/** «m:ss», «h:mm:ss» o segundos sueltos → segundos desde el inicio; null si no se entiende. */
-export function deRelativo(texto: string): number | null {
-  const t = texto.trim().replace(",", ".");
-  if (/^\d+(\.\d+)?$/.test(t)) return Number(t);
-  const m = /^(?:(\d+):)?(\d{1,2}):(\d{1,2})$/.exec(t);
-  return m ? Number(m[1] ?? 0) * 3600 + Number(m[2]) * 60 + Number(m[3]) : null;
-}
-
 export type Serie = { paso_s: number; personas: number[]; entradas: number[] };
 
 /** Por intervalo: el máximo de personas a la vez y las que aparecen por primera vez (en la zona, si hay una elegida). */
@@ -122,8 +114,20 @@ export function indicadores(replay: Replay, zonas: Zona[], zonaId: number | null
 /** Hora del reloj de un instante de la sesión (`inicio` en ms). */
 export const hora = (inicio: number, s: number) => horaReloj(inicio + s * 1000);
 
-export const nombreRango = (inicio: number, r: Rango, i: number) =>
-  `${LETRAS[i]} · ${relativo(r.desde)}–${relativo(r.hasta)} (${hora(inicio, r.desde)}–${hora(inicio, r.hasta)})`;
+/**
+ * «hh:mm:ss» o «hh:mm» del reloj → segundos desde el inicio de la sesión (`inicio` en ms); null si no se entiende. Una hora
+ * antes del inicio es del día siguiente si así cae dentro de la sesión (una grabación que pasa la medianoche).
+ */
+export function deHora(inicio: number, texto: string, duracion_s: number): number | null {
+  const m = /^(\d{1,2})[:.](\d{2})(?:[:.](\d{2}))?$/.exec(texto.trim());
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59 || Number(m[3] ?? 0) > 59) return null;
+  const d = new Date(inicio);
+  const base = d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds(); // la hora a la vista no muestra milésimas
+  const s = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3] ?? 0) - base;
+  return s < 0 && s + 86400 <= duracion_s + 1 ? s + 86400 : s;
+}
+
+export const nombreRango = (inicio: number, r: Rango, i: number) => `${LETRAS[i]} · ${hora(inicio, r.desde)}–${hora(inicio, r.hasta)}`;
 
 type Fila = { nombre: string; valor: (x: Indicadores) => number | null; texto: (v: number) => string };
 const FILAS: Fila[] = [

@@ -8,7 +8,7 @@ import { CELDA_CALOR, SESION_VIVO, capturasVersion, entradasPorIntervalo, fijarM
 import ContrasteSesiones from "../components/ContrasteSesiones.vue";
 import TraficoSitio from "../components/TraficoSitio.vue";
 import LineaTiempo from "../components/LineaTiempo.vue";
-import { COLORES, LETRAS, nombreRango, recortar, recortarVarios, relativo, type Rango } from "../lineaTiempo";
+import { COLORES, LETRAS, hora, nombreRango, recortar, recortarVarios, type Rango } from "../lineaTiempo";
 import { desdeReplay, entradasPorIntervalo as entradasEntre, resumir, type HistoriaBasica, type ResumenVivo } from "../analisisVivo";
 import { useSitios } from "../useSitios";
 import { perfil } from "../../cuentas/api";
@@ -368,7 +368,7 @@ const casosPdf = computed(() =>
   mapasPdf.value && conRangos.value && replay.value
     ? [null, ...rangos.value.map((_, i) => i)].map((sel) => ({
         sel,
-        titulo: sel == null ? "Todos los rangos" : `${LETRAS[sel]} · ${relativo(rangos.value[sel].desde)}–${relativo(rangos.value[sel].hasta)}`,
+        titulo: sel == null ? "Todos los rangos" : nombreRango(inicioSesion.value, rangos.value[sel], sel),
         ...casoMapa(sel),
       }))
     : [],
@@ -714,7 +714,7 @@ onMounted(async () => {
     <span><small>Puntos de trayectoria</small><b>{{ sesion.points.toLocaleString() }}</b></span>
     <span><small>Cámaras</small><b>{{ config?.cameras.length ?? "—" }}</b></span>
     <span v-if="conRangos" class="rangos-activos" data-prueba="rangos-activos">
-      <small>Rangos</small><b>{{ rangos.map((o, i) => `${LETRAS[i]} ${relativo(o.desde)}–${relativo(o.hasta)}`).join(" · ") }}</b>
+      <small>Rangos</small><b>{{ rangos.map((o, i) => `${LETRAS[i]} ${hora(inicioSesion, o.desde)}–${hora(inicioSesion, o.hasta)}`).join(" · ") }}</b>
     </span>
   </div>
   <p v-if="modoVivo && vivo.sinUbicar.value" class="aviso-sin-ubicar" role="status">
@@ -802,7 +802,7 @@ onMounted(async () => {
                 type="button"
                 :class="{ activa: rangoMapa === i }"
                 :style="rangoMapa === i ? { background: COLORES[i], borderColor: COLORES[i] } : { color: COLORES[i] }"
-                :title="`${relativo(o.desde)}–${relativo(o.hasta)}`"
+                :title="`${hora(inicioSesion, o.desde)}–${hora(inicioSesion, o.hasta)}`"
                 @click="rangoMapa = i"
               >
                 {{ LETRAS[i] }}
@@ -838,7 +838,7 @@ onMounted(async () => {
                 type="button"
                 :class="{ activa: rangoMapa === i }"
                 :style="rangoMapa === i ? { background: COLORES[i], borderColor: COLORES[i] } : { color: COLORES[i] }"
-                :title="`${relativo(o.desde)}–${relativo(o.hasta)}`"
+                :title="`${hora(inicioSesion, o.desde)}–${hora(inicioSesion, o.hasta)}`"
                 @click="rangoMapa = i"
               >
                 {{ LETRAS[i] }}

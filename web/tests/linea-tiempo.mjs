@@ -3,7 +3,7 @@
 // Uso: node web/tests/linea-tiempo.mjs  (Node 22.18 o más nuevo: lee TypeScript directamente; sale con error si algo falla)
 import assert from "node:assert/strict";
 import { desdeReplay, horaReloj, resumir, zonasDelPunto } from "../src/features/sitios/analisisVivo.ts";
-import { hora, indicadores, recortar } from "../src/features/sitios/lineaTiempo.ts";
+import { deHora, hora, indicadores, nombreRango, recortar } from "../src/features/sitios/lineaTiempo.ts";
 
 // Un local (10 × 10 m) con su frente (3 × 10 m) adentro y un pasillo al lado.
 const cuadro = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
@@ -58,4 +58,19 @@ for (const ms of [0, 1_700_000_000_000, 1_763_445_123_456]) {
   assert.equal(horaReloj(ms), new Date(ms).toLocaleTimeString("es-PE", formato));
   assert.equal(hora(ms, 75.4), new Date(ms + 75_400).toLocaleTimeString("es-PE", formato));
 }
+// Los rangos se ven y se escriben con la hora del reloj: lo que se muestra vuelve al mismo instante.
+const inicio = new Date(2026, 10, 25, 10, 15, 30, 700).getTime();
+assert.equal(hora(inicio, 0), "10:15:30");
+assert.equal(hora(inicio, 216), "10:19:06");
+assert.equal(deHora(inicio, "10:15:30", 216), 0);
+assert.equal(deHora(inicio, "10:19:06", 216), 216);
+assert.equal(deHora(inicio, "10:17", 216), 90);
+assert.equal(deHora(inicio, " 10.16.00 ", 216), 30);
+for (const s of [0, 37, 125, 216]) assert.equal(deHora(inicio, hora(inicio, s), 216), s);
+for (const malo of ["", "3:36x", "25:00", "10:61", "10:15:75", "abc"]) assert.equal(deHora(inicio, malo, 216), null);
+// Una grabación que pasa la medianoche: después de las 00:00 sigue contando desde el inicio.
+const tarde = new Date(2026, 10, 25, 23, 58, 0).getTime();
+assert.equal(deHora(tarde, "00:01:00", 600), 180);
+assert.equal(deHora(tarde, "23:57:00", 600), -60); // antes del inicio: quien la usa la lleva a 0
+assert.equal(nombreRango(inicio, { desde: 0, hasta: 216 }, 0), "A · 10:15:30–10:19:06");
 console.log("linea-tiempo: todo bien");
