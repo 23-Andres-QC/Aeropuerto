@@ -5,6 +5,11 @@ ancho y su homografía de píxeles a metros del plano. Cada cuadro procesado se 
 las baldosas y RANSAC) y su homografía al plano es la de la referencia compuesta con la que lleva el cuadro a ella. Así
 un teléfono que se mueve, o que se vuelve a poner un poco distinto, sigue ubicando bien a la gente.
 
+Cuando ninguna referencia alcanza (gente que tapa las baldosas, otra luz que la de la calibración), el cuadro se compara
+con el último del mismo teléfono que sí se ubicó contra una referencia: es la misma vista con la misma luz, así que
+cuadran muchos más puntos, y mientras el teléfono siga en su lugar (o se mueva poco) la ubicación se mantiene. Se
+compara siempre con un cuadro ubicado por una referencia, nunca con uno ubicado así: el error no se va sumando.
+
 ORB y no SIFT: en los cuadros grabados en ESAN los dos reconocen la vista en los mismos cuadros (~93 %), pero ORB tarda
 ~15 ms por cuadro y SIFT ~120 ms.
 """
@@ -20,7 +25,7 @@ RAZON = 0.8               # prueba de razón de Lowe
 UMBRAL_PX = 3.0           # error de RANSAC, en píxeles a media resolución
 MIN_COINCIDENCIAS = 40    # puntos que deben cuadrar con la referencia para creerle
 SOBRADAS = 150            # con tantos puntos no se prueba otra referencia (con menos se queda la mejor de las probadas)
-VIGENCIA_S = 3.0          # sin una comparación buena, la última ubicación vale este tiempo
+VIGENCIA_S = 3.0          # sin una comparación buena (ni con las referencias ni con su último cuadro), la última ubicación vale este tiempo
 INTENTOS = 3              # referencias que se prueban por cuadro (la última que sirvió, luego las de su cámara)
 LIMITE_M = 150.0          # una homografía que manda el cuadro más lejos que esto del origen del plano está mal (el comedor queda a ~75 m)
 
@@ -40,9 +45,19 @@ class Referencia:
     def __init__(self, nombre, camara, imagen, H, orb):
         if imagen is None or imagen.shape[1] != ANCHO:
             raise ValueError(f"la referencia {nombre} debe ser un cuadro de {ANCHO} px de ancho")
+        self._iniciar(nombre, camara, H, *orb.detectAndCompute(a_media(imagen), None))
+
+    @classmethod
+    def de_cuadro(cls, nombre, camara, H, puntos, descriptores):
+        """Un cuadro del teléfono ya ubicado (sus puntos ORB y su homografía al plano), para compararle los siguientes."""
+        referencia = cls.__new__(cls)
+        referencia._iniciar(nombre, camara, H, puntos, descriptores)
+        return referencia
+
+    def _iniciar(self, nombre, camara, H, puntos, descriptores):
         self.nombre, self.camara = nombre, camara
         self.H = np.asarray(H, float).reshape(3, 3)
-        self.puntos, self.descriptores = orb.detectAndCompute(a_media(imagen), None)
+        self.puntos, self.descriptores = puntos, descriptores
         self.buscador = cv2.BFMatcher(cv2.NORM_HAMMING)
 
     def comparar(self, puntos, descriptores):
@@ -70,6 +85,7 @@ class Ubicador:
         self.referencias = [Referencia(r["nombre"], r["camara"], cv2.imread(str(carpeta / r["imagen"])), r["H"], self.orb)
                             for r in datos["referencias"]]
         self.ultima = {}  # teléfono -> (referencia, ubicación, hora)
+        self.propio = {}  # teléfono -> su último cuadro ubicado por una referencia (ver el módulo)
         self.turno = {}   # teléfono -> desde qué referencia se sigue probando cuando ninguna sirve
         self.parecido = {}  # teléfono -> (nombre de la referencia más parecida, coincidencias) del último cuadro: para saber por qué no se ubica
 
@@ -105,13 +121,26 @@ class Ubicador:
         self.parecido[cid] = cercana if mejor is None else (mejor[0].nombre, mejor[2])
         if mejor is not None:
             referencia, H, n = mejor
-            ubicacion = {"sitio": self.sitio, "ancho": ANCHO, "H": [float(v) for v in (H / H[2, 2]).ravel()],
-                         "referencia": referencia.nombre, "coincidencias": n}
+            ubicacion = self._ubicacion(H, referencia.nombre, n)
             self.ultima[cid] = (referencia, ubicacion, ahora)
+            self.propio[cid] = Referencia.de_cuadro(referencia.nombre, camara, H, puntos, descriptores)
             return ubicacion
         self.turno[cid] = self.turno.get(cid, 0) + INTENTOS - 1
-        previa = self.ultima.get(cid)
+        propio, previa = self.propio.get(cid), self.ultima.get(cid)
+        if propio is not None:  # ninguna referencia alcanzó: su último cuadro ubicado, misma vista y misma luz
+            G, n = propio.comparar(puntos, descriptores)
+            if G is not None:
+                H = propio.H @ np.linalg.inv(_A_MEDIA) @ G @ _A_MEDIA
+                if self._valida(H, frame):
+                    ubicacion = {**self._ubicacion(H, propio.nombre, n), "seguida": True}
+                    self.ultima[cid] = (previa[0] if previa is not None else propio, ubicacion, ahora)
+                    self.parecido[cid] = (propio.nombre, n)
+                    return ubicacion
         return previa[1] if previa is not None and ahora - previa[2] <= VIGENCIA_S else None
+
+    def _ubicacion(self, H, referencia, coincidencias):
+        return {"sitio": self.sitio, "ancho": ANCHO, "H": [float(v) for v in (H / H[2, 2]).ravel()],
+                "referencia": referencia, "coincidencias": coincidencias}
 
     @staticmethod
     def _valida(H, frame):
@@ -127,4 +156,5 @@ class Ubicador:
     def olvidar(self, cid):
         """Un teléfono que salió: la próxima vez empieza de cero."""
         self.ultima.pop(cid, None)
+        self.propio.pop(cid, None)
         self.turno.pop(cid, None)

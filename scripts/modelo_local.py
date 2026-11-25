@@ -4,12 +4,13 @@ Los teléfonos se unen a esta laptop en su red (https://<IP de la laptop>:8444, 
 backend-vivo de la laptop los reciben y el modelo lee su video aquí mismo, sin internet de por medio. La web de la
 laptop muestra el video con las cajas (Teléfonos).
 
-Al servidor (la web y todo el backend, sin modelo) no sube video: una réplica manda solo los resultados a su
-backend-vivo, por la API del modelo en el dominio (https://aeropuerto.tujuegoya.com/api-modelo/8093,
-scripts/puente_modelo.py):
+Al servidor (la web y todo el backend, sin modelo) una réplica manda solo los resultados a su backend-vivo, por la API
+del modelo en el dominio (https://aeropuerto.tujuegoya.com/api-modelo/8093, scripts/puente_modelo.py):
 - los teléfonos que procesa el modelo (se registran allá con el mismo nombre y se quitan al salir);
 - lo que ve cada uno: cajas, IDs y su ubicación en el plano (si la red se atrasa, el más nuevo);
-- el estado del modelo (cuadros por segundo, personas).
+- el estado del modelo (cuadros por segundo, personas);
+- un video liviano de cada teléfono (MODELO_VIDEO_FPS, 2 cuadros por segundo; 0 = ninguno), para que su cámara no se
+  vea en negro en la web del servidor: siempre el cuadro más nuevo, así nunca atrasa las cajas.
 Con eso En vivo del servidor pinta el mapa y guarda cada captura en Registros, igual que con el modelo allá. Cuando el
 servidor empieza una grabación (vacía la memoria de identidades), el modelo de la laptop también empieza de cero.
 
@@ -88,6 +89,7 @@ RESERVAS, RESERVA_VIDA_S = 3, 45
 SONDEO_S = 2  # cada cuánto la réplica compara los teléfonos y mira si el servidor empezó una grabación
 RESUMEN_S = 10  # cada cuánto se muestra aquí cómo va el proceso
 PONG_S = 10  # backend-vivo corta a quien publica si en 30 s no le llega un pong (un ping no cuenta)
+VIDEO_FPS = float(leer_env("MODELO_VIDEO_FPS") or 2)  # video de cada teléfono que va al servidor (0 = ninguno)
 # Los teléfonos de esta laptop en el servidor: su URL dice de qué laptop y de qué teléfono son (sin token: no es su video).
 ESPEJO = f"http://modelo-laptop/{hashlib.sha1(socket.gethostname().encode()).hexdigest()[:8]}/"
 # El modelo se reinicia solo si se cae; si se cae enseguida otra vez, se espera más (hasta REINICIO_MAX_S).
@@ -319,7 +321,7 @@ class Ws:
     def __init__(self, puerto, ruta):
         self.sock = socket.create_connection(("127.0.0.1", puerto), timeout=20)
         self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        self.buffer, self.partes = bytearray(), []
+        self.buffer, self.partes, self.tipo = bytearray(), [], 1
         try:
             llave = base64.b64encode(os.urandom(16)).decode()
             self.sock.sendall((f"GET {ruta} HTTP/1.1\r\nHost: 127.0.0.1:{puerto}\r\nUpgrade: websocket\r\n"
@@ -340,14 +342,15 @@ class Ws:
             self.sock.close()
             raise
 
-    def enviar(self, texto):
-        self.sock.sendall(marco_ws(1, texto.encode()))
+    def enviar(self, mensaje):
+        """Un mensaje de texto (str) o binario (bytes, el video)."""
+        self.sock.sendall(marco_ws(1, mensaje.encode()) if isinstance(mensaje, str) else marco_ws(2, mensaje))
 
     def pong(self):
         self.sock.sendall(marco_ws(10, b""))
 
     def leer(self):
-        """Lee lo que llegó (llamarla con datos listos) y devuelve los mensajes de texto completos."""
+        """Lee lo que llegó (llamarla con datos listos) y devuelve los mensajes completos: str los de texto, bytes los binarios."""
         datos = self.sock.recv(65536)
         if not datos:
             raise ConnectionError("se cerró")
@@ -355,10 +358,13 @@ class Ws:
         mensajes = []
         while (marco := sacar_marco(self.buffer)) is not None:
             opcode, datos, fin = marco
-            if opcode in (0, 1):  # un mensaje largo llega en varios marcos
+            if opcode in (0, 1, 2):  # un mensaje largo llega en varios marcos (los que siguen, con opcode 0)
+                if opcode:
+                    self.tipo, self.partes = opcode, []
                 self.partes.append(datos)
                 if fin:
-                    mensajes.append(b"".join(self.partes).decode("utf-8", "replace"))
+                    datos = b"".join(self.partes)
+                    mensajes.append(datos.decode("utf-8", "replace") if self.tipo == 1 else datos)
                     self.partes = []
             elif opcode == 8:
                 raise ConnectionError("se cerró")
@@ -388,7 +394,8 @@ class Replica:
         self.avisado = False
         self.estado = None  # el último que publicó el modelo (ids de la laptop)
         self.enviados = {}  # id local -> mensajes de cajas mandados al servidor
-        self.resumido = (time.monotonic(), {})
+        self.videos = {}  # id local -> cuadros de video mandados al servidor
+        self.resumido = (time.monotonic(), {}, {})
 
     def local(self, metodo, ruta):
         pedido = urllib.request.Request(f"http://127.0.0.1:{PUERTO_VIVO}{ruta}", method=metodo)
@@ -442,9 +449,9 @@ class Replica:
 
     def resumir(self):
         """Una línea con cómo va cada teléfono (lo mismo que Teléfonos) y cuántas cajas por segundo llegan al servidor."""
-        ahora, enviados = time.monotonic(), dict(self.enviados)
-        antes, previos = self.resumido
-        self.resumido = (ahora, enviados)
+        ahora, enviados, videos = time.monotonic(), dict(self.enviados), dict(self.videos)
+        antes, previos, videos_antes = self.resumido
+        self.resumido = (ahora, enviados, videos)
         estado = self.estado or {}
         partes = []
         for lid, t in (estado.get("telefonos") or {}).items():
@@ -457,6 +464,8 @@ class Replica:
                 texto += f" ({t['mensaje']})"
             if lid in self.mapa:
                 texto += f", al servidor {(enviados.get(lid, 0) - previos.get(lid, 0)) / (ahora - antes):.1f}/s"
+                if VIDEO_FPS > 0:
+                    texto += f" (video {(videos.get(lid, 0) - videos_antes.get(lid, 0)) / (ahora - antes):.1f}/s)"
             else:
                 texto += ", aún no en el servidor"
             partes.append(texto)
@@ -499,8 +508,14 @@ class Replica:
             if not (lid in self.hilos and self.hilos[lid].is_alive()):
                 self.hilos[lid] = threading.Thread(
                     target=self.pasar, args=(f"/api/v1/cameras/{lid}/detections/watch",
-                                             lambda lid=lid: self.publicar(lid), None, lid), daemon=True)
+                                             lambda lid=lid: self.publicar(lid), None, self.enviados, lid), daemon=True)
                 self.hilos[lid].start()
+            clave = f"video:{lid}"
+            if VIDEO_FPS > 0 and not (clave in self.hilos and self.hilos[clave].is_alive()):
+                self.hilos[clave] = threading.Thread(
+                    target=self.pasar, args=(f"/api/v1/cameras/{lid}/watch", lambda lid=lid: self.publicar(lid, "publish"),
+                                             None, self.videos, lid, 1 / VIDEO_FPS), daemon=True)
+                self.hilos[clave].start()
 
         epoca = self.remoto("GET", "/api/v1/personas/resumen").get("epoca")
         if self.epoca is not None and epoca != self.epoca:
@@ -508,10 +523,10 @@ class Replica:
             print("Réplica: el servidor empezó una grabación; el modelo olvida a las personas de antes.", flush=True)
         self.epoca = epoca
 
-    def publicar(self, lid):
-        """Dónde van las cajas de un teléfono en el servidor (None si ya no está)."""
+    def publicar(self, lid, canal="detections/publish"):
+        """Dónde van las cajas (o el video) de un teléfono en el servidor (None si ya no está)."""
         sid = self.mapa.get(lid)
-        return f"/api/v1/cameras/{sid}/detections/publish" if sid else None
+        return f"/api/v1/cameras/{sid}/{canal}" if sid else None
 
     def traducir_estado(self, texto):
         """El estado del modelo con los ids del servidor; los teléfonos que allá aún no figuran no van."""
@@ -526,9 +541,10 @@ class Replica:
             estado = {**estado, "telefonos": {mapa[lid]: t for lid, t in telefonos.items() if lid in mapa}}
         return json.dumps(estado)
 
-    def pasar(self, ruta_local, destino, traducir, lid=None):
+    def pasar(self, ruta_local, destino, traducir, cuenta=None, lid=None, cada_s=0.0):
         """Hilo: lee un canal del relevo de la laptop y lo publica en el del servidor. Si la red se atrasa, solo el
-        mensaje más nuevo: cada uno trae el cuadro entero (cajas, IDs y ubicación) y lo viejo ya no sirve en el mapa."""
+        mensaje más nuevo: cada uno trae el cuadro entero (cajas, IDs y ubicación) y lo viejo ya no sirve en el mapa.
+        Con `cada_s` (el video), a lo sumo uno cada tanto: el más nuevo que llegó."""
         while not self.parar.is_set():
             ruta = destino()
             if ruta is None:
@@ -537,20 +553,23 @@ class Replica:
             try:
                 local = Ws(PUERTO_VIVO, ruta_local)
                 servidor = Ws(PUERTO_SERVIDOR, ruta)
-                pong = time.monotonic()
+                pong, pendiente, enviado = time.monotonic(), None, 0.0
                 while not self.parar.is_set() and destino() == ruta:
-                    listos = select.select([local.sock, servidor.sock], [], [], 1)[0]
+                    espera = 1.0 if pendiente is None else max(0.0, cada_s - (time.monotonic() - enviado))
+                    listos = select.select([local.sock, servidor.sock], [], [], espera)[0]
                     if servidor.sock in listos:
                         servidor.leer()
                     if local.sock in listos:
                         mensajes = local.leer()
-                        texto = mensajes[-1] if mensajes else None
-                        if texto and traducir:
-                            texto = traducir(texto)
-                        if texto:
-                            servidor.enviar(texto)
-                            if lid:
-                                self.enviados[lid] = self.enviados.get(lid, 0) + 1
+                        if mensajes:
+                            pendiente = mensajes[-1]
+                    if pendiente is not None and time.monotonic() - enviado >= cada_s:
+                        mensaje = traducir(pendiente) if traducir else pendiente
+                        pendiente, enviado = None, time.monotonic()
+                        if mensaje:
+                            servidor.enviar(mensaje)
+                            if cuenta is not None and lid:
+                                cuenta[lid] = cuenta.get(lid, 0) + 1
                     if time.monotonic() - pong > PONG_S:
                         servidor.pong()
                         pong = time.monotonic()

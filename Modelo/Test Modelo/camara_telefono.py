@@ -782,7 +782,8 @@ class SesionEnVivo:
             self._aviso_ubicacion = ahora
             for cid, u in ubicaciones.items():
                 ref, n = self.ubicador.parecido.get(cid, (None, 0))
-                print(f"Ubicación {cid[:12]}: " + (f"reconoce la vista {u['referencia']} ({u['coincidencias']} puntos)" if u else
+                print(f"Ubicación {cid[:12]}: " + (f"reconoce la vista {u['referencia']} ({u['coincidencias']} puntos"
+                      f"{', por su último cuadro ubicado' if u.get('seguida') else ''})" if u else
                       f"NO reconoce el lugar (lo más parecido: {ref or 'nada'}, {n} puntos de {U_MIN} necesarios)"), flush=True)
         return ubicaciones
 

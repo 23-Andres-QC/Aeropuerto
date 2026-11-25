@@ -77,6 +77,33 @@ class TestUbicador(unittest.TestCase):
         u.olvidar("tel-1")
         self.assertIsNone(u.ubicar("tel-1", 1, gris, 0.0))
 
+    def test_sin_referencia_sigue_con_su_último_cuadro(self):
+        # Se ubica una vez; después ninguna referencia alcanza (gente que tapa el piso, otra luz: se simula), pero el teléfono
+        # se movió poco: la ubicación sale de su último cuadro ubicado y da el mismo punto del plano que daría la referencia.
+        u = Ubicador(self.carpeta)
+        W = np.vstack([cv2.getRotationMatrix2D((320, 426), 4, 1.05), [0, 0, 1]])
+        W[:2, 2] += (18, -25)
+        primero = cv2.warpAffine(self.referencia, W[:2], (640, 853), borderValue=(120, 120, 120))
+        self.assertIsNotNone(u.ubicar("tel-1", 1, primero, 0.0))
+        W2 = np.vstack([cv2.getRotationMatrix2D((320, 426), -2, 0.98), [0, 0, 1]])
+        W2[:2, 2] += (6, 9)
+        segundo = cv2.warpAffine(primero, W2[:2], (640, 853), borderValue=(120, 120, 120))
+        for referencia in u.referencias:
+            referencia.comparar = lambda puntos, descriptores: (None, 12)
+        r = u.ubicar("tel-1", 1, segundo, 60.0)  # mucho después de VIGENCIA_S: no es la última que se repite
+        self.assertIsNotNone(r)
+        self.assertTrue(r["seguida"])
+        self.assertEqual(r["referencia"], "A0")
+        inversa = np.linalg.inv(W2 @ W)
+        for x, y in ((320, 426), (150, 700), (500, 200)):
+            esperado = plano(H_REFERENCIA, *(inversa @ [x, y, 1])[:2])
+            self.assertLess(np.linalg.norm(plano(r["H"], x, y) - esperado), 0.05)
+        # Lo que no se parece ni a su último cuadro no se ubica (pasado VIGENCIA_S), y al salir el teléfono se olvida todo.
+        gris = np.full_like(self.referencia, 128)
+        self.assertIsNone(u.ubicar("tel-1", 1, gris, 120.0))
+        u.olvidar("tel-1")
+        self.assertIsNone(u.ubicar("tel-1", 1, segundo, 121.0))
+
     def test_primero_las_referencias_de_su_cámara(self):
         u = Ubicador(self.carpeta)
         self.assertEqual([r.nombre for r in u._orden("tel-2", 2)], ["B0", "A0"])
