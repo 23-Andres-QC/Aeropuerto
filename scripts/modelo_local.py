@@ -1,30 +1,27 @@
 """Modelo en vivo en esta laptop (con su GPU) para la web del servidor, por la API del dominio.
 
-El servidor tiene la web y todo el backend, sin modelo (servidor.env): los teléfonos se unen a su camara-web
-(https://aeropuerto.tujuegoya.com/camara/), pero sin este script nadie procesa su video y En vivo dice «El modelo no
-está publicando».
-El modelo usa dos servicios que en el servidor solo escuchan en 127.0.0.1; este script los trae a los mismos puertos
-de la laptop por la API del modelo en el dominio (scripts/puente_modelo.py en el servidor):
+El servidor tiene la web y todo el backend, sin modelo (servidor.env). Este script corre el modelo aquí y le manda al
+servidor solo los resultados, por la API del modelo en el dominio (scripts/puente_modelo.py en el servidor):
 
-    127.0.0.1:8093 -> https://aeropuerto.tujuegoya.com/api-modelo/8093   backend-vivo: teléfonos, videos, cajas, memoria
-    127.0.0.1:8092 -> https://aeropuerto.tujuegoya.com/api-modelo/8092   camara-web: cuadros de cada teléfono
+    127.0.0.1:8093 -> https://aeropuerto.tujuegoya.com/api-modelo/8093   backend-vivo: teléfonos, cajas, IDs, mapa, video
 
-y corre el modelo de siempre (modelo-gpu de compose.yaml, en Docker con la GPU; --directo, camara_telefono.py con el
-Python de esta laptop), así que En vivo, Teléfonos y Videos del servidor funcionan sin cambios: el video baja, el
-modelo lo procesa aquí y las cajas, la ubicación en el plano, los IDs y la memoria de identidades vuelven al servidor.
+Los teléfonos se unen a esta laptop, en su red (https://<IP de la laptop>:8444, la de ESAN 5G): el camara-web de la
+laptop los registra en el servidor y el modelo lee su video aquí mismo, sin bajarlo de internet (cada cuadro por
+internet costaba ~0,3 s de ida y vuelta y el modelo veía ~3 por segundo). Al servidor solo suben las cajas, los IDs, la
+ubicación en el plano, la memoria de identidades y un video chico para la web (RELEVO_VIDEO_FPS, dosificado), así que
+En vivo, Teléfonos y Videos del servidor funcionan sin cambios.
+Con --camaras-servidor los teléfonos se unen al servidor (https://aeropuerto.tujuegoya.com/camara/) y el modelo baja
+sus cuadros por la API (/api-modelo/8092): sirve con la laptop en otra red que los teléfonos, pero es más lento.
+
+    python scripts/modelo_local.py                       # teléfonos a la laptop; el modelo solo envía al servidor
+    python scripts/modelo_local.py --camaras-servidor    # teléfonos al servidor; el modelo baja sus cuadros
+    python scripts/modelo_local.py --docker              # el modelo en modelo-gpu (Docker) en vez del Python de aquí
+
 Va por HTTPS (puerto 443), así que sirve en cualquier red que abra la web, también las de ESAN; sin SSH ni contraseña
-del servidor: pide solo TUNEL_CLAVE del .env de la raíz (la misma del .env del servidor), porque por ahí se ve el video
-de los teléfonos. Si la red se corta, cada conexión se rehace sola; si el servidor está arrancando, espera a que
-responda; y si el modelo se cae, lo vuelve a levantar.
-
-    python scripts/modelo_local.py               # la web de servidor.env (APP_BASE_URL)
-    python scripts/modelo_local.py --directo     # el modelo con el Python de esta laptop, sin Docker
-    python scripts/modelo_local.py --web URL     # otra web con su API del modelo
-
-Los mismos puertos los usan backend-vivo y camara-web locales: si están levantados se detienen mientras corre (y el
-modelo-gpu local, que publicaría en la web de la laptop) y al salir se vuelven a levantar los dos primeros. Los
-teléfonos, en cualquier red: entran por el dominio. Ctrl+C detiene el modelo. Con la web en esta misma laptop
-(docker compose local) no hace falta.
+del servidor: pide solo TUNEL_CLAVE del .env de la raíz (la misma del .env del servidor). Necesita Docker Desktop
+abierto (camara-web de la laptop). Mientras corre detiene backend-vivo y modelo-gpu locales (usan los mismos puertos) y
+al salir deja los servicios locales como estaban. Si la red se corta, cada conexión se rehace sola; si el servidor está
+arrancando, espera a que responda; y si el modelo se cae, lo vuelve a levantar. Ctrl+C detiene el modelo.
 """
 import argparse
 import base64
@@ -85,9 +82,15 @@ LOCALES = ("modelo-gpu", "camara-web", "backend-vivo")
 #   viejos), reducido a 1280 px: la resolución del detector de Videos que usan los teléfonos;
 # - el video del relevo (solo de respaldo: la web muestra el de la sala de camara-web) va a 1 cuadro por segundo y
 #   dosificado (120 KB/s): un cuadro entero ocupaba la subida de la laptop ~90 ms y las cajas esperaban detrás.
-AJUSTES_REMOTO = {"LECTURA_TELEFONOS": "foto", "MJPEG_ANCHO": "1280", "RELEVO_VIDEO_FPS": "1", "RELEVO_VIDEO_KBPS": "120"}
-VARIABLES = (*AJUSTES_REMOTO, "ENLACE_CAMARA")  # las que pasan al contenedor del modelo
+AJUSTES_CAMARAS_SERVIDOR = {"LECTURA_TELEFONOS": "foto", "MJPEG_ANCHO": "1280", "RELEVO_VIDEO_FPS": "1",
+                            "RELEVO_VIDEO_KBPS": "120"}
+# Con los teléfonos en la laptop el modelo lee su video aquí (el MJPEG de siempre) y la subida solo lleva el video de la
+# web: 10 cuadros por segundo de 640 px, dosificado a 500 KB/s para que nunca tape las cajas.
+AJUSTES_CAMARAS_LAPTOP = {"RELEVO_VIDEO_FPS": "10", "RELEVO_VIDEO_KBPS": "500"}
+VARIABLES = (*AJUSTES_CAMARAS_SERVIDOR, "ENLACE_CAMARA")  # las que pasan al contenedor del modelo (--docker)
 PUERTOS = (8093, 8092)  # mismos números en las dos puntas: las URL que reparte backend-vivo valen tal cual
+# camara-web de la laptop (en Docker) llega al 8093 de este script por host.docker.internal.
+API_VIVO_PARA_CAMARA = f"http://host.docker.internal:{PUERTOS[0]}"
 # Abrir un WebSocket es una conexión TLS más su saludo (unas décimas de segundo por Cloudflare) y el modelo abre
 # conexiones a menudo (la lista de teléfonos cada 2 s): cada conexión toma uno ya abierto de reserva. Las reservas que
 # pasan RESERVA_VIDA_S sin usarse se cambian por otras (Cloudflare corta las que pasan ~100 s calladas).
@@ -337,13 +340,49 @@ def esperar_servidor():
             time.sleep(5)
 
 
-def docker(*argumentos):
+def docker(*argumentos, entorno=None):
     """Corre un comando de Docker en la raíz del repositorio (donde está compose.yaml) y devuelve su resultado."""
-    return subprocess.run(list(argumentos), cwd=RAIZ, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    return subprocess.run(list(argumentos), cwd=RAIZ, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          env=entorno)
+
+
+def ip_laptop():
+    """La IP de esta laptop en su red (la de ESAN 5G): por ella se unen los teléfonos. No manda nada."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("1.1.1.1", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
+def camara_web_local(api_vivo=None):
+    """(Re)crea camara-web de la laptop: con api_vivo registra sus teléfonos ahí (el servidor); sin él, en el local.
+
+    Al recrearlo el anterior se apaga y borra sus teléfonos de donde los había registrado.
+    """
+    entorno = {k: v for k, v in os.environ.items() if k not in ("CAMARA_API_VIVO", "CAMARA_SALA_RELEVO")}
+    if api_vivo:
+        # Su sala no sigue los relevos: nadie la mira y bajaría del servidor el mismo video que el modelo le sube.
+        entorno.update(CAMARA_API_VIVO=api_vivo, CAMARA_SALA_RELEVO="no")
+    r = docker("docker", "compose", "up", "-d", "--build", "--no-deps", "--force-recreate", "camara-web",
+               entorno=entorno)
+    if r.returncode != 0:
+        raise SystemExit(f"No se pudo levantar camara-web de la laptop: {r.stderr.strip()}")
+    for _ in range(60):
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{PUERTOS[1]}/salud", timeout=2) as respuesta:
+                respuesta.read()
+            return
+        except OSError:
+            time.sleep(1)
+    raise SystemExit("camara-web de la laptop no respondió en 60 s.")
 
 
 def locales_levantados(directo):
-    """Los servicios de LOCALES que corren en esta laptop. Sin Docker, ninguno (con --directo no hace falta)."""
+    """Los servicios de LOCALES que corren en esta laptop. Sin Docker, ninguno (si directo, no hace falta)."""
     try:
         resultado = docker(*COMPOSE, "ps", "--status", "running", "--services")
     except OSError:
@@ -351,7 +390,7 @@ def locales_levantados(directo):
     if resultado is None or resultado.returncode != 0:
         if directo:
             return []
-        raise SystemExit("Docker no responde: abrir Docker Desktop (el modelo corre en modelo-gpu) o usar --directo.")
+        raise SystemExit("Docker no responde: abrir Docker Desktop (camara-web de la laptop y modelo-gpu corren ahí).")
     corriendo = set(resultado.stdout.split())
     return [s for s in LOCALES if s in corriendo]
 
@@ -411,9 +450,13 @@ def correr_modelo(entorno, directo):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--web", default=WEB_SERVIDOR, help=f"la web con la API del modelo (por defecto {WEB_SERVIDOR})")
-    parser.add_argument("--directo", action="store_true", help="el modelo con el Python de esta laptop, sin Docker")
+    parser.add_argument("--camaras-servidor", action="store_true",
+                        help="los teléfonos se unen al servidor y el modelo baja sus cuadros (más lento)")
+    parser.add_argument("--docker", action="store_true",
+                        help="el modelo en modelo-gpu (Docker) en vez del Python de esta laptop")
     args = parser.parse_args()
-    web = args.web.rstrip("/")
+    web, directo, en_laptop = args.web.rstrip("/"), not args.docker, not args.camaras_servidor
+    puertos = PUERTOS if args.camaras_servidor else PUERTOS[:1]
     clave = leer_env("TUNEL_CLAVE")
     if not clave:
         raise SystemExit("Falta TUNEL_CLAVE en el .env de la raíz: la misma del .env del servidor.")
@@ -433,15 +476,17 @@ def main():
                 avisado = True
             time.sleep(3)
 
-    locales = locales_levantados(args.directo)
-    if locales:
-        print(f"Se detienen los servicios locales que usan los puertos {PUERTOS[0]} y {PUERTOS[1]}: {', '.join(locales)}.",
-              flush=True)
-        docker(*COMPOSE, "stop", *locales)
+    # Con los teléfonos en la laptop, camara-web se queda (se recrea apuntando al servidor) y hace falta Docker.
+    locales = locales_levantados(directo and not en_laptop)
+    detener = [s for s in locales if not (en_laptop and s == "camara-web")]
+    if detener:
+        print(f"Se detienen los servicios locales que usan los mismos puertos: {', '.join(detener)}.", flush=True)
+        docker(*COMPOSE, "stop", *detener)
     reenvios, reservas, parar = [], [], threading.Event()
+    camara_apuntada = False
     codigo = 1
     try:
-        for puerto in PUERTOS:
+        for puerto in puertos:
             reserva = Reservas(web, clave, puerto)
             try:
                 reenvio = Reenvio(reserva, puerto)
@@ -453,21 +498,41 @@ def main():
             reenvios.append(reenvio)
             reservas.append(reserva)
         esperar_servidor()
-        print(f"API del modelo lista ({web}{RUTA_API}): backend-vivo y cámaras en 127.0.0.1:{PUERTOS[0]} y "
-              f":{PUERTOS[1]}", flush=True)
-        # Enlace que Teléfonos muestra para unir un teléfono: el de la web del servidor, no la IP de la laptop.
-        entorno = {**AJUSTES_REMOTO, **os.environ, "ENLACE_CAMARA": os.environ.get("ENLACE_CAMARA") or f"{web}/camara/"}
-        codigo = correr_modelo(entorno, args.directo)
+        if en_laptop:
+            camara_web_local(API_VIVO_PARA_CAMARA)
+            camara_apuntada = True
+            enlace = f"https://{ip_laptop()}:{os.environ.get('CAMARA_PORT') or 8444}"
+            ajustes = AJUSTES_CAMARAS_LAPTOP
+            print(f"API del modelo lista ({web}{RUTA_API}{PUERTOS[0]}). Los teléfonos se unen a esta laptop: {enlace} "
+                  "(misma red). El modelo lee su video aquí y solo envía los resultados al servidor.", flush=True)
+        else:
+            enlace = f"{web}/camara/"
+            ajustes = AJUSTES_CAMARAS_SERVIDOR
+            print(f"API del modelo lista ({web}{RUTA_API}): backend-vivo y cámaras en 127.0.0.1:{PUERTOS[0]} y "
+                  f":{PUERTOS[1]}. Los teléfonos se unen al servidor: {enlace}", flush=True)
+        # Enlace que Teléfonos muestra para unir un teléfono.
+        entorno = {**ajustes, **os.environ, "ENLACE_CAMARA": os.environ.get("ENLACE_CAMARA") or enlace}
+        codigo = correr_modelo(entorno, directo)
     except KeyboardInterrupt:
         pass
     finally:
         parar.set()
+        # camara-web vuelve a lo local antes de cerrar la API: al apagarse borra sus teléfonos del servidor.
+        if camara_apuntada:
+            if "backend-vivo" in locales:
+                docker(*COMPOSE, "start", "backend-vivo")
+            try:
+                camara_web_local()
+            except SystemExit as error:
+                print(error, flush=True)
+            if "camara-web" not in locales:
+                docker(*COMPOSE, "stop", "camara-web")
         for reenvio in reenvios:
             reenvio.shutdown()
             reenvio.server_close()
         for reserva in reservas:
             reserva.cerrar()
-        vuelven = [s for s in locales if s != "modelo-gpu"]
+        vuelven = [s for s in detener if s != "modelo-gpu" and not (camara_apuntada and s == "backend-vivo")]
         if vuelven:
             print(f"Se vuelven a levantar los servicios locales: {', '.join(vuelven)}.", flush=True)
             docker(*COMPOSE, "start", *vuelven)

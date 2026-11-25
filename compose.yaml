@@ -111,7 +111,11 @@ services:
   camara-web:
     build: ./app-web
     environment:
-      API_VIVO: http://backend-vivo:8080
+      # scripts/modelo_local.py lo cambia a la API del modelo del servidor (por la laptop): los teléfonos unidos a la
+      # laptop quedan registrados en el servidor y el modelo solo le manda resultados.
+      API_VIVO: ${CAMARA_API_VIVO:-http://backend-vivo:8080}
+      # Con «no» la sala de esta máquina no sigue los relevos de backend-vivo (la de la laptop, que nadie mira).
+      SALA_RELEVO: ${CAMARA_SALA_RELEVO:-}
       # De dónde lee el video camara_telefono.py (corre en esta máquina).
       URL_MJPEG: http://127.0.0.1:${CAMARA_MJPEG_PORT:-8092}
     ports:
