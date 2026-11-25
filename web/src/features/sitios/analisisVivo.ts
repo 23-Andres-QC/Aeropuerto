@@ -1,7 +1,7 @@
 // Métricas de Insights calculadas en el navegador a partir de las personas de una captura en vivo: las mismas para lo
 // que pasa ahora (el motor) y para una captura ya guardada (se reconstruyen desde su reproducción), de modo que las dos
 // se vean igual que una sesión con Parte III. Módulo puro: sin Vue ni red.
-import type { Punto, Replay, Zona } from "./api";
+import type { CapaPlano, Punto, Replay, Zona } from "./api";
 
 /** Lo que hace falta saber de cada persona para las métricas. Los tiempos van en milisegundos. */
 export type HistoriaBasica = {
@@ -41,6 +41,27 @@ export function dentro([x, y]: Punto, pol: Punto[]) {
     if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
   }
   return c;
+}
+
+/** A qué zona grabada pertenece un punto del plano: la capa en cuyo piso cae o, si no cae en ninguna, el sitio (el patio). */
+export function lugarDePunto(punto: Punto, capas: CapaPlano[] | null | undefined): string {
+  return (capas ?? []).find((c) => c.piso_m.length > 2 && dentro(punto, c.piso_m))?.nombre ?? "sitio";
+}
+
+/** A qué zona grabada pertenece una zona: la de su centro. */
+export function lugarDeZona(z: { points: Punto[] }, capas: CapaPlano[] | null | undefined): string {
+  const n = z.points.length;
+  if (!n) return "sitio";
+  return lugarDePunto([z.points.reduce((a, p) => a + p[0], 0) / n, z.points.reduce((a, p) => a + p[1], 0) / n], capas);
+}
+
+/**
+ * Las zonas de una zona grabada (`lugar`: «sitio» o el nombre de su capa); sin lugar o sin capas, todas. En el plano las zonas
+ * grabadas pueden quedar una sobre otra: el comedor está en el 2.º piso del Edificio D y el pasillo pasa junto al edificio, así que
+ * quien entra al edificio desde el pasillo no está en el comedor.
+ */
+export function zonasDelLugar<Z extends { points: Punto[] }>(zonas: Z[], lugar: string | null | undefined, capas: CapaPlano[] | null | undefined): Z[] {
+  return lugar && capas?.length ? zonas.filter((z) => lugarDeZona(z, capas) === lugar) : zonas;
 }
 
 /**
@@ -174,7 +195,6 @@ export function desdeReplay(replay: Replay, inicio: number, zonas: Zona[]): Anal
   for (const p of replay.personas) {
     const tiempos = new Map<number, number>();
     const secuencia: number[] = [];
-    let actual: number | null = null;
     p.k.forEach((k, i) => {
       const punto: Punto = [p.x[i], p.y[i]];
       const contenidas = zonasDelPunto(punto, zonas);
@@ -184,11 +204,9 @@ export function desdeReplay(replay: Replay, inicio: number, zonas: Zona[]): Anal
         m.set(z.zone_id, (m.get(z.zone_id) ?? 0) + 1);
         ocupacion.set(k, m);
       }
-      const zona = contenidas[0]?.zone_id ?? null;
-      if (zona !== actual) {
-        if (zona != null) secuencia.push(zona);
-        actual = zona;
-      }
+      // Salir a donde no hay zona y volver a la misma no la repite (como en la Parte III).
+      const zona = contenidas[0]?.zone_id;
+      if (zona != null && zona !== secuencia[secuencia.length - 1]) secuencia.push(zona);
       const [ci, cj] = [Math.floor(punto[0] / CELDA_CALOR), Math.floor(punto[1] / CELDA_CALOR)];
       const celda = celdas.get(`${ci},${cj}`) ?? [ci * CELDA_CALOR, cj * CELDA_CALOR, 0];
       celda[2] += paso;

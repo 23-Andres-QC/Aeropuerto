@@ -1,8 +1,8 @@
-// Prueba de los cálculos de Insights con rangos: guardar las zonas de cada punto no cambia ningún resultado y la hora del reloj
-// es la misma que antes.
+// Prueba de los cálculos de Insights con rangos: guardar las zonas de cada punto no cambia ningún resultado, la hora del reloj
+// es la misma que antes y cada zona grabada cuenta solo sus zonas.
 // Uso: node web/tests/linea-tiempo.mjs  (Node 22.18 o más nuevo: lee TypeScript directamente; sale con error si algo falla)
 import assert from "node:assert/strict";
-import { desdeReplay, horaReloj, resumir, zonasDelPunto } from "../src/features/sitios/analisisVivo.ts";
+import { desdeReplay, horaReloj, resumir, zonasDelLugar, zonasDelPunto } from "../src/features/sitios/analisisVivo.ts";
 import { deHora, hora, indicadores, nombreRango, recortar } from "../src/features/sitios/lineaTiempo.ts";
 
 // Un local (10 × 10 m) con su frente (3 × 10 m) adentro y un pasillo al lado.
@@ -73,4 +73,34 @@ const tarde = new Date(2026, 10, 25, 23, 58, 0).getTime();
 assert.equal(deHora(tarde, "00:01:00", 600), 180);
 assert.equal(deHora(tarde, "23:57:00", 600), -60); // antes del inicio: quien la usa la lleva a 0
 assert.equal(nombreRango(inicio, { desde: 0, hasta: 216 }, 0), "A · 10:15:30–10:19:06");
+// Las zonas de cada zona grabada: el comedor (un 2.º piso) queda junto al pasillo, y una captura del pasillo no cuenta sus zonas
+// aunque alguien que entra al edificio caiga encima de ellas en el plano.
+const capas = [
+  { nombre: "Comedor", piso_m: cuadro(20, 0, 30, 10) },
+  { nombre: "Pasillo", piso_m: cuadro(20, 10, 30, 14) },
+];
+const delSitio = [
+  ...zonas(),
+  { zone_id: 4, name: "Comedor", zone_type: "INTERIOR", local_id: null, area_m2: 100, points: cuadro(20, 0, 30, 10) },
+  { zone_id: 5, name: "Edificio D", zone_type: "ENTRADA", local_id: null, area_m2: 12, points: cuadro(22, 9, 26, 12) },
+  { zone_id: 6, name: "SBS", zone_type: "ENTRADA", local_id: null, area_m2: 8, points: cuadro(26, 12, 30, 14) },
+];
+const ids = (zs) => zs.map((z) => z.zone_id);
+assert.deepEqual(ids(zonasDelLugar(delSitio, "Pasillo", capas)), [5, 6]);
+assert.deepEqual(ids(zonasDelLugar(delSitio, "Comedor", capas)), [4]);
+assert.deepEqual(ids(zonasDelLugar(delSitio, "sitio", capas)), [1, 2, 3]);
+assert.equal(zonasDelLugar(delSitio, null, capas).length, 6);
+assert.equal(zonasDelLugar(delSitio, "Pasillo", []).length, 6);
+const entra = { numero: 1, camaras: [], inicio_s: 0, fin_s: 5, k: [0, 1, 2, 3, 4], x: [28, 27, 25, 24, 24], y: [13, 12.5, 11, 9.5, 8] };
+const flujosDe = (zs) => {
+  const a = desdeReplay({ session: {}, paso_s: 1, duracion_s: 5, personas: [entra] }, 0, zs);
+  return resumir(a.historias, zs, a.densidad).flujos.map((f) => `${f.desde_nombre} → ${f.hacia_nombre}: ${f.personas}`);
+};
+assert.deepEqual(flujosDe(delSitio), ["SBS → Edificio D: 1", "Edificio D → Comedor: 1"]);
+assert.deepEqual(flujosDe(zonasDelLugar(delSitio, "Pasillo", capas)), ["SBS → Edificio D: 1"]);
+// Salir de una zona a donde no hay ninguna y volver a ella no la repite: la ruta es SBS → Edificio D, no SBS → SBS.
+const vuelve = { numero: 2, camaras: [], inicio_s: 0, fin_s: 4, k: [0, 1, 2, 3], x: [28, 24, 28, 25], y: [13, 13, 13, 11] };
+const conVuelta = desdeReplay({ session: {}, paso_s: 1, duracion_s: 4, personas: [vuelve] }, 0, delSitio);
+assert.deepEqual(conVuelta.historias[0].secuencia, [6, 5]);
+assert.deepEqual(resumir(conVuelta.historias, delSitio, conVuelta.densidad).rutas.map((r) => r.secuencia.join(" → ")), ["SBS → Edificio D"]);
 console.log("linea-tiempo: todo bien");

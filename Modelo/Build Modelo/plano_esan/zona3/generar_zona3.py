@@ -4,7 +4,8 @@ Por dentro va recta y pegada al comedor: se arma en el marco del plano del comed
 v hacia el sur, 29,7 px por metro), así que esos bordes coinciden con sus paredes. Por fuera sigue los bordes del terreno en el mapa del
 campus (esan-campus.svg, 789 × 585 px; ~1,7 px por metro, así que es aproximado): el borde del camino y el Aula C al noroeste, el jardín
 al norte, la abertura hacia la plaza en la esquina noreste, la fachada del edificio del este y, al sur, el puente hacia el Edificio A.
-Como el comedor, viaja como una «capa» del plano de ESAN.
+Como el comedor, viaja como una «capa» del plano de ESAN, y sus zonas son zonas de `esan`: los accesos SBS (al norte, pasando el
+jardín) y Edificio D (la entrada al edificio por su fachada norte, hacia la esquina del este).
 
 Sin opciones escribe (no toca la base):
   web/public/planos/esan-zona-3.svg   el dibujo (el piso del pasillo)
@@ -12,7 +13,9 @@ Sin opciones escribe (no toca la base):
 
 Después, con ESAN levantado:
     python "Modelo/Build Modelo/plano_esan/generar_plano.py" --publicar
+    python "Modelo/Build Modelo/plano_esan/zona3/generar_zona3.py" --zonas   crea las zonas que falten (después se editan en Configuración)
 """
+import argparse
 import json
 import math
 import sys
@@ -72,7 +75,38 @@ def area_m2(poly):
     return abs(sum(p[0] * q[1] - q[0] * p[1] for p, q in zip(poly, poly[1:] + poly[:1]))) / 2
 
 
-def main():
+FONDO_ACCESO = 90  # px (3 m): lo que entra en el pasillo la zona de un acceso
+
+
+def zonas_px():
+    """Los accesos del pasillo como zonas (px del plano del comedor). El SBS queda al norte, pasando el jardín: su zona es la franja del
+    pasillo contra el borde de afuera, entre la esquina y la punta del jardín. El Edificio D se entra por su fachada norte, hacia la
+    esquina del este: ahí termina el recorrido de quienes entran; la zona pasa 1 m la pared para no perder a quien ya la cruzó."""
+    (u1, v1), (u2, v2) = contorno_px()[2:4]  # el borde norte, de la esquina a la punta del jardín
+    borde = lambda u: round(v1 + (v2 - v1) * (u - u1) / (u2 - u1), 1)  # noqa: E731
+    return [
+        {"name": "SBS", "zone_type": "ENTRADA", "color": "#0d9488",
+         "px": [(820, borde(820)), (1220, borde(1220)), (1220, borde(1220) + FONDO_ACCESO), (820, borde(820) + FONDO_ACCESO)]},
+        {"name": "Edificio D", "zone_type": "ENTRADA", "color": "#ea580c",
+         "px": [(540, -FONDO_ACCESO), (comedor.ANCHO, -FONDO_ACCESO), (comedor.ANCHO, 30), (540, 30)]},
+    ]
+
+
+def crear_zonas(web):
+    """Crea en ESAN las zonas del pasillo que aún no estén (por nombre): las que ya están no se tocan, se editan en Configuración."""
+    from api_web import llamar  # el mismo cliente (llave de scripts) que usa el plano del patio
+
+    existentes = {z["name"] for z in llamar(web, "GET", f"/api/v1/sites/{comedor.SITIO}/config")["zones"]}
+    for z in zonas_px():
+        if z["name"] in existentes:
+            print(f"  ya existe: {z['name']}")
+            continue
+        cuerpo = {k: v for k, v in z.items() if k != "px"} | {"local_id": None, "points": [comedor.en_esan(p) for p in z["px"]]}
+        creada = llamar(web, "POST", f"/api/v1/sites/{comedor.SITIO}/zones", cuerpo)
+        print(f"  zona {creada['name']:<12} {creada['zone_type']:<8} {creada['area_m2']:5.1f} m²")
+
+
+def escribir():
     l = contorno_px()
     u0, v0 = min(p[0] for p in l) - MARGEN, min(p[1] for p in l) - MARGEN
     ancho = round(max(p[0] for p in l) + MARGEN - u0)
@@ -93,6 +127,17 @@ def main():
             "angulo_deg": round(comedor.giro_en_esan(), 2), "piso_m": piso, "obstaculos": []}
     CAPA.write_text(json.dumps(capa, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     print(f"SVG: {SVG} ({ancho} × {alto} px)\nCapa: {CAPA.name} · {area_m2(piso):.0f} m², pegada al comedor (giro {capa['angulo_deg']}°)")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--zonas", action="store_true", help="solo crear en ESAN las zonas del pasillo que falten (no escribe archivos)")
+    parser.add_argument("--web", default="http://127.0.0.1:8080")
+    args = parser.parse_args()
+    if args.zonas:
+        crear_zonas(args.web)
+        return
+    escribir()
 
 
 if __name__ == "__main__":

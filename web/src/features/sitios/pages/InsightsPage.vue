@@ -9,7 +9,7 @@ import ContrasteSesiones from "../components/ContrasteSesiones.vue";
 import TraficoSitio from "../components/TraficoSitio.vue";
 import LineaTiempo from "../components/LineaTiempo.vue";
 import { COLORES, LETRAS, hora, nombreRango, recortar, recortarVarios, type Rango } from "../lineaTiempo";
-import { desdeReplay, entradasPorIntervalo as entradasEntre, resumir, type HistoriaBasica, type ResumenVivo } from "../analisisVivo";
+import { desdeReplay, entradasPorIntervalo as entradasEntre, resumir, zonasDelLugar, type HistoriaBasica, type ResumenVivo } from "../analisisVivo";
 import { useSitios } from "../useSitios";
 import { perfil } from "../../cuentas/api";
 import { cargarPermisoExportar, puedeExportar, textoPermisoExportar } from "../../cuentas/permisos";
@@ -109,7 +109,13 @@ const p3 = computed(() => analitica.value?.results);
 const comando = computed(() => `python "Modelo/Insights Modelo/insights_historicos.py" --sitio ${slug.value}`);
 
 // --- Filtro de zona ------------------------------------------------------------
-const zonas = computed(() => config.value?.zones ?? []);
+/** Las zonas del lugar de lo que se mira: una captura del pasillo del Edificio D no cuenta las del comedor (el 2.º piso del edificio). */
+const zonas = computed(() => zonasDelLugar(config.value?.zones ?? [], lugarMapas.value, mapa.value?.capas));
+const idsLugar = computed(() => new Set(zonas.value.map((z) => z.zone_id)));
+// Una zona elegida que no es de este lugar (se eligió con otra sesión) deja de filtrar.
+watch(idsLugar, (ids) => {
+  if (zonaId.value != null && !ids.has(zonaId.value)) zonaId.value = null;
+});
 const zonaSel = computed(() => zonas.value.find((z) => z.zone_id === zonaId.value) ?? null);
 const mz = computed(() => (zonaId.value == null ? null : (p3.value?.zonas.find((z) => z.zone_id === zonaId.value) ?? null)));
 const localSel = computed(() => {
@@ -146,7 +152,7 @@ const totalLocales = computed(() => {
   const ls = p3.value?.locales ?? [];
   return { visitas: suma(ls.map((l) => l.visitas)), exposicion: suma(ls.map((l) => l.exposicion)), captados: suma(ls.map((l) => l.captados)) };
 });
-const zonaPico = computed(() => [...(p3.value?.zonas ?? [])].sort((a, b) => b.densidad_max - a.densidad_max)[0]);
+const zonaPico = computed(() => (p3.value?.zonas ?? []).filter((z) => idsLugar.value.has(z.zone_id)).sort((a, b) => b.densidad_max - a.densidad_max)[0]);
 
 type Tarjeta = { titulo: string; valor: string; detalle: string; serie?: (number | null)[] };
 const tarjetas = computed<Tarjeta[]>(() => {
@@ -405,7 +411,11 @@ const centroZona = (id: number): Punto | null => {
   return [suma(z.points.map((p) => p[0])) / z.points.length, suma(z.points.map((p) => p[1])) / z.points.length];
 };
 
-const flujos = computed(() => (analisis.value ? analisis.value.resumen.flujos : (p3.value?.origen_destino ?? [])).filter((f) => zonaId.value == null || f.desde === zonaId.value || f.hacia === zonaId.value));
+const flujos = computed(() =>
+  (analisis.value ? analisis.value.resumen.flujos : (p3.value?.origen_destino ?? [])).filter(
+    (f) => idsLugar.value.has(f.desde) && idsLugar.value.has(f.hacia) && (zonaId.value == null || f.desde === zonaId.value || f.hacia === zonaId.value),
+  ),
+);
 
 const flechas = computed<FlechaPlano[]>(() =>
   !verFlujos.value
@@ -421,13 +431,17 @@ const comparacion = computed(() => {
   const filas = analisis.value
     ? analisis.value.resumen.zonas.map((z) => ({ id: z.id, nombre: z.nombre, personas: z.visitantes, permanencia: z.permanencia, densidad: z.densidad as number | null }))
     : p3.value
-    ? p3.value.zonas.map((z) => ({ id: z.zone_id, nombre: z.nombre, personas: z.visitantes, permanencia: z.permanencia_media_s, densidad: z.densidad_max }))
-    : (datos.value?.zonas ?? []).map((z) => ({ id: z.zone_id, nombre: z.name, personas: z.visitantes, permanencia: z.permanencia_media_s, densidad: null as number | null }));
+    ? p3.value.zonas.filter((z) => idsLugar.value.has(z.zone_id)).map((z) => ({ id: z.zone_id, nombre: z.nombre, personas: z.visitantes, permanencia: z.permanencia_media_s, densidad: z.densidad_max }))
+    : (datos.value?.zonas ?? []).filter((z) => idsLugar.value.has(z.zone_id)).map((z) => ({ id: z.zone_id, nombre: z.name, personas: z.visitantes, permanencia: z.permanencia_media_s, densidad: null as number | null }));
   const max = Math.max(1, ...filas.map((f) => f.permanencia ?? 0));
   return filas.sort((a, b) => (b.permanencia ?? 0) - (a.permanencia ?? 0)).map((f) => ({ ...f, ancho: (100 * (f.permanencia ?? 0)) / max }));
 });
 
-const rutas = computed(() => (analisis.value ? analisis.value.resumen.rutas : (p3.value?.rutas ?? [])).filter((ruta) => zonaId.value == null || ruta.zonas.includes(zonaId.value)).slice(0, 8));
+const rutas = computed(() =>
+  (analisis.value ? analisis.value.resumen.rutas : (p3.value?.rutas ?? []))
+    .filter((ruta) => ruta.zonas.every((id) => idsLugar.value.has(id)) && (zonaId.value == null || ruta.zonas.includes(zonaId.value)))
+    .slice(0, 8),
+);
 
 // --- Flujo entre zonas: sankey de dos columnas (origen → destino) --------------
 const sankey = computed(() => {

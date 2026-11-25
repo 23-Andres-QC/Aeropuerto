@@ -16,4 +16,4 @@ Comedor, comedor de profesores y zona de atención, trazados sobre el plano de e
 
 ## `esan-zona-3.svg` · ESAN, pasillo exterior del Edificio D (zona grabada 3)
 
-El pasillo por la fachada norte del Edificio D que dobla por su lado este, trazado sobre el mapa del campus siguiendo el área marcada para grabar. Lo genera `Modelo/Build Modelo/plano_esan/zona3/generar_zona3.py`: 1 px = 1/20 m, en los ejes de ESAN. Como el comedor, es una *capa* del plano de ESAN (`plano.capas`); su ubicación es aproximada (el mapa del campus tiene ~1,7 px por metro).
+El pasillo por la fachada norte del Edificio D que dobla por su lado este, trazado sobre el mapa del campus siguiendo el área marcada para grabar. Lo genera `Modelo/Build Modelo/plano_esan/zona3/generar_zona3.py`: 1 px = 1/29,7 m, en el marco del plano del comedor (recto contra sus paredes norte y este). Como el comedor, es una *capa* del plano de ESAN (`plano.capas`); su ubicación es aproximada (el mapa del campus tiene ~1,7 px por metro). Sus zonas son los accesos SBS (al norte, pasando el jardín) y Edificio D (la entrada por la fachada norte); `generar_zona3.py --zonas` crea las que falten.

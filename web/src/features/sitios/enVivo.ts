@@ -9,7 +9,7 @@ import { json, request, socketPersistente } from "../../core/http";
 import { colorPersona } from "../../shared/format";
 import { api as apiVivo, RELEVO_VIVO, type Detecciones, type EstadoServicio, type EstadoTelefono, type Telefono, type UbicacionPlano } from "../telefonos/api";
 import { api, mapaDelSitio, type Camara, type Config, type Mapa, type Punto } from "./api";
-import { CELDA_CALOR, dentro, entradasPorIntervalo as entradasEntre, resumir, type ResumenVivo } from "./analisisVivo";
+import { CELDA_CALOR, dentro, entradasPorIntervalo as entradasEntre, resumir, zonasDelLugar, type ResumenVivo } from "./analisisVivo";
 import type { PersonaPlano, RecorridoPlano } from "./components/PlanoSitio.vue";
 
 export { CELDA_CALOR };
@@ -183,8 +183,8 @@ const sitio = ref("");
 const config = shallowRef<Config>();
 const mapa = computed(() => mapaDelSitio(config.value));
 const camaras = computed(() => config.value?.cameras);
-/** Zonas del sitio, de la más pequeña a la más grande. */
-const zonas = computed(() => [...(config.value?.zones ?? [])].sort((a, b) => a.area_m2 - b.area_m2));
+/** Zonas de la zona grabada del en vivo, de la más pequeña a la más grande (en el pasillo no cuentan las del comedor, que es el 2.º piso). */
+const zonas = computed(() => [...zonasDelLugar(config.value?.zones ?? [], claveVivo.value, config.value?.plano?.capas)].sort((a, b) => a.area_m2 - b.area_m2));
 const telefonos = ref<Telefono[]>([]);
 const servicio = ref<EstadoServicio>();
 const ultimoServicio = ref(0);
@@ -690,7 +690,8 @@ function componer() {
       }
       const zona = contenidas[0]?.zone_id ?? null;
       if (zona !== h.zonaActual) {
-        if (zona != null) h.secuencia.push(zona);
+        // Salir a donde no hay zona y volver a la misma no la repite (como en la Parte III).
+        if (zona != null && zona !== h.secuencia[h.secuencia.length - 1]) h.secuencia.push(zona);
         h.zonaActual = zona;
       }
       historia.set(a.id, h);

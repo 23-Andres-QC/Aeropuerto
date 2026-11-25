@@ -285,7 +285,7 @@ def escribir():
 
 
 def crear_zonas(web):
-    from generar_plano import llamar  # el mismo cliente (llave de scripts) que usa el plano del patio
+    from api_web import llamar  # el mismo cliente (llave de scripts) que usa el plano del patio
 
     config = llamar(web, "GET", f"/api/v1/sites/{SITIO}/config")
     existentes = {z["name"] for z in config["zones"]}

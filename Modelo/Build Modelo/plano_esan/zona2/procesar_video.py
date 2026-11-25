@@ -906,7 +906,7 @@ def llave_api():
     if os.environ.get("LAP_API_KEY"):
         return os.environ["LAP_API_KEY"]
     sys.path.insert(0, str(AQUI.parent))
-    from generar_plano import llave_api as del_env  # la API_KEY del .env de la raíz, como generar_plano.py
+    from api_web import llave_api as del_env  # la API_KEY del .env de la raíz, como generar_plano.py
     return del_env()
 
 

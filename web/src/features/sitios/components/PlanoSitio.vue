@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { recordarVista, vistaRecordada, type VistaGuardada } from "../vistaPlano";
 import type { Camara, Mapa, Punto, Zona } from "../api";
+import { lugarDePunto, lugarDeZona } from "../analisisVivo";
 
 /** `estimado`: en un hueco de detección (posición interpolada); `salio`: ya dejó el plano (su última posición). */
 export type PersonaPlano = { id: number; x: number; y: number; color: string; etiqueta: string; estado?: "visto" | "estimado" | "salio" };
@@ -533,7 +534,7 @@ const camaras = computed(() => {
         activa: true,
       }));
   // Con `solo`, solo las cámaras de esa zona grabada.
-  return base.filter((c) => !props.solo || lugarDePunto(c.pos) === props.solo).map((c) => {
+  return base.filter((c) => !props.solo || lugarDePunto(c.pos, props.mapa.capas) === props.solo).map((c) => {
     const a = arrastre.value?.id === c.id ? arrastre.value : null;
     const pos = a?.pos ?? c.pos;
     const angulo = a?.angulo ?? c.angulo;
@@ -596,7 +597,7 @@ watch(
 /** Zonas con la forma que se está arrastrando; la activa va al final, encima de las demás. */
 const zonasPlano = computed(() => {
   const a = arrastreZona.value;
-  const lista = (props.solo ? props.zonas.filter((z) => lugarDeZona(z) === props.solo) : props.zonas).map((z) => (a && a.id === z.zone_id ? { ...z, points: a.puntos } : z));
+  const lista = (props.solo ? props.zonas.filter((z) => lugarDeZona(z, props.mapa.capas) === props.solo) : props.zonas).map((z) => (a && a.id === z.zone_id ? { ...z, points: a.puntos } : z));
   const activa = lista.findIndex((z) => z.zone_id === props.zonaActiva);
   if (activa >= 0) lista.push(...lista.splice(activa, 1));
   return lista;
@@ -782,46 +783,58 @@ const celdas = computed(() =>
 );
 
 const maxPeso = computed(() => Math.max(1, ...props.flechas.map((f) => f.peso)));
+/**
+ * Flechas de flujo: una curva leve (A→B y B→A quedan una a cada lado) que no llega al centro de las zonas, para que las dos de un par
+ * no se monten; la punta va aparte, de tamaño fijo en pantalla (un marcador crecía con el grosor y tapaba la otra flecha), y el número
+ * junto a la mitad de su curva, por fuera.
+ */
 const flechasPlano = computed(() =>
-  props.flechas.map((f) => {
+  props.flechas.flatMap((f) => {
     const [x1, y1, x2, y2] = [px(f.desde[0]), py(f.desde[1]), px(f.hacia[0]), py(f.hacia[1])];
-    // Curva leve para que A→B y B→A no se superpongan.
-    const [mx, my] = [(x1 + x2) / 2 - (y2 - y1) * 0.15, (y1 + y2) / 2 + (x2 - x1) * 0.15];
-    return { d: `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`, ancho: 2 + 8 * (f.peso / maxPeso.value), mx, my, etiqueta: f.etiqueta ?? String(f.peso) };
+    const largo = Math.hypot(x2 - x1, y2 - y1);
+    if (largo < 1) return [];
+    const grosor = 2 + 5 * (f.peso / maxPeso.value); // px de pantalla
+    const [nx, ny] = [-(y2 - y1) / largo, (x2 - x1) / largo];
+    const [cx, cy] = [(x1 + x2) / 2 + nx * largo * 0.18, (y1 + y2) / 2 + ny * largo * 0.18];
+    const en = (t: number): Punto => [(1 - t) ** 2 * x1 + 2 * (1 - t) * t * cx + t * t * x2, (1 - t) ** 2 * y1 + 2 * (1 - t) * t * cy + t * t * y2];
+    // Fracciones de la curva: lo que queda libre en cada punta y el largo de la punta.
+    const libre = Math.min(0.2, (24 * e.value) / largo);
+    const cabeza = Math.min(0.3, ((9 + 1.6 * grosor) * e.value) / largo);
+    const [a, b, c] = [libre, 1 - libre - cabeza, 1 - libre];
+    // El tramo [a, b] de la curva también es una cuadrática; este es su control.
+    const [ka, kb, kc] = [(1 - a) * (1 - b), (1 - a) * b + a * (1 - b), a * b];
+    const control = [ka * x1 + kb * cx + kc * x2, ka * y1 + kb * cy + kc * y2];
+    const [inicio, fin, punta] = [en(a), en(b), en(c)];
+    const [dx, dy] = [punta[0] - fin[0], punta[1] - fin[1]];
+    const media = ((4.5 + 0.9 * grosor) * e.value) / (Math.hypot(dx, dy) || 1);
+    const medio = en(0.5);
+    const fuera = (grosor / 2 + 10) * e.value;
+    return [
+      {
+        d: `M ${inicio[0]} ${inicio[1]} Q ${control[0]} ${control[1]} ${fin[0]} ${fin[1]}`,
+        punta: [punta, [fin[0] - dy * media, fin[1] + dx * media], [fin[0] + dy * media, fin[1] - dx * media]].map((q) => `${q[0].toFixed(1)},${q[1].toFixed(1)}`).join(" "),
+        ancho: grosor * e.value,
+        tx: medio[0] + nx * fuera,
+        ty: medio[1] + ny * fuera,
+        etiqueta: f.etiqueta ?? String(f.peso),
+      },
+    ];
   }),
 );
 
 // Leyenda: solo lo que este plano está dibujando.
-/** ¿El punto (m) cae dentro del polígono (m)? */
-function dentro([x, y]: Punto, poligono: Punto[]): boolean {
-  let en = false;
-  for (let i = 0, j = poligono.length - 1; i < poligono.length; j = i++) {
-    const [xi, yi] = poligono[i];
-    const [xj, yj] = poligono[j];
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) en = !en;
-  }
-  return en;
-}
-/** A qué zona grabada pertenece un punto del plano: la otra zona grabada (capa) en cuyo piso cae, o el sitio. */
-function lugarDePunto(c: Punto): string {
-  return (props.mapa.capas ?? []).find((q) => q.piso_m.length > 2 && dentro(c, q.piso_m))?.nombre ?? "sitio";
-}
-/** A qué zona grabada pertenece una zona del plano: la de su centro. */
-function lugarDeZona(z: Zona): string {
-  if (!z.points.length) return "sitio";
-  return lugarDePunto([z.points.reduce((a, p) => a + p[0], 0) / z.points.length, z.points.reduce((a, p) => a + p[1], 0) / z.points.length]);
-}
 /** Lo que se ve: todo el campus, el sitio o el nombre de otra zona grabada acercada. */
 const lugarActual = computed(() => props.solo ?? (enCampus.value ? "campus" : capaEnVista.value ?? "sitio"));
 const elementos = computed(() => {
   // La leyenda lista las zonas de la zona grabada que se mira; con todo el campus a la vista, ninguna.
   const zonas = new Map<string, string>();
-  if (lugarActual.value !== "campus") for (const z of props.zonas) if (lugarDeZona(z) === lugarActual.value && !zonas.has(z.name)) zonas.set(z.name, z.color || "#3d8bff");
+  if (lugarActual.value !== "campus")
+    for (const z of props.zonas) if (lugarDeZona(z, props.mapa.capas) === lugarActual.value && !zonas.has(z.name)) zonas.set(z.name, z.color || "#3d8bff");
   return {
     zonas: [...zonas].map(([nombre, color]) => ({ nombre, color })),
     piso: !!props.mapa.piso_L_m?.length && !props.mapa.fondo,
     obstaculos: !props.mapa.fondo && !!props.mapa.obstaculos?.length,
-    camaras: props.mostrarCamaras && lugarActual.value !== "campus" && camaras.value.some((c) => lugarDePunto(c.pos) === lugarActual.value),
+    camaras: props.mostrarCamaras && lugarActual.value !== "campus" && camaras.value.some((c) => lugarDePunto(c.pos, props.mapa.capas) === lugarActual.value),
     personas: props.personas.some((p) => (p.estado ?? "visto") === "visto"),
     estimadas: props.personas.some((p) => p.estado === "estimado"),
     salieron: props.personas.some((p) => p.estado === "salio"),
@@ -986,9 +999,10 @@ watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
             <text :x="c.x" :y="c.y + 22 * e" class="camara-nombre">{{ c.etiqueta }}</text>
           </g>
         </g>
-        <g v-for="(f, i) in flechasPlano" :key="'f' + i" class="flecha">
-          <path :d="f.d" :stroke-width="f.ancho * e" marker-end="url(#flecha-flujo)" />
-          <text :x="f.mx" :y="f.my">{{ f.etiqueta }}</text>
+        <g v-for="(f, i) in flechasPlano" :key="'f' + i" class="flecha" data-prueba="flecha-flujo">
+          <path :d="f.d" :stroke-width="f.ancho" />
+          <polygon :points="f.punta" class="punta-flujo" />
+          <text :x="f.tx" :y="f.ty">{{ f.etiqueta }}</text>
         </g>
         <g v-for="p in personas" :key="'p' + p.id" class="persona-g" :class="p.estado ?? 'visto'">
           <circle :cx="px(p.x)" :cy="py(p.y)" :r="(p.estado === 'salio' ? 6 : 9) * e" :fill="p.color" class="persona" />
@@ -1024,11 +1038,6 @@ watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
         <rect :width="escalaM * k" :height="3 * e" />
         <text :x="escalaM * k + 5 * e" :y="4 * e">{{ escalaM }} m</text>
       </g>
-      <defs>
-        <marker id="flecha-flujo" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto">
-          <path d="M 0 0 L 10 5 L 0 10 z" class="punta-flujo" />
-        </marker>
-      </defs>
     </svg>
     <button v-if="zoom && campus && !enCampus && !solo" type="button" class="ver-campus" data-prueba="ver-campus" @click="verTodo">⤢ Alejar: todo el campus</button>
     <div v-if="zoom" class="controles-zoom">
@@ -1389,6 +1398,7 @@ watch(lugarActual, (l) => emit("lugar", l), { immediate: true });
   stroke: var(--glass-strong);
   stroke-width: calc(3px * var(--e));
   text-anchor: middle;
+  dominant-baseline: middle;
 }
 .punta-flujo {
   fill: rgba(124, 58, 237, 0.85);
