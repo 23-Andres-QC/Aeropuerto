@@ -2,7 +2,7 @@
 // es la misma que antes y cada zona grabada cuenta solo sus zonas.
 // Uso: node web/tests/linea-tiempo.mjs  (Node 22.18 o más nuevo: lee TypeScript directamente; sale con error si algo falla)
 import assert from "node:assert/strict";
-import { desdeReplay, horaReloj, resumir, zonasDelLugar, zonasDelPunto } from "../src/features/sitios/analisisVivo.ts";
+import { desdeReplay, horaReloj, juzgarSalto, partirEnSaltos, resumir, zonasDelLugar, zonasDelPunto } from "../src/features/sitios/analisisVivo.ts";
 import { deHora, hora, indicadores, nombreRango, recortar } from "../src/features/sitios/lineaTiempo.ts";
 
 // Un local (10 × 10 m) con su frente (3 × 10 m) adentro y un pasillo al lado.
@@ -103,4 +103,31 @@ const vuelve = { numero: 2, camaras: [], inicio_s: 0, fin_s: 4, k: [0, 1, 2, 3],
 const conVuelta = desdeReplay({ session: {}, paso_s: 1, duracion_s: 4, personas: [vuelve] }, 0, delSitio);
 assert.deepEqual(conVuelta.historias[0].secuencia, [6, 5]);
 assert.deepEqual(resumir(conVuelta.historias, delSitio, conVuelta.densidad).rutas.map((r) => r.secuencia.join(" → ")), ["SBS → Edificio D"]);
+
+// Saltos de la ubicación: quien camina a 1,4 m/s sigue; un salto de 20 m por un cuadro se ignora y la persona queda donde
+// estaba; si se queda en el lugar nuevo 1,5 s, se acepta sin unirlo con el anterior.
+const camina = (pasos) => {
+  let estado;
+  const veredictos = [];
+  for (const [t, x, y] of pasos) {
+    const j = juzgarSalto(estado, [x, y], t);
+    estado = j.estado;
+    veredictos.push(j.veredicto);
+  }
+  return { veredictos, estado };
+};
+const paseo = Array.from({ length: 20 }, (_, i) => [i * 100, 10 + i * 0.14, 5]);
+assert.ok(camina(paseo).veredictos.every((v) => v === "sigue"));
+const conSalto = camina([...paseo.slice(0, 10), [1000, 31, 5], [1100, 30, 5], ...paseo.slice(12)]);
+assert.deepEqual(conSalto.veredictos.slice(9, 13), ["sigue", "descarta", "descarta", "sigue"]);
+assert.ok(Math.abs(conSalto.estado.p[0] - paseo[19][1]) < 1e-9);
+const seMuda = camina([[0, 10, 5], [100, 10, 5], ...Array.from({ length: 20 }, (_, i) => [200 + i * 100, 30, 5])]);
+assert.equal(seMuda.veredictos.filter((v) => v === "salta").length, 1);
+assert.equal(seMuda.veredictos[seMuda.veredictos.indexOf("salta") - 1], "descarta");
+assert.ok(seMuda.veredictos.indexOf("salta") * 100 - 200 >= 1500);
+assert.deepEqual(seMuda.estado.p, [30, 5]);
+// Quien deja de verse 10 s y vuelve 15 m más allá sigue siendo la misma persona, pero su recorrido no une los dos lugares.
+assert.deepEqual(camina([[0, 10, 5], [10_000, 25, 5]]).veredictos, ["sigue", "salta"]);
+assert.deepEqual(partirEnSaltos([[0, 0], [1, 0], [2, 0], [20, 0], [21, 0], [21, 1]]), [[[0, 0], [1, 0], [2, 0]], [[20, 0], [21, 0], [21, 1]]]);
+assert.deepEqual(partirEnSaltos([]), []);
 console.log("linea-tiempo: todo bien");

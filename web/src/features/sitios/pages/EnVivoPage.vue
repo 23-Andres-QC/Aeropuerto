@@ -4,7 +4,7 @@ import { colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, type Config, type Replay, type Sesion } from "../api";
 import VistaTelefono from "../../telefonos/components/VistaTelefono.vue";
 import PlanoSitio, { type PersonaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
-import { camarasVivo, CELDA_CALOR, LINEA_CONTEO, SESION_VIVO, ajusteMapa, capturaDePrueba, capturasVersion, fijarUnion, unidasAhora, unirPorPosicion, grabando, iniciarGrabacion, terminarGrabacion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura, zonaVivo, zonaElegida, claveVivo, zonasDelPlano } from "../enVivo";
+import { camarasVivo, CELDA_CALOR, LINEA_CONTEO, SESION_VIVO, ajusteMapa, capturaDePrueba, capturasVersion, fijarUnion, unidasAhora, unirPorPosicion, grabando, iniciarGrabacion, terminarGrabacion, moverMapa, reponerAjusteMapa, fijarModoVivo, guardando, mensajeGuardado, modoVivo, motorVivo as vivo, reiniciarCaptura, zonaVivo, zonaElegida, claveVivo, zonasDelPlano, pedirVivo } from "../enVivo";
 import type { VistaGuardada } from "../vistaPlano";
 import { useRoute } from "vue-router";
 import { useSitios } from "../useSitios";
@@ -42,7 +42,7 @@ const valorSesion = computed({
   get: () => (enVivo.value ? SESION_VIVO : sesionId.value),
   set: (v: string) => {
     if (v === SESION_VIVO) {
-      fijarModoVivo(true);
+      void pedirVivo();
       return;
     }
     fijarModoVivo(false);

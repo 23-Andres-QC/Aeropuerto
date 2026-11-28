@@ -4,12 +4,12 @@ import { useRoute } from "vue-router";
 import { cantidad, colorPersona, segundos } from "../../../shared/format";
 import { api, mapaDelSitio, tramos, type Analitica, type Config, type Insights, type Punto, type Recorrido, type Replay, type Sesion } from "../api";
 import PlanoSitio, { type FlechaPlano, type RecorridoPlano } from "../components/PlanoSitio.vue";
-import { CELDA_CALOR, SESION_VIVO, capturasVersion, claveVivo, entradasPorIntervalo, fijarModoVivo, historiasDe, mensajeGuardado, modoVivo, motorVivo as vivo, type ConteoCamara, type CuentaSentido } from "../enVivo";
+import { CELDA_CALOR, SESION_VIVO, capturasVersion, claveVivo, entradasPorIntervalo, fijarModoVivo, historiasDe, pedirVivo, mensajeGuardado, modoVivo, motorVivo as vivo, type ConteoCamara, type CuentaSentido } from "../enVivo";
 import ContrasteSesiones from "../components/ContrasteSesiones.vue";
 import TraficoSitio from "../components/TraficoSitio.vue";
 import LineaTiempo from "../components/LineaTiempo.vue";
 import { COLORES, LETRAS, hora, nombreRango, recortar, recortarVarios, type Rango } from "../lineaTiempo";
-import { desdeReplay, entradasPorIntervalo as entradasEntre, resumir, zonasDelLugar, type HistoriaBasica, type ResumenVivo } from "../analisisVivo";
+import { desdeReplay, entradasPorIntervalo as entradasEntre, partirEnSaltos, resumir, zonasDelLugar, type HistoriaBasica, type ResumenVivo } from "../analisisVivo";
 import { useSitios } from "../useSitios";
 import { perfil } from "../../cuentas/api";
 import { cargarPermisoExportar, puedeExportar, textoPermisoExportar } from "../../cuentas/permisos";
@@ -84,7 +84,7 @@ const valorSesion = computed({
   set: (v: string) => {
     vistaSinCapturas.value = v === SESION_SIN_CAPTURAS;
     if (v === SESION_VIVO) {
-      fijarModoVivo(true);
+      void pedirVivo();
       return;
     }
     fijarModoVivo(false);
@@ -367,15 +367,17 @@ const casoActual = computed(() => (conRangos.value && replay.value ? casoMapa(ra
 
 const recorridos = computed<RecorridoPlano[]>(() => {
   if (modoVivo.value)
-    return historiasDe(zonaId.value)
-      .filter((h) => h.puntos.length > 1)
-      .map((h) => ({ id: h.id, color: colorPersona(h.id), puntos: h.puntos }));
+    return historiasDe(zonaId.value).flatMap((h) =>
+      partirEnSaltos(h.puntos)
+        .filter((puntos) => puntos.length > 1)
+        .map((puntos) => ({ id: h.id, color: colorPersona(h.id), puntos })),
+    );
   if (casoActual.value) return casoActual.value.recorridos;
   return personasMapa.value.flatMap((p) => trazos(p, colorPersona(p.numero)));
 });
 
 const nRecorridos = computed(() =>
-  modoVivo.value ? recorridos.value.length : casoActual.value ? casoActual.value.personas : personasMapa.value.length,
+  modoVivo.value ? new Set(recorridos.value.map((r) => r.id)).size : casoActual.value ? casoActual.value.personas : personasMapa.value.length,
 );
 
 /** En el PDF con rangos, los mapas van una vez por caso: todos los rangos y cada uno por separado. */

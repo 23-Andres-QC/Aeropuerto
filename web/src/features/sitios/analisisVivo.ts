@@ -64,6 +64,47 @@ export function zonasDelLugar<Z extends { points: Punto[] }>(zonas: Z[], lugar: 
   return lugar && capas?.length ? zonas.filter((z) => lugarDeZona(z, capas) === lugar) : zonas;
 }
 
+// --- Saltos de la ubicación -------------------------------------------------------------
+// Sin reconocer la vista, la distancia a cada persona sale del alto de su caja: si la caja se achica un momento (piernas
+// tapadas, otra persona delante) la persona «se va» decenas de metros y vuelve, y el recorrido la unía con una recta.
+/** Un punto más lejos que esto del último bueno (más lo que se alcanza a caminar desde entonces) es un salto de la ubicación. */
+export const SALTO_BASE_M = 2;
+/** Lo más rápido que se mueve alguien en el plano; deja margen al temblor de la ubicación por el alto de la caja. */
+export const VELOCIDAD_MAX_M_S = 4;
+/** Si la persona sigue en el lugar nuevo este tiempo, el salto era cierto (lo de antes estaba mal) y se acepta. */
+export const CONFIRMAR_SALTO_MS = 1500;
+/** Entre dos puntos seguidos de un recorrido más lejos que esto no se traza línea. */
+export const CORTE_RECORRIDO_M = 3;
+
+/** Último punto bueno de una persona (t en ms) y, si apareció lejos, dónde y desde cuándo. */
+export type EstadoSalto = { p: Punto; t: number; nuevo?: { p: Punto; desde: number } };
+
+/**
+ * Si el punto `p` en el instante `t` es la persona («sigue»), la persona en otro lugar sin unirla con el anterior («salta»:
+ * volvió a verse lejos o confirmó el lugar nuevo) o un salto de la ubicación que se ignora («descarta»).
+ */
+export function juzgarSalto(estado: EstadoSalto | undefined, p: Punto, t: number): { veredicto: "sigue" | "salta" | "descarta"; estado: EstadoSalto } {
+  if (!estado) return { veredicto: "sigue", estado: { p, t } };
+  const d = Math.hypot(p[0] - estado.p[0], p[1] - estado.p[1]);
+  if (d <= SALTO_BASE_M + (VELOCIDAD_MAX_M_S * Math.max(0, t - estado.t)) / 1000) return { veredicto: d > CORTE_RECORRIDO_M ? "salta" : "sigue", estado: { p, t } };
+  const nuevo = estado.nuevo;
+  const mismo = nuevo && Math.hypot(p[0] - nuevo.p[0], p[1] - nuevo.p[1]) <= SALTO_BASE_M + (VELOCIDAD_MAX_M_S * Math.max(0, t - nuevo.desde)) / 1000;
+  if (mismo && t - nuevo.desde >= CONFIRMAR_SALTO_MS) return { veredicto: "salta", estado: { p, t } };
+  return { veredicto: "descarta", estado: { ...estado, nuevo: mismo ? nuevo : { p, desde: t } } };
+}
+
+/** Un recorrido en tramos: se corta donde dos puntos seguidos quedan a más de `corte` metros. */
+export function partirEnSaltos(puntos: Punto[], corte = CORTE_RECORRIDO_M): Punto[][] {
+  const tramos: Punto[][] = [];
+  for (const p of puntos) {
+    const actual = tramos[tramos.length - 1];
+    const fin = actual?.[actual.length - 1];
+    if (fin && Math.hypot(p[0] - fin[0], p[1] - fin[1]) <= corte) actual.push(p);
+    else tramos.push([p]);
+  }
+  return tramos;
+}
+
 /**
  * Las zonas que contienen un punto, de la más pequeña a la más grande. Se calcula una vez por punto (al centímetro) y lista de
  * zonas: cada rango de la línea de tiempo vuelve a pasar por los mismos puntos, y el punto en polígono de cada punto contra cada

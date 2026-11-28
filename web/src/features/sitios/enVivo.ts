@@ -9,7 +9,7 @@ import { json, request, socketPersistente } from "../../core/http";
 import { colorPersona } from "../../shared/format";
 import { api as apiVivo, RELEVO_VIVO, type Detecciones, type EstadoServicio, type EstadoTelefono, type Telefono, type UbicacionPlano } from "../telefonos/api";
 import { api, mapaDelSitio, type Camara, type Config, type Mapa, type Punto } from "./api";
-import { CELDA_CALOR, dentro, entradasPorIntervalo as entradasEntre, resumir, zonasDelLugar, type ResumenVivo } from "./analisisVivo";
+import { CELDA_CALOR, dentro, entradasPorIntervalo as entradasEntre, juzgarSalto, partirEnSaltos, resumir, zonasDelLugar, type EstadoSalto, type ResumenVivo } from "./analisisVivo";
 import type { PersonaPlano, RecorridoPlano } from "./components/PlanoSitio.vue";
 
 export { CELDA_CALOR };
@@ -21,10 +21,12 @@ import { construirSesion, uuid, type CargaSesion, type PersonaGuardable, type Tr
 export const SESION_VIVO = "__vivo__";
 /**
  * Cámaras que toman los teléfonos según la zona del en vivo, por orden de llegada: en el patio la 1, luego la 2 y la 3; en el
- * comedor la 4 y luego la 5; en el pasillo del Edificio D la 6 y la 7. Para ubicar a la gente en el plano una cámara necesita
- * referencias calibradas (Modelo/Test Modelo/Modelo/ubicacion/esan). Un sitio sin zonas elegibles usa cam01 y cam02.
+ * pasillo del Edificio D la 6 y la 7. Para ubicar a la gente en el plano una cámara necesita referencias calibradas
+ * (Modelo/Test Modelo/Modelo/ubicacion/esan). Un sitio sin zonas elegibles usa cam01 y cam02.
  */
-const CAMARAS_POR_ZONA: Record<string, string[]> = { Patio: ["cam01", "cam02", "cam03"], Comedor: ["cam04", "cam05"], "Pasillo del Edificio D": ["cam06", "cam07"] };
+const CAMARAS_POR_ZONA: Record<string, string[]> = { Patio: ["cam01", "cam02", "cam03"], "Pasillo del Edificio D": ["cam06", "cam07"] };
+/** Zonas grabadas que no se ofrecen para el en vivo: el comedor se ve solo con sus videos. */
+const SIN_EN_VIVO = new Set(["Comedor"]);
 /** Cámaras de una zona grabada que aún no tiene las suyas en CAMARAS_POR_ZONA. */
 const CAMARAS_OTRA_ZONA = ["cam08", "cam09"];
 
@@ -68,16 +70,11 @@ function leerModo(): boolean {
 }
 /** El sistema está en modo en vivo: En vivo e Insights muestran lo que ven los teléfonos, no una sesión guardada. */
 export const modoVivo = ref(leerModo());
-/** Se acaba de prender En vivo (no es una recarga con el modo ya prendido): la memoria empieza vacía. «auto»: se prendió
- * solo, porque un teléfono empezó a transmitir (todas las pestañas lo ven a la vez: lo vacía una sola). */
-let empezarLimpio: false | "mano" | "auto" = false;
-/**
- * Prende o apaga En vivo. `limpiar`: la memoria del modelo se vacía al prenderlo (una grabación nueva empieza de cero).
- * Cuando se prende solo porque un teléfono empezó a transmitir también, salvo en una pestaña que se abre con la sesión
- * ya en marcha (sería a mitad de la sesión); varias pestañas del mismo navegador la vacían una sola vez (OLVIDO_RECIENTE_MS).
- */
-export function fijarModoVivo(valor: boolean, limpiar = true, automatico = false) {
-  if (valor && !modoVivo.value && limpiar) empezarLimpio = automatico ? "auto" : "mano";
+/** Se acaba de prender En vivo (no es una recarga con el modo ya prendido): la memoria empieza vacía. */
+let empezarLimpio = false;
+/** Prende o apaga En vivo. Al prenderlo la memoria del modelo se vacía: una grabación nueva empieza de cero. */
+export function fijarModoVivo(valor: boolean) {
+  if (valor && !modoVivo.value) empezarLimpio = true;
   modoVivo.value = valor;
   try {
     localStorage.setItem(CLAVE_MODO, valor ? "1" : "0");
@@ -199,6 +196,10 @@ const sockets = new Map<string, () => void>();
 const cuadros = new Map<string, Cuadro>();
 const rastros = new Map<string, { puntos: Punto[]; visto: number; color: string }>();
 const suavizadas = new Map<string, Punto>();
+/** Último punto bueno de cada persona, para no seguir los saltos de su ubicación (ver juzgarSalto). */
+const saltos = new Map<string, EstadoSalto>();
+/** Pasado esto sin verla, se olvida su último punto bueno (igual ya alcanzaría a estar en cualquier lugar del plano). */
+const OLVIDAR_SALTO_MS = 30_000;
 /**
  * Personas que el modelo memorizó (con ID global) mientras se graba, las ubique o no el plano: la captura las guarda a
  * todas (con su recorrido si lo tienen). Una caja sin ID no cuenta: puede ser un falso positivo pasajero.
@@ -355,6 +356,7 @@ function unirCercanas(acumulado: Map<string, Fusionable>, t: number): void {
     acumulado.delete(mejor);
     rastros.delete(mejor);
     suavizadas.delete(mejor);
+    saltos.delete(mejor);
     unidas++;
   }
   for (const [k, visto] of [...uniones]) if (t - visto > VIDA_UNION_MS) uniones.delete(k);
@@ -647,10 +649,21 @@ function componer() {
   const porZona = new Map<number, number>();
   for (const [clave, a] of acumulado) {
     const bruto: Punto = [a.x / a.peso, a.y / a.peso];
+    const juicio = juzgarSalto(saltos.get(clave), bruto, t);
+    saltos.set(clave, juicio.estado);
     const previo = suavizadas.get(clave);
-    const punto: Punto = previo ? [previo[0] + alfa * (bruto[0] - previo[0]), previo[1] + alfa * (bruto[1] - previo[1])] : bruto;
-    suavizadas.set(clave, punto);
     const color = a.id != null ? colorPersona(a.id) : "#8ba4bf";
+    // Un salto de la ubicación: la persona queda donde estaba y no suma al recorrido, al calor ni a sus zonas.
+    if (juicio.veredicto === "descarta") {
+      const quieto = previo ?? juicio.estado.p;
+      suavizadas.set(clave, quieto);
+      personas.push({ id: a.id ?? -(personas.length + 1), x: quieto[0], y: quieto[1], color, etiqueta: a.id != null ? `G${a.id}` : "?", estado: "visto" });
+      lista.push({ clave, id: a.id, camaras: [...a.camaras].sort() });
+      continue;
+    }
+    // En un lugar nuevo (confirmado, o al volver a verla lejos) va directo, sin deslizarse desde el anterior.
+    const punto: Punto = previo && juicio.veredicto === "sigue" ? [previo[0] + alfa * (bruto[0] - previo[0]), previo[1] + alfa * (bruto[1] - previo[1])] : bruto;
+    suavizadas.set(clave, punto);
 
     const rastro = rastros.get(clave) ?? { puntos: [], visto: t, color };
     const ultimo = rastro.puntos[rastro.puntos.length - 1];
@@ -705,6 +718,7 @@ function componer() {
     if (area > 0) densidadMax.set(zona, Math.max(densidadMax.get(zona) ?? 0, n / area));
   }
   for (const clave of [...suavizadas.keys()]) if (!acumulado.has(clave)) suavizadas.delete(clave);
+  for (const [clave, s] of [...saltos]) if (t - s.t > OLVIDAR_SALTO_MS) saltos.delete(clave);
   const recorridos: RecorridoPlano[] = [];
   // Grabando, el recorrido de cada persona queda en el mapa toda la captura (es lo que se guarda en Registros): el de quien
   // sigue a la vista, marcado; el de quien ya no se ve, como recorrido. Sin grabar, solo el rastro de los últimos segundos.
@@ -714,7 +728,7 @@ function componer() {
     for (const h of recientes) {
       const clave = `g${h.id}`;
       conHistoria.add(clave);
-      recorridos.push({ id: clave, color: colorPersona(h.id), puntos: [...h.puntos], activo: acumulado.has(clave) });
+      for (const puntos of partirEnSaltos(h.puntos)) if (puntos.length > 1) recorridos.push({ id: clave, color: colorPersona(h.id), puntos, activo: acumulado.has(clave) });
     }
   }
   for (const [clave, r] of [...rastros]) {
@@ -722,7 +736,8 @@ function componer() {
       rastros.delete(clave);
       continue;
     }
-    if (r.puntos.length > 1 && !conHistoria.has(clave)) recorridos.push({ id: clave, color: r.color, puntos: [...r.puntos], activo: acumulado.has(clave) });
+    if (conHistoria.has(clave)) continue;
+    for (const puntos of partirEnSaltos(r.puntos)) if (puntos.length > 1) recorridos.push({ id: clave, color: r.color, puntos, activo: acumulado.has(clave) });
   }
   lista.sort((a, b) => (a.id ?? 1e9) - (b.id ?? 1e9));
   vivas.value = { personas, recorridos, lista };
@@ -744,6 +759,7 @@ export function reiniciarVivo() {
   densidadMax.clear();
   rastros.clear();
   suavizadas.clear();
+  saltos.clear();
   camaraPreferida.clear();
   capturaDePrueba.value = false;
   uniones.clear();
@@ -936,19 +952,6 @@ function cerrarCaptura() {
   })();
 }
 
-/** Un vaciado de la memoria hecho hace menos de esto (en cualquier pestaña de este navegador) vale para esta grabación. */
-const OLVIDO_RECIENTE_MS = 15_000;
-const CLAVE_OLVIDO = "vivo-olvido-ms";
-/** Marca el vaciado de ahora. Con `siNadie`, false si otra pestaña ya lo hizo hace un momento (todas ven entrar el mismo teléfono). */
-function tomarOlvido(siNadie: boolean): boolean {
-  try {
-    if (siNadie && Date.now() - Number(localStorage.getItem(CLAVE_OLVIDO) ?? 0) < OLVIDO_RECIENTE_MS) return false;
-    localStorage.setItem(CLAVE_OLVIDO, String(Date.now()));
-  } catch {
-    /* localStorage bloqueado: se vacía igual */
-  }
-  return true;
-}
 /**
  * Tras vaciar la memoria, lo que el modelo manda hasta notarlo (lo revisa cada 1 s) trae los IDs de la grabación anterior,
  * que después se reparten de nuevo desde 1: no se registra, o la persona 5 de antes y la 5 de ahora quedarían juntas.
@@ -959,13 +962,9 @@ let descartarHasta = 0;
 /**
  * Empieza una grabación nueva: vacía la memoria de identidades del modelo (backend-vivo sube la época y el modelo, al
  * notarlo, olvida la sesión entera: personas, tramos y seguidores), así no arrastra las grabaciones anteriores
- * ni se va saturando. `automatico`: En vivo se prendió solo (ver tomarOlvido); una acción a mano vacía siempre.
+ * ni se va saturando.
  */
-async function olvidarGrabacionAnterior(automatico = false) {
-  if (!tomarOlvido(automatico)) {
-    descartarHasta = Date.now() + ESPERA_OLVIDO_MS; // otra pestaña la vació recién: el modelo está olvidando
-    return;
-  }
+async function olvidarGrabacionAnterior() {
   descartarHasta = Infinity;
   try {
     const { borradas } = await apiVivo.olvidarTodas();
@@ -1016,9 +1015,8 @@ function arrancar() {
   // identidades del modelo se vacía, así los IDs empiezan en 1 y el modelo no compara con gente de otras sesiones. Una
   // recarga de la página con En vivo ya prendido no la vacía (sería a mitad de la sesión).
   if (empezarLimpio) {
-    const automatico = empezarLimpio === "auto";
     empezarLimpio = false;
-    void olvidarGrabacionAnterior(automatico);
+    void olvidarGrabacionAnterior();
   }
   // La captura empieza sola: lo que se ve en vivo queda registrado (Terminar la corta e Iniciar empieza otra).
   grabando.value = true;
@@ -1082,10 +1080,9 @@ watch(
   { immediate: true },
 );
 
-// Si se conecta un teléfono y el modelo empieza a procesarlo, el sistema entra solo al modo en vivo: lo que se ve en la web
-// es lo que ven los teléfonos, no una sesión guardada. Solo al pasar de ningún teléfono a alguno (si después se sale a mano,
-// no vuelve a entrar mientras sigan los mismos) y no si se está mirando a propósito una captura (?sesion=). Es una grabación
-// nueva y el modelo empieza de cero, salvo si la pestaña se abrió con los teléfonos ya transmitiendo (null: aún no se sabía).
+// Si se conecta un teléfono y el modelo empieza a procesarlo, la web pregunta qué zona se va a grabar: En vivo no se prende ni
+// graba hasta que se elige (Cancelar no prende nada). Solo al pasar de ningún teléfono a alguno (si se cancela, no vuelve a
+// preguntar mientras sigan los mismos) y no si se está mirando a propósito una captura (?sesion=).
 // Se escucha solo con una sesión que puede abrir En vivo: en el login (o con un rol sin ese módulo) el relevo respondería 401
 // o 403 y el navegador reintentaría cada 2 s.
 let habiaTelefonos: boolean | null = null;
@@ -1100,7 +1097,7 @@ watch(
       try {
         const e = JSON.parse(ev.data as string) as EstadoServicio;
         const hay = Object.values(e.telefonos ?? {}).some((t) => t.estado === "procesando");
-        if (hay && !habiaTelefonos && !modoVivo.value && !location.search.includes("sesion=")) fijarModoVivo(true, habiaTelefonos === false, true);
+        if (hay && !habiaTelefonos && !modoVivo.value && !location.search.includes("sesion=")) void pedirVivo(true);
         habiaTelefonos = hay;
       } catch {
         /* un mensaje que no es del servicio: se ignora */
@@ -1110,7 +1107,7 @@ watch(
   { immediate: true },
 );
 
-/** Dónde se hace el en vivo: el nombre corto de una zona grabada («Patio», «Comedor», «Pasillo del Edificio D»). */
+/** Dónde se hace el en vivo: el nombre corto de una zona grabada («Patio», «Pasillo del Edificio D»). */
 export type ZonaEnVivo = string;
 const CLAVE_ZONA = "zona-vivo";
 function leerZona(): ZonaEnVivo {
@@ -1124,20 +1121,28 @@ function leerZona(): ZonaEnVivo {
 export const zonaElegida = ref<ZonaEnVivo>(leerZona());
 /** Se está preguntando dónde se hace el en vivo (el aviso que sale al pulsar «Activar en vivo»). */
 export const preguntandoZona = ref(false);
-/** Las zonas que se pueden grabar en vivo (las del plano del sitio). */
-export const zonasVivo = computed(() => zonasDelPlano(config.value?.plano?.capas));
+/** Las zonas que se pueden grabar en vivo (las del plano del sitio, menos las de SIN_EN_VIVO). */
+export const zonasVivo = computed(() => zonasDelPlano(config.value?.plano?.capas).filter((z) => !SIN_EN_VIVO.has(z.nombre)));
 /** La zona del en vivo (null en un sitio con una sola zona grabada), y su clave en el plano: «sitio» o el nombre de su capa. */
 export const zonaVivo = computed(() => (config.value?.plano?.capas?.length ? (zonasVivo.value.find((z) => z.nombre === zonaElegida.value) ?? zonasVivo.value[0]).nombre : null));
 export const claveVivo = computed(() => (zonaVivo.value ? zonasVivo.value.find((z) => z.nombre === zonaVivo.value)!.clave : null));
 /** Las cámaras que toman los teléfonos en esta zona del en vivo, en el orden en que se van conectando. */
 export const camarasVivo = computed(() => (zonaVivo.value ? CAMARAS_POR_ZONA[zonaVivo.value] ?? CAMARAS_OTRA_ZONA : ["cam01", "cam02"]));
 
-/** El botón «Activar en vivo»: si el sitio tiene más de una zona grabada pregunta cuál; apagarlo no pregunta nada. */
+/**
+ * Prender En vivo: si el sitio tiene más de una zona grabada, primero se pregunta cuál se va a grabar. `alEntrar`: lo pide un
+ * teléfono que empezó a transmitir; sin zonas para elegir no prende nada (se prende con «Activar en vivo»).
+ */
+export async function pedirVivo(alEntrar = false) {
+  if (modoVivo.value) return;
+  if (!config.value) await cargarConfig(); // antes de prender, el plano aún no se había leído
+  if (config.value?.plano?.capas?.length) preguntandoZona.value = true;
+  else if (!alEntrar) fijarModoVivo(true);
+}
+/** El botón «Activar en vivo»: pregunta la zona (ver pedirVivo); apagarlo no pregunta nada. */
 export async function alternarVivo() {
   if (modoVivo.value) return fijarModoVivo(false);
-  if (!config.value) await cargarConfig(); // antes de prender, el plano aún no se había leído
-  if (!config.value?.plano?.capas?.length) return fijarModoVivo(true);
-  preguntandoZona.value = true;
+  return pedirVivo();
 }
 /** Se eligió la zona: se prende el en vivo ahí. */
 export function elegirZonaVivo(z: ZonaEnVivo) {
